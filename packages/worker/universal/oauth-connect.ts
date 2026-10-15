@@ -42,6 +42,8 @@ export function buildConnectOauthHref(input: {
 	name: string
 	appSlug?: string
 	platformSlug?: string
+	/** Creation / team handoff org; omitted for signup-org visits. */
+	orgSlug?: string | null
 }): string {
 	const params = new URLSearchParams({ provider: input.name })
 	const appSlug = input.appSlug?.trim()
@@ -52,6 +54,10 @@ export function buildConnectOauthHref(input: {
 	if (platformSlug) {
 		params.set('platform', platformSlug)
 	}
+	const orgSlug = input.orgSlug?.trim()
+	if (orgSlug) {
+		params.set('org', orgSlug)
+	}
 	return `/connect/oauth?${params.toString()}`
 }
 
@@ -60,8 +66,13 @@ export function buildConnectOauthHref(input: {
  * and `platform=` tells the lookup to resolve the discoverable platform app
  * instead of a bring-your-own record.
  */
-export function buildPlatformConnectOauthHref(slug: string): string {
+export function buildPlatformConnectOauthHref(
+	slug: string,
+	orgSlug?: string | null,
+): string {
 	const params = new URLSearchParams({ provider: slug, platform: slug })
+	const org = orgSlug?.trim()
+	if (org) params.set('org', org)
 	return `/connect/oauth?${params.toString()}`
 }
 
@@ -108,7 +119,10 @@ export function buildConnectOauthChooserOptions(input: {
 		canDrive: boolean
 	}>
 	platformApps: ReadonlyArray<ConnectablePlatformApp>
+	/** When set, every chooser link keeps this org through SSR and writes. */
+	orgSlug?: string | null
 }): Array<ConnectOauthChooserOption> {
+	const orgSlug = input.orgSlug?.trim() || null
 	const connectionOptions = input.connections
 		.filter((connection) => connection.canDrive)
 		.map((connection) => {
@@ -125,6 +139,7 @@ export function buildConnectOauthChooserOptions(input: {
 				href: buildConnectOauthHref({
 					name: connection.name,
 					appSlug: connection.platform ? undefined : connection.appSlug,
+					orgSlug,
 				}),
 				label: connection.label,
 				detail: builtInReconnect
@@ -144,7 +159,7 @@ export function buildConnectOauthChooserOptions(input: {
 		connections: input.connections,
 	}).map((app) => ({
 		id: `platform:${app.slug}`,
-		href: buildPlatformConnectOauthHref(app.slug),
+		href: buildPlatformConnectOauthHref(app.slug, orgSlug),
 		label: app.label,
 		detail: "Connect with Kody's built-in app",
 		providerKey: normalizeProviderKey(app.provider) || app.slug,

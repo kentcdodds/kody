@@ -1,7 +1,5 @@
-import {
-	personalOrgId,
-	type OwnerId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
 	callerHasRole,
@@ -119,11 +117,11 @@ async function executeSearchListWithinBudget(
 	// Team-bound search must label packages with the org slug, not the actor
 	// person handle (otherwise exact URLs and hosted app links go to /@actor/…).
 	const boundOrg = input.callerContext.request?.org
-	const actorUserId = input.callerContext.user?.userId
+	const actor = input.callerContext.user
 	const boundToTeamOrg =
 		Boolean(boundOrg?.slug?.trim()) &&
-		Boolean(actorUserId) &&
-		boundOrg!.id !== personalOrgId(actorUserId!)
+		Boolean(actor) &&
+		boundOrg!.id !== personalOrgIdForPerson(actor!)
 	const username = boundToTeamOrg
 		? boundOrg!.slug!.trim()
 		: await resolvePublicUsername({

@@ -17,6 +17,10 @@ import {
 	applyHomeOgVariant,
 } from '#universal/home-og-variants.ts'
 import { publicOgPages, type PublicOgPageId } from '#universal/og-pages.ts'
+import {
+	findWithAgentByPathname,
+	withAgentHref,
+} from '#universal/with-agents.ts'
 
 export const DEFAULT_DOCUMENT_TITLE = 'Kody'
 export const NOT_FOUND_DOCUMENT_TITLE = 'Not found'
@@ -198,8 +202,9 @@ function publicPageHead(
 function featurePageHead(
 	pageId: PublicOgPageId,
 	title: string,
-	scenes?: string,
+	scenes: string | ReadonlyArray<string> = [],
 ): DocumentHeadDescriptor {
+	const sceneSheets = typeof scenes === 'string' ? [scenes] : scenes
 	return {
 		...publicPageHead(pageId, title, {
 			links: [
@@ -208,15 +213,11 @@ function featurePageHead(
 					hrefPath: '/feature-pages.css',
 					sameOrigin: true,
 				},
-				...(scenes
-					? [
-							{
-								rel: 'stylesheet',
-								hrefPath: `/feature-scenes/${scenes}.css`,
-								sameOrigin: true,
-							},
-						]
-					: []),
+				...sceneSheets.map((scene) => ({
+					rel: 'stylesheet',
+					hrefPath: `/feature-scenes/${scene}.css`,
+					sameOrigin: true,
+				})),
 			],
 		}),
 		description: publicOgPages[pageId].ogDescription,
@@ -266,11 +267,13 @@ const routeDocumentHeads = {
 	[routePattern(routes.orgBilling)]: titleOnly('Billing'),
 	[routePattern(routes.orgBillingSuccess)]: titleOnly("You're in"),
 	[routePattern(routes.orgUsage)]: titleOnly('Usage'),
+	[routePattern(routes.orgCredits)]: titleOnly('Credits'),
 	[routePattern(routes.accountUsage)]: titleOnly('Usage'),
 	[routePattern(routes.accountExperiments)]: titleOnly('Experiments'),
 	[routePattern(routes.communityPackageApproveCredentials)]: titleOnly(
 		'Approve credential mappings',
 	),
+	[routePattern(routes.orgApprovalBundle)]: titleOnly('Review approvals'),
 	[routePattern(routes.communityPackageApprovePublish)]: titleOnly(
 		'Approve package publish',
 	),
@@ -373,6 +376,18 @@ const routeDocumentHeads = {
 		packageCredentialsHead('mappings'),
 	[routePattern(routes.communityPackageTriggers)]:
 		packageCredentialsHead('triggers'),
+	[routePattern(routes.communityPackageCollaborators)]: ({
+		loaderData,
+		pathname,
+	}) => {
+		const page = loaderData?.packageCollaborators
+		if (page && !page.ok) return titleOnly(NOT_FOUND_DOCUMENT_TITLE)
+		if (!page) return titleOnly('Package collaborators')
+		return {
+			title: `${page.shell.name} collaborators`,
+			canonicalPath: pathname,
+		}
+	},
 	[routePattern(routes.communityDetailFiles)]: ({ loaderData, pathname }) => {
 		const files = loaderData?.packageFiles
 		if (!files?.ok) return titleOnly('Package files')
@@ -474,11 +489,6 @@ const routeDocumentHeads = {
 		'Shared memory for your AI agents | Kody',
 		'memory',
 	),
-	[routePattern(routes.featureSecrets)]: featurePageHead(
-		'feature-secrets',
-		'API secrets for your AI agents | Kody',
-		'secrets',
-	),
 	[routePattern(routes.featurePackages)]: featurePageHead(
 		'feature-packages',
 		'Reusable packages for your AI agents | Kody',
@@ -489,10 +499,10 @@ const routeDocumentHeads = {
 		'Triggers and automation for your AI agents | Kody',
 		'triggers',
 	),
-	[routePattern(routes.featureIntegrations)]: featurePageHead(
-		'feature-integrations',
-		'Service connections for your AI agents | Kody',
-		'integrations',
+	[routePattern(routes.featureCredentials)]: featurePageHead(
+		'feature-credentials',
+		'Credentials for your AI agents | Kody',
+		['secrets', 'integrations'],
 	),
 	[routePattern(routes.featureApps)]: featurePageHead(
 		'feature-apps',
@@ -520,6 +530,8 @@ const routeDocumentHeads = {
 		'case-studies',
 		'Case studies',
 	),
+	[routePattern(routes.believe)]: publicPageHead('believe', 'What we believe'),
+	[routePattern(routes.withAgent)]: withAgentHead,
 	[routePattern(routes.support)]: publicPageHead('support', 'Support'),
 	[routePattern(routes.privacy)]: publicPageHead('privacy', 'Privacy'),
 	[routePattern(routes.terms)]: publicPageHead('terms', 'Terms'),
@@ -606,6 +618,7 @@ const orgDocumentHeads: Record<string, DocumentHeadResolver> = {
 	[routePattern(routes.orgJobs)]: titleOnly('Jobs'),
 	[routePattern(routes.orgMcpServers)]: titleOnly('MCP servers'),
 	[routePattern(routes.orgMemories)]: titleOnly('Memories'),
+	[routePattern(routes.orgFollows)]: titleOnly('Follows'),
 	[routePattern(routes.orgOverview)]: titleOnly('Overview'),
 	[routePattern(routes.orgRepositories)]: titleOnly('Repositories'),
 	[routePattern(routes.orgSecretProviders)]: titleOnly('Secret providers'),
@@ -698,6 +711,22 @@ export function absolutizeDocumentHead(
 			type: link.type,
 			title: link.title,
 		})),
+	}
+}
+
+function withAgentHead({
+	pathname,
+}: {
+	pathname: string
+}): DocumentHeadDescriptor {
+	const agent = findWithAgentByPathname(pathname)
+	if (!agent) return titleOnly('Agent not found')
+	const title = `Kody for ${agent.name} | Kody`
+	return {
+		title,
+		description: agent.pitch,
+		canonicalPath: withAgentHref(agent.slug),
+		og: { title, description: agent.pitch, imagePath: '/og/home.png' },
 	}
 }
 

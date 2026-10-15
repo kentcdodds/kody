@@ -1,5 +1,5 @@
 import { loadOrgBindingForSlug, type OrgBinding } from '#worker/orgs/repo.ts'
-import { isLastUsedOrgCommitApiPath } from '#universal/org-last-used-cookie.ts'
+import { readOrgSlugFromUrl } from '#universal/org-binding/url.ts'
 import {
 	orgOwnedAccountApiSection,
 	orgOwnedSectionForPath,
@@ -24,8 +24,10 @@ const resolutions = new WeakMap<Request, Promise<RequestOrgResolution>>()
  * The organization for this request. Resource, billing, usage, and management
  * URLs under `/@slug/...` bind that organization when the actor is a member or
  * holds a grant. Org-owned `/account/<section>.json` and credits mutation APIs
- * bind the same org via Referer. Credits mutations without a usable Referer
- * are denied (no personal fallback). Every other URL keeps the signup
+ * bind the same org via Referer. `/connect/oauth?org=<slug>` binds that org so
+ * team credential handoffs keep writes off the signup org (the redirect URI
+ * itself stays org-less). Credits mutations without a usable Referer are
+ * denied (no personal fallback). Every other URL keeps the signup
  * organization.
  */
 export function loadRequestOrgResolution(
@@ -64,8 +66,29 @@ export function isOrgBoundPath(pathname: string): boolean {
 	return (
 		orgOwnedAccountApiSection(pathname) !== null ||
 		isCreditsApiPath(pathname) ||
-		isLastUsedOrgCommitApiPath(pathname) ||
 		orgSlugFromPageUrl(pathname) !== null
+	)
+}
+
+/**
+ * True when this request can bind a non-signup org: an org-bound path, or
+ * `/connect/oauth?org=<slug>` (the OAuth redirect URI stays path-org-less).
+ * An explicit empty/invalid `org=` is also bound so the guard can deny it
+ * instead of falling through to the signup org.
+ */
+export function isOrgBoundRequest(url: URL): boolean {
+	return (
+		isOrgBoundPath(url.pathname) ||
+		hasInvalidConnectOauthOrg(url) ||
+		orgSlugFromConnectOauthUrl(url) !== null
+	)
+}
+
+function hasInvalidConnectOauthOrg(url: URL): boolean {
+	return (
+		url.pathname === routes.connectOauth.href() &&
+		url.searchParams.has('org') &&
+		readOrgSlugFromUrl(url) === null
 	)
 }
 
@@ -83,17 +106,23 @@ export async function isOrgRequestDenied(
 	env: Env,
 	personId: string,
 ): Promise<boolean> {
-	const pathname = new URL(request.url).pathname
-	if (!isOrgBoundPath(pathname)) return false
+	const url = new URL(request.url)
+	if (!isOrgBoundRequest(url)) return false
 	const resolution = await loadRequestOrgResolution(request, env, personId)
 	if (resolution === 'denied') return true
 	if (resolution === 'personal') return false
-	const section = orgOwnedSectionForPath(pathname)
+	const section = orgOwnedSectionForPath(url.pathname)
 	return section !== null && orgSectionDenial(resolution, section) !== null
 }
 
 function orgSlugFromPageUrl(pathname: string): string | null {
 	return orgSlugFromOrgOwnedPath(pathname)
+}
+
+/** `/connect/oauth` keeps a fixed redirect URI; the destination org is `?org=`. */
+function orgSlugFromConnectOauthUrl(url: URL): string | null {
+	if (url.pathname !== routes.connectOauth.href()) return null
+	return readOrgSlugFromUrl(url)
 }
 
 /**
@@ -115,7 +144,9 @@ function orgSlugFromAccountApiReferer(
 		return null
 	}
 	if (referer.origin !== origin) return null
-	return orgSlugFromPageUrl(referer.pathname)
+	return (
+		orgSlugFromPageUrl(referer.pathname) ?? orgSlugFromConnectOauthUrl(referer)
+	)
 }
 
 async function resolveRequestOrg(
@@ -124,13 +155,14 @@ async function resolveRequestOrg(
 	personId: string,
 ): Promise<RequestOrgResolution> {
 	const url = new URL(request.url)
+	if (hasInvalidConnectOauthOrg(url)) return 'denied'
 	const slugOnPage = orgSlugFromPageUrl(url.pathname)
 	const apiSection = orgOwnedAccountApiSection(url.pathname)
 	const creditsApi = isCreditsApiPath(url.pathname)
-	const lastUsedCommit = isLastUsedOrgCommitApiPath(url.pathname)
 	const slug =
 		slugOnPage ??
-		(apiSection || creditsApi || lastUsedCommit
+		orgSlugFromConnectOauthUrl(url) ??
+		(apiSection || creditsApi
 			? orgSlugFromAccountApiReferer(request, url.origin)
 			: null)
 	// Credits mutations must name an org (path or usage-page Referer). Falling

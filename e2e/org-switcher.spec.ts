@@ -50,6 +50,18 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 	).toBeVisible()
 	await expect(page.getByTestId('org-home')).toBeVisible()
 	await waitForClientHydration(page)
+	await expect(page.getByTestId('org-home-nav-workspace')).toHaveAttribute(
+		'href',
+		`/@pinned-${runId}/-/repositories`,
+	)
+	// The header has no switcher; it heads the workspace rail.
+	await expect(page.getByTestId('org-switcher')).toHaveCount(0)
+	await page.getByTestId('org-home-nav-workspace').click()
+	await expect(page).toHaveURL(new RegExp(`/@pinned-${runId}/-/repositories$`))
+	const workspaceRail = page.getByRole('navigation', {
+		name: 'Workspace sections',
+	})
+	await expect(workspaceRail.getByTestId('org-switcher')).toBeVisible()
 
 	const wide = await openSwitcher(page)
 	await expect(
@@ -59,10 +71,10 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 		wide.panel.getByTestId(`org-switcher-${user.username}`),
 	).not.toHaveAttribute('aria-current', 'true')
 	await expect(wide.panel.getByTestId('org-switcher-create')).toBeVisible()
-	await expect(page.getByTestId('org-home-nav-workspace')).toHaveAttribute(
-		'href',
-		`/@pinned-${runId}/-/repositories`,
-	)
+	// The signup org keeps the section.
+	await expect(
+		wide.panel.getByTestId(`org-switcher-${user.username}`),
+	).toHaveAttribute('href', `/@${user.username}/-/repositories`)
 	// No invites waiting, so no Invites row. The person's own links live in
 	// the account menu, not the org switcher.
 	await expect(wide.panel.getByTestId('org-switcher-invites')).toHaveCount(0)
@@ -73,20 +85,34 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 	await accountMenu.click()
 	const accountPanel = page.getByTestId('account-menu-panel')
 	await expect(accountPanel).toBeVisible()
-	const accountGroup = accountPanel.getByRole('group', { name: 'Your account' })
+	const accountGroup = accountPanel.getByRole('group', {
+		name: 'Your account',
+	})
 	await expect(
 		accountGroup.getByRole('link', { name: 'Your profile' }),
 	).toHaveAttribute('href', `/@${user.username}`)
 	await expect(
 		accountGroup.getByRole('link', { name: 'Account settings' }),
 	).toHaveAttribute('href', '/account')
-	// Usage follows the URL org (team home here), not a last-used cookie.
+	// Usage follows the URL org, not a last-used cookie.
 	await expect(
 		accountGroup.getByRole('link', { name: 'Usage & credits' }),
 	).toHaveAttribute('href', `/@pinned-${runId}/-/usage`)
 	await expect(
 		accountGroup.getByRole('button', { name: 'Log out' }),
 	).toBeVisible()
+	// Manage lists every workspace by handle, the current one first, so the
+	// avatar menu is never a dead end for org sections.
+	const manageGroup = accountPanel.getByRole('group', { name: 'Manage' })
+	const manageLinks = manageGroup.getByRole('link')
+	await expect(manageLinks).toHaveCount(2)
+	await expect(manageLinks.nth(0)).toHaveAccessibleName(`@pinned-${runId}`)
+	await expect(manageLinks.nth(0)).toHaveAttribute('href', `/@pinned-${runId}`)
+	await expect(manageLinks.nth(1)).toHaveAccessibleName(`@${user.username}`)
+	await expect(manageLinks.nth(1)).toHaveAttribute(
+		'href',
+		`/@${user.username}/-/overview`,
+	)
 	await page.keyboard.press('Escape')
 	await expect(accountPanel).toBeHidden()
 	await openSwitcher(page)
@@ -104,19 +130,34 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 	await expect(wide.trigger).toBeFocused()
 	await expect(wide.trigger).toHaveAttribute('aria-expanded', 'false')
 
-	// A narrower desktop still opens the menu; a click outside closes it.
-	await page.setViewportSize({ width: 860, height: 800 })
-	const narrow = await openSwitcher(page)
-	await page.mouse.click(20, 700)
-	await expect(narrow.panel).toBeHidden()
+	// A narrow window folds the rail into its drawer; the switcher opens
+	// from there, and a click outside closes it.
+	await page.setViewportSize({ width: 390, height: 800 })
+	await expect(wide.trigger).toBeHidden()
+	await page
+		.locator('details:has([data-testid="org-switcher-drawer"]) > summary')
+		.click()
+	const drawerTrigger = page.getByTestId('org-switcher-drawer')
+	await expect(drawerTrigger).toHaveAccessibleName(
+		`@pinned-${runId}: switch organization`,
+	)
+	await drawerTrigger.click()
+	const drawerPanel = page.getByTestId('org-switcher-drawer-panel')
+	await expect(drawerPanel).toBeVisible()
+	await expect(
+		drawerPanel.getByTestId(`org-switcher-pinned-${runId}`),
+	).toHaveAttribute('aria-current', 'true')
+	await page.mouse.click(4, 400)
+	await expect(drawerPanel).toBeHidden()
 
 	// Team settings chrome must name the URL org (not the personal org) next
 	// to Delete organization.
 	await page.setViewportSize({ width: 1440, height: 900 })
 	await page.goto(`/@pinned-${runId}/-/settings`)
 	await waitForClientHydration(page)
-	// Team workspace rail matches the personal shape: same resource sections
-	// (Credentials, Agents, …) plus Members, Settings, and Billing.
+	// Team workspace rail matches the personal shape for Build / Credentials /
+	// Agents & data / Activity, except Memories (personal-only after ADR 0072),
+	// plus Members, Settings, and Billing.
 	const teamRail = page.getByRole('navigation', { name: 'Workspace sections' })
 	for (const label of [
 		'Overview',
@@ -126,7 +167,6 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 		'Credentials',
 		'Secret providers',
 		'Agents',
-		'Memories',
 		'Email',
 		'Activity',
 		'Members',
@@ -146,9 +186,9 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 	await expect(page.getByTestId('org-switcher')).toHaveAccessibleName(
 		`@pinned-${runId}: switch organization`,
 	)
-	await expect(
-		page.getByLabel('Workspace sections').getByText(`@pinned-${runId}`),
-	).toBeVisible()
+	await expect(teamRail.getByTestId('org-switcher')).toContainText(
+		`@pinned-${runId}`,
+	)
 	await expect(page.getByTestId('delete-org')).toBeVisible()
 
 	// Teams, Collaborators, and Grants are tabs on Members.

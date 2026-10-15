@@ -5,9 +5,9 @@ summary:
   How and why to use OpenMuse, CopilotKit's open-source, self-hostable personal
   agent, alongside Kody. OpenMuse is the personal-agent app (phone and web chat,
   an agent computer, goals, reviewed actions); Kody is the home that agent
-  shares with your other agents (memory, secrets it never reads, packages, jobs,
-  webhooks, inbox). Covers what each is good at, what to put where, and how to
-  connect OpenMuse's agent harness to Kody over MCP.
+  shares with your other agents (memory, credentials it never reads, packages,
+  jobs, webhooks, inbox). Covers what each is good at, what to put where, and
+  how to connect OpenMuse's agent harness to Kody over MCP.
 category: platform
 ---
 

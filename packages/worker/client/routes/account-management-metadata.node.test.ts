@@ -231,7 +231,6 @@ test('team settings rail names the URL org when the session list is personal-onl
 				personal: true,
 			},
 		],
-		lastUsedOrganization: 'ada',
 	}
 	const html = await renderToString(
 		jsx(RouterLocationProvider, {
@@ -260,7 +259,6 @@ test('team settings rail names the URL org when the session list is personal-onl
 	expect(html).toContain('href="/@acme/-/agents"')
 	expect(html).toContain('href="/@acme/-/credentials"')
 	expect(html).toContain('href="/@acme/-/secret-providers"')
-	expect(html).toContain('href="/@acme/-/memories"')
 	expect(html).toContain('href="/@acme/-/email"')
 	expect(html).toContain('href="/@acme/-/activity"')
 	// Workflows and Waiting are tabs on the Activity page, and usage is the
@@ -268,8 +266,89 @@ test('team settings rail names the URL org when the session list is personal-onl
 	expect(html).not.toContain('href="/@acme/-/workflows"')
 	expect(html).not.toContain('href="/@acme/-/waiting"')
 	expect(html).not.toContain('href="/account/usage"')
-	// No personal workspace links leak onto the team URL.
-	expect(html).not.toContain('href="/@ada/-/')
+	// No personal workspace links leak onto the team URL. The only personal
+	// link is the switcher row for the signup org (rail and drawer), which
+	// has no Settings page, so it opens that workspace's overview.
+	expect(html.match(/href="\/@ada\/-\/[^"]*"/g)).toEqual([
+		'href="/@ada/-/overview"',
+		'href="/@ada/-/overview"',
+	])
+	// The rail heading is the switcher for the URL org, and the session's
+	// missing team still gets a row so it can be re-selected.
+	expect(html).toContain('aria-label="@acme: switch organization"')
+	expect(html).toContain('data-testid="org-switcher-acme"')
+})
+
+test('workspace rail heading is the org switcher on desktop and in the phone drawer', async () => {
+	const session: SessionInfo = {
+		email: 'ada@example.com',
+		emailVerified: true,
+		emailVerificationDelivery: null,
+		username: 'ada',
+		avatarUrl: null,
+		roles: [],
+		permissions: [],
+		featureFlags: {} as SessionInfo['featureFlags'],
+		organizations: [
+			{ slug: 'ada', displayName: 'Ada', role: 'owner', personal: true },
+			{ slug: 'acme', displayName: 'Acme', role: 'member', personal: false },
+		],
+		inviteCount: 1,
+	}
+	const render = (url: string) =>
+		renderToString(
+			jsx(RouterLocationProvider, {
+				url,
+				children: jsx(AppSessionProvider, {
+					session,
+					status: 'ready',
+					children: jsx(AccountPageHeader, {
+						title: 'Page',
+						description: 'Page.',
+						currentHref: url,
+					}),
+				}),
+			}),
+		)
+	const html = await render('/@acme/-/credentials')
+	const rail = html.slice(
+		html.indexOf('aria-label="Workspace sections" data-account-nav'),
+		html.indexOf('<details'),
+	)
+	const drawer = html.slice(html.indexOf('<details'))
+	// The "Workspace" label stays; the static name under it is now the
+	// switcher trigger, ahead of the section links.
+	const railTrigger = rail.indexOf('data-testid="org-switcher"')
+	expect(rail.indexOf('>Workspace</span>')).toBeLessThan(railTrigger)
+	expect(railTrigger).toBeLessThan(rail.indexOf('>Repositories<'))
+	expect(rail).toContain('aria-label="@acme: switch organization"')
+	expect(rail).toContain('popovertarget="workspace-switcher-rail"')
+	expect(rail).toContain('id="workspace-switcher-rail"')
+	expect(html).toContain('anchor-name: --workspace-switcher-rail')
+	expect(html).toContain('anchor-name: --workspace-switcher-drawer')
+	expect(rail).toMatch(/href="\/@ada\/-\/credentials"[^>]*org-switcher-ada/)
+	expect(rail).toMatch(
+		/href="\/@acme\/-\/credentials" aria-current="true"[^>]*org-switcher-acme"[^>]*data-selected/,
+	)
+	expect(rail).toContain('href="/account/organizations/new"')
+	expect(rail).toContain('href="/account/organizations#invites"')
+	// The phone drawer opens to the same switcher (own panel and anchor),
+	// still ahead of the section links.
+	const drawerTrigger = drawer.indexOf('data-testid="org-switcher-drawer"')
+	expect(drawerTrigger).toBeGreaterThan(-1)
+	expect(drawerTrigger).toBeLessThan(drawer.indexOf('>Repositories<'))
+	expect(drawer).toContain('popovertarget="workspace-switcher-drawer"')
+	expect(drawer).toContain('id="workspace-switcher-drawer"')
+	expect(drawer).toContain('data-testid="org-switcher-acme"')
+	expect(drawer).toMatch(/<summary>[\s\S]*?>@acme<\/span>/)
+
+	// The account rail has no switcher and no workspaces group: it holds
+	// only the person's own pages.
+	const account = await render('/account/security')
+	expect(account).toContain('aria-label="Account sections"')
+	expect(account).not.toContain('switch organization')
+	expect(account).not.toContain('href="/@acme"')
+	expect(account).not.toContain('href="/@ada/-/overview"')
 })
 
 test('account page header puts the phone section menu above the heading', async () => {

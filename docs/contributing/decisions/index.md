@@ -185,9 +185,9 @@ Open these before proposing a new primitive, surface, or storage home.
   `kody_at_…` for clone/fetch/push of `kody.codes/@owner/name.git`
 - [0071 — Custom domains for package apps (Cloudflare for SaaS on kody.run)](./0071-package-app-custom-domains.md)
   — SaaS custom hostnames on the package-app zone; org-level for private apps,
-  per-app for public; CNAME/ALIAS only (no Enterprise apex A/wildcards); org
-  admins; one free domain then $0.10/mo; verify before serve; 24–48h DNS grace
-  then remove
+  per-app for internet-visible (not merely forkable); CNAME/ALIAS only (no
+  Enterprise apex A/wildcards); org admins; one free domain then $0.10/mo;
+  verify before serve; 24–48h DNS grace then remove
 - [0072 — Memory is personal-only](./0072-memory-is-personal-only.md) — one
   writable pool per person (personal org); tools always use personal regardless
   of connection org; shared org knowledge is packages + org instructions;
@@ -197,6 +197,10 @@ Open these before proposing a new primitive, surface, or storage home.
   — `{slug}@inbox.kody.codes`; Mailbox keyed by org id; per-sender enablement
   rows; inbox-owner fallback retired; migrated personal catch-alls tagged
   `any_authenticated`
+- [0075 — Repo pushes serialize through a per-repo Durable Object in a dedicated worker](./0075-repo-push-queue-worker.md)
+  — `kody-push-queue` owns `RepoPushQueueV1`; pack lands before enqueue; FIFO
+  one push at a time; 90s budget then 503 `Retry-After: 2`; no fallback; gated
+  by the repo-scoped `repo-push-queue` flag
 
 ## Historical / UI / implementation
 

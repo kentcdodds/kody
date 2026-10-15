@@ -74,6 +74,7 @@ const owner: PackageOwnerContext = {
 	ownerScope: 'kentcdodds',
 	ownerEmail: 'user-1@example.com',
 	actorUserId: personIdFromStored('user-1'),
+	actorPersonalOrgId: ownerIdFromStored('user-1'),
 }
 
 function create(
@@ -148,6 +149,10 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for pe
 	expect(syncedFiles['package.json']).not.toContain('"id"')
 	expect(syncedFiles['README.md']).toContain('## Intent')
 	expect(syncedFiles['AGENTS.md']).toContain('## Imports')
+	expect(syncedFiles['AGENTS.md']).toContain('repoRunChecks')
+	expect(syncedFiles['AGENTS.md']).toContain(
+		'Do not assume every agent can run the CLI.',
+	)
 	expect(mockModule.insertSavedPackage).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
@@ -176,6 +181,7 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for pe
 			ownerScope: 'acme',
 			ownerEmail: 'acme@example.com',
 			actorUserId: personIdFromStored('actor-1'),
+			actorPersonalOrgId: ownerIdFromStored('actor-1'),
 		},
 	})
 	expect(mockModule.assertWithinEntitlement).toHaveBeenCalledWith(

@@ -18,6 +18,7 @@ async function createDb() {
 			`CREATE TABLE users (
 				id INTEGER PRIMARY KEY,
 				stable_user_id TEXT NOT NULL UNIQUE,
+			personal_org_id TEXT,
 				email TEXT NOT NULL,
 				username TEXT NOT NULL,
 				deleting_at TEXT,

@@ -117,6 +117,32 @@ export function OrgMembersRoute(handle: Handle) {
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
 	let invitePrompt: string | null = null
+	let revokingInviteId: string | null = null
+
+	async function revokeInvite(inviteId: string) {
+		if (revokingInviteId) return
+		revokingInviteId = inviteId
+		message = null
+		handle.update()
+		try {
+			await postMember('revoke-invite', { inviteId }, { reload: false })
+			message = 'Invite revoked.'
+			messageTone = 'info'
+		} catch (error) {
+			message =
+				error instanceof Error ? error.message : 'Unable to revoke that invite.'
+			messageTone = 'error'
+		}
+		revokingInviteId = null
+		handle.update()
+		reloadMembers()
+	}
+
+	// A reload started before the final handle.update() is aborted by it, so
+	// list refreshes after a write run last.
+	function reloadMembers() {
+		membersData.reload(handle, readCurrentRouterHref(handle))
+	}
 
 	const inviteLinksUi = createOrgMembersInviteLinks(handle, {
 		createLink: async (body) => {
@@ -164,28 +190,44 @@ export function OrgMembersRoute(handle: Handle) {
 		}
 	}
 
+	type MemberPostPath =
+		| 'role'
+		| 'remove'
+		| 'invite'
+		| 'invite-link'
+		| 'revoke-link'
+		| 'revoke-invite'
+
+	function memberPostHref(path: MemberPostPath, orgSlug: string) {
+		switch (path) {
+			case 'role':
+				return routes.orgMembersRolePost.href({ orgSlug })
+			case 'remove':
+				return routes.orgMembersRemovePost.href({ orgSlug })
+			case 'invite':
+				return routes.orgMembersInvitePost.href({ orgSlug })
+			case 'invite-link':
+				return routes.orgMembersInviteLinksPost.href({ orgSlug })
+			case 'revoke-link':
+				return routes.orgMembersInviteLinksRevokePost.href({ orgSlug })
+			case 'revoke-invite':
+				return routes.orgMembersInviteRevokePost.href({ orgSlug })
+			default: {
+				const exhaustive: never = path
+				throw new Error(`Unknown members action: ${String(exhaustive)}`)
+			}
+		}
+	}
+
 	async function postMember(
-		path: 'role' | 'remove' | 'invite' | 'invite-link' | 'revoke-link',
+		path: MemberPostPath,
 		body: Record<string, unknown>,
 		options: { reload?: boolean } = {},
 	) {
 		const snapshot = membersData.read(handle, readCurrentRouterHref(handle))
 		const data = snapshot.data
 		if (!data?.ok) return
-		const href =
-			path === 'role'
-				? routes.orgMembersRolePost.href({ orgSlug: data.org.slug })
-				: path === 'remove'
-					? routes.orgMembersRemovePost.href({ orgSlug: data.org.slug })
-					: path === 'invite'
-						? routes.orgMembersInvitePost.href({ orgSlug: data.org.slug })
-						: path === 'invite-link'
-							? routes.orgMembersInviteLinksPost.href({
-									orgSlug: data.org.slug,
-								})
-							: routes.orgMembersInviteLinksRevokePost.href({
-									orgSlug: data.org.slug,
-								})
+		const href = memberPostHref(path, data.org.slug)
 		const response = await fetch(href, {
 			method: 'POST',
 			headers: {
@@ -267,10 +309,11 @@ export function OrgMembersRoute(handle: Handle) {
 		inviteLinksUi.clearCopiedLink()
 		handle.update()
 		try {
-			const payload = await postMember('invite', {
-				invitee,
-				role: inviteRole,
-			})
+			const payload = await postMember(
+				'invite',
+				{ invitee, role: inviteRole },
+				{ reload: false },
+			)
 			invitee = ''
 			invitePrompt = payload?.invite?.prompt ?? null
 			message = invitePrompt
@@ -284,6 +327,7 @@ export function OrgMembersRoute(handle: Handle) {
 		} finally {
 			inviting = false
 			handle.update()
+			reloadMembers()
 		}
 	}
 
@@ -458,8 +502,8 @@ export function OrgMembersRoute(handle: Handle) {
 												]}
 											/>
 											<p mix={css(accountFieldNoteCss)}>
-												They accept by pasting the invite prompt into their
-												agent.
+												It waits on their Waiting page, or they can paste the
+												invite prompt into their agent.
 											</p>
 										</label>
 										<label mix={css(accountFieldCss)}>
@@ -508,7 +552,11 @@ export function OrgMembersRoute(handle: Handle) {
 							<AccountManagementPanel title="Pending invites">
 								<ul mix={css(listCss)} data-testid="org-invites">
 									{data.invites.map((invite) => (
-										<li key={invite.id} mix={css(rowItemCss)}>
+										<li
+											key={invite.id}
+											mix={css(rowItemCss)}
+											data-testid="org-invite"
+										>
 											<div mix={css(rowCss)}>
 												<span aria-hidden="true" mix={css(inviteIconCss)}>
 													{renderIcon('mail', { size: '1.25rem' })}
@@ -522,13 +570,31 @@ export function OrgMembersRoute(handle: Handle) {
 													</span>
 													<span mix={css(rowDetailCss)}>
 														{[
-															invite.roleLabel,
+															invite.kind === 'membership'
+																? invite.roleLabel
+																: 'Access grant',
+															'Pending',
 															`Expires ${formatTimestampDate(invite.expiresAt)}`,
 														]
 															.filter(Boolean)
 															.join(' · ')}
 													</span>
 												</span>
+												{invite.kind === 'membership' ? (
+													<button
+														type="button"
+														disabled={revokingInviteId !== null}
+														data-testid="org-invite-revoke"
+														mix={[
+															css(getDangerPillCss({ size: 'sm' })),
+															on('click', () => void revokeInvite(invite.id)),
+														]}
+													>
+														{revokingInviteId === invite.id
+															? 'Revoking…'
+															: 'Revoke'}
+													</button>
+												) : null}
 											</div>
 										</li>
 									))}

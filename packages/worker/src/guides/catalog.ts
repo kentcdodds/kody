@@ -50,6 +50,7 @@ import textYourAgent from '../../../../docs/guides/text-your-agent.md'
 import openmuse from '../../../../docs/guides/openmuse.md'
 import platformFriction from '../../../../docs/guides/platform-friction.md'
 import providerDiscord from '../../../../docs/guides/providers/discord.md'
+import providerDropbox from '../../../../docs/guides/providers/dropbox.md'
 import providerFigma from '../../../../docs/guides/providers/figma.md'
 import providerGithub from '../../../../docs/guides/providers/github.md'
 import providerGoogle from '../../../../docs/guides/providers/google.md'
@@ -60,6 +61,7 @@ import providerSlack from '../../../../docs/guides/providers/slack.md'
 import providerSpotify from '../../../../docs/guides/providers/spotify.md'
 import secretBackedIntegration from '../../../../docs/guides/secret-backed-integration.md'
 import secretProviders from '../../../../docs/guides/secret-providers.md'
+import credentials from '../../../../docs/guides/credentials.md'
 import secrets from '../../../../docs/guides/secrets.md'
 import triggers from '../../../../docs/guides/triggers.md'
 import values from '../../../../docs/guides/values.md'
@@ -89,6 +91,7 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'first-win', raw: firstWin },
 	{ slug: 'memory', raw: memory },
 	{ slug: 'agent-guidance', raw: agentGuidance },
+	{ slug: 'credentials', raw: credentials },
 	{ slug: 'secrets', raw: secrets },
 	{ slug: 'secret-providers', raw: secretProviders },
 	{ slug: 'packages-integrations-mcp', raw: packagesIntegrationsMcp },
@@ -122,6 +125,7 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'locked-mcp-server', raw: lockedMcpServer },
 	{ slug: 'locked-gmail-drafts', raw: lockedGmailDrafts },
 	{ slug: 'discord', raw: providerDiscord },
+	{ slug: 'dropbox', raw: providerDropbox },
 	{ slug: 'figma', raw: providerFigma },
 	{ slug: 'github', raw: providerGithub },
 	{ slug: 'google', raw: providerGoogle },

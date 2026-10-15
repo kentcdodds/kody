@@ -13,8 +13,9 @@
  * can Use.
  */
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
+import { isPersonalOrg } from '#worker/orgs/is-personal-org.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { AuthorizationError } from '#worker/authorization/authorize.ts'
@@ -29,6 +30,12 @@ import {
 	type CredentialCreateLinkInput,
 } from '#universal/credential-contracts.ts'
 import { buildNeedCreateUrl } from './need-create-url.ts'
+import {
+	assertCredentialUsesDeclared,
+	CredentialNeedUndeclaredError,
+	type credentialNeedUndeclaredCode,
+	isPackageCredentialUseLimited,
+} from './credential-need-enforcement.ts'
 import {
 	CredentialClientHandleError,
 	signCredentialClientHandle,
@@ -75,6 +82,7 @@ export type CredentialClientErrorCode =
 	| 'credential_not_found'
 	| 'credential_denied'
 	| 'credential_need_unknown'
+	| typeof credentialNeedUndeclaredCode
 	| 'host_not_allowed'
 	| 'insecure_transport'
 	| 'invalid_request'
@@ -144,6 +152,9 @@ export function toCredentialClientError(
 	options: { baseUrl?: string; orgSlug?: string | null } = {},
 ) {
 	if (error instanceof CredentialClientError) return error
+	if (error instanceof CredentialNeedUndeclaredError) {
+		return refusal(error.code, error.detail)
+	}
 	if (error instanceof CredentialRequestRefusedError) {
 		return refusal(error.code, error.message)
 	}
@@ -298,7 +309,13 @@ async function createUrlForNeed(
 async function assertNamedAllowed(ctx: CredentialClientContext) {
 	if (!ctx.packageId) return
 	const request = requireActorRequest(ctx)
-	const personal = request.org.id === personalOrgId(request.actor!.userId)
+	// Equal-id fixtures and stamped distinct signup orgs both count as personal.
+	const personal =
+		request.org.id ===
+			personalOrgIdForPerson({
+				userId: request.actor!.userId,
+				personalOrgId: ctx.callerContext.user?.personalOrgId,
+			}) || (await isPersonalOrg(ctx.env.APP_DB, request.org.id))
 	const listed = personal
 		? await ctx.env.APP_DB.prepare(
 				`SELECT 1 AS listed FROM community_listings
@@ -308,7 +325,16 @@ async function assertNamedAllowed(ctx: CredentialClientContext) {
 				.bind(ctx.packageId)
 				.first<{ listed: number }>()
 		: null
-	if (!personal || listed) {
+	const limited =
+		personal && !listed
+			? await isPackageCredentialUseLimited({
+					env: ctx.env,
+					request,
+					orgId: request.org.id,
+					packageId: ctx.packageId,
+				})
+			: true
+	if (limited) {
 		throw refusal(
 			'credential_denied',
 			'credential.named works only in ad hoc execute and in unshared packages of your personal org. Declare the credential in kody.credentials and call credential(key) instead.',
@@ -508,7 +534,21 @@ async function resolveKey(
 	usable: ReadonlyArray<UsableCredential>,
 	mode: 'one' | 'many',
 ): Promise<Array<Picked>> {
-	const need = await loadNeed(ctx, key)
+	const runNeed = await loadNeed(ctx, key)
+	// The run's needs can come from a sibling entry, so the calling package's
+	// own closure decides; a key only it declares resolves as it declares it.
+	const declared = ctx.packageId
+		? await assertCredentialUsesDeclared({
+				env: ctx.env,
+				request: requireActorRequest(ctx),
+				orgId: requireActorRequest(ctx).org.id,
+				packageId: ctx.packageId,
+				references: [{ use: 'key', key }],
+			}).catch((error: unknown) => {
+				throw toCredentialClientError(error) ?? error
+			})
+		: null
+	const need = runNeed ?? declared?.get(key) ?? null
 	const target = needTarget(key, need)
 	const picks = ctx.callMap?.get(key)
 	if (!picks) {
@@ -775,7 +815,7 @@ async function readHandle(
 }
 
 function doorInput<T extends CredentialTarget>(
-	ctx: Pick<CredentialClientContext, 'env' | 'callerContext'>,
+	ctx: Pick<CredentialClientContext, 'env' | 'callerContext' | 'packageId'>,
 	credential: T,
 ): ResolveCredentialInput<T> {
 	const request = ctx.callerContext.request!
@@ -784,6 +824,7 @@ function doorInput<T extends CredentialTarget>(
 		orgId: request.org.id,
 		actor: request,
 		packageStamp: null,
+		runPackageId: ctx.packageId,
 		baseUrl: ctx.callerContext.baseUrl,
 		credential,
 	}
@@ -917,6 +958,8 @@ export async function applyCredentialClient(input: {
 	env: Env
 	request: RequestContext | null
 	baseUrl: string
+	/** The run's package; only the self-publish guard reads it here. */
+	packageId: string | null
 	binding: string | null | undefined
 	token: string
 	requestUrl: URL
@@ -930,6 +973,7 @@ export async function applyCredentialClient(input: {
 		})
 		const ctx = {
 			env: input.env,
+			packageId: input.packageId,
 			callerContext: {
 				baseUrl: input.baseUrl,
 				request: input.request,

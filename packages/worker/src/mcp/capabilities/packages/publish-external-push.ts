@@ -55,6 +55,12 @@ import {
 } from '#worker/package-registry/package-publish-lock.ts'
 import { buildPackageCapabilityApprovalUrl } from '#worker/package-capabilities/capability-approval-url.ts'
 import { createCredentialNeedsApprovalMessage } from '#worker/credentials/credential-needs-approval.ts'
+import { type ApprovalViewer } from '#worker/approval-bundles/item-views.ts'
+import {
+	bundlePausedPublishes,
+	pausedPublishBundleMessage,
+} from '#worker/approval-bundles/paused-publishes.ts'
+import { optionalApprovalViewerForCaller } from './approval-bundle-shared.ts'
 import {
 	credentialNeedChangeSchema,
 	pendingPackageSecretApprovalsSchema,
@@ -373,6 +379,12 @@ const outputSchema = z.discriminatedUnion('status', [
 				'HEAD commit that passed checks. The previously published commit keeps serving until the owner approves this one.',
 			),
 		approval_url: z.string(),
+		approval_bundle_url: z
+			.string()
+			.optional()
+			.describe(
+				'Present when other paused publishes also wait on the owner: one page that approves them together.',
+			),
 		credential_need_changes: z.array(credentialNeedChangeSchema),
 		message: z.string(),
 	}),
@@ -669,6 +681,7 @@ async function runExternalPublishAttempt(input: {
 	allowForce: boolean
 	destructiveOverwriteConfirmed: boolean
 	requestedByUserId: string | null
+	approvalViewer: ApprovalViewer | null
 	signal?: AbortSignal
 	reportProgress?: McpReportProgress
 }): Promise<Exclude<PublishExternalPushResult, { status: 'dispatched' }>> {
@@ -868,17 +881,25 @@ async function runExternalPublishAttempt(input: {
 					username: input.ownerScope,
 					kodyId: input.kodyId,
 				})
+				const bundle = await bundlePausedPublishes({
+					viewer: input.approvalViewer,
+					ownerUserId: input.ownerUserId,
+				})
+				const message = createCredentialNeedsApprovalMessage({
+					packageName: result.approval.packageName,
+					changes: result.approval.changes,
+					approvalUrl,
+				})
 				return {
 					status: 'approval_required' as const,
 					previous_commit: result.previous_commit,
 					pending_commit: result.pending_commit,
 					approval_url: approvalUrl,
+					...(bundle ? { approval_bundle_url: bundle.url } : {}),
 					credential_need_changes: result.approval.changes,
-					message: createCredentialNeedsApprovalMessage({
-						packageName: result.approval.packageName,
-						changes: result.approval.changes,
-						approvalUrl,
-					}),
+					message: bundle
+						? `${message} ${pausedPublishBundleMessage(bundle)}`
+						: message,
 				}
 			}
 			if (result.status !== 'published') {
@@ -1092,6 +1113,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 				allowForce: args.allow_force,
 				destructiveOverwriteConfirmed: args.confirm_destructive_overwrite,
 				requestedByUserId: user.userId,
+				approvalViewer: optionalApprovalViewerForCaller(ctx),
 				reportProgress: ctx.reportProgress,
 			}
 

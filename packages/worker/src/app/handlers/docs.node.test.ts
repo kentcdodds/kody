@@ -125,6 +125,8 @@ test('docs API lists every advertised doc by section and the markdown root is in
 	expect(llms.headers.get('Vary')).toBe('Cookie')
 	const llmsBody = await llms.text()
 	expect(llmsBody.startsWith('# Kody\n')).toBe(true)
+	expect(llmsBody).toContain('individuals and teams')
+	expect(llmsBody).toContain('credentials it never reads')
 	expect(llmsBody).not.toContain('/docs/values.md')
 	expect(llmsBody).not.toContain('/docs/admin-events.md')
 	expectOrdered(llmsBody, [

@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/component'
+import { type Handle, type RemixNode, css } from 'remix/component'
 import { createMatcher } from 'remix/route-pattern/match'
 import { routes } from '#universal/routes.ts'
 import { on } from '#client/event-mixin.ts'
@@ -6,13 +6,23 @@ import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
+	AccountManagementHeader,
 	AccountManagementMessage,
 	AccountManagementShell,
-	AccountPageHeader,
 	IdValue,
 	MetadataGrid,
 	accountDisclosureCss,
 } from './account-management-components.tsx'
+import {
+	approveCapabilitiesPageCopy,
+	credentialsSectionIntro,
+	credentialValuesNote,
+	credentialSummary,
+	noCapabilitiesMessage,
+	reachingDependency,
+	storageSummary,
+} from './account-package-approve-capabilities-copy.ts'
+import { PackageSecurityAuditField } from './package-security-audit-field.tsx'
 import {
 	type AccountPackageApproveCapabilitiesLoaderData,
 	type AccountPackagePendingApproval,
@@ -21,9 +31,11 @@ import {
 	getAccentCalloutCss,
 	getGhostButtonCss,
 	getPrimaryButtonCss,
+	mergeCss,
 } from '#universal/styles/style-primitives.ts'
 import {
 	colors,
+	mq,
 	radius,
 	spacing,
 	typography,
@@ -32,6 +44,54 @@ import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
+
+/**
+ * Raw identifiers for the collapsed Details disclosure. The decision itself
+ * reads in plain language; these are copy targets for support and agents.
+ */
+function approveCapabilitiesDetailItems(
+	payload: AccountPackageApproveCapabilitiesLoaderData,
+) {
+	const items: Array<{ key: string; label: string; value: RemixNode }> = [
+		{
+			key: 'published-commit',
+			label: 'Published commit',
+			value: payload.publishedCommit ? (
+				<IdValue value={payload.publishedCommit} label="published commit" />
+			) : (
+				'Not published'
+			),
+		},
+		{
+			key: 'fingerprint',
+			label: 'Capability fingerprint',
+			value: <IdValue value={payload.fingerprint} label="fingerprint" />,
+		},
+	]
+	for (const entry of payload.entries) {
+		if (entry.kind === 'credential' && entry.credentialId) {
+			const name = entry.name ?? 'Credential'
+			items.push({
+				key: `credential:${entry.credentialId}`,
+				label: `${name} credential ID`,
+				value: (
+					<IdValue value={entry.credentialId} label={`${name} credential ID`} />
+				),
+			})
+		} else if (entry.kind === 'storage' && entry.storageId) {
+			const dependency = reachingDependency(entry)
+			const label = dependency
+				? `Package storage ID (${dependency})`
+				: 'Package storage ID'
+			items.push({
+				key: `storage:${entry.storageId}`,
+				label,
+				value: <IdValue value={entry.storageId} label={label} />,
+			})
+		}
+	}
+	return items
+}
 
 const approveCapabilitiesMatcher = createMatcher(
 	routes.communityPackageApproveCapabilities.pattern,
@@ -140,6 +200,7 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 
 	async function approveCapabilities() {
 		if (!payload?.publishedCommit || approving) return
+		const goPublicRequestId = payload.goPublicRequestId
 		approving = true
 		message = null
 		handle.update()
@@ -153,11 +214,20 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 						'Content-Type': 'application/json',
 					},
 					credentials: 'include',
-					body: JSON.stringify({
-						action: 'approve-capabilities',
-						packageId: payload.package.id,
-						fingerprint: payload.fingerprint,
-					}),
+					body: JSON.stringify(
+						goPublicRequestId
+							? {
+									action: 'approve-capabilities-and-go-public',
+									packageId: payload.package.id,
+									fingerprint: payload.fingerprint,
+									requestId: goPublicRequestId,
+								}
+							: {
+									action: 'approve-capabilities',
+									packageId: payload.package.id,
+									fingerprint: payload.fingerprint,
+								},
+					),
 				},
 			)
 			const body = await readJson<{ ok?: boolean; error?: string }>(response)
@@ -167,7 +237,7 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 				handle.update()
 				return
 			}
-			if (payload.package.isInternetVisible) {
+			if (payload.package.isInternetVisible || goPublicRequestId) {
 				window.location.assign(payload.settingsHref)
 			} else {
 				// Capability pin recorded; went_public is now pending on this page.
@@ -210,18 +280,57 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 		const storageEntries =
 			payload?.entries.filter((entry) => entry.kind === 'storage') ?? []
 
-		const pendingApprovals = payload?.pendingApprovals ?? []
+		const goPublicRequestId = payload?.goPublicRequestId ?? null
+		const allPendingApprovals = payload?.pendingApprovals ?? []
+		// The went_public request rides on the capability Approve below.
+		const pendingApprovals = goPublicRequestId
+			? allPendingApprovals.filter(
+					(approval) => approval.id !== goPublicRequestId,
+				)
+			: allPendingApprovals
+		const pageCopy = payload
+			? approveCapabilitiesPageCopy(payload)
+			: {
+					title: 'Approve package changes',
+					description: `Review what this package asks for. ${credentialValuesNote}`,
+					mentionInternet: false,
+				}
+		const restingApproveLabel = goPublicRequestId
+			? 'Approve and make internet-visible'
+			: payload?.package.isInternetVisible
+				? 'Re-approve capability set'
+				: 'Approve capability set'
+		const approveActionLabel =
+			status === 'approving' ? 'Approving…' : restingApproveLabel
+		const hasWentPublicPending = pendingApprovals.some(
+			(approval) => approval.reason === 'went_public',
+		)
+		const hasCredentialNeedsPending = pendingApprovals.some(
+			(approval) => approval.reason === 'credential_needs_changed',
+		)
+		const publishedCommit = payload?.publishedCommit ?? null
+		const hasPausedPublish = allPendingApprovals.some(
+			(approval) => approval.pendingCommit !== publishedCommit,
+		)
 
 		return (
-			<AccountManagementShell busy={pending && payload !== null}>
-				<AccountPageHeader
-					title={
-						pendingApprovals.length > 0
-							? 'Approve package changes'
-							: 'Approve internet-visible capabilities'
+			<AccountManagementShell
+				busy={pending && payload !== null}
+				maxWidth="46rem"
+			>
+				<AccountManagementHeader
+					eyebrow={
+						payload ? (
+							<p
+								data-testid="package-approve-capabilities-package"
+								mix={css(packageContextCss)}
+							>
+								{payload.package.name}
+							</p>
+						) : null
 					}
-					description="Review every credential and capability this package can reach before serving it on the public internet. Secret values never appear here."
-					currentHref={currentHref}
+					title={pageCopy.title}
+					description={pageCopy.description}
 				/>
 				{message ? (
 					<AccountManagementMessage tone="error">
@@ -241,55 +350,32 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 				(status === 'ready' || status === 'approving') ? (
 					<section
 						data-testid="package-pending-approvals"
+						aria-labelledby="package-pending-approvals-heading"
 						mix={css({ display: 'grid', gap: spacing.md })}
 					>
 						<h2
-							mix={css({
-								margin: 0,
-								fontSize: typography.fontSize.lg,
-								fontWeight: typography.fontWeight.semibold,
-							})}
+							id="package-pending-approvals-heading"
+							mix={css(heroHeadingCss)}
 						>
 							Waiting for your approval
 						</h2>
 						<p mix={css({ margin: 0, color: colors.textMuted })}>
-							{pendingApprovals.some(
-								(approval) => approval.reason === 'credential_needs_changed',
-							)
-								? 'The previously published version keeps running until you approve.'
-								: 'Internet-visible serving stays off until you approve.'}
+							{hasWentPublicPending
+								? 'Internet-visible serving stays off until you approve.'
+								: hasCredentialNeedsPending
+									? 'The previously published version keeps running until you approve.'
+									: 'Nothing changes until you approve.'}
 						</p>
-						<ul
-							mix={css({
-								margin: 0,
-								padding: 0,
-								listStyle: 'none',
-								display: 'grid',
-								gap: spacing.sm,
-							})}
-						>
+						<ul mix={css(cardListCss)}>
 							{pendingApprovals.map((approval) => (
 								<li
 									key={approval.id}
 									data-testid="package-pending-approval"
 									mix={css(capabilityRowCss)}
 								>
-									<strong mix={css({ color: colors.text })}>
+									<strong mix={css(cardTitleCss)}>
 										{approval.reasonLabel}
 									</strong>
-									<span mix={css({ color: colors.textMuted })}>
-										{approval.reason === 'went_public'
-											? 'Published commit '
-											: 'Paused commit '}
-										<IdValue
-											value={approval.pendingCommit}
-											label={
-												approval.reason === 'went_public'
-													? 'published commit'
-													: 'paused commit'
-											}
-										/>
-									</span>
 									{approval.changes.length > 0 ? (
 										<ul mix={css({ margin: 0, color: colors.textMuted })}>
 											{approval.changes.map((change) => (
@@ -297,6 +383,29 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 											))}
 										</ul>
 									) : null}
+									<details mix={css(accountDisclosureCss)}>
+										<summary>Details</summary>
+										<MetadataGrid
+											items={[
+												{
+													label:
+														approval.reason === 'went_public'
+															? 'Published commit'
+															: 'Paused commit',
+													value: (
+														<IdValue
+															value={approval.pendingCommit}
+															label={
+																approval.reason === 'went_public'
+																	? 'published commit'
+																	: 'paused commit'
+															}
+														/>
+													),
+												},
+											]}
+										/>
+									</details>
 									{approval.approveAction ? (
 										<div>
 											<button
@@ -324,54 +433,10 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 				{payload && (status === 'ready' || status === 'approving') ? (
 					<section
 						data-testid="package-approve-capabilities-card"
-						mix={css({ display: 'grid', gap: spacing.lg })}
+						aria-label="Capability set"
+						mix={css({ display: 'grid', gap: spacing.xl })}
 					>
-						{pendingApprovals.length > 0 ? (
-							<h2
-								mix={css({
-									margin: 0,
-									fontSize: typography.fontSize.lg,
-									fontWeight: typography.fontWeight.semibold,
-								})}
-							>
-								Internet-visible serving
-							</h2>
-						) : null}
-						<MetadataGrid
-							items={[
-								{
-									label: 'Package',
-									value: payload.package.name,
-								},
-								{
-									label: 'Slug',
-									value: (
-										<IdValue
-											value={payload.package.kodyId}
-											label="package slug"
-										/>
-									),
-								},
-								{
-									label: 'Published commit',
-									value: payload.publishedCommit ? (
-										<IdValue
-											value={payload.publishedCommit}
-											label="published commit"
-										/>
-									) : (
-										'Not published'
-									),
-								},
-								{
-									label: 'Fingerprint',
-									value: (
-										<IdValue value={payload.fingerprint} label="fingerprint" />
-									),
-								},
-							]}
-						/>
-						{!payload.publishedCommit ? (
+						{!payload.publishedCommit && pageCopy.mentionInternet ? (
 							<div mix={css(getAccentCalloutCss())}>
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									Publish this package before approving internet-visible
@@ -386,142 +451,215 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 									{payload.latestApprovedAt
 										? ` (${payload.latestApprovedAt})`
 										: ''}
-									. Approving again keeps internet-visible on for the same set.
+									{payload.package.isInternetVisible
+										? '. Approving again keeps internet-visible on for the same set.'
+										: '.'}
 								</p>
 							</div>
 						) : null}
-						<section mix={css({ display: 'grid', gap: spacing.md })}>
-							<h2
-								mix={css({
-									margin: 0,
-									fontSize: typography.fontSize.lg,
-									fontWeight: typography.fontWeight.semibold,
-								})}
+						{!payload.publishedCommit ? null : credentialEntries.length === 0 &&
+						  storageEntries.length === 0 ? (
+							<section
+								data-testid="package-approve-capabilities-empty"
+								aria-labelledby="package-approve-capabilities-empty-heading"
+								mix={css({ display: 'grid', gap: spacing.md })}
 							>
-								Credentials
-							</h2>
-							{credentialEntries.length === 0 ? (
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									No user credentials are reachable from this package's current
-									tree.
-								</p>
-							) : (
-								<ul
-									mix={css({
-										margin: 0,
-										padding: 0,
-										listStyle: 'none',
-										display: 'grid',
-										gap: spacing.sm,
-									})}
+								<h2
+									id="package-approve-capabilities-empty-heading"
+									mix={css(heroHeadingCss)}
 								>
-									{credentialEntries.map((entry) => (
-										<li
-											key={entry.credentialId ?? entry.name}
-											mix={css(capabilityRowCss)}
-										>
-											<div mix={css({ display: 'grid', gap: spacing.xs })}>
-												<strong mix={css({ color: colors.text })}>
-													{entry.name ?? entry.credentialId}
-												</strong>
-												<span mix={css({ color: colors.textMuted })}>
-													{entry.credentialKind ?? 'secret'} · id{' '}
-													<code>{entry.credentialId}</code>
-												</span>
-												<span mix={css({ color: colors.textMuted })}>
-													Hosts:{' '}
-													{entry.hosts.length > 0
-														? entry.hosts.join(', ')
-														: 'none approved'}
-												</span>
-												<details mix={css(accountDisclosureCss)}>
-													<summary>How it is reached</summary>
-													<p mix={css({ margin: 0, color: colors.textMuted })}>
-														{entry.via.join(' → ')}
-													</p>
-												</details>
-											</div>
-										</li>
-									))}
-								</ul>
-							)}
-						</section>
-						<section mix={css({ display: 'grid', gap: spacing.md })}>
-							<h2
-								mix={css({
-									margin: 0,
-									fontSize: typography.fontSize.lg,
-									fontWeight: typography.fontWeight.semibold,
-								})}
-							>
-								Other capabilities
-							</h2>
-							{storageEntries.length === 0 ? (
+									Credentials and capabilities
+								</h2>
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									No additional storage capabilities.
+									{noCapabilitiesMessage}
 								</p>
-							) : (
-								<ul
-									mix={css({
-										margin: 0,
-										padding: 0,
-										listStyle: 'none',
-										display: 'grid',
-										gap: spacing.sm,
-									})}
+							</section>
+						) : (
+							<>
+								<section
+									data-testid="package-approve-capabilities-credentials"
+									aria-labelledby="package-approve-capabilities-credentials-heading"
+									mix={css({ display: 'grid', gap: spacing.md })}
 								>
-									{storageEntries.map((entry) => (
-										<li key={entry.storageId} mix={css(capabilityRowCss)}>
-											<strong mix={css({ color: colors.text })}>
-												Package storage
-											</strong>
-											<span mix={css({ color: colors.textMuted })}>
-												<code>{entry.storageId}</code>
-												{entry.via.length > 0
-													? ` via ${entry.via.join(' → ')}`
-													: ''}
-											</span>
-										</li>
-									))}
-								</ul>
-							)}
-						</section>
-						<div
-							mix={css({
-								display: 'flex',
-								flexWrap: 'wrap',
-								gap: spacing.sm,
-								alignItems: 'center',
-							})}
-						>
-							<button
-								type="button"
-								disabled={status === 'approving' || !payload.publishedCommit}
-								data-testid="package-approve-capabilities"
-								mix={[
-									css(getPrimaryButtonCss()),
-									on('click', () => void approveCapabilities()),
-								]}
+									<h2
+										id="package-approve-capabilities-credentials-heading"
+										mix={css(heroHeadingCss)}
+									>
+										Credentials
+									</h2>
+									{credentialEntries.length === 0 ? (
+										<p mix={css({ margin: 0, color: colors.textMuted })}>
+											This package does not use any of your credentials.
+										</p>
+									) : (
+										<>
+											<p mix={css({ margin: 0, color: colors.textMuted })}>
+												{credentialsSectionIntro({
+													isInternetVisible: payload.package.isInternetVisible,
+													mentionInternet: pageCopy.mentionInternet,
+												})}
+											</p>
+											<ul mix={css(cardListCss)}>
+												{credentialEntries.map((entry) => (
+													<li
+														key={entry.credentialId ?? entry.name}
+														data-testid="package-approve-capabilities-credential"
+														mix={css(capabilityRowCss)}
+													>
+														<strong mix={css(cardTitleCss)}>
+															{entry.name ?? 'Unnamed credential'}
+														</strong>
+														<span mix={css({ color: colors.textMuted })}>
+															{credentialSummary(entry)}
+														</span>
+														<span mix={css({ color: colors.textMuted })}>
+															{entry.hosts.length > 0
+																? `Can only be sent to ${entry.hosts.join(', ')}`
+																: 'No hosts approved yet'}
+														</span>
+													</li>
+												))}
+											</ul>
+										</>
+									)}
+								</section>
+								<section
+									data-testid="package-approve-capabilities-other"
+									aria-labelledby="package-approve-capabilities-other-heading"
+									mix={css({ display: 'grid', gap: spacing.md })}
+								>
+									<h2
+										id="package-approve-capabilities-other-heading"
+										mix={css(heroHeadingCss)}
+									>
+										Other capabilities
+									</h2>
+									{storageEntries.length === 0 ? (
+										<p mix={css({ margin: 0, color: colors.textMuted })}>
+											No other capabilities.
+										</p>
+									) : (
+										<ul mix={css(cardListCss)}>
+											{storageEntries.map((entry) => (
+												<li
+													key={entry.storageId}
+													data-testid="package-approve-capabilities-storage"
+													mix={css(capabilityRowCss)}
+												>
+													<strong mix={css(cardTitleCss)}>
+														Package storage
+													</strong>
+													<span mix={css({ color: colors.textMuted })}>
+														{storageSummary(entry)}
+													</span>
+												</li>
+											))}
+										</ul>
+									)}
+								</section>
+							</>
+						)}
+						<PackageSecurityAuditField
+							audit={payload.securityAudit}
+							packageName={payload.package.name}
+							hasPausedPublish={hasPausedPublish}
+						/>
+						{goPublicRequestId ? (
+							<p
+								data-testid="package-approve-capabilities-go-public-note"
+								mix={css({ margin: 0, color: colors.textMuted })}
 							>
-								{status === 'approving'
-									? 'Approving…'
-									: payload.package.isInternetVisible
-										? 'Re-approve capability set'
-										: 'Approve capability set'}
-							</button>
+								You asked to make this package internet-visible. One approval
+								records this capability set and turns on internet-visible
+								serving.
+							</p>
+						) : null}
+						<div mix={css(approveActionRowCss)}>
+							{pageCopy.mentionInternet ? (
+								<button
+									type="button"
+									disabled={status === 'approving' || !payload.publishedCommit}
+									data-testid="package-approve-capabilities"
+									mix={[
+										css(
+											mergeCss(getPrimaryButtonCss(), approveActionControlCss),
+										),
+										on('click', () => void approveCapabilities()),
+									]}
+								>
+									{equalActionLabel(
+										approveActionLabel,
+										restingApproveLabel,
+										backToSettingsLabel,
+									)}
+								</button>
+							) : null}
 							<a
 								href={payload.settingsHref}
-								mix={css(getGhostButtonCss())}
+								mix={css(
+									pageCopy.mentionInternet
+										? mergeCss(getGhostButtonCss(), approveActionControlCss)
+										: getGhostButtonCss(),
+								)}
 								data-testid="package-approve-capabilities-back"
 							>
-								Back to settings
+								{pageCopy.mentionInternet
+									? equalActionLabel(
+											backToSettingsLabel,
+											restingApproveLabel,
+											backToSettingsLabel,
+										)
+									: backToSettingsLabel}
 							</a>
 						</div>
+						<details
+							data-testid="package-approve-capabilities-details"
+							mix={css(accountDisclosureCss)}
+						>
+							<summary>Details</summary>
+							<MetadataGrid items={approveCapabilitiesDetailItems(payload)} />
+						</details>
 					</section>
 				) : null}
 			</AccountManagementShell>
 		)
 	}
+}
+
+const packageContextCss = {
+	margin: 0,
+	width: 'fit-content',
+	maxWidth: '100%',
+	overflowWrap: 'anywhere' as const,
+	fontSize: typography.fontSize.sm,
+	fontWeight: typography.fontWeight.semibold,
+	color: colors.primaryText,
+	backgroundColor: colors.primarySoft,
+	borderRadius: radius.full,
+	padding: '0.2rem 0.7rem',
+}
+
+const heroHeadingCss = {
+	margin: 0,
+	fontSize: '1.35rem',
+	fontWeight: 720,
+	letterSpacing: '-0.014em',
+	lineHeight: 1.2,
+	color: colors.text,
+}
+
+const cardListCss = {
+	margin: 0,
+	padding: 0,
+	listStyle: 'none',
+	display: 'grid',
+	gap: spacing.sm,
+}
+
+const cardTitleCss = {
+	color: colors.text,
+	fontSize: typography.fontSize.base,
+	overflowWrap: 'anywhere' as const,
 }
 
 const capabilityRowCss = {
@@ -531,4 +669,55 @@ const capabilityRowCss = {
 	borderRadius: radius.md,
 	border: `1px solid ${colors.border}`,
 	backgroundColor: colors.surface,
+	minWidth: 0,
+}
+
+const backToSettingsLabel = 'Back to package settings'
+
+function equalActionLabel(visible: string, ...sizers: Array<string>) {
+	return (
+		<>
+			<span mix={css(approveActionFaceCss)}>{visible}</span>
+			{sizers.map((sizer) => (
+				<span key={sizer} aria-hidden="true" mix={css(approveActionSizerCss)}>
+					{sizer}
+				</span>
+			))}
+		</>
+	)
+}
+
+const approveActionRowCss = {
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	gap: spacing.sm,
+	[mq.mobile]: {
+		flexDirection: 'column' as const,
+	},
+}
+
+const approveActionControlCss = {
+	display: 'inline-grid',
+	alignItems: 'center',
+	justifyItems: 'center',
+	maxWidth: '100%',
+	padding: `${spacing.sm} ${spacing.md}`,
+	appearance: 'none' as const,
+	fontFamily: typography.fontFamily,
+	fontSize: typography.fontSize.base,
+	fontWeight: typography.fontWeight.semibold,
+	lineHeight: 1.25,
+	whiteSpace: 'normal' as const,
+	[mq.mobile]: {
+		width: '100%',
+	},
+}
+
+const approveActionFaceCss = {
+	gridArea: '1 / 1',
+}
+
+const approveActionSizerCss = {
+	gridArea: '1 / 1',
+	visibility: 'hidden' as const,
 }

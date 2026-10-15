@@ -4,8 +4,8 @@ title: Package lifecycle: reuse, execute, fork, or create
 summary:
   Choose between invoking existing behavior, temporary execute exploration,
   forking a close public package, deferred workflows, and creating a durable
-  repo-backed package; test unpublished packages locally with `kody dev` and
-  package-owned job wrappers safely.
+  repo-backed package; validate with `repoRunChecks` (every agent), and when
+  the host can run the CLI use `kody dev` / mocks / `--local` before publish.
 category: platform
 ---
 
@@ -167,25 +167,44 @@ git review.
 
 ### Tool-only lane
 
-Without local filesystem or git access:
+Without local filesystem or git access (for example ChatGPT, Claude, or Grok
+mobile apps that only expose MCP):
 
 1. Create the complete UTF-8 text package with `packageSave`, or inspect
    existing package metadata with `packageGet`. For `README.md`, `AGENTS.md`,
    and source, open a repo session (`repoOpenSession` + `repoReadFile`; `path`
    accepts `#L165`, `#L165-L180`, or a Markdown heading slug) or one file with
    `search({ entity: "package:{id}#{path}" })`.
-2. Use `repoEditFiles`, `repoCommit`, and `repoRunChecks` for repo-backed edits
-   and validation.
-3. Publish with `repoPublishSession`.
+2. Use `repoEditFiles`, `repoCommit`, and **`repoRunChecks`** for repo-backed
+   edits and validation. `repoRunChecks` is the MCP-only safety gate before
+   publish: manifest, docs, dependencies, bundle, typecheck, lint, and
+   credential-need validation — without requiring a local CLI.
+3. Publish with `repoPublishSession` only after `repoRunChecks` returns `ok`.
 
 If the work needs binary assets, broad refactors, or a substantial local
 build/test loop, explain that it fits a coding-capable agent and confirm before
 continuing in the tool-only lane.
 
-## Local testing before publish
+## Validate and test before publish
 
-**Prefer `@kodycodes/cli` `kody dev` before the first publish.** From the
-package directory, test all four package surfaces locally. One
+Every authoring lane must validate before publish. What you can run depends on
+the host:
+
+| Host capability                                 | Before publish                                                                                                                                 |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| **MCP / tool-only** (no shell, no git)          | `repoRunChecks` on the active repo session — required safety. No local mock runtime.                                                           |
+| **CLI available** (Node ≥22 + `@kodycodes/cli`) | Same publish checks conceptually, plus optional local surface tests below (`kody dev`, `.kody/mocks.ts`, `execute --local` / `--target mock`). |
+
+Do **not** assume every agent can run the CLI. Mobile MCP-only agents stop at
+`repoRunChecks`, then publish, then use post-publish smoke surfaces
+(`packageAppFetch`, `packageSubscriptionDispatch`, webhook synthetic dispatch,
+or a static `kody:@…` import from `execute` when that tool is available on the
+session).
+
+### Local CLI testing (when the host can run code)
+
+When Node ≥22 and `@kodycodes/cli` are available, use `kody dev` from the
+package directory to exercise unpublished surfaces before the first publish. One
 `--target prod|mock` switch decides where server-side calls go (default **`mock`
 for `kody dev`**, **`prod` for `execute` / `search`**).
 
@@ -198,7 +217,7 @@ for `kody dev`**, **`prod` for `execute` / `search`**).
 | **Subscriptions** | `kody dev emit <event> --body event.json` — delivers the platform subscription envelope (`synthetic: true`); on mock, any declared event type is allowed |
 | **Check**         | `kody dev check` — bundle + light publish validations without running                                                                                    |
 
-Mock first (safe iteration; scratch storage; no real secrets), then the same
+Mock first (safe iteration; scratch storage; no real credentials), then the same
 commands with `--target prod`, then publish. Share previews for unpublished
 packages are out of scope. `execute --local` without `--target` talks to the
 hosted account.
@@ -214,12 +233,13 @@ npx @kodycodes/cli@latest dev emit user.deleted --body ./fixtures/user-deleted.j
 
 ### Mock outbound `fetch` with `.kody/mocks.ts`
 
-Optional. Under `--target mock` only, put MSW handlers in the package at
-`.kody/mocks.ts`. Package code still runs in workerd; the CLI’s Node-side
-gateway matches outbound fetches against those handlers (no patching inside
-workerd). Packages without the file keep native workerd fetch. The file is
-local-dev only — it is not a publish entrypoint and is ignored on
-`--target prod`.
+Optional, **CLI hosts only**. Under `--target mock` only, put MSW handlers in
+the package at `.kody/mocks.ts`. Package code still runs in workerd; the CLI’s
+Node-side gateway matches outbound fetches against those handlers (no patching
+inside workerd). Packages without the file keep native workerd fetch. The file
+is local-dev only — it is not a publish entrypoint and is ignored on
+`--target prod`. MCP-only agents cannot load this file; they rely on
+`repoRunChecks` and post-publish smokes instead.
 
 ```ts
 // .kody/mocks.ts
@@ -240,7 +260,7 @@ npx @kodycodes/cli@latest dev --passthrough api.stripe.com
 Unmatched requests fail closed with structured `unmocked_request` (method + URL)
 and a paste-ready handler stub in `fix` / `details.handlerStub`.
 `--passthrough <host,…>` opts specific hosts into the real network; credentials
-stay fake on mock, so passthrough never carries real secrets. Private/local
+stay fake on mock, so passthrough never carries real credentials. Private/local
 passthrough hosts also need `--allow-private-network`.
 
 Example agent-facing error:
@@ -249,7 +269,7 @@ Example agent-facing error:
 [unmocked_request] Unmocked GET https://api.example.com/v1/me under --target mock.
 target: mock
 where: GET https://api.example.com/v1/me
-fix: Add a handler in .kody/mocks.ts (or pass --passthrough api.example.com for real network without secrets):
+fix: Add a handler in .kody/mocks.ts (or pass --passthrough api.example.com for real network without real credentials):
 
 import { http, HttpResponse } from 'msw'
 
@@ -262,11 +282,12 @@ export const handlers = [
 
 ## Test the scheduled wrapper before enabling its schedule
 
-Scheduled behavior should not be its first real execution. Prefer
-[`kody dev job`](#local-testing-before-publish) while unpublished, then the
-published `execute` import below before enabling the schedule. Package job
-manifests do not supply params to their entrypoints, so structure the package
-with:
+Scheduled behavior should not be its first real execution. When the CLI is
+available, prefer
+[`kody dev job`](#local-cli-testing-when-the-host-can-run-code) while
+unpublished; otherwise publish after `repoRunChecks`, then call the published
+`execute` import below before enabling the schedule. Package job manifests do
+not supply params to their entrypoints, so structure the package with:
 
 - a shared implementation that accepts explicit input
 - an optional callable export that passes representative input to that
@@ -286,7 +307,7 @@ After package checks and publishing succeed:
    scheduler uses.
 3. Optionally invoke the underlying callable export with representative input:
    realistic field shapes, boundary values, and the same configuration
-   references the wrapper will load. Never put plaintext secrets in params.
+   references the wrapper will load. Never put plaintext credentials in params.
 4. Validate the structured results and the intended durable or external effects.
    Exercise an expected failure path when the operation is risky.
 5. Only then change the job to `"enabled": true`, publish again, and verify the

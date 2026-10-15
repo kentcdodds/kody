@@ -1,6 +1,7 @@
 import { acquisitionPageSummaries } from '#universal/acquisition/metadata.ts'
 import { blogPostSlugs } from '#universal/blog-post-slugs.ts'
 import { listDocsNavSlugs } from '#universal/docs-nav.ts'
+import { withAgentHref, withAgents } from '#universal/with-agents.ts'
 
 // Public pixel owned by the Kody organization. Never load on preview hosts.
 const pixelId = '45bb291d-1173-47ce-a996-7214c1787914'
@@ -10,6 +11,8 @@ const publicPaths = new Set([
 	'/pricing',
 	'/faq',
 	'/case-studies',
+	'/believe',
+	...withAgents.map((agent) => withAgentHref(agent.slug)),
 	'/community',
 	'/blog',
 	'/docs',

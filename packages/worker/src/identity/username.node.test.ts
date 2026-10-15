@@ -16,6 +16,9 @@ test('usernames are DNS labels: reject underscores, map email locals, fall back 
 		usernameRequirements,
 	)
 	expect(getUsernameFormatValidationError('some-user')).toBeNull()
+	expect(getUsernameFormatValidationError('Some-User')).toBe(
+		usernameRequirements,
+	)
 	expect(getUsernameValidationError('jane-lee')).toBeNull()
 	expect(getUsernameFormatValidationError('john.doe')).toBe(
 		usernameRequirements,

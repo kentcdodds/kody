@@ -11,17 +11,9 @@ import {
 	workspaceRailGroups,
 	workspaceSwitchHref,
 } from '#client/routes/account-rail.ts'
-import { type OrganizationSummary } from '#universal/org-pages.ts'
-
-const organizations: Array<OrganizationSummary> = [
-	{ slug: 'acme', displayName: 'Acme', role: 'owner', personal: false },
-	{ slug: 'jane-old', displayName: 'Jane', role: 'owner', personal: true },
-]
 
 test('account rail holds the person: profile, security, organizations, experiments, data', () => {
-	const items = accountRailGroups({ organizations: [] }).flatMap(
-		(group) => group.items,
-	)
+	const items = accountRailGroups().flatMap((group) => group.items)
 	expect(items.map((item) => item.label)).toEqual([
 		'Profile',
 		'Security',
@@ -60,21 +52,8 @@ test('account rail holds the person: profile, security, organizations, experimen
 	]) {
 		expect(isAccountRailPath(path), path).toBe(false)
 	}
-})
-
-test('account rail lists every workspace, signup org first, each opening its home', () => {
-	const groups = accountRailGroups({ organizations })
-	expect(groups.map((group) => group.label)).toEqual([null, 'Workspaces'])
-	expect(
-		groups[1]?.items.map((item) => [item.label, item.href, item.icon]),
-	).toEqual([
-		['@jane-old', '/@jane-old/-/overview', 'user'],
-		['@acme', '/@acme', 'users'],
-	])
-	for (const item of groups[1]?.items ?? []) {
-		expect(isAccountRailPath(item.href), item.href).toBe(false)
-		expect(isAccountNavItemActive(item, '/account'), item.href).toBe(false)
-	}
+	expect(accountRailGroups().map((group) => group.label)).toEqual([null])
+	expect(items.some((item) => item.label.startsWith('@'))).toBe(false)
 })
 
 test('workspace home is the overview for the signup org and /@slug for a team', () => {
@@ -122,14 +101,30 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 		groups.map((group) => [group.label, group.items.map((item) => item.href)]),
 	).toEqual([
 		[null, ['/@jane/-/overview']],
-		['Build', ['/@jane/-/repositories', '/@jane/-/jobs', '/@jane/-/webhooks']],
+		[
+			'Build',
+			[
+				'/@jane/-/repositories',
+				'/@jane/-/jobs',
+				'/@jane/-/webhooks',
+				'/@jane/-/follows',
+			],
+		],
 		['Credentials', ['/@jane/-/credentials', '/@jane/-/secret-providers']],
 		[
 			'Agents & data',
 			['/@jane/-/agents', '/@jane/-/memories', '/@jane/-/email'],
 		],
 		['Activity', ['/@jane/-/activity']],
-		['Organization', ['/@jane/-/grants', '/@jane/-/usage', '/@jane/-/billing']],
+		[
+			'Organization',
+			[
+				'/@jane/-/grants',
+				'/@jane/-/usage',
+				'/@jane/-/credits',
+				'/@jane/-/billing',
+			],
+		],
 	])
 	// The Key, OAuth, and MCP server editors still count as Credentials.
 	const credentials = items.find((item) => item.label === 'Credentials')
@@ -147,7 +142,7 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 		credentials &&
 			isAccountNavItemActive(credentials, '/@jane/-/secret-providers'),
 	).toBe(false)
-	const usage = items.find((item) => item.label === 'Usage & credits')
+	const usage = items.find((item) => item.label === 'Usage')
 	expect(usage && isAccountNavItemActive(usage, '/@jane/-/usage')).toBe(true)
 	expect(usage && isAccountNavItemActive(usage, '/account/usage')).toBe(true)
 	const billing = items.find((item) => item.label === 'Billing')
@@ -203,21 +198,23 @@ test('team organization rail shares the sections and keeps members, settings, an
 		'Repositories',
 		'Jobs',
 		'Webhooks',
+		'Follows',
 		'Credentials',
 		'Secret providers',
 		'Agents',
-		'Memories',
 		'Email',
 		'Activity',
 		'Members',
 		'Settings',
-		'Usage & credits',
+		'Usage',
+		'Credits',
 		'Billing',
 	])
 	expect(teamOwner.at(-1)?.items.map((item) => item.href)).toEqual([
 		'/@acme/-/members',
 		'/@acme/-/settings',
 		'/@acme/-/usage',
+		'/@acme/-/credits',
 		'/@acme/-/billing',
 	])
 	expect(railTabsForPath(teamOwner, '/@acme/-/grants')?.tabs).toEqual([
@@ -236,12 +233,17 @@ test('team organization rail shares the sections and keeps members, settings, an
 		teamRail('billing')
 			.at(-1)
 			?.items.map((item) => item.label),
-	).toEqual(['Members', 'Settings', 'Usage & credits', 'Billing'])
+	).toEqual(['Members', 'Settings', 'Usage', 'Credits', 'Billing'])
+	// Members cannot open usage or billing, but Credits shows their budget.
 	expect(
 		teamRail('member')
 			.at(-1)
-			?.items.map((item) => item.label),
-	).toEqual(['Members', 'Settings'])
+			?.items.map((item) => [item.label, item.description]),
+	).toEqual([
+		['Members', expect.any(String)],
+		['Settings', expect.any(String)],
+		['Credits', 'Your monthly budget and what it has spent.'],
+	])
 	// Team Overview is the org home; exact match so section pages stay off.
 	const teamOverview = teamOwner[0]?.items[0]
 	expect(teamOverview?.href).toBe('/@acme')
@@ -258,7 +260,36 @@ test('team organization rail shares the sections and keeps members, settings, an
 	).toBe(true)
 })
 
-test('grant-only collaborators see Agents with a note, and no slug means no team rail', () => {
+test('personal rail includes Memories; team rail hides it (ADR 0072)', () => {
+	const sections = (personal: boolean) =>
+		workspaceRailGroups({ orgSlug: 'acme', personal, role: 'owner' })
+			.filter((group) => group.label !== 'Organization')
+			.map((group) => [group.label, group.items.map((item) => item.label)])
+	expect(sections(true)).toEqual([
+		[null, ['Overview']],
+		['Build', ['Repositories', 'Jobs', 'Webhooks', 'Follows']],
+		['Credentials', ['Credentials', 'Secret providers']],
+		['Agents & data', ['Agents', 'Memories', 'Email']],
+		['Activity', ['Activity']],
+	])
+	expect(sections(false)).toEqual([
+		[null, ['Overview']],
+		['Build', ['Repositories', 'Jobs', 'Webhooks', 'Follows']],
+		['Credentials', ['Credentials', 'Secret providers']],
+		['Agents & data', ['Agents', 'Email']],
+		['Activity', ['Activity']],
+	])
+	for (const role of ['owner', 'member', 'billing'] as const) {
+		expect(
+			workspaceRailGroups({ orgSlug: 'acme', personal: false, role })
+				.filter((group) => group.label !== 'Organization')
+				.map((group) => [group.label, group.items.map((item) => item.label)]),
+			role,
+		).toEqual(sections(false))
+	}
+})
+
+test('grant-only collaborators see Agents and Credits with a note, and no slug means no team rail', () => {
 	const collaborator = workspaceRailGroups({
 		orgSlug: 'acme',
 		personal: false,
@@ -269,7 +300,10 @@ test('grant-only collaborators see Agents with a note, and no slug means no team
 			group.label,
 			group.items.map((item) => item.href),
 		]),
-	).toEqual([['Agents & data', ['/@acme/-/agents']]])
+	).toEqual([
+		['Agents & data', ['/@acme/-/agents']],
+		['Organization', ['/@acme/-/credits']],
+	])
 	expect(collaborator[0]?.note).toMatch(/grant/i)
 	expect(
 		workspaceRailGroups({ orgSlug: null, personal: false, role: 'owner' }),
@@ -305,6 +339,15 @@ test('switching workspaces keeps the page when the role can open it there', () =
 	)
 	expect(workspaceSwitchHref('/@jane/-/secrets', acmeGuest)).toBe('/@acme')
 	expect(workspaceSwitchHref('/@jane/-/usage', acmeGuest)).toBe('/@acme')
+	const acmeMember = { ...acmeOwner, role: 'member' } as const
+	expect(workspaceSwitchHref('/@jane/-/usage', acmeMember)).toBe('/@acme')
+	expect(workspaceSwitchHref('/@jane/-/credits', acmeMember)).toBe(
+		'/@acme/-/credits',
+	)
+	expect(workspaceSwitchHref('/@acme/-/credits', jane)).toBe('/@jane/-/credits')
+	expect(workspaceSwitchHref('/@jane/-/credits', acmeGuest)).toBe(
+		'/@acme/-/credits',
+	)
 	expect(workspaceSwitchHref('/@acme', jane)).toBe('/@jane/-/overview')
 })
 

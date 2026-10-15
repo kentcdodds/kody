@@ -2,7 +2,6 @@ import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import { isRecord } from '@kody-internal/shared/is-record.ts'
 import { isOrgPermission } from '@kody-internal/shared/org-permissions.ts'
 import {
-	personalOrgId,
 	personIdFromStored,
 	ownerIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
@@ -17,6 +16,7 @@ import {
 	type RequestLineage,
 	type RequestOrg,
 } from '@kody-internal/shared/request-context.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 
 /**
  * Who a verified inbound email runs as (`classifyInboundEmailSender`).
@@ -68,8 +68,15 @@ export type RequestSource =
 	/** Nested invokes, workflow steps, package events, sealed providers. */
 	| { kind: 'inherited'; lineage: RequestLineage }
 
-/** The identity fields a request context is derived from. */
-type RequestPerson = Pick<McpUserContext, 'userId' | 'username'>
+/**
+ * The identity fields a request context is derived from. Prefer a stamped
+ * `personalOrgId` (from `users.personal_org_id`) so phase-2 signups with
+ * `orgs.id !== stable_user_id` bind correctly when `orgBinding` is omitted.
+ */
+type RequestPerson = Pick<
+	McpUserContext,
+	'userId' | 'username' | 'personalOrgId'
+>
 
 export type RequestOrgBinding = {
 	org: RequestOrg
@@ -78,15 +85,15 @@ export type RequestOrgBinding = {
 }
 
 /**
- * Which org a person acts in, and with which role. This is the only place
- * that decides it: every person acts in their implicit org, whose id is
- * their `stable_user_id`, as its Owner. Org memberships replace this body;
- * callers do not change.
+ * Which org a person acts in, and with which role. Prefer a stamped
+ * `personalOrgId`; fall back to the identity cast for callers that have not
+ * loaded `users.personal_org_id` yet. DB-backed paths pass `orgBinding`
+ * from membership instead.
  */
 function resolveOrgBinding(user: RequestPerson): RequestOrgBinding {
 	return {
 		org: {
-			id: personalOrgId(user.userId),
+			id: personalOrgIdForPerson(user),
 			slug: user.username?.trim() || null,
 		},
 		role: 'owner',
@@ -307,6 +314,10 @@ function inheritedMembership(
 ): RequestContext['membership'] {
 	if (!lineage.actor) return null
 	if (lineage.membership === undefined) {
+		// Legacy equal-id personal orgs only: actor.userId === org.id.
+		// Distinct personal orgs always persist membership on lineage
+		// (requestLineage); do not infer Owner from credential.orgId alone
+		// (that would promote team Members).
 		const personalOwner =
 			String(lineage.actor.userId) === String(binding.org.id)
 		return personalOwner && binding.role ? { role: binding.role } : null

@@ -21,6 +21,8 @@ export type { ConnectOauthChooserOption }
 export async function loadConnectOauthChooser(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
+	/** From `/connect/oauth?org=`; kept on every chooser option href. */
+	orgSlug?: string | null
 }): Promise<{ options: Array<ConnectOauthChooserOption> }> {
 	const [joined, platformApps, marks] = await Promise.all([
 		listJoinedIntegrations({ env: input.env, userId: input.userId }),
@@ -29,6 +31,7 @@ export async function loadConnectOauthChooser(input: {
 	])
 	return {
 		options: buildConnectOauthChooserOptions({
+			orgSlug: input.orgSlug,
 			connections: joined.map((entry) => ({
 				name: entry.connection.name,
 				label:

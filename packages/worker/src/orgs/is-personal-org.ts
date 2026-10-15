@@ -1,9 +1,8 @@
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 /**
- * A personal (signup) organization is the org whose id is a live person's
- * `users.stable_user_id`. That is the personal-owner relation: the org is that
- * person's account identity.
+ * A personal (signup) organization is the org recorded on a live person's
+ * `users.personal_org_id` (fallback: `stable_user_id` when the column is blank).
  *
  * Do not use founding membership (`org_id = user_id`) alone. Migration 0099
  * soft-deletes that row for former platform orgs (for example `@kody`) and
@@ -16,9 +15,12 @@ export async function isPersonalOrg(db: D1Database, orgId: string) {
 		.prepare(
 			`SELECT 1 AS ok
 			 FROM users
-			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			 WHERE (
+			 	(personal_org_id IS NOT NULL AND TRIM(personal_org_id) != '' AND personal_org_id = ?)
+			 	OR ((personal_org_id IS NULL OR TRIM(personal_org_id) = '') AND stable_user_id = ?)
+			 )${andLiveDeletedAtSql()}`,
 		)
-		.bind(orgId)
+		.bind(orgId, orgId)
 		.first<{ ok: number }>()
 	return Boolean(row)
 }

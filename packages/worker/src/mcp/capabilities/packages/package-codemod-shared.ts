@@ -1,8 +1,10 @@
 import { z } from 'zod'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { credentialNeedEnforcementScope } from '#worker/credentials/credential-need-enforcement-scope.ts'
 import {
 	runPackageCodemodStep,
+	type PackageCodemodRunFilters,
 	type PackageCodemodRunMode,
 } from '#worker/package-codemods/engine.ts'
 
@@ -137,6 +139,12 @@ export const packageCodemodFiltersSchema = z
 			.array(z.string().min(1))
 			.optional()
 			.describe('Optional saved package ids to limit a fleet run.'),
+		scope: z
+			.literal(credentialNeedEnforcementScope)
+			.optional()
+			.describe(
+				'Keep the run to packages the credential-need enforcement can reach: team-org packages, personal-org packages in an org that grants access, unadopted community forks, and internet-visible packages.',
+			),
 	})
 	.describe('Optional fleet filters for canary or partial runs.')
 
@@ -184,10 +192,7 @@ export async function runFleetPackageCodemodStep(
 		codemodId: string
 		mode: PackageCodemodRunMode
 		packageIds?: Array<string>
-		filters?: {
-			userIds?: Array<string>
-			packageIds?: Array<string>
-		}
+		filters?: PackageCodemodRunFilters
 		runId?: string
 		cursor?: string
 		limit?: number
@@ -196,13 +201,15 @@ export async function runFleetPackageCodemodStep(
 ) {
 	const user = requireMcpUser(ctx.callerContext)
 	const packageIds = input.filters?.packageIds ?? input.packageIds
+	const scope = input.filters?.scope
 	const filters =
-		input.filters?.userIds != null || packageIds != null
+		input.filters?.userIds != null || packageIds != null || scope != null
 			? {
 					...(input.filters?.userIds != null
 						? { userIds: input.filters.userIds }
 						: {}),
 					...(packageIds != null ? { packageIds } : {}),
+					...(scope != null ? { scope } : {}),
 				}
 			: undefined
 	const result = await runPackageCodemodStep({

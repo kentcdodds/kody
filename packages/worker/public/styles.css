@@ -115,23 +115,25 @@
 	/* Warm light cast by the lantern Kody holds (landing + auth heroes) */
 	--lantern-glow: oklch(0.88 0.11 85 / 0.4);
 	--lantern-glow-dark: oklch(0.8 0.13 80 / 0.55);
-	/* Six primitives, one palette: the lantern orbs, the leader lines,
-	   word dots, popovers, and orbit lights all read from these. Hues
-	   follow the orb art — memory red (not apps magenta), secrets purple,
-	   packages blue, triggers yellow, integrations green (the plug, not
-	   the old lightning lime), apps magenta. */
+	/* Primitive palette: the lantern orbs, the leader lines, word dots,
+	   popovers, and orbit lights all read from these. Hues follow the orb
+	   art: memory red, packages blue, triggers yellow, integrations
+	   (credentials) green, apps purple. Apps sits a step lighter than
+	   secrets so the dark ink on its scene buttons clears 4.5:1. Secrets
+	   is no longer a card; `/features/credentials` maps it to
+	   the credentials green. */
 	--primitive-memory: oklch(0.63 0.22 29);
 	--primitive-secrets: oklch(0.6 0.22 300);
 	--primitive-packages: oklch(0.6 0.2 255);
 	--primitive-triggers: oklch(0.78 0.16 96);
 	--primitive-integrations: oklch(0.66 0.19 148);
-	--primitive-apps: oklch(0.72 0.24 345);
+	--primitive-apps: oklch(0.63 0.21 300);
 	--primitive-memory-dark: oklch(0.72 0.17 29);
 	--primitive-secrets-dark: oklch(0.72 0.19 300);
 	--primitive-packages-dark: oklch(0.72 0.17 255);
 	--primitive-triggers-dark: oklch(0.89 0.17 96);
 	--primitive-integrations-dark: oklch(0.76 0.19 148);
-	--primitive-apps-dark: oklch(0.8 0.18 345);
+	--primitive-apps-dark: oklch(0.72 0.19 300);
 	/* Lightness used when a primitive color has to carry text: dark enough
 	   on the light canvas, light enough on graphite. */
 	--primitive-text-l: 0.46;
@@ -688,119 +690,6 @@ html.is-settled {
 	color: var(--color-text);
 }
 
-.landing-pill {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: 0.5rem;
-	font: 650 1rem/1 var(--font-display);
-	border: none;
-	border-radius: var(--radius-full);
-	padding: 0.95rem 1.7rem;
-	cursor: pointer;
-	text-decoration: none;
-	white-space: nowrap;
-	background-color: var(--color-primary);
-	color: var(--color-on-primary);
-	transition:
-		background-color var(--transition-fast),
-		color var(--transition-fast),
-		transform var(--transition-fast),
-		box-shadow var(--transition-fast);
-}
-
-.landing-pill:disabled {
-	cursor: not-allowed;
-	opacity: 0.7;
-}
-
-.landing-pill:not(:disabled):active {
-	transform: translateY(0) scale(0.97);
-}
-
-@media (hover: hover) and (pointer: fine) {
-	.landing-pill:not(:disabled):hover {
-		background-color: var(--color-primary-hover);
-		color: var(--color-on-primary);
-		transform: translateY(-1px);
-		box-shadow: 0 6px 20px -8px oklch(from var(--color-primary) l c h / 0.6);
-	}
-
-	.landing-pill:not(:disabled):active {
-		transform: translateY(0) scale(0.97);
-	}
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.landing-pill {
-		transition:
-			background-color var(--transition-normal),
-			border-color var(--transition-normal),
-			color var(--transition-normal),
-			opacity var(--transition-normal),
-			box-shadow var(--transition-normal);
-	}
-
-	.landing-pill:not(:disabled):hover,
-	.landing-pill:not(:disabled):active {
-		transform: none;
-	}
-}
-
-.landing-pill-swap {
-	display: inline-grid;
-	justify-items: center;
-	align-items: center;
-}
-
-.landing-pill-swap [data-swap-label] {
-	grid-area: 1 / 1;
-	white-space: nowrap;
-	transition:
-		opacity 90ms var(--ease-out),
-		filter 90ms var(--ease-out),
-		scale 90ms var(--ease-out);
-}
-
-.landing-pill-swap [data-swap-label]:not([data-active]) {
-	opacity: 0;
-	filter: blur(3px);
-	scale: 0.96;
-}
-
-.landing-pill-swap [data-swap-label][data-active] {
-	transition:
-		opacity 200ms var(--ease-out) 50ms,
-		filter 200ms var(--ease-out) 50ms,
-		scale 200ms var(--ease-out) 50ms;
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.landing-pill-swap [data-swap-label] {
-		transition: opacity 90ms var(--ease-out);
-		filter: none;
-		scale: none;
-	}
-
-	.landing-pill-swap [data-swap-label][data-active] {
-		transition: opacity 200ms var(--ease-out) 50ms;
-	}
-}
-
-.landing-pill-swap[aria-disabled='true'] {
-	cursor: progress;
-	opacity: 0.7;
-	transform: none;
-}
-
-@media (hover: hover) and (pointer: fine) {
-	.landing-pill-swap[aria-disabled='true']:hover,
-	.landing-pill-swap[aria-disabled='true']:active {
-		transform: none;
-		box-shadow: none;
-	}
-}
-
 .landing-account-deleted {
 	box-sizing: border-box;
 	width: min(40rem, calc(100% - 2.5rem));
@@ -848,20 +737,23 @@ html.is-settled {
 
 .landing-hero-subhead {
 	margin: 1.15rem 0 0;
-	font-size: clamp(1.25rem, 2.4vw, 1.7rem);
-	font-weight: 650;
+	max-width: 40ch;
+	color: var(--color-text-muted);
+	font-size: clamp(1.1rem, 1.9vw, 1.35rem);
+	font-weight: 500;
+	letter-spacing: -0.01em;
+	line-height: 1.45;
+	text-wrap: pretty;
+}
+
+/* The line directly under the hero: keep your agent, plug it into Kody. */
+.landing-hero-plug {
+	margin: clamp(2.25rem, 5vw, 3.25rem) auto 0;
+	font-size: clamp(1.3rem, 2.6vw, 1.75rem);
+	font-weight: 700;
 	letter-spacing: -0.02em;
 	line-height: 1.25;
 	text-wrap: balance;
-}
-
-.landing-hero-lead {
-	margin: 0.95rem 0 0;
-	color: var(--color-text-muted);
-	font-size: 1.12rem;
-	line-height: 1.5;
-	max-width: 42ch;
-	text-wrap: pretty;
 }
 
 .landing-hero-actions {
@@ -873,15 +765,183 @@ html.is-settled {
 	gap: 0.85rem 1.25rem;
 }
 
-.landing-hero-secondary {
-	font: 650 1rem/1 var(--font-display);
-	color: var(--color-primary-text);
-	text-decoration-thickness: 1.5px;
-	text-underline-offset: 3px;
+/* Hero agent marks: 64px monochrome icons (a mask filled with the text
+   colour), each a link to its `/with/:agent` page. Hover, focus, or press
+   zooms a mark like the video chooser thumbs, slides its neighbours aside,
+   and fades its name in. With JS (`.is-looping`, set by
+   `landing-agent-marquee.tsx`) the loop copies show and the scroll wraps
+   endlessly; without it the row is a plain scroller. */
+.landing-agents-row {
+	width: 100%;
 }
 
-.landing-hero-secondary:hover {
+.landing-agents {
+	--agent-size: 64px;
+	--agent-zoom: 1.25;
+	--agent-shift: calc(var(--agent-size) * (var(--agent-zoom) - 1) / 2);
+	--agent-fade: clamp(2rem, 8vw, 4.5rem);
+	width: min(44rem, 100%);
+	margin: clamp(1.75rem, 4vw, 2.5rem) auto 0;
+	overflow-x: auto;
+	scrollbar-width: none;
+	mask-image: linear-gradient(
+		to right,
+		transparent,
+		#000 var(--agent-fade),
+		#000 calc(100% - var(--agent-fade)),
+		transparent
+	);
+	-webkit-mask-image: linear-gradient(
+		to right,
+		transparent,
+		#000 var(--agent-fade),
+		#000 calc(100% - var(--agent-fade)),
+		transparent
+	);
+}
+
+.landing-agents::-webkit-scrollbar {
+	display: none;
+}
+
+.landing-agents-track {
+	list-style: none;
+	margin: 0;
+	padding: 0.75rem var(--agent-fade) 0;
+	display: flex;
+	width: max-content;
+}
+
+.landing-agents-item {
+	flex: none;
+	padding-inline: 0.8rem;
+}
+
+.landing-agents-item[aria-hidden] {
+	display: none;
+}
+
+.landing-agent {
+	position: relative;
+	display: grid;
+	justify-items: center;
+	padding-bottom: 1.6rem;
 	color: var(--color-text);
+	text-decoration: none;
+	border-radius: 0.75rem;
+}
+
+.landing-agent-icon {
+	display: block;
+	width: var(--agent-size);
+	height: var(--agent-size);
+	background-color: currentColor;
+	mask: var(--agent-icon) center / contain no-repeat;
+	-webkit-mask: var(--agent-icon) center / contain no-repeat;
+}
+
+.landing-agent-name {
+	position: absolute;
+	bottom: 0;
+	left: 50%;
+	translate: -50% 0;
+	white-space: nowrap;
+	font-size: 0.78rem;
+	font-weight: 550;
+	color: var(--color-text-muted);
+	opacity: 0;
+}
+
+/* While a mouse is over the row (`.is-magnifying`, JS with motion allowed)
+   marks magnify like the macOS Dock: each scales by its distance to the
+   pointer (`--agent-scale`) and its neighbours make room (`--agent-x`), so
+   the gaps never shrink a mark. Otherwise hover, keyboard focus, and presses
+   zoom one mark. */
+.landing-agents.is-looping .landing-agents-item {
+	translate: var(--agent-x, 0px) 0;
+}
+
+.landing-agents.is-looping .landing-agent-icon {
+	scale: var(--agent-scale, 1);
+}
+
+.landing-agents.is-looping .landing-agents-item.is-nearest .landing-agent-name {
+	opacity: 1;
+}
+
+.landing-agents:not(.is-magnifying) .landing-agent:hover .landing-agent-icon,
+.landing-agents:not(.is-magnifying)
+	.landing-agent:is(:focus-visible, :active)
+	.landing-agent-icon {
+	scale: var(--agent-zoom);
+}
+
+.landing-agents:not(.is-magnifying) .landing-agent:hover .landing-agent-name,
+.landing-agents:not(.is-magnifying)
+	.landing-agent:is(:focus-visible, :active)
+	.landing-agent-name {
+	opacity: 1;
+}
+
+.landing-agents:not(.is-magnifying)
+	.landing-agents-item:has(~ .landing-agents-item .landing-agent:hover),
+.landing-agents:not(.is-magnifying)
+	.landing-agents-item:has(
+		~ .landing-agents-item .landing-agent:is(:focus-visible, :active)
+	) {
+	translate: calc(-1 * var(--agent-shift)) 0;
+}
+
+.landing-agents:not(.is-magnifying)
+	.landing-agents-item:has(.landing-agent:hover)
+	~ .landing-agents-item,
+.landing-agents:not(.is-magnifying)
+	.landing-agents-item:has(.landing-agent:is(:focus-visible, :active))
+	~ .landing-agents-item {
+	translate: var(--agent-shift) 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.landing-agents-item {
+		transition: translate 260ms var(--ease-out);
+	}
+
+	.landing-agent-icon {
+		transition: scale 260ms var(--ease-out);
+	}
+
+	.landing-agent-name {
+		transition: opacity 200ms var(--ease-out);
+	}
+
+	/* Track the pointer closely while magnifying; settle slowly after. */
+	.landing-agents.is-magnifying .landing-agents-item,
+	.landing-agents.is-magnifying .landing-agent-icon {
+		transition-duration: 70ms;
+	}
+}
+
+.landing-agents.is-looping .landing-agents-track {
+	padding-inline: 0;
+}
+
+.landing-agents.is-looping .landing-agents-item[aria-hidden] {
+	display: block;
+}
+
+@media (hover: hover) and (pointer: fine) {
+	.landing-agents.is-looping {
+		cursor: grab;
+	}
+}
+
+.landing-agents.is-dragging {
+	cursor: grabbing;
+	user-select: none;
+}
+
+.landing-agents.is-dragging .landing-agent {
+	cursor: grabbing;
 }
 
 .landing-hero-media {
@@ -1082,10 +1142,6 @@ html.is-settled {
 			translate 260ms var(--ease-out),
 			opacity 200ms var(--ease-out);
 	}
-}
-
-.landing-hero-cta {
-	box-sizing: border-box;
 }
 
 .landing-compare {
@@ -1612,6 +1668,23 @@ html.is-settled {
 	text-wrap: pretty;
 }
 
+.landing-vs-item-is {
+	border-color: color-mix(
+		in oklch,
+		var(--color-primary) 40%,
+		var(--color-border)
+	);
+	background: color-mix(
+		in oklch,
+		var(--color-primary) 7%,
+		var(--color-surface)
+	);
+}
+
+.landing-vs-item-is .landing-vs-body {
+	color: var(--color-text);
+}
+
 .landing-proof {
 	max-width: 72rem;
 	margin: 0 auto;
@@ -1657,10 +1730,6 @@ html.is-settled {
 
 .landing-videos .landing-section-heading {
 	margin-bottom: 1.25rem;
-}
-
-.landing-invite-tools {
-	margin-top: 2.25rem;
 }
 
 .landing-hero-art {
@@ -1958,68 +2027,6 @@ html.is-settled {
 	padding: 0.45rem 1rem;
 }
 
-.landing-chip-muted {
-	color: var(--color-text-muted);
-	background-color: transparent;
-	border-style: dashed;
-}
-
-.landing-chip-icon::before {
-	content: '';
-	width: 1.05em;
-	height: 1.05em;
-	flex: none;
-	background: currentColor;
-	mask-image: var(--chip-icon);
-	mask-position: center;
-	mask-size: contain;
-	mask-repeat: no-repeat;
-	-webkit-mask-image: var(--chip-icon);
-	-webkit-mask-position: center;
-	-webkit-mask-size: contain;
-	-webkit-mask-repeat: no-repeat;
-}
-
-.landing-chip-link {
-	text-decoration: none;
-	cursor: pointer;
-}
-
-.landing-chip-link:hover {
-	color: var(--color-text);
-	border-color: color-mix(
-		in oklch,
-		var(--color-primary) 40%,
-		var(--color-border)
-	);
-	background-color: color-mix(in oklch, var(--color-primary) 8%, transparent);
-}
-
-.landing-world-link-item {
-	display: flex;
-}
-
-.landing-factory {
-	max-width: 72rem;
-	margin-inline: auto;
-	padding: clamp(3.5rem, 8vw, 6.5rem) clamp(1.25rem, 4vw, 2.5rem)
-		clamp(0.5rem, 1.5vw, 1rem);
-	text-align: center;
-}
-
-.landing-factory-lead {
-	margin: 1.1rem auto 0;
-	color: var(--color-text-muted);
-	font-size: 1.08rem;
-	max-width: 48ch;
-	text-wrap: pretty;
-}
-
-.landing-factory-lead strong {
-	font-weight: 700;
-	color: var(--color-text);
-}
-
 .landing-path {
 	margin: clamp(1.75rem, 4vw, 2.75rem) auto 0;
 	max-width: 48rem;
@@ -2126,82 +2133,11 @@ html.is-settled {
 	gap: 0.85rem;
 }
 
-.landing-path-fan-slot {
-	display: flex;
-	min-width: 0;
-}
-
-.landing-path-fan-item {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: 0.35rem;
-	padding: 0.85rem 0.6rem;
-	background: var(--color-surface);
-	border: 1px solid var(--color-border);
-	border-radius: 16px;
-	text-align: center;
-	min-width: 0;
-}
-
-/* Quiet card-link: same tile chrome as a static fan item. Pointer and
-   the global :focus-visible ring are the only affordances. */
-.landing-path-fan-link {
-	flex: 1 1 auto;
-	width: 100%;
-	cursor: pointer;
-}
-
-.landing-path-fan-link:any-link,
-.landing-path-fan-link:hover,
-.landing-path-fan-link:focus,
-.landing-path-fan-link:active {
-	color: inherit;
-	text-decoration: none;
-}
-
-.landing-path-fan-item .landing-path-kicker {
-	margin: 0;
-}
-
-.landing-path-fan-title {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	flex-wrap: wrap;
-	gap: 0.4rem;
-	margin: 0;
-	font-size: 0.98rem;
-	font-weight: 700;
-	letter-spacing: -0.01em;
-	line-height: 1.25;
-}
-
-.landing-path-fan-title svg {
-	flex: 0 0 18px;
-	width: 18px;
-	height: 18px;
-	color: var(--color-primary-text);
-}
-
 .landing-path-fan-chips {
 	display: flex;
 	flex-wrap: wrap;
 	justify-content: center;
 	gap: 0.55rem;
-}
-
-.landing-factory-ritual {
-	margin: clamp(3.5rem, 7vw, 5.25rem) auto 0;
-	font-family: var(--font-display);
-	font-size: clamp(1.85rem, 3.6vw, 2.6rem);
-	font-weight: 740;
-	letter-spacing: -0.025em;
-	line-height: 1.2;
-}
-
-.landing-factory-ritual span {
-	white-space: nowrap;
 }
 
 .landing-walkthrough-story {
@@ -2222,6 +2158,9 @@ html.is-settled {
 
 .landing-loop {
 	margin: clamp(1.75rem, 4vw, 2.5rem) auto 0;
+	/* Auto inline margins shrink a grid item to its content, so the card
+	   would grow as the conversation fills in. Hold the full column. */
+	width: 100%;
 	max-width: 40rem;
 	text-align: left;
 	background: var(--color-surface);
@@ -2807,17 +2746,6 @@ html.is-settled {
 	text-wrap: balance;
 }
 
-.landing-world-cloud {
-	list-style: none;
-	margin: 2.2rem auto 0;
-	padding: 0;
-	display: flex;
-	flex-wrap: wrap;
-	justify-content: center;
-	gap: 0.6rem;
-	max-width: 46rem;
-}
-
 .landing-trust {
 	max-width: 72rem;
 	margin-inline: auto;
@@ -2888,8 +2816,19 @@ html.is-settled {
 	text-wrap: balance;
 }
 
+.landing-invite-believe {
+	margin: 1.1rem auto 0;
+	font-weight: 600;
+}
+
 .landing-invite-cta {
 	margin: 1.8rem auto 0;
+}
+
+/* `page-init.js` sets `html.js` before paint, so exactly one CTA shows. */
+html.js .landing-connect-fallback,
+html:not(.js) .landing-connect-copy {
+	display: none;
 }
 
 /*
@@ -2956,10 +2895,6 @@ html.is-settled {
 
 	.landing-section-heading {
 		font-size: 2rem;
-	}
-
-	.landing-factory {
-		padding: 3.25rem 1.25rem 0.5rem;
 	}
 
 	.landing-loop-chat {
@@ -3346,14 +3281,7 @@ button.pw-node:hover {
 	animation-delay: calc(var(--i, 0) * 2s);
 }
 
-/* Secrets */
-
-.pw-vault {
-	flex-direction: column;
-	gap: 0.25em;
-	padding: 0.5em 0.85em;
-	font-weight: 600;
-}
+/* Lock, lanes, and packets shared by the scenes */
 
 .pw-lock {
 	position: relative;
@@ -3377,25 +3305,6 @@ button.pw-node:hover {
 	border-radius: 0.35em 0.35em 0 0;
 }
 
-.pw-host {
-	flex-direction: column;
-	gap: 0.1em;
-}
-
-.pw-host-name {
-	font-size: 0.85em;
-}
-
-.pw-host-status {
-	font-size: 0.72em;
-	color: var(--pw-muted);
-}
-
-.pw-run[data-blocked] .pw-host {
-	border-style: dashed;
-	opacity: 0.6;
-}
-
 .pw-lane {
 	position: absolute;
 	height: 0;
@@ -3417,70 +3326,12 @@ button.pw-node:hover {
 	opacity: 0;
 }
 
-.pw-run[data-blocked] .pw-lane-2 {
-	display: none;
-}
-
-.pw-stamp {
-	position: absolute;
-	translate: -50% -50%;
-	display: grid;
-	place-items: center;
-	width: 1.5em;
-	height: 1.5em;
-	border-radius: 50%;
-	background: var(--color-danger, #c0392b);
-	color: #fff;
-	font-weight: 800;
-	opacity: 0;
-}
-
-.pw-run[data-blocked] .pw-stamp {
-	opacity: 1;
-}
-
-.pw-ledger {
-	display: grid;
-	grid-template-columns: auto auto;
-	gap: 0.25em 1.2em;
-	padding: 0.55em 0.95em;
-	font-size: 0.85em;
-}
-
-.pw-ledger span {
-	color: var(--pw-muted);
-}
-
-.pw-ledger code {
-	font-family: ui-monospace, monospace;
-}
-
 .pw[data-motion] .pw-lane {
 	animation: pw-lane-1 5s var(--pw-ease) infinite;
 }
 
 .pw[data-motion] .pw-lane .pw-packet {
 	animation: pw-packet-1 5s linear infinite;
-}
-
-.pw[data-motion] .pw-lane-2 {
-	animation-name: pw-lane-2;
-}
-
-.pw[data-motion] .pw-lane-2 .pw-packet {
-	animation-name: pw-packet-2;
-}
-
-.pw[data-motion] .pw-vault {
-	animation: pw-vault 5s var(--pw-ease) infinite;
-}
-
-.pw[data-motion] .pw-run:not([data-blocked]) .pw-host {
-	animation: pw-arrive 5s var(--pw-ease) infinite;
-}
-
-.pw[data-motion] .pw-run[data-blocked] .pw-stamp {
-	animation: pw-stamp 5s var(--pw-ease) infinite;
 }
 
 @keyframes pw-lane-1 {
@@ -3506,73 +3357,6 @@ button.pw-node:hover {
 	36%,
 	100% {
 		opacity: 0;
-	}
-}
-
-@keyframes pw-lane-2 {
-	0%,
-	44% {
-		transform: translateX(0);
-	}
-	74%,
-	100% {
-		transform: translateX(100%);
-	}
-}
-
-@keyframes pw-packet-2 {
-	0%,
-	43% {
-		opacity: 0;
-	}
-	46%,
-	72% {
-		opacity: 1;
-	}
-	76%,
-	100% {
-		opacity: 0;
-	}
-}
-
-@keyframes pw-vault {
-	0%,
-	32%,
-	48%,
-	100% {
-		scale: 1;
-	}
-	38% {
-		scale: 1.1;
-	}
-}
-
-@keyframes pw-arrive {
-	0%,
-	72%,
-	86%,
-	100% {
-		scale: 1;
-	}
-	77% {
-		scale: 1.1;
-	}
-}
-
-@keyframes pw-stamp {
-	0%,
-	38% {
-		opacity: 0;
-		scale: 1.8;
-	}
-	44%,
-	92% {
-		opacity: 1;
-		scale: 1;
-	}
-	100% {
-		opacity: 0;
-		scale: 1;
 	}
 }
 
@@ -5138,9 +4922,10 @@ button.pw-slot:hover {
 	text-align: center;
 }
 
+/* Half-width tracks so a short last row can sit centered under the rest. */
 .landing-pcards-list {
 	display: grid;
-	grid-template-columns: repeat(3, minmax(0, 1fr));
+	grid-template-columns: repeat(6, minmax(0, 1fr));
 	gap: 1rem;
 	margin: 1.75rem 0 0;
 	padding: 0;
@@ -5150,6 +4935,15 @@ button.pw-slot:hover {
 
 .landing-pcard-item {
 	display: flex;
+	grid-column: span 2;
+}
+
+.landing-pcard-item:nth-child(3n + 1):nth-last-child(2) {
+	grid-column: 2 / span 2;
+}
+
+.landing-pcard-item:nth-child(3n + 1):last-child {
+	grid-column: 3 / span 2;
 }
 
 .landing-pcard {
@@ -5222,7 +5016,16 @@ button.pw-slot:hover {
 	}
 
 	.landing-pcards-list {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+	}
+
+	.landing-pcard-item,
+	.landing-pcard-item:nth-child(3n + 1):nth-last-child(2) {
+		grid-column: span 2;
+	}
+
+	.landing-pcard-item:nth-child(odd):last-child {
+		grid-column: 2 / span 2;
 	}
 }
 
@@ -5243,7 +5046,10 @@ button.pw-slot:hover {
 		scroll-snap-type: x mandatory;
 	}
 
-	.landing-pcard-item {
+	.landing-pcard-item,
+	.landing-pcard-item:nth-child(3n + 1):nth-last-child(2),
+	.landing-pcard-item:nth-child(odd):last-child {
+		grid-column: auto;
 		scroll-snap-align: start;
 	}
 }

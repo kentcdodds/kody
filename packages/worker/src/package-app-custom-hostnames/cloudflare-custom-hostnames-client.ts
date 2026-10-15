@@ -87,7 +87,9 @@ function requireZoneId(zoneId: string | undefined) {
 
 function assertCustomHostnameId(id: string) {
 	const trimmed = id.trim()
-	if (!trimmed || trimmed.includes('/') || trimmed.includes('..')) {
+	// Reject path, query, and fragment delimiters so URL construction cannot
+	// reinterpret a malformed id as a different Cloudflare resource.
+	if (!trimmed || /[/?#]/.test(trimmed) || trimmed.includes('..')) {
 		throw new Error('Custom hostname id is invalid.')
 	}
 	return trimmed

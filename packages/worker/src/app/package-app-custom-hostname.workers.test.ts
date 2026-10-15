@@ -1,5 +1,6 @@
 import { env, exports } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
+import { ensureAuditEventsTestSchema } from '#worker/test-support/audit-events-test-schema.ts'
 import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
 import { packageAppHandoffQueryParam } from '#app/package-app-handoff.ts'
 import { buildPackageAppNotFoundMessage } from '#worker/package-runtime/package-app-synthetic.ts'
@@ -11,6 +12,11 @@ import {
 	seedAccount,
 } from '#worker/test-support/workers-seed.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import {
+	accessFixture,
+	accessFixtureOrigin,
+	seedPackageAppAccessFixture,
+} from '#worker/test-support/package-app-access-fixture.ts'
 
 const appOrigin = 'https://app.kody.test:8788'
 const packageAppOrigin = 'https://packages.isolated.test'
@@ -35,6 +41,7 @@ async function workerFetch(url: string | URL, init: RequestInit = {}) {
 }
 
 async function seedOwnerSessionCookie() {
+	await ensureAuditEventsTestSchema(env.AUDIT_DB)
 	await ensureRbacTestSchema(env.APP_DB)
 	await ensurePackageSubscriptionTestSchema(env.APP_DB)
 	try {
@@ -261,5 +268,57 @@ test('a verified app custom hostname serves at / behind the same host-only hando
 		expect(servedBody).toBe(buildPackageAppNotFoundMessage())
 	}
 
+	await setCustomDomainsFlag(false)
+})
+
+test('internet-visible apps skip an org-level custom hostname and go to the subdomain', async () => {
+	configureOrigins()
+	await seedPackageAppAccessFixture()
+	await ensureCustomHostnameSchema()
+	await setCustomDomainsFlag(true)
+	const { orgId, orgSlug, privateApp, publicApp } = accessFixture
+	const orgHostname = 'apps.cost-org-test.example'
+	const now = '2026-10-14T00:00:00.000Z'
+	await env.APP_DB.prepare(
+		`INSERT OR IGNORE INTO package_app_custom_hostnames (
+			id, hostname, binding_kind, package_id, org_id,
+			hostname_status, ssl_status, verified_at, created_at, updated_at
+		) VALUES ('host-cost-org', ?, 'org', NULL, ?, 'active', 'active', ?, ?, ?)`,
+	)
+		.bind(orgHostname, orgId, now, now, now)
+		.run()
+
+	// Session-gated apps still hand off to the org domain.
+	const memberSession = await createAuthCookie(
+		{
+			stableUserId: testStableUserIdFromEmail(
+				accessFixture.people.member.email,
+			),
+			email: accessFixture.people.member.email,
+			rememberMe: false,
+		},
+		true,
+	)
+	const privateEntry = await workerFetch(
+		`${appOrigin}/@${orgSlug}/packages/${privateApp.slug}`,
+		{ headers: { Cookie: memberSession.split(';')[0] ?? '' } },
+	)
+	expect(new URL(privateEntry.headers.get('Location') ?? '').host).toBe(
+		orgHostname,
+	)
+
+	// The org domain serves only session-gated apps, so a signed-out visitor
+	// of an internet-visible app goes to the org subdomain instead.
+	const publicEntry = await workerFetch(
+		`${appOrigin}/@${orgSlug}/packages/${publicApp.slug}`,
+	)
+	expect(publicEntry.status).toBe(302)
+	const publicLocation = new URL(publicEntry.headers.get('Location') ?? '')
+	expect(publicLocation.origin).toBe(accessFixtureOrigin)
+	expect(publicLocation.pathname).toBe(`/packages/${publicApp.slug}`)
+
+	await env.APP_DB.prepare(
+		`DELETE FROM package_app_custom_hostnames WHERE id = 'host-cost-org'`,
+	).run()
 	await setCustomDomainsFlag(false)
 })

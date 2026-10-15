@@ -95,9 +95,10 @@ This project uses the following resources:
     the metadata-only listing projection, acknowledges invalid or inactive
     listings, and retries transient lookup, subscription-discovery, or
     package-invocation infrastructure failures. Only first publish enqueues this
-    shape. A republish that moves the pinned commit enqueues a
-    `kind: 'fork_upstream_updated'` message on the same queue for
-    `community.fork.upstream_updated` forker fan-out.
+    shape. A republish that moves the pinned commit no longer enqueues
+    `kind: 'fork_upstream_updated'`. The follow pipeline emits
+    `community.fork.upstream_updated` with the same payload. In-flight messages
+    of that kind are acknowledged without fan-out.
 - Cloudflare Queue for durable package-emitted event dispatch
   - Producer binding: `PACKAGE_EVENTS_DISPATCH_QUEUE`
   - Queue: `kody-package-events-dispatch`

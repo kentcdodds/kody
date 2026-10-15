@@ -1,5 +1,5 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { loadCredentialDetail } from '#worker/credentials/credential-detail.ts'
 import { listCredentialsForViewer } from '#worker/credentials/credential-list.ts'
 import { listCredentialProviderBindings } from '#worker/credentials/credential-provider-bindings.ts'
@@ -25,7 +25,7 @@ export async function loadAccountCredentialsData(input: {
 		user: input.user.mcpUser,
 	})
 	const viewer = input.user.mcpUser.userId
-	const personalId = personalOrgId(viewer)
+	const personalId = personalOrgIdForPerson(input.user.mcpUser)
 	const teamOrg = orgId !== personalId
 	const orgSlug = input.user.request.org.slug ?? input.user.username
 	const [personalOrgSlug, listed, providers, packages] = await Promise.all([

@@ -29,7 +29,48 @@ import {
 	clearInternetVisible,
 	loadCapabilityApprovalSummary,
 } from '#worker/package-capabilities/capability-approval-service.ts'
+import {
+	attemptSelfPublish,
+	type SelfPublishAttempt,
+} from '#worker/package-capabilities/self-publish.ts'
+import {
+	enqueueWentPublicApproval,
+	getPendingWentPublicApproval,
+} from '#worker/package-capabilities/went-public-approval.ts'
+import {
+	loadPackageSecurityAuditNextStep,
+	type PackageSecurityAuditNextStep,
+} from '#worker/package-capabilities/security-audit-next-step.ts'
+import { packageSecurityAuditRecordOperation } from '#universal/package-security-audit-prompt.ts'
 import { packageSummarySchema, toPackageSummary } from './shared.ts'
+
+const securityAuditNextStepSchema = z.object({
+	next_step: z.string(),
+	operation: z.literal(packageSecurityAuditRecordOperation),
+	http_route: z.string(),
+	args: z
+		.object({
+			package_id: z.string(),
+			published_commit: z.string(),
+			fingerprint: z.string(),
+		})
+		.describe(
+			`Exact values for ${packageSecurityAuditRecordOperation}. Add verdict ("pass" or "concerns"), summary, and optionally auditor.`,
+		),
+	audit_prompt: z
+		.string()
+		.describe('What to review and how to record it, as the owner would ask.'),
+})
+
+function toSecurityAuditNextStepOutput(step: PackageSecurityAuditNextStep) {
+	return {
+		next_step: step.nextStep,
+		operation: step.operation,
+		http_route: step.httpRoute,
+		args: step.args,
+		audit_prompt: step.auditPrompt,
+	}
+}
 
 const packageUpdateChangesSchema = z
 	.strictObject({
@@ -55,7 +96,7 @@ const packageUpdateChangesSchema = z
 			.boolean()
 			.optional()
 			.describe(
-				'Internet-visible app serving. Independent of visibility/forkable. Agents cannot approve capabilities: setting true returns an approval_url for the owner website. Setting false turns off public app serving (requires confirm_name).',
+				`Internet-visible app serving. Independent of visibility/forkable. Setting true makes the package internet-visible right away (self-publish, logged) when credential-need enforcement is on, nothing in its dependency tree declares a credential or another capability (kody.credentials, secretMounts, secretProvider, subscriptions, emits, jobs, retrievers, webhooks), a security audit with verdict pass is recorded for the current published commit + fingerprint, and the caller may publish the package (package:publish). An unpublished package is refused with an error: publish it first. Otherwise agents cannot approve: it returns an approval_url for the owner website and self_publish_blocker (or self_publish_error when the approval itself failed) says why. When the published version has no security audit, it also returns security_audit: run that audit and record it with ${packageSecurityAuditRecordOperation} using security_audit.args. Recording verdict pass re-evaluates the pending request and self-publishes when everything else allows it; otherwise hand the owner approval_url. Calling this again with internet_visible true also re-evaluates. Setting false turns off public app serving (requires confirm_name).`,
 			),
 	})
 	.refine(
@@ -109,13 +150,45 @@ export const packageUpdateCapability = defineDomainCapability(
 				.string()
 				.optional()
 				.describe(
-					'Present when internet_visible was requested and is waiting on owner Approve (went_public).',
+					'Present when internet_visible was requested and is waiting on owner Approve (went_public). One Approve on that page records the capability set and turns internet-visible on.',
 				),
 			internet_visible_pending: z
 				.boolean()
 				.optional()
 				.describe(
 					'True when other package changes applied but internet-visible is waiting on owner Approve.',
+				),
+			security_audit: securityAuditNextStepSchema
+				.optional()
+				.describe(
+					`Present when internet-visible is pending and the published version has no security audit. Do this before handing the owner approval_url: audit, then record with ${packageSecurityAuditRecordOperation}.`,
+				),
+			self_published: z
+				.literal(true)
+				.optional()
+				.describe(
+					'Present when internet_visible was turned on without owner Approve because the package declares no credential or capability. The package cannot use any credential while public this way.',
+				),
+			self_publish_blocker: z
+				.enum([
+					'enforcement_off',
+					'unpublished',
+					'stale_dependencies',
+					'declares_credentials',
+					'declares_capabilities',
+					'not_audited',
+					'audit_concerns',
+					'not_permitted',
+				])
+				.optional()
+				.describe(
+					`Why internet_visible waits on owner Approve instead of self-publishing: credential-need enforcement is off, a package in the tree is unpublished, a dependency republished since this package's publish (stale_dependencies: publish this package again), the tree declares credentials, the tree declares other capabilities, the current published commit + fingerprint has no security audit (not_audited) or one with verdict concerns (audit_concerns), or the caller may not publish this package. For not_audited: audit, record verdict pass with ${packageSecurityAuditRecordOperation}; that re-evaluates the pending request.`,
+				),
+			self_publish_error: z
+				.string()
+				.optional()
+				.describe(
+					'Present when self-publish applied but its approval failed; internet_visible waits on owner Approve at approval_url instead.',
 				),
 		}),
 		async handler(args, ctx) {
@@ -216,7 +289,13 @@ export const packageUpdateCapability = defineDomainCapability(
 			}
 
 			let internetVisiblePending = false
+			let selfPublished = false
+			let selfPublishBlocker:
+				| Extract<SelfPublishAttempt, { status: 'blocked' }>['blocker']
+				| null = null
+			let selfPublishError: string | null = null
 			let approvalUrl: string | undefined
+			let securityAudit: PackageSecurityAuditNextStep | null = null
 			if (
 				args.changes.internet_visible === true &&
 				!existing.isInternetVisible
@@ -237,22 +316,70 @@ export const packageUpdateCapability = defineDomainCapability(
 						`Publish the package before making it internet-visible. Then send the owner to approve capabilities: ${approvalUrl}`,
 					)
 				}
-				if (!summary.fingerprintMatchesApproval) {
-					throw new McpCallerError(
-						`Internet-visible requires owner approval of the credential and capability summary. Send them to ${approvalUrl}`,
-					)
-				}
-				// Record/refresh the pin for the current published commit, then
-				// leave went_public pending for the owner's Approve click.
-				await approvePackageCapabilitySet({
+				const attempt = await attemptSelfPublish({
 					env: ctx.env,
+					request: requireMcpRequest(ctx.callerContext),
+					requestUrl: ctx.callerContext.baseUrl,
 					ownerUserId: owner.ownerUserId,
 					actorUserId: owner.actorUserId,
 					savedPackage: existing,
-					requestUrl: ctx.callerContext.baseUrl,
-					expectedFingerprint: summary.capabilitySet.fingerprint,
+					summary,
 				})
-				internetVisiblePending = true
+				if (attempt.status === 'failed') {
+					// A failed attempt leaves the request it saw pending; with none
+					// pending (resolved meanwhile), the summary is not worth re-asking on.
+					const pending = await getPendingWentPublicApproval({
+						env: ctx.env,
+						ownerUserId: owner.ownerUserId,
+						packageId: existing.id,
+					})
+					if (!pending) {
+						throw new McpCallerError(
+							`${attempt.error} Nothing is pending for the owner; call packageUpdate with internet_visible true again.`,
+						)
+					}
+					selfPublishError = attempt.error
+				}
+				if (attempt.status === 'blocked') selfPublishBlocker = attempt.blocker
+				if (attempt.status === 'self_published') {
+					selfPublished = true
+				} else if (selfPublishError) {
+					// Its pending request already waits on the owner's Approve click.
+				} else if (summary.fingerprintMatchesApproval) {
+					// Record/refresh the pin for the current published commit, then
+					// leave went_public pending for the owner's Approve click.
+					await approvePackageCapabilitySet({
+						env: ctx.env,
+						ownerUserId: owner.ownerUserId,
+						actorUserId: owner.actorUserId,
+						savedPackage: existing,
+						requestUrl: ctx.callerContext.baseUrl,
+						expectedFingerprint: summary.capabilitySet.fingerprint,
+					})
+				} else {
+					// Agents cannot approve capabilities. Record the ask so the
+					// owner's one Approve covers the capability set and going public.
+					await enqueueWentPublicApproval({
+						env: ctx.env,
+						ownerUserId: owner.ownerUserId,
+						savedPackage: existing,
+						publishedCommit: summary.publishedCommit,
+						fingerprint: summary.capabilitySet.fingerprint,
+						requestedByUserId: owner.actorUserId,
+					})
+				}
+				internetVisiblePending = !selfPublished
+				if (internetVisiblePending) {
+					securityAudit = await loadPackageSecurityAuditNextStep({
+						db: ctx.env.APP_DB,
+						ownerUserId: owner.ownerUserId,
+						packageId: existing.id,
+						packageName: existing.name,
+						publishedCommit: summary.publishedCommit,
+						fingerprint: summary.capabilitySet.fingerprint,
+						approvalUrl,
+					})
+				}
 			}
 			if (args.changes.internet_visible === false) {
 				const expectedName = existing.kodyId
@@ -287,8 +414,18 @@ export const packageUpdateCapability = defineDomainCapability(
 					? {
 							approval_url: approvalUrl,
 							internet_visible_pending: true as const,
+							...(selfPublishBlocker
+								? { self_publish_blocker: selfPublishBlocker }
+								: {}),
+							...(selfPublishError
+								? { self_publish_error: selfPublishError }
+								: {}),
 						}
 					: {}),
+				...(securityAudit
+					? { security_audit: toSecurityAuditNextStepOutput(securityAudit) }
+					: {}),
+				...(selfPublished ? { self_published: true as const } : {}),
 			}
 		},
 	},

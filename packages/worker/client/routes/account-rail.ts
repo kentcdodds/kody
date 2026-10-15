@@ -3,6 +3,7 @@ import {
 	accountAliasPath,
 	orgBillingPath,
 	orgCollaboratorsPath,
+	orgCreditsPath,
 	orgGrantsPath,
 	orgMembersPath,
 	orgOverviewPath,
@@ -13,8 +14,8 @@ import {
 	orgSlugFromOrgOwnedPath,
 	orgSlugFromPathname,
 	orgUsagePath,
-	orderOrganizations,
 	parseOrgBillingPath,
+	parseOrgCreditsPath,
 	parseOrgManagementPath,
 	parseOrgResourcePath,
 	parseOrgUsagePath,
@@ -161,6 +162,7 @@ function orgPathOpensFor(
 	org: Pick<OrganizationSummary, 'personal' | 'role'>,
 ) {
 	const section = parseOrgResourcePath(pathname)?.section
+	if (parseOrgCreditsPath(pathname)) return true
 	if (org.role === null) return section === 'agents'
 	if (parseOrgBillingPath(pathname) || parseOrgUsagePath(pathname)) {
 		return orgRoleManagesBilling(org.role)
@@ -188,27 +190,12 @@ export function workspaceSwitchHref(
 }
 
 /**
- * The account rail: settings that belong to the person, then a Workspaces
- * group with one row per organization they belong to. Each row opens that
- * workspace, whose own rail lists every section, so any section is two
- * clicks from `/account`.
+ * The account rail: only the settings that belong to the person. Workspaces
+ * are reached from the avatar menu's Manage group and the Organizations page,
+ * not listed here.
  */
-export function accountRailGroups(input: {
-	organizations: ReadonlyArray<OrganizationSummary>
-}): Array<AccountRailGroup> {
-	const person: AccountRailGroup = { label: null, items: accountRailItems }
-	if (input.organizations.length === 0) return [person]
-	return [
-		person,
-		{
-			label: 'Workspaces',
-			items: orderOrganizations(input.organizations).map((org) => ({
-				href: workspaceHomeHref(org),
-				label: `@${org.slug}`,
-				icon: org.personal ? 'user' : 'users',
-			})),
-		},
-	]
+export function accountRailGroups(): Array<AccountRailGroup> {
+	return [{ label: null, items: accountRailItems }]
 }
 
 function overviewRailItem(
@@ -254,11 +241,19 @@ function billingRailItem(orgSlug: string | null | undefined): AccountRailItem {
 function usageRailItem(orgSlug: string | null | undefined): AccountRailItem {
 	return {
 		href: orgSlug ? orgUsagePath(orgSlug) : routes.account.href(),
-		label: 'Usage & credits',
+		label: 'Usage',
 		icon: 'chart',
 		alsoActiveFor: orgSlug
 			? [routes.accountUsage.href(), routes.accountCredits.href()]
 			: [routes.accountCredits.href()],
+	}
+}
+
+function creditsRailItem(orgSlug: string): AccountRailItem {
+	return {
+		href: orgCreditsPath(orgSlug),
+		label: 'Credits',
+		icon: 'pie-chart',
 	}
 }
 
@@ -280,8 +275,8 @@ export function workspaceLandingItem(
 /**
  * Management links for a team (non-personal) organization. Same order as the
  * Organization rail: Settings, Members, Teams (owners/members), Grants,
- * Collaborators, Billing (owners/billing). Empty for collaborators (`role`
- * null) or when `orgSlug` is missing. Used by the rail and org home so
+ * Collaborators, Usage and Billing (owners/billing), and Credits (every
+ * member). Empty for collaborators (`role` null) or when `orgSlug` is missing. Used by the rail and org home so
  * discovery stays consistent.
  */
 export function teamOrgManagementItems(input: {
@@ -323,7 +318,13 @@ export function teamOrgManagementItems(input: {
 		},
 	)
 	if (orgRoleManagesBilling(input.role)) {
-		items.push(usageRailItem(orgSlug), billingRailItem(orgSlug))
+		items.push(
+			usageRailItem(orgSlug),
+			creditsRailItem(orgSlug),
+			billingRailItem(orgSlug),
+		)
+	} else {
+		items.push(creditsRailItem(orgSlug))
 	}
 	return items
 }
@@ -384,8 +385,7 @@ function memoriesRailItem(orgSlug: string | null | undefined): AccountRailItem {
 		href: orgSectionHref(orgSlug, 'memories'),
 		label: 'Memories',
 		icon: 'book',
-		description:
-			'Personal long-term memories (team workspaces show a read-only legacy list).',
+		description: 'Personal long-term memories for this account.',
 	}
 }
 
@@ -439,13 +439,15 @@ function membersRailItem(orgSlug: string, role: OrgRole): AccountRailItem {
 }
 
 /**
- * Sections every organization has, in the same order for personal and team
- * orgs. The server opens each of them for member roles (`orgSectionDenial`
- * only closes grant-only collaborators). Credentials are one group: the
- * kinds of thing Kody uses on your behalf, plus the vaults they can come from.
+ * Workspace sections shared by personal and team orgs, except Memories
+ * (personal-only after ADR 0072). The server opens each of them for member
+ * roles (`orgSectionDenial` only closes grant-only collaborators). Credentials
+ * are one group: the kinds of thing Kody uses on your behalf, plus the vaults
+ * they can come from.
  */
 function workspaceResourceGroups(
 	orgSlug: string | null | undefined,
+	personal: boolean,
 ): Array<AccountRailGroup> {
 	return [
 		{
@@ -458,6 +460,13 @@ function workspaceResourceGroups(
 					label: 'Webhooks',
 					icon: 'cloud',
 					description: 'Every inbound webhook your packages declare.',
+				},
+				{
+					href: orgSectionHref(orgSlug, 'follows'),
+					label: 'Follows',
+					icon: 'eye',
+					description:
+						'Packages and repositories this workspace gets new versions and pushes from.',
 				},
 			],
 		},
@@ -477,7 +486,7 @@ function workspaceResourceGroups(
 			label: 'Agents & data',
 			items: [
 				agentsRailItem(orgSlug),
-				memoriesRailItem(orgSlug),
+				...(personal ? [memoriesRailItem(orgSlug)] : []),
 				{
 					href: orgSectionHref(orgSlug, 'email'),
 					label: 'Email',
@@ -493,12 +502,14 @@ function workspaceResourceGroups(
 
 /**
  * The workspace rail: everything the organization owns, grouped by job.
- * Personal and team orgs share every section above Organization. A team
- * org's Organization group holds Members (with Teams, Collaborators, and
- * Grants as tabs), Settings, and Billing for roles that manage it. A
- * personal org has no members or settings of its own (its name and photo
- * are the person's profile), so it lists Grants and Billing. Grant-only
- * collaborators (`role` null) get Agents only, with a note.
+ * Personal and team orgs share Build, Credentials, Agents & data (without
+ * Memories on team orgs), and Activity above Organization. A team org's
+ * Organization group holds Members (with Teams, Collaborators, and Grants as
+ * tabs), Settings, Credits, and Usage and Billing for roles that manage it. A
+ * personal org has no members or settings of its own (its name and photo are
+ * the person's profile), so it lists Grants, Credits, and Usage and Billing.
+ * Grant-only collaborators (`role` null) get Agents and their Credits budget,
+ * with a note.
  */
 export function workspaceRailGroups(input: {
 	orgSlug: string | null | undefined
@@ -517,23 +528,44 @@ export function workspaceRailGroups(input: {
 			{
 				label: 'Agents & data',
 				items: [agentsRailItem(orgSlug)],
-				note: 'Only Agents is available with a grant. Ask an owner for membership to open the rest of this workspace.',
+				note: 'Only Agents and Credits are available with a grant. Ask an owner for membership to open the rest of this workspace.',
+			},
+			{
+				label: 'Organization',
+				items: [
+					{
+						...creditsRailItem(orgSlug),
+						description: 'Your monthly budget and what it has spent.',
+					},
+				],
 			},
 		]
 	}
 
 	const usage: AccountRailItem = {
 		...usageRailItem(orgSlug),
-		description: 'Activity, included compute, plan limits, and credits.',
+		description: 'Activity, included compute, plan limits, and adding credits.',
 	}
 	const billing: AccountRailItem = {
 		...billingRailItem(orgSlug),
 		description: 'Plan, subscription, and payment method.',
 	}
-	const billingAndUsage = orgRoleManagesBilling(role) ? [usage, billing] : []
+	const credits: Array<AccountRailItem> = orgSlug
+		? [
+				{
+					...creditsRailItem(orgSlug),
+					description: orgRoleManagesBilling(role)
+						? 'Balance, budgets, and the full credit ledger.'
+						: 'Your monthly budget and what it has spent.',
+				},
+			]
+		: []
+	const billingItems = orgRoleManagesBilling(role)
+		? [usage, ...credits, billing]
+		: credits
 	const organizationItems: Array<AccountRailItem> =
 		personal || !orgSlug
-			? [grantsRailItem(orgSlug), ...billingAndUsage]
+			? [grantsRailItem(orgSlug), ...billingItems]
 			: [
 					membersRailItem(orgSlug, role),
 					{
@@ -542,14 +574,14 @@ export function workspaceRailGroups(input: {
 						icon: 'edit',
 						description: 'The organization name, photo, and deletion.',
 					},
-					...billingAndUsage,
+					...billingItems,
 				]
 
 	return [
 		...(orgSlug
 			? [{ label: null, items: [overviewRailItem(orgSlug, personal)] }]
 			: []),
-		...workspaceResourceGroups(orgSlug),
+		...workspaceResourceGroups(orgSlug, personal),
 		{ label: 'Organization', items: organizationItems },
 	]
 }

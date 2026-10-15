@@ -2,8 +2,9 @@
 id: organizations
 title: Organizations
 summary:
-  Personal vs team orgs, who automation runs as, the org-wide execute pool,
-  connecting one client to several orgs, free-org limits, and paid seats.
+  Personal vs team orgs, invite links, who automation runs as, the org-wide
+  execute pool, connecting one client to several orgs, free-org limits, and paid
+  seats.
 category: platform
 audience: agents
 ---
@@ -27,11 +28,64 @@ catalog search (`search:read`) plus their grants. See
 | ------------------ | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Created            | At signup (slug = username)                          | `orgCreate` or Create organization                                                                                                                                           |
 | Members / teams    | No. Create a team org to invite people or group them | Yes                                                                                                                                                                          |
-| Package grants     | `accessGrant` / grant invites                        | Same, plus the Grants web page                                                                                                                                               |
+| Package grants     | `accessGrant` / grant invites / package invite links | Same, plus the Grants web page                                                                                                                                               |
 | Resource web pages | Secrets, jobs, packages, connections, and the rest   | Every resource page reads the org. Connections shows your agents approved for that org; Repositories shows the org's packages you can see plus every plain repo the org owns |
 
-Switch orgs in the header, or pick the org at MCP consent. One connection binds
-one org.
+Switch orgs from the workspace name at the top of the workspace rail (it keeps
+the section you are on), from the avatar menu's Manage group, or pick the org at
+MCP consent. One connection binds one org.
+
+## Invites
+
+An invite waits on the person it is for and shows on the page that sent it:
+
+- **Waiting on you.** Every pending invite you can answer is a card on your
+  Waiting page (`/@<org>/-/waiting`) and a row in the Invites panel on your
+  Organizations page (`/account/organizations`), each with **Accept** and
+  **Decline**. That covers invites addressed to your email or username and
+  invite links you opened. An invite sent to your email needs a verified email
+  before you can answer it on the web. Declining ends the invite (recorded as
+  `invite.declined`).
+- **Sent by you.** The page you sent it from lists it until it is answered or
+  lapses: **Members** shows invites addressed to people as Pending, with
+  **Revoke** on membership invites, plus active Members links; **Teams** lists
+  each team's links; a package's **Collaborators** tab lists its links. Every
+  link has **Revoke**.
+
+Agents use `inviteAccept` with the token and `inviteRevoke` for addressed
+invites.
+
+## Invite links
+
+An invite link lets someone in without knowing their email or username. You make
+one where you would otherwise add the person, and what it gives depends on where
+you made it:
+
+| Made on                           | Accepting it                                                                               | Who can make it                 |
+| --------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------- |
+| **Members** (team org)            | Joins the org as Member or Billing                                                         | `member:write`                  |
+| **Teams**, one team (team org)    | Joins that team, and the org as Member if they are not in it yet                           | `team:write` and `member:write` |
+| A package's **Collaborators** tab | Grants the chosen preset on that package; non-members stay outside collaborators (any org) | Manage on the package           |
+
+Opening a link signs the person in or lets them create an account, then shows an
+accept page with what the link gives and who sent it. Nothing happens until they
+choose **Accept**; they can also **Decline**. A signed-in person who opened a
+link sees it on their Waiting page and in the Invites panel on their
+Organizations page until they accept or decline it, or it stops working.
+
+Links last 7 days by default (up to 365) and can be limited by number of uses;
+Members links can also require a verified email domain. Kody stores only a hash,
+so the link is shown once. Each page lists its active links with uses and
+expiry, and **Revoke** ends one right away. A link also stops working when its
+org is no longer active, when the team or package it points at is deleted, or
+when the person who made it loses access. Someone removed from the org can
+rejoin with the same membership link while it is live. Team and package links
+are spent per person, so removing someone is not undone by the link they already
+used.
+
+Creating, revoking, and accepting are recorded in the org audit log as
+`invite_link.created`, `invite_link.revoked`, and `invite_link.joined`, with the
+link's kind, team or package, and preset in the details.
 
 ## Automation runs as the person who turned it on
 
@@ -67,9 +121,10 @@ you run. A triggered run that tries one fails with
 `Capability "<name>" needs a live person`, naming the capability it tried.
 Everything else runs unattended with the enabler's live permissions.
 
-Site-admin tools run unattended too, but only for a site admin: a job, webhook,
-subscription, or inbound email handler in a site admin's personal org may call
-them, and every such call is audited with its trigger type and id.
+Site-admin tools run unattended too when the person the run acts for is a site
+admin: a job, webhook, subscription, inbound email handler, or `jobRunNow` in
+that person's personal org or any team org they enabled (or clicked run-now in)
+may call them, and every such call is audited with its trigger type and id.
 
 Publishing a package never turns anything on, and nobody can enable a trigger
 for someone else. `enablementList` shows your enablements (an Owner can list the

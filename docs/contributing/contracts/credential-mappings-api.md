@@ -2,8 +2,8 @@
 
 Contract between the non-UI half (data model, APIs, runtime errors) and the UI
 half (creation one-pager, credentials list, package Credentials / Default
-mappings / Triggers tabs, approval page) of the credentials UX build. It builds
-on [ADR 0068](../decisions/0068-credentials-own-placement-scoped-clients.md),
+mappings / Triggers tabs, approval page). It builds on
+[ADR 0068](../decisions/0068-credentials-own-placement-scoped-clients.md),
 including the 2026-10-12 amendments and the
 [credential mappings amendment](../decisions/0068-credentials-own-placement-scoped-clients.md#amendment-2026-10-13-credential-mappings).
 
@@ -54,8 +54,12 @@ wins:
 Unusable refs:
 
 - In a trigger mapping, a ref the enabler has lost Use on (deleted, Use revoked,
-  personal grant removed) is a `credential_not_found` error for that run. It
-  never falls through to another credential.
+  personal grant removed), or that no longer fits the need's kind or provider,
+  pauses the enablement before the run (`credential_access` on the Waiting list)
+  instead of failing mid-run with `credential_not_found`. It never falls through
+  to another credential. The next event resumes once every named credential is
+  usable again (see
+  [Paused on a trigger mapping](#paused-on-a-trigger-mapping)).
 - In a default mapping, refs the actor cannot Use are skipped; a layer with no
   usable ref counts as absent and resolution continues with the next step. This
   keeps an org default to a shared bot credential from breaking members who lack
@@ -91,7 +95,10 @@ export type CredentialPick =
 export type CredentialMappingLayer = 'org' | 'mine'
 
 export type CredentialTriggerKind = 'cron' | 'subscription' | 'webhook'
-export type CredentialTriggerRef = { kind: CredentialTriggerKind; name: string }
+export type CredentialTriggerRef = {
+	kind: CredentialTriggerKind
+	name: string
+}
 
 export type StoredCredentialMapping = {
 	/** `[]` is "none on purpose". */
@@ -136,12 +143,14 @@ export type CredentialMappingChange = {
 ## Credential creation link
 
 ```
-GET /connect/credential?kind=<kind>&kindMode=hint|required&...
+GET /@<org>/-/credentials/new?kind=<kind>&kindMode=hint|required&...
 ```
 
-Agents hand people this link the way they hand out `/connect/secret-set` and
-`/connect/oauth` today. Runtime errors build it (see
-[Runtime errors](#runtime-errors)).
+Agents hand people this org-scoped link (organization in the URL segment; no org
+picker on the page). Runtime errors build it when the run's org is known (see
+[Runtime errors](#runtime-errors)). Legacy entry points `/connect/credential`
+and `/connect/secret-set` still redirect here (signup org when the link has no
+org context).
 
 | Param                | Meaning                                                                                                                                                                                                                                              |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -159,7 +168,8 @@ The page saves `secret`, `url`, `login`, and `signing` in place through the
 website save (`POST /account/secrets.json`, `action: "save"`), which accepts
 `kind`, `hosts`, and `loginExchange` and validates them exactly as `secretSet`
 does. The person types the value, so no agent ever holds it. `oauth` hands off
-to `/connect/oauth` with the same query, and `mcp` to
+to `/connect/oauth` with the same query plus `org=<org>` (the OAuth redirect URI
+stays org-less; `org` binds account writes to the creation org), and `mcp` to
 `/@<org>/-/mcp-servers/new`.
 
 Codecs: `buildCredentialCreateHref(input)` and
@@ -665,7 +675,8 @@ export type CredentialClientErrorBody = {
   prefilled and no kind.
 - A missing `{{secret:NAME}}` placeholder in a run keeps its `secret_required`
   details; its `nextStep` points at the creation link
-  (`/connect/credential?kind=secret&kindMode=required&name=NAME`).
+  (`/@<org>/-/credentials/new?kind=secret&kindMode=required&name=NAME` when the
+  run org is known; otherwise the legacy `/connect/credential?...` redirect).
 
 ## Redirects
 
@@ -706,21 +717,6 @@ Where they are wired:
   preserved. Org-less pages (`/connect/secrets`, `/connect/secret-set`) link
   back to it with `data-rmx-document`, because the client router would otherwise
   intercept the org-less path.
-- URLs the table returns null for keep the legacy page: approval links (`names`,
-  `hosts`, `package_id`, `capability`) and `package=` filters on the index
-  pages. The legacy pages and their add forms stay in place until the
-  Credentials pages are proven, and then they can be deleted.
-
-## Build order
-
-Each step is a small PR stacked on the previous one:
-
-1. This contract and the ADR amendment.
-2. `universal/credential-contracts.ts`: types and URL codecs, with tests.
-3. Runtime errors carry `createUrl`; `/connect/credential` redirects to the
-   creation one-pager.
-4. Credentials list API and `credentialList` (MCP servers included).
-5. Mapping storage (additive migration) and resolution in `credential()`.
-6. Package credentials API.
-7. Proposal capability and approval API.
-8. Redirect table.
+- URLs the table returns null for stay on the dedicated page: approval links
+  (`names`, `hosts`, `package_id`, `capability`) and `package=` filters on the
+  index pages. `/connect/secret-set` remains the Key intake.

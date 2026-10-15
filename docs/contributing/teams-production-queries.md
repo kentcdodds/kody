@@ -89,8 +89,9 @@ mismatch.
 
 `credential.resolve` audit rows carry the credential id as their resource id and
 are matched to grants by it. Rows written before stable ids carry a name instead
-and never match a grant. Saved packages keep implicit self-authored credential
-access for now; the credentials redesign series removes it.
+and never match a grant. A package in the actor's personal org that is not an
+unadopted Community fork and is not internet-visible does not require declared
+needs.
 
 ## Read-only guarantees
 

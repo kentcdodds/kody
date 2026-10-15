@@ -1,0 +1,32 @@
+{
+	"$schema": "../../node_modules/nx/schemas/project-schema.json",
+	"name": "push-queue-worker",
+	"projectType": "application",
+	"sourceRoot": "packages/push-queue-worker/src",
+	"targets": {
+		"build": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "npm run push-queue:build"
+			}
+		},
+		"deploy": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "npm run push-queue:deploy"
+			}
+		},
+		"typecheck": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "tsc --noEmit -p packages/push-queue-worker/tsconfig.json"
+			}
+		},
+		"test": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "vitest run --project node-unit packages/push-queue-worker"
+			}
+		}
+	}
+}

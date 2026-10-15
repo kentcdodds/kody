@@ -16,6 +16,7 @@ import { offboardOrgMember } from './offboarding.ts'
 import {
 	addOrgMember,
 	createOrg,
+	OrgSlugValidationError,
 	updateOrgMemberRole,
 	upsertGrant,
 } from './access-writes.ts'
@@ -328,6 +329,57 @@ test('an audit write failure is reported without undoing the access change', asy
 		.bind(org.id, memberId)
 		.first<{ role: string }>()
 	expect(membership?.role).toBe('member')
+})
+
+test('createOrg rejects reserved and claimed handles via the shared claim helper', async () => {
+	const db = await createDb()
+	const creatorId = testStableUserIdFromEmail('claimer@example.com')
+	await expect(
+		createOrg({
+			db,
+			env: {} as Env,
+			slug: 'admin',
+			createdByUserId: creatorId,
+			audit: createTestOrgAuditWriter(),
+		}),
+	).rejects.toBeInstanceOf(OrgSlugValidationError)
+	await expect(
+		createOrg({
+			db,
+			env: {} as Env,
+			slug: 'admin',
+			createdByUserId: creatorId,
+			audit: createTestOrgAuditWriter(),
+		}),
+	).rejects.toThrow('This username is reserved.')
+	for (const slug of ['me', 'ME']) {
+		await expect(
+			createOrg({
+				db,
+				env: {} as Env,
+				slug,
+				createdByUserId: creatorId,
+				audit: createTestOrgAuditWriter(),
+			}),
+		).rejects.toThrow('This username is reserved.')
+	}
+
+	const taken = await createOrg({
+		db,
+		env: {} as Env,
+		slug: 'already-taken',
+		createdByUserId: creatorId,
+		audit: createTestOrgAuditWriter(),
+	})
+	await expect(
+		createOrg({
+			db,
+			env: {} as Env,
+			slug: taken.slug,
+			createdByUserId: testStableUserIdFromEmail('other@example.com'),
+			audit: createTestOrgAuditWriter(),
+		}),
+	).rejects.toThrow('That name is taken.')
 })
 
 test('createOrg refuses a third free org inside the insert and leaves no partial rows', async () => {

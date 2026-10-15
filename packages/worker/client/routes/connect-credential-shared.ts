@@ -105,8 +105,9 @@ const mcpPrefillParams = ['name', 'url'] as const
 
 /**
  * Where an OAuth or MCP link continues. OAuth keeps the whole query, which
- * `/connect/oauth` already reads (`provider` and its config params). MCP keeps
- * the `name` and `url` the add-server form prefills from.
+ * `/connect/oauth` already reads (`provider` and its config params), and adds
+ * `org` so the fixed redirect URI still binds the creation page's organization.
+ * MCP keeps the `name` and `url` the add-server form prefills from.
  */
 export function credentialCreateHandoffHref(input: {
 	kind: 'oauth' | 'mcp'
@@ -115,7 +116,9 @@ export function credentialCreateHandoffHref(input: {
 }) {
 	switch (input.kind) {
 		case 'oauth': {
-			const query = input.search.toString()
+			const params = new URLSearchParams(input.search)
+			params.set('org', input.orgSlug)
+			const query = params.toString()
 			const path = routes.connectOauth.href()
 			return query ? `${path}?${query}` : path
 		}
@@ -414,9 +417,10 @@ export function keyFormPackageId(
 
 /**
  * The `/account/secrets.json` save for the value form. Replacing a Key keeps
- * its hosts and package locks and adds the form's; the opt-in kinds take
- * exactly the form's hosts, because whoever types the value decides where it
- * may go. An empty expiry keeps the existing one.
+ * its hosts and adds the form's; package locks are exactly the form's checked
+ * set (replacement hydrates those checkboxes from the existing Key). The
+ * opt-in kinds take exactly the form's hosts, because whoever types the value
+ * decides where it may go. An empty expiry keeps the existing one.
  */
 export function buildKeySaveBody(input: {
 	kind: ValueFormKind
@@ -431,12 +435,9 @@ export function buildKeySaveBody(input: {
 	const scope = packageId ? 'package' : 'user'
 	const allowedPackages = packageId
 		? []
-		: [
-				...new Set([
-					...(replacing ? (input.existing?.lockedToPackageIds ?? []) : []),
-					...form.allowedPackages,
-				]),
-			].sort((left, right) => left.localeCompare(right))
+		: [...new Set(form.allowedPackages)].sort((left, right) =>
+				left.localeCompare(right),
+			)
 	const common = {
 		action: 'save',
 		currentId: replacing

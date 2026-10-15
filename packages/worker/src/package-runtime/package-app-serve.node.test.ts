@@ -340,7 +340,7 @@ test('hello-world serve emits Server-Timing phases and forwards the bag into bui
 			serverTiming?: Array<{ name: string; durationMs: number }>
 		}) => {
 			input.serverTiming?.push(
-				{ name: 'assertWithinComputeInclude', durationMs: 1 },
+				{ name: 'usageGate', durationMs: 1 },
 				{ name: 'appLoader', durationMs: 2 },
 			)
 			return {
@@ -396,7 +396,7 @@ test('hello-world serve emits Server-Timing phases and forwards the bag into bui
 	expect(phaseNames).toContain('owner')
 	expect(phaseNames).toContain('resolveSavedPackage')
 	expect(phaseNames).toContain('entrypoint')
-	expect(phaseNames).toContain('assertWithinComputeInclude')
+	expect(phaseNames).toContain('usageGate')
 })
 
 test('websocket upgrade responses skip Server-Timing and keep the paired socket', async () => {

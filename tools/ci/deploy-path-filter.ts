@@ -7,6 +7,8 @@ import { isExecutedDirectly } from '../node-runtime.ts'
  *   origin + platform; skip runtime/jobs/highlight
  * - Highlight worker or shared highlight types → highlight (plus origin when
  *   origin also imports those types)
+ * - Push queue worker → push-queue; shared receive-pack wait/queue protocol
+ *   modules → push-queue + origin (both import them)
  * - Jobs worker or shared jobs modules → jobs (plus origin when origin also
  *   imports those modules)
  * - Fleet-shared helpers (`d1-retry`, `chat` context types) → origin +
@@ -19,8 +21,8 @@ import { isExecutedDirectly } from '../node-runtime.ts'
  *   sources → origin + platform + runtime. Jobs/highlight only when their
  *   sources or shared deps change.
  *
- * Empty path lists still deploy all five (workflow_dispatch / safety).
- * `.github/workflows/deploy.yml` does **not** force jobs/highlight: a
+ * Empty path lists still deploy all six (workflow_dispatch / safety).
+ * `.github/workflows/deploy.yml` does **not** force jobs/highlight/push-queue: a
  * runtime-token or secret-wiring edit must not 10000 those siblings and
  * block origin.
  */
@@ -64,6 +66,12 @@ const highlightSharedPathPrefixes = [
 	'packages/worker/universal/highlighted-code',
 ] as const
 
+const pushQueueWorkerPathPrefix = 'packages/push-queue-worker/'
+const pushQueueSharedExactPaths = new Set([
+	'packages/shared/src/artifacts-receive-pack-wait.ts',
+	'packages/shared/src/repo-push-queue-protocol.ts',
+])
+
 const jobsWorkerPathPrefix = 'packages/jobs-worker/'
 const jobsWorkerResourcesPathPrefix = 'tools/ci/jobs-worker-resources'
 const jobsSharedPathPrefix = 'packages/shared/src/jobs/'
@@ -105,9 +113,16 @@ export type ProductionDeployTargets = {
 	deployRuntime: boolean
 	deployJobs: boolean
 	deployHighlight: boolean
+	deployPushQueue: boolean
 }
 
-type DeployScript = 'origin' | 'platform' | 'runtime' | 'jobs' | 'highlight'
+type DeployScript =
+	| 'origin'
+	| 'platform'
+	| 'runtime'
+	| 'jobs'
+	| 'highlight'
+	| 'push-queue'
 
 type PathClass =
 	| { kind: 'skip' }
@@ -120,6 +135,7 @@ const allWorkers = {
 	deployRuntime: true,
 	deployJobs: true,
 	deployHighlight: true,
+	deployPushQueue: true,
 } as const satisfies ProductionDeployTargets
 
 const noWorkers = {
@@ -128,6 +144,7 @@ const noWorkers = {
 	deployRuntime: false,
 	deployJobs: false,
 	deployHighlight: false,
+	deployPushQueue: false,
 } as const satisfies ProductionDeployTargets
 
 const unknownFallback = {
@@ -136,6 +153,7 @@ const unknownFallback = {
 	deployRuntime: true,
 	deployJobs: false,
 	deployHighlight: false,
+	deployPushQueue: false,
 } as const satisfies ProductionDeployTargets
 
 function startsWithAny(path: string, prefixes: ReadonlyArray<string>): boolean {
@@ -158,6 +176,14 @@ export function isHighlightWorkerPath(path: string) {
 
 export function isHighlightSharedPath(path: string) {
 	return startsWithAny(path, highlightSharedPathPrefixes)
+}
+
+export function isPushQueueWorkerPath(path: string) {
+	return path.startsWith(pushQueueWorkerPathPrefix)
+}
+
+export function isPushQueueSharedPath(path: string) {
+	return pushQueueSharedExactPaths.has(path)
 }
 
 export function isJobsWorkerPath(path: string) {
@@ -195,6 +221,9 @@ function classifyPath(path: string): PathClass {
 	if (isHighlightWorkerPath(path) || isHighlightSharedPath(path)) {
 		scripts.add('highlight')
 	}
+	if (isPushQueueWorkerPath(path) || isPushQueueSharedPath(path)) {
+		scripts.add('push-queue')
+	}
 	if (
 		isJobsWorkerPath(path) ||
 		isJobsSharedPath(path) ||
@@ -216,6 +245,7 @@ function classifyPath(path: string): PathClass {
 		isOriginOnlyPath(path) ||
 		isOriginAndPlatformPath(path) ||
 		isHighlightSharedPath(path) ||
+		isPushQueueSharedPath(path) ||
 		isJobsSharedPath(path) ||
 		isFleetSharedPath(path)
 	) {
@@ -235,6 +265,7 @@ function targetsFromScripts(
 		deployRuntime: scripts.has('runtime'),
 		deployJobs: scripts.has('jobs'),
 		deployHighlight: scripts.has('highlight'),
+		deployPushQueue: scripts.has('push-queue'),
 	}
 }
 
@@ -276,6 +307,7 @@ export function classifyProductionDeployPaths(
 			...unknownFallback,
 			deployJobs: scripts.has('jobs'),
 			deployHighlight: scripts.has('highlight'),
+			deployPushQueue: scripts.has('push-queue'),
 		}
 	}
 	return targetsFromScripts(scripts)
@@ -288,6 +320,7 @@ export function formatGitHubDeployOutputs(targets: ProductionDeployTargets) {
 		`deploy_runtime=${targets.deployRuntime}`,
 		`deploy_jobs=${targets.deployJobs}`,
 		`deploy_highlight=${targets.deployHighlight}`,
+		`deploy_push_queue=${targets.deployPushQueue}`,
 	].join('\n')
 }
 

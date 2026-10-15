@@ -284,6 +284,42 @@ test('operator-owned tables are explicit deletion/export exclusions', () => {
 	)
 })
 
+test('deleting a member anonymizes follow attribution and org purge still deletes owned follows', () => {
+	const creator = accountUserDataTargets.find(
+		(target) =>
+			target.kind === 'replace_user_column' &&
+			target.table === 'follows' &&
+			target.matchColumn === 'creator_user_id',
+	)
+	expect(creator).toMatchObject({
+		setColumn: 'creator_user_id',
+		value: 'deleted-user',
+	})
+	if (!creator) return
+	expect(buildUserScopedDeleteOrUpdateSql(matchFor(creator))).toEqual({
+		sql: `UPDATE follows
+						SET creator_user_id = ?
+						WHERE creator_user_id = ?`,
+		params: ['deleted-user', 'user-aaa'],
+	})
+	expect(isExcludedFromAccountExport(creator)).toBe(false)
+
+	const owned = accountUserDataTargets.find(
+		(target) =>
+			target.kind === 'user_columns' &&
+			target.table === 'follows' &&
+			target.columns.includes('follower_org_id'),
+	)
+	expect(owned).toMatchObject({
+		columns: ['follower_org_id'],
+		includeInExport: false,
+	})
+	if (!owned) return
+	expect(buildUserScopedDeleteOrUpdateSql(matchFor(owned)).sql).toBe(
+		'DELETE FROM follows WHERE follower_org_id = ?',
+	)
+})
+
 test('account deletion statements never bind a LIKE or GLOB pattern (D1 caps patterns at 50 bytes)', () => {
 	// A stable user id is 64 hex chars; wrapped in quotes and wildcards it is
 	// 68 bytes, which D1 rejects with "LIKE or GLOB pattern too complex". The

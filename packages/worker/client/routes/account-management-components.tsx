@@ -27,7 +27,7 @@ import {
 	pageGutter,
 } from '#universal/styles/style-primitives.ts'
 import { readAppSession } from '#client/app-session-context.tsx'
-import { type SessionInfo } from '#client/session.ts'
+import { getSessionDisplayName, type SessionInfo } from '#client/session.ts'
 import { renderRoutePendingStatus } from '#client/route-data.tsx'
 import { type IconName } from '#universal/icon.tsx'
 import { EntityExplainer, resolveEntityExplainer } from './entity-explainer.tsx'
@@ -258,6 +258,8 @@ export function AccountManagementShell(
 }
 
 type AccountManagementHeaderProps = {
+	/** Context above the H1, such as the package a decision is about. */
+	eyebrow?: AccountManagementSlot
 	title: string
 	description: string
 	actions?: AccountManagementSlot
@@ -279,6 +281,7 @@ export function AccountManagementHeader(
 			})}
 		>
 			<div mix={css({ display: 'grid', gap: '0.6rem', minWidth: 0 })}>
+				{handle.props.eyebrow ?? null}
 				<div
 					mix={css({
 						display: 'flex',
@@ -420,12 +423,8 @@ function pageRail(input: { session: SessionInfo | null; currentPath: string }) {
 		return {
 			label: 'Account sections',
 			heading: { eyebrow: 'Account' },
-			groups: accountRailGroups({
-				organizations: organizationsWithSignupFallback({
-					organizations,
-					username: input.session?.username ?? '',
-				}),
-			}),
+			workspaceSwitcher: undefined,
+			groups: accountRailGroups(),
 		}
 	}
 	const orgSlug = accountRailOrgSlug({
@@ -450,12 +449,28 @@ function pageRail(input: { session: SessionInfo | null; currentPath: string }) {
 				: orgSlug !== null
 					? ('member' as const)
 					: null
+	const session = input.session
 	return {
 		label: 'Workspace sections',
 		heading: {
 			eyebrow: 'Workspace',
 			name: orgSlug ? `@${orgSlug}` : undefined,
 		},
+		workspaceSwitcher:
+			session && orgSlug
+				? {
+						currentSlug: orgSlug,
+						organizations: organizationsWithSignupFallback({
+							organizations,
+							username: session.username,
+						}),
+						inviteCount: session.inviteCount ?? 0,
+						username: session.username,
+						displayName: getSessionDisplayName(session),
+						avatarUrl: session.avatarUrl,
+						currentPathname: input.currentPath,
+					}
+				: undefined,
 		groups: workspaceRailGroups({
 			orgSlug,
 			personal,
@@ -488,6 +503,7 @@ export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 					<AccountManagementLinkNav
 						label={rail.label}
 						heading={rail.heading}
+						workspaceSwitcher={rail.workspaceSwitcher}
 						groups={railLinkGroups(rail.groups, currentPath)}
 					/>
 				) : null}
@@ -627,6 +643,8 @@ export function AccountManagementPanel(
 
 type MetadataGridProps = {
 	items: Array<{
+		/** Defaults to `label`; pass one when two rows can share a label. */
+		key?: string
 		label: string
 		value: AccountManagementSlot
 	}>
@@ -651,7 +669,7 @@ export function MetadataGrid(handle: Handle<MetadataGridProps>) {
 			})}
 		>
 			{handle.props.items.map((item) => (
-				<div key={item.label} mix={css({ minWidth: 0 })}>
+				<div key={item.key ?? item.label} mix={css({ minWidth: 0 })}>
 					<dt mix={css(accountFieldLabelCss)}>{item.label}</dt>
 					<dd
 						mix={css({

@@ -1,11 +1,9 @@
-import {
-	personalOrgId,
-	type OwnerId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { z } from 'zod'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 
 export const packageRealtimeSessionRecordSchema = z.object({
@@ -74,8 +72,11 @@ export async function requirePackageRealtimeContext(input: {
 		input.callerContext,
 		input.explicitPackageId,
 	)
+	// saved_packages.user_id and realtime DO names are org-keyed (ADR 0060/0063).
+	const ownerOrgId =
+		input.callerContext.request?.org.id ?? personalOrgIdForPerson(user)
 	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
-		userId: personalOrgId(user.userId),
+		userId: ownerOrgId,
 		packageId,
 	})
 	if (!savedPackage || !savedPackage.hasApp) {
@@ -88,7 +89,7 @@ export async function requirePackageRealtimeContext(input: {
 		savedPackage,
 		realtime: await createPackageRealtimeClient({
 			env: input.env,
-			userId: personalOrgId(user.userId),
+			userId: ownerOrgId,
 			packageId: savedPackage.id,
 			kodyId: savedPackage.kodyId,
 			sourceId: savedPackage.sourceId,

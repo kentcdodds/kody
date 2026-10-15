@@ -110,6 +110,18 @@ primitives:
     docs:
       - docs/contributing/architecture/request-lifecycle.md
 
+  - id: push-queue-worker
+    group: surfaces
+    name: Push queue worker
+    summary:
+      Service-binding-only worker owning RepoPushQueueV1, the per-repo Durable
+      Object that lands receive-pack packs in storage and sends them to
+      Artifacts one at a time in FIFO order for repo-push-queue flagged repos.
+    code:
+      - packages/push-queue-worker/
+    docs:
+      - docs/contributing/decisions/0075-repo-push-queue-worker.md
+
   - id: open-api
     group: surfaces
     name: Open API (api.kody.codes)
@@ -701,17 +713,38 @@ primitives:
     name: Community listing published dispatch queue
     summary:
       Durable event delivery from first community listing publish to admin
-      packages, and from pin-moving republishes to forkers' packages.
+      packages. Pin-moving republish fan-out to forkers now runs through the
+      follows pipeline alias (community.fork.upstream_updated).
     code:
       - packages/worker/src/community/listing-published-dispatch-queue
       - packages/worker/src/community/listing-published-package-subscriptions
       - packages/worker/src/community/listing-published-subscription-event
-      - packages/worker/src/community/fork-upstream-updated-package-subscriptions
-      - packages/worker/src/community/fork-upstream-updated-subscription-event
     docs:
       - docs/contributing/setup-manifest.md
       - docs/contributing/architecture/authorization.md
       - docs/guides/package-subscriptions.md
+
+  - id: follows
+    group: assistant
+    name: Follow any repo
+    summary:
+      Org-owned follow records for packages and plain repos, follow.published /
+      follow.pushed delivery, push coalescing, and the
+      community.fork.upstream_updated compatibility alias.
+    code:
+      - packages/worker/src/follow/
+      - packages/worker/src/mcp/capabilities/follow/
+      - packages/worker/src/app/follows-web.ts
+      - packages/worker/src/app/handlers/org-follows.ts
+      - packages/worker/universal/follows.ts
+      - packages/worker/client/routes/org-follows.tsx
+      - packages/worker/client/routes/package-follow-controller.tsx
+      - packages/worker/src/community/fork-upstream-updated-package-subscriptions
+      - packages/worker/src/community/fork-upstream-updated-subscription-event
+    docs:
+      - docs/guides/package-subscriptions.md
+      - docs/contributing/contracts/follow-cli.md
+      - docs/contributing/architecture/authorization.md
 
   - id: package-events-dispatch-queue
     group: storage

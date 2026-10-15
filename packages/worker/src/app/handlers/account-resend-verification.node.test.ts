@@ -80,11 +80,20 @@ function createResendTestDb(
 				if (isOrgBindingMembershipQuery(normalized)) {
 					return mockPersonalOrgBindingRow(user.stable_user_id, user.username)
 				}
-				if (normalized.includes('select deleting_at from users')) {
+				if (
+					normalized.includes('select deleting_at from users') ||
+					normalized.includes(
+						'select deleting_at, stable_user_id, personal_org_id',
+					)
+				) {
 					if (options.fenceAfterWritableCheck) {
 						state.fenceAfterWritableCheck = true
 					}
-					return { deleting_at: options.deletingAt ?? null }
+					return {
+						deleting_at: options.deletingAt ?? null,
+						stable_user_id: user.stable_user_id,
+						personal_org_id: user.stable_user_id,
+					}
 				}
 				if (normalized.includes('email_verification_delivery_status')) {
 					return {

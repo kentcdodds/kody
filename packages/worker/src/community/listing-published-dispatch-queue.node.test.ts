@@ -4,16 +4,11 @@ import { CommunityListingPublishedDispatchCancelledError } from './errors.ts'
 
 const mocks = vi.hoisted(() => ({
 	dispatchCommunityListingPublishedSubscriptionEvent: vi.fn(),
-	dispatchCommunityForkUpstreamUpdatedSubscriptionEvents: vi.fn(),
 }))
 
 vi.mock('./listing-published-package-subscriptions.ts', () => ({
 	dispatchCommunityListingPublishedSubscriptionEvent:
 		mocks.dispatchCommunityListingPublishedSubscriptionEvent,
-}))
-vi.mock('./fork-upstream-updated-package-subscriptions.ts', () => ({
-	dispatchCommunityForkUpstreamUpdatedSubscriptionEvents:
-		mocks.dispatchCommunityForkUpstreamUpdatedSubscriptionEvents,
 }))
 
 const { handleCommunityListingPublishedDispatchQueue } =
@@ -99,8 +94,7 @@ test('community listing published queue acks valid, invalid, and cancelled messa
 	)
 })
 
-test('fork upstream-updated messages route to forker fan-out; malformed ones ack without dispatch', async () => {
-	consoleError.mockImplementation(() => {})
+test('fork upstream-updated queue messages ack without the retired fork-only fan-out', async () => {
 	const release = {
 		previous: { pinnedCommit: 'commit-1', packageVersion: null },
 		current: { pinnedCommit: 'commit-2', packageVersion: '2.0.0' },
@@ -127,29 +121,9 @@ test('fork upstream-updated messages route to forker fan-out; malformed ones ack
 		current: { pinnedCommit: 'commit-2', packageVersion: 2 },
 		publishedAt: '2026-09-30T12:00:00.000Z',
 	})
-	const cancelled = createQueueMessage('fork-cancelled', {
-		kind: 'fork_upstream_updated',
-		eventId: 'event-4',
-		listingId: 'listing-gone',
-		...release,
-		publishedAt: '2026-09-30T12:00:00.000Z',
-	})
-	const transient = createQueueMessage('fork-transient', {
-		kind: 'fork_upstream_updated',
-		eventId: 'event-5',
-		listingId: 'listing-1',
-		...release,
-		publishedAt: '2026-09-30T12:00:00.000Z',
-	})
-	mocks.dispatchCommunityForkUpstreamUpdatedSubscriptionEvents
-		.mockResolvedValueOnce([])
-		.mockRejectedValueOnce(
-			new CommunityListingPublishedDispatchCancelledError('listing-gone'),
-		)
-		.mockRejectedValueOnce(new Error('discovery failed'))
 
 	await handleCommunityListingPublishedDispatchQueue(
-		createBatch([valid, missingCurrent, badVersion, cancelled, transient]),
+		createBatch([valid, missingCurrent, badVersion]),
 		{ APP_DB: {} } as Env,
 		{} as ExecutionContext,
 	)
@@ -157,31 +131,10 @@ test('fork upstream-updated messages route to forker fan-out; malformed ones ack
 	expect(
 		mocks.dispatchCommunityListingPublishedSubscriptionEvent,
 	).not.toHaveBeenCalled()
-	expect(
-		mocks.dispatchCommunityForkUpstreamUpdatedSubscriptionEvents,
-	).toHaveBeenCalledTimes(3)
-	expect(
-		mocks.dispatchCommunityForkUpstreamUpdatedSubscriptionEvents,
-	).toHaveBeenNthCalledWith(1, {
-		env: expect.anything(),
-		message: {
-			eventId: 'event-1',
-			listingId: 'listing-1',
-			...release,
-			publishedAt: '2026-09-30T12:00:00.000Z',
-		},
-	})
-	for (const message of [valid, missingCurrent, badVersion, cancelled]) {
+	expect(valid.ack).toHaveBeenCalledTimes(1)
+	expect(valid.retry).not.toHaveBeenCalled()
+	for (const message of [missingCurrent, badVersion]) {
 		expect(message.ack).toHaveBeenCalledTimes(1)
 		expect(message.retry).not.toHaveBeenCalled()
 	}
-	expect(transient.retry).toHaveBeenCalledWith({ delaySeconds: 30 })
-	expect(consoleError).toHaveBeenCalledWith(
-		'community-listing-published-dispatch-queue-processing-failed',
-		expect.objectContaining({
-			queueMessageId: 'fork-transient',
-			kind: 'fork_upstream_updated',
-			eventId: 'event-5',
-		}),
-	)
 })

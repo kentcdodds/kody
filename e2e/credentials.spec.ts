@@ -44,6 +44,9 @@ test('Credentials lists a key, filters by kind, and opens its detail pane withou
 			.locator('xpath=..')
 			.getByRole('link', { name: 'Secret providers' }),
 	).toHaveAttribute('href', `/@${user.username}/-/secret-providers`)
+	await expect(
+		page.getByRole('link', { name: 'How credentials work' }),
+	).toHaveAttribute('href', '/docs/credentials')
 
 	await page
 		.getByRole('combobox', { name: 'Filter credentials by kind' })
@@ -97,6 +100,96 @@ test('Credentials lists a key, filters by kind, and opens its detail pane withou
 			.getByTestId('credentials-error')
 			.getByRole('button', { name: 'Copy prompt for your agent' }),
 	).toBeVisible()
+})
+
+test('a Key detail pane edits its allowed hosts, HTTPS host names only', async ({
+	page,
+	seedE2eUser,
+	login,
+}) => {
+	test.setTimeout(process.env.CI ? 90_000 : 60_000)
+	const runId = Date.now()
+	const user = await seedE2eUser({
+		email: `credential-hosts-${runId}@example.com`,
+		username: `credential-hosts-${runId}`,
+		password: 'credential-hosts-password',
+	})
+	await login({ email: user.email, password: user.password, mode: 'login' })
+	const value = `sk-hosts-never-shown-${runId}`
+	const saved = await page.request.post('/account/secrets.json', {
+		data: {
+			action: 'save',
+			name: 'HOSTS_KEY',
+			scope: 'user',
+			value,
+			description: '',
+			allowedHosts: ['api.example.com'],
+			allowedPackages: [],
+		},
+		headers: { 'Content-Type': 'application/json' },
+	})
+	expect(saved.ok()).toBe(true)
+
+	await page.setViewportSize({ width: 1440, height: 900 })
+	await page.goto(`/@${user.username}/-/credentials`)
+	await waitForClientHydration(page)
+	await page
+		.getByRole('region', { name: 'Credentials', exact: true })
+		.getByRole('link', { name: /HOSTS_KEY/ })
+		.click()
+	const pane = page.getByRole('region', { name: 'HOSTS_KEY details' })
+	await pane.getByTestId('credential-hosts-edit').click()
+	const editor = pane.getByTestId('credential-hosts-editor')
+	const input = editor.getByRole('textbox', { name: 'Host to allow' })
+
+	await input.fill('http://plain.example.com')
+	await editor.getByRole('button', { name: 'Add host' }).click()
+	await expect(editor.getByRole('alert')).toHaveText(
+		'Kody sends credentials only over HTTPS. Enter the host without http://.',
+	)
+
+	await input.fill('https://Uploads.Example.com/')
+	await editor.getByRole('button', { name: 'Add host' }).click()
+	await expect(input).toHaveValue('')
+	await expect(editor.getByText('uploads.example.com')).toBeVisible()
+
+	// The server is the authority on what a host name is.
+	await input.fill('*.example.com')
+	await editor.getByTestId('credential-hosts-save').click()
+	await expect(editor.getByRole('alert')).toContainText(
+		'wildcards are not supported',
+	)
+	await input.fill('')
+
+	await editor.getByRole('button', { name: 'Remove api.example.com' }).click()
+	await editor.getByTestId('credential-hosts-save').click()
+	await expect(
+		pane.getByRole('status').filter({ hasText: 'Hosts saved.' }),
+	).toBeVisible()
+	await expect(pane.getByText('uploads.example.com')).toBeVisible()
+	await expect(pane.getByText('api.example.com')).toHaveCount(0)
+	await expect(page.getByText(value)).toHaveCount(0)
+
+	// Reopening right after a save starts from what was saved.
+	await pane.getByTestId('credential-hosts-edit').click()
+	await expect(
+		editor.getByRole('button', { name: 'Remove uploads.example.com' }),
+	).toBeVisible()
+	await expect(
+		editor.getByRole('button', { name: 'Remove api.example.com' }),
+	).toHaveCount(0)
+	await editor.getByRole('button', { name: 'Cancel' }).click()
+
+	const listed = await page.request.get('/account/credentials.json', {
+		headers: { Referer: page.url() },
+	})
+	const payload = (await listed.json()) as {
+		credentials: Array<{ name: string; hosts: Array<string> }>
+	}
+	expect(
+		payload.credentials.find((credential) => credential.name === 'HOSTS_KEY')
+			?.hosts,
+	).toEqual(['uploads.example.com'])
 })
 
 test('the creation link saves Key, URL, and login credentials from their prefill', async ({
@@ -160,7 +253,7 @@ test('the creation link saves Key, URL, and login credentials from their prefill
 	)
 	await expect(page.getByTestId('connect-credential-continue')).toHaveAttribute(
 		'href',
-		'/connect/oauth?kind=oauth&provider=github',
+		`/connect/oauth?kind=oauth&provider=github&org=${user.username}`,
 	)
 
 	// A URL credential takes its hosts; a value off those hosts is refused

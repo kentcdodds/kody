@@ -1466,7 +1466,8 @@ async function runCommand(options: ControlKodyOptions) {
 			}
 			if (options.json) printJson(output)
 			else {
-				console.log(`${output.detail} ${output.path}`)
+				console.log(output.detail)
+				console.log(output.path)
 				if (options.showHeaders) {
 					console.log(`ttfb_ms ${String(result.ttfbMs)}`)
 					for (const name of Object.keys(result.headers).sort()) {
@@ -1514,7 +1515,7 @@ async function runCommand(options: ControlKodyOptions) {
 			const origin = await resolveOrigin(options)
 			const playwright = inspectPlaywrightBrowsers({
 				homeDir: homedir(),
-				browsersJsonPath: defaultPlaywrightBrowsersJsonPath(process.cwd()),
+				browsersJsonPath: defaultPlaywrightBrowsersJsonPath(repoRootFromHere()),
 			})
 			if (!playwright.ok) {
 				throw new ControlKodyError(playwright.detail)

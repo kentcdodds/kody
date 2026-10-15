@@ -44,8 +44,15 @@ test('connect chooser lists reconnectable connections and hides unused built-ins
 	).toBe(
 		'/connect/oauth?provider=github-platform-2&app=github-platform&platform=github-platform',
 	)
+	expect(buildConnectOauthHref({ name: 'github', orgSlug: 'acme' })).toBe(
+		'/connect/oauth?provider=github&org=acme',
+	)
+	expect(buildPlatformConnectOauthHref('notion', 'acme')).toBe(
+		'/connect/oauth?provider=notion&platform=notion&org=acme',
+	)
 
 	const options = buildConnectOauthChooserOptions({
+		orgSlug: 'acme',
 		connections: [
 			{
 				name: 'google-work',
@@ -89,13 +96,13 @@ test('connect chooser lists reconnectable connections and hides unused built-ins
 		'connection:github',
 	])
 	expect(options[0]).toMatchObject({
-		href: '/connect/oauth?provider=google-work&app=google',
+		href: '/connect/oauth?provider=google-work&app=google&org=acme',
 		kind: 'connection',
 		detail: 'Reconnect your OAuth app',
 		catalogLogoPath: '/integrations/provider-marks/google',
 	})
 	expect(options[1]).toMatchObject({
-		href: '/connect/oauth?provider=github',
+		href: '/connect/oauth?provider=github&org=acme',
 		kind: 'connection',
 		detail: 'Set up your own OAuth app to reconnect',
 	})

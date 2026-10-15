@@ -15,6 +15,7 @@ import {
 	readJson,
 } from '#client/routes/account-approval-shared.ts'
 import { AccountManagementShell } from '#client/routes/account-management-components.tsx'
+import { readAccountSecretsSaveWarning } from '#client/routes/account-secrets-shared.ts'
 import {
 	buildKeySaveBody,
 	createKeyFormState,
@@ -74,7 +75,10 @@ import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 
 const accountCredentialsApiPath = routes.accountCredentialsApi.href()
 
-const primaryButtonCss = getPrimaryButtonCss({ size: 'lg', weight: 'semibold' })
+const primaryButtonCss = getPrimaryButtonCss({
+	size: 'lg',
+	weight: 'semibold',
+})
 const secondaryButtonCss = getSecondaryButtonCss({
 	size: 'lg',
 	weight: 'semibold',
@@ -165,7 +169,10 @@ export function ConnectCredentialRoute(handle: Handle) {
 	let saving = false
 	let savedName: string | null = null
 	let savedPackageId: string | null = null
+	let savedWarning: string | null = null
 	let message: string | null = null
+	/** Seed existing package locks once per credential when Replace is checked. */
+	let seededReplaceLocksForId: string | null = null
 
 	function resetFor(href: string) {
 		const query = parseCredentialCreateQuery(
@@ -174,8 +181,10 @@ export function ConnectCredentialRoute(handle: Handle) {
 		form = createKeyFormState(query)
 		formForHref = credentialCreateFormKey(href)
 		savedName = null
+		savedWarning = null
 		message = null
 		showValue = false
+		seededReplaceLocksForId = null
 	}
 
 	async function refreshCredentials() {
@@ -238,12 +247,18 @@ export function ConnectCredentialRoute(handle: Handle) {
 				)
 				return
 			}
-			const payload = await readJson<{ ok?: boolean; error?: string }>(response)
+			const payload = await readJson<{
+				ok?: boolean
+				error?: string
+				providerLinkError?: string | null
+				renameCleanupError?: string | null
+			}>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to save this credential.')
 			}
 			savedName = current.name.trim()
 			savedPackageId = keyFormPackageId(current, kind)
+			savedWarning = readAccountSecretsSaveWarning(payload)
 			form = { ...current, value: '', loginFields: {} }
 			await refreshCredentials()
 		} catch (error) {
@@ -287,6 +302,15 @@ export function ConnectCredentialRoute(handle: Handle) {
 					: null
 			return (
 				<section mix={css(cardCss)} data-testid="connect-credential-saved">
+					{savedWarning ? (
+						<p
+							mix={css({ margin: 0, color: colors.warningText })}
+							data-testid="connect-credential-save-warning"
+							role="status"
+						>
+							{savedWarning}
+						</p>
+					) : null}
 					<p mix={css({ margin: 0 })}>
 						<strong>{savedName}</strong> is saved. Return to your agent and
 						continue.
@@ -339,12 +363,13 @@ export function ConnectCredentialRoute(handle: Handle) {
 							placeholder="OPENAI_API_KEY"
 							mix={[
 								css(inputCss),
-								on('input', (event) =>
+								on('input', (event) => {
+									seededReplaceLocksForId = null
 									update({
 										name: event.currentTarget.value,
 										replaceExisting: false,
-									}),
-								),
+									})
+								}),
 							]}
 						/>
 						<span mix={css(mutedCss)}>
@@ -379,12 +404,25 @@ export function ConnectCredentialRoute(handle: Handle) {
 								data-testid="connect-credential-replace"
 								mix={on('change', (event) => {
 									const replaceExisting = event.currentTarget.checked
+									const seedLocks =
+										replaceExisting && seededReplaceLocksForId !== existing.id
+									if (seedLocks) seededReplaceLocksForId = existing.id
 									update({
 										replaceExisting,
 										provider:
 											replaceExisting && !state.provider.trim()
 												? (existing.provider ?? '')
 												: state.provider,
+										// Seed existing locks once per credential; later
+										// Replace toggles keep the user's edited set.
+										allowedPackages: seedLocks
+											? [
+													...new Set([
+														...(existing.lockedToPackageIds ?? []),
+														...state.allowedPackages,
+													]),
+												]
+											: state.allowedPackages,
 									})
 								})}
 							/>
@@ -392,13 +430,14 @@ export function ConnectCredentialRoute(handle: Handle) {
 								{isKey ? (
 									<>
 										A credential named <code>{existing.name}</code> already
-										exists. Replace it (its hosts and package locks stay).
+										exists. Replace it (its hosts stay; edit package locks
+										below).
 									</>
 								) : (
 									<>
 										A credential named <code>{existing.name}</code> already
-										exists. Replace it (its package locks stay; its hosts become
-										the ones below).
+										exists. Replace it (edit package locks below; its hosts
+										become the ones you enter).
 									</>
 								)}
 							</span>
@@ -661,7 +700,6 @@ export function ConnectCredentialRoute(handle: Handle) {
 						kind: selected,
 						search,
 						orgSlug,
-						personalOrgSlug: data?.personalOrgSlug ?? null,
 						valueForm: (kind) =>
 							renderKeyForm({
 								kind,
@@ -697,7 +735,6 @@ function renderKindBody(input: {
 	kind: CredentialKind
 	search: URLSearchParams
 	orgSlug: string
-	personalOrgSlug: string | null
 	valueForm: (kind: ValueFormKind) => RemixNode
 }) {
 	const mode = credentialCreateMode(input.kind)
@@ -714,18 +751,6 @@ function renderKindBody(input: {
 							? `Kody sends you to ${provider ? `${provider}'s` : 'the provider’s'} sign-in, then brings you back.`
 							: 'Add the server’s URL. Kody connects to it and asks you to sign in when the server needs it.'}
 					</p>
-					{kind === 'oauth' &&
-					input.personalOrgSlug &&
-					input.orgSlug &&
-					input.personalOrgSlug !== input.orgSlug ? (
-						<p
-							mix={css(mutedCss)}
-							data-testid="connect-credential-oauth-personal"
-						>
-							Kody saves OAuth connections to your personal account,{' '}
-							<code>@{input.personalOrgSlug}</code>, not to this team.
-						</p>
-					) : null}
 					<a
 						href={credentialCreateHandoffHref({
 							kind,

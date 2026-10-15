@@ -114,7 +114,20 @@ export function parseMcpCallerContextWire(
 	return createMcpCallerContextWire({
 		...rest,
 		orgBinding: normalizeWireOrgBinding(orgBinding),
-		user: user ? { ...user, userId: personIdFromStored(user.userId) } : null,
+		user: user
+			? (() => {
+					const { personalOrgId: wirePersonalOrgId, ...userRest } = user
+					return {
+						...userRest,
+						userId: personIdFromStored(user.userId),
+						...(wirePersonalOrgId
+							? {
+									personalOrgId: ownerIdFromStored(wirePersonalOrgId as string),
+								}
+							: {}),
+					}
+				})()
+			: null,
 	})
 }
 

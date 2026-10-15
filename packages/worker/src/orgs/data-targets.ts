@@ -95,12 +95,25 @@ const orgStructuralHardPurgeTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'org_id', table: 'enablements' },
 	{ kind: 'org_id', table: 'credential_mappings' },
 	{ kind: 'org_id', table: 'credential_mapping_proposals' },
+	{
+		kind: 'org_via_parent',
+		table: 'approval_bundle_decisions',
+		parentTable: 'approval_bundles',
+		parentKey: 'bundle_id',
+	},
+	{ kind: 'org_id', table: 'approval_bundles' },
 	{ kind: 'org_id', table: 'credential_org_grants' },
 	{ kind: 'org_id', table: 'org_memberships' },
 	{ kind: 'org_id', table: 'invites' },
 	{
 		kind: 'org_via_parent',
 		table: 'org_invite_link_redemptions',
+		parentTable: 'org_invite_links',
+		parentKey: 'link_id',
+	},
+	{
+		kind: 'org_via_parent',
+		table: 'org_invite_link_pending',
 		parentTable: 'org_invite_links',
 		parentKey: 'link_id',
 	},
@@ -115,14 +128,38 @@ const orgOwnedUserIdSoftDeleteTableSet = new Set<string>(
 )
 
 /**
+ * `user_id` tables that are person-scoped even when the row sits under a team
+ * org (membership, redemption, attribution). Team org hard purge must not
+ * delete these via `WHERE user_id = orgId`. Soft-delete org-owned tables are
+ * allowlisted separately; these names stay excluded from the non-soft-delete
+ * owner-inventory expansion (#3121).
+ */
+const personScopedUserIdTablesExcludedFromOrgHardPurge = new Set([
+	'org_memberships',
+	'team_members',
+	'org_user_budgets',
+	'org_invite_link_redemptions',
+	'org_invite_link_pending',
+])
+
+/**
  * Org hard purge deletes org-owned rows from the person inventory (same match
  * builders and child-before-parent order) plus the org graph. Integer
- * person-account tables stay on the person subject.
+ * person-account tables stay on the person subject. Owner-scoped account
+ * inventory tables without `deleted_at` (for example `published_bundle_artifacts`)
+ * are included so team org purge can remove them after out-of-band cleanup.
  */
 function appliesToOrgHardPurge(target: UserScopedDataTarget): boolean {
 	switch (target.kind) {
 		case 'user_id':
-			return orgOwnedUserIdSoftDeleteTableSet.has(target.table)
+			if (orgOwnedUserIdSoftDeleteTableSet.has(target.table)) return true
+			if (personScopedUserIdTablesExcludedFromOrgHardPurge.has(target.table)) {
+				return false
+			}
+			// Owner-scoped inventory without deleted_at (and other owner user_id
+			// surfaces). Person-scoped rows keyed by a different id are a no-op
+			// when bound to a team org id.
+			return true
 		case 'bucket_parent':
 			return orgOwnedBucketChildSoftDeleteTables.some(
 				(row) =>
@@ -131,10 +168,12 @@ function appliesToOrgHardPurge(target: UserScopedDataTarget): boolean {
 		case 'community_listing_child':
 			return true
 		case 'user_columns':
+			// Owner id columns (community listings, package approvals, …)
+			// plus org-owned follows (`follower_org_id`).
 			return (
-				target.table === 'community_listings' &&
-				target.columns.length === 1 &&
-				target.columns[0] === 'owner_user_id'
+				target.columns.includes('owner_user_id') ||
+				(target.table === 'follows' &&
+					target.columns.includes('follower_org_id'))
 			)
 		case 'db_user_id':
 		case 'db_user_target':
@@ -154,11 +193,17 @@ function appliesToOrgHardPurge(target: UserScopedDataTarget): boolean {
 	}
 }
 
+export type HardPurgeOrgMode = 'team' | 'personal'
+
 /**
  * One hard-purge inventory. `person` is the account-deletion list.
  * `org` is the org-owned subset of that list plus org-graph deletes.
  * The scheduled purge lane still dry-runs while `SOFT_DELETE_PURGE_ENABLED`
  * is false; this function only names the rows.
+ *
+ * Prefer {@link hardPurgeOrgDataTargets} when choosing personal vs team org
+ * behavior: personal org purge leaves owner-scoped rows for the following
+ * user purge (org id == person id).
  */
 export function hardPurgeDataTargets(
 	subject: HardPurgeSubject,
@@ -167,13 +212,33 @@ export function hardPurgeDataTargets(
 		case 'person':
 			return accountUserDataTargets
 		case 'org':
+			return hardPurgeOrgDataTargets('team')
+		default: {
+			const exhaustive: never = subject
+			throw new Error(`Unhandled hard purge subject: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/**
+ * D1 targets for org hard purge. `team` includes owner-scoped account inventory
+ * (after out-of-band keys are collected). `personal` is org-graph only so the
+ * subsequent user purge can still inventory KV/R2/vectors from D1.
+ */
+export function hardPurgeOrgDataTargets(
+	mode: HardPurgeOrgMode,
+): ReadonlyArray<UserScopedDataTarget> {
+	switch (mode) {
+		case 'personal':
+			return orgStructuralHardPurgeTargets
+		case 'team':
 			return [
 				...accountUserDataTargets.filter(appliesToOrgHardPurge),
 				...orgStructuralHardPurgeTargets,
 			]
 		default: {
-			const exhaustive: never = subject
-			throw new Error(`Unhandled hard purge subject: ${String(exhaustive)}`)
+			const exhaustive: never = mode
+			throw new Error(`Unhandled hard purge org mode: ${String(exhaustive)}`)
 		}
 	}
 }

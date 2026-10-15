@@ -81,6 +81,7 @@ import {
 } from '#worker/billing/signup-welcome-credits.ts'
 import { attributeReferralAtSignup } from '#worker/entitlements/referral-program.ts'
 import {
+	mintPersonalOrgIdForSignup,
 	provisionPersonalOrgForSignup,
 	rollbackPersonalOrgAfterFailedSignup,
 } from '#worker/orgs/signup-provision.ts'
@@ -446,6 +447,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					clearReferralCookie?: boolean
 				} = {},
 			) {
+				// person-keyed (not personal org)
 				const stableUserId = personalOrgId(
 					personIdFromStored(user.stable_user_id),
 				)
@@ -732,6 +734,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 			// 4. New account.
 			let username: string
 			let stableUserId: OwnerId
+			let signupPersonalOrgId: OwnerId
 			let newUser: {
 				id: number
 				stable_user_id: string
@@ -740,7 +743,11 @@ export function createAuthProviderCallbackHandler(env: Env) {
 
 			async function rollbackNewUser(userId: number) {
 				invalidatePackageAppOwnerCache({ stableUserId })
-				await rollbackPersonalOrgAfterFailedSignup(env.APP_DB, stableUserId)
+				await rollbackPersonalOrgAfterFailedSignup(
+					env.APP_DB,
+					stableUserId,
+					signupPersonalOrgId,
+				)
 				try {
 					await env.APP_DB.prepare(
 						`DELETE FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
@@ -769,6 +776,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					return fail('account-error', 'user_create_conflict')
 				}
 				stableUserId = personalOrgId(allocated.stableUserId)
+				signupPersonalOrgId = mintPersonalOrgIdForSignup()
 				recordOnboardingFunnelEvent(env, {
 					stage: 'signup_started',
 					userId: stableUserId,
@@ -781,6 +789,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 						username,
 						email,
 						stable_user_id: stableUserId,
+						personal_org_id: signupPersonalOrgId,
 						password_hash: oauthNoUsablePasswordHash,
 						email_verified_at: createdAt,
 						...firstTouchAttributionCreateFields(signupAttribution),
@@ -791,6 +800,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				newUser = { id: createdUser.id, stable_user_id: stableUserId, email }
 				await provisionPersonalOrgForSignup(env.APP_DB, {
 					stableUserId,
+					orgId: signupPersonalOrgId,
 					username,
 					createdAt,
 					plan: resolvePlanWrite(null),
@@ -801,7 +811,10 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					await rollbackNewUser(newUser.id)
 				}
 				const uniqueField = getUniqueConstraintField(error)
-				if (uniqueField === 'stable_user_id') {
+				if (
+					uniqueField === 'stable_user_id' ||
+					uniqueField === 'personal_org_id'
+				) {
 					return fail('email-claimed', 'former_email_claimed')
 				}
 				if (uniqueField) {
@@ -897,7 +910,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 			})
 			await maybeGrantSignupWelcomeCredits({
 				db: env.APP_DB,
-				userId: stableUserId,
+				userId: signupPersonalOrgId,
 			})
 			try {
 				await attributeReferralAtSignup({

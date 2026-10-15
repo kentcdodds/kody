@@ -322,6 +322,17 @@ test('the OpenAPI document covers every operation with resolvable refs', async (
 		),
 	).toBe(true)
 
+	const packageGraph =
+		document.paths['/v1/local-execute/package-graph']?.['post']
+	expect(packageGraph?.['x-kody-permission']).toBe('org:execute')
+	expect(packageGraph?.requestBody?.required).toBe(true)
+	const packageGraphSchema =
+		packageGraph?.requestBody?.content['application/json']?.schema
+	expect(
+		Array.isArray(packageGraphSchema?.['anyOf']) ||
+			Array.isArray(packageGraphSchema?.['oneOf']),
+	).toBe(true)
+
 	const tokenCreate = document.paths['/v1/tokens']?.['post']
 	expect(tokenCreate?.['x-kody-permission']).toBe('none')
 	expect(tokenCreate?.requestBody?.required).toBe(true)
@@ -350,4 +361,36 @@ test('the OpenAPI document covers every operation with resolvable refs', async (
 	expect(document.paths['/v1/search']?.['get']?.['x-kody-permission']).toBe(
 		'search:read',
 	)
+})
+
+test('package collaborator calls are package-scoped Open API routes', async () => {
+	const document = await buildOpenApiDocument({
+		serverUrl: 'https://api.kody.codes',
+	})
+	const collection = document.paths['/v1/packages/{package_id}/collaborators']
+	expect(collection?.['get']?.operationId).toBe('packageCollaboratorList')
+	const set = collection?.['post']
+	expect(set?.operationId).toBe('packageCollaboratorSet')
+	expect(
+		(set?.parameters ?? []).map(
+			(parameter: { name: string }) => parameter.name,
+		),
+	).toEqual(['package_id'])
+	expect(set?.requestBody?.content['application/json']?.schema).toMatchObject({
+		properties: expect.objectContaining({
+			team_slug: expect.anything(),
+			username: expect.anything(),
+			preset: expect.anything(),
+		}),
+	})
+	const remove =
+		document.paths['/v1/packages/{package_id}/collaborators/{grant_id}']?.[
+			'delete'
+		]
+	expect(remove?.operationId).toBe('packageCollaboratorRemove')
+	expect(
+		(remove?.parameters ?? []).map(
+			(parameter: { name: string }) => parameter.name,
+		),
+	).toEqual(['package_id', 'grant_id'])
 })

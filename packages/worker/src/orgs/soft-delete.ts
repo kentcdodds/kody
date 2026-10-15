@@ -4,8 +4,12 @@
  * Soft-delete and restore must read and update tombstoned rows.
  */
 
-import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
+import { personalOrgIdFromUserRow } from '#worker/orgs/personal-org-id.ts'
 import {
 	AccountDeletionWritersActiveError,
 	abortOrgDeleting,
@@ -671,6 +675,17 @@ export async function softDeleteUserAccount(input: {
 		userId: input.userId,
 	})
 	const appDb = input.env.APP_DB
+	// `userId` is the person (`stable_user_id`). Org-keyed audit/billing use
+	// `users.personal_org_id` when it differs (#3053 phase 2).
+	const personRow = await appDb
+		.prepare(
+			`SELECT stable_user_id, personal_org_id FROM users WHERE stable_user_id = ?`,
+		)
+		.bind(input.userId)
+		.first<{ stable_user_id: string; personal_org_id: string | null }>()
+	const personalOrgId = personRow
+		? personalOrgIdFromUserRow(personRow)
+		: ownerIdFromStored(input.userId as string)
 	const { deletedAt, resumed } = await claimSoftDeleteGeneration({
 		db: appDb,
 		selectSql: `SELECT deleted_at FROM users WHERE stable_user_id = ?`,
@@ -763,7 +778,7 @@ export async function softDeleteUserAccount(input: {
 	// throws never writes user.deleted, and the retry skips it too.
 	await logOrgAuditEvent({
 		env: input.env,
-		orgId: input.userId,
+		orgId: personalOrgId,
 		action: 'user.deleted',
 		result: 'success',
 		actorUserId: input.actorUserId ?? input.userId,
@@ -774,9 +789,11 @@ export async function softDeleteUserAccount(input: {
 	})
 
 	invalidatePackageAppOwnerCache({ stableUserId: input.userId })
+	// Sole personal org cancel runs inside softDeleteOrg above; this covers
+	// equal-id / resume paths where billing still keys the signup org.
 	await cancelKodySubscriptionsForSoftDelete({
 		env: input.env,
-		ownerId: input.userId,
+		ownerId: personalOrgId,
 	})
 
 	return { userId: input.userId, deletedAt, deletedOrgIds, resumed }

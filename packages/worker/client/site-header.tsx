@@ -1,22 +1,36 @@
 import { FeaturesMenu } from '#client/features-menu.tsx'
-import { type Handle, type RemixNode, css } from 'remix/component'
+import { type Handle, css } from 'remix/component'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
-import { type IconName, renderIcon } from '#universal/icon.tsx'
+import { type IconName } from '#universal/icon.tsx'
 import { UserAvatar } from '#universal/user-avatar.tsx'
-import { workspaceSwitchHref } from '#client/routes/account-rail.ts'
+import { workspaceHomeHref } from '#client/routes/account-rail.ts'
 import {
-	currentSwitcherSlug,
-	orgIdentity,
-	orgRoleLabel,
+	dismissOpenPopoverPanel,
+	headerNavMq,
+	moveSwitcherFocus,
+	renderIconWell,
+	renderSwitcherRow,
+	switcherActionsCss,
+	switcherButtonRowCss,
+	switcherEyebrowCss,
+	switcherLeadingCss,
+	switcherPanelCss,
+	switcherRowDetailCss,
+	switcherRowLabelCss,
+	switcherRowTextCss,
+	type SwitcherRow,
+} from '#client/switcher-menu.tsx'
+import {
+	urlOrgSlug,
+	orderOrganizations,
+	orgOverviewPath,
 	orgRoleManagesBilling,
 	orgSlugFromOrgOwnedPath,
 	orgSlugFromPathname,
-	orgSwitcherEntries,
 	orgUsagePath,
 	organizationsWithSignupFallback,
 	type OrganizationSummary,
-	type OrgSwitcherEntry,
 } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 import {
@@ -43,16 +57,19 @@ export type SiteHeaderProps = {
 	loginHref: string
 	currentPathname: string
 	organizations?: Array<OrganizationSummary>
-	inviteCount?: number
-	lastUsedOrganization?: string | null
+	/**
+	 * Single-decision pages (approvals): only the brand and the account menu,
+	 * at every width, so nothing pulls attention from the decision.
+	 */
+	focused?: boolean
 }
 
 /**
  * Sticky site header from the 2026 landing redesign: brand, marketing nav
- * (Community · Docs · Pricing · Blog), and the session corner: the
- * organization switcher, then the person's own avatar menu. The phone menu
- * folds both into one panel. The bottom hairline is a static CSS border so it
- * paints before JS.
+ * (Community · Docs · Pricing · Blog), and the person's avatar menu. The
+ * organization switcher is the workspace rail's heading, not a header
+ * control. The phone menu folds the avatar menu into its one panel. The
+ * bottom hairline is a static CSS border so it paints before JS.
  */
 const marketingLinks = [
 	{ href: '/community', label: 'Community' },
@@ -73,67 +90,7 @@ function ariaCurrent(currentPathname: string, href: string) {
 
 /** One id: the invoker points at the panel with `popovertarget`. */
 const menuPanelId = 'site-menu'
-const orgSwitcherPanelId = 'org-switcher'
 const accountMenuPanelId = 'account-menu'
-
-/**
- * Dismiss an open popover panel on client-side navigation. Older browsers
- * throw from `matches(':popover-open')` when the Popover API is unavailable.
- */
-export function dismissOpenPopoverPanel(panel: Element | null) {
-	if (!panel || typeof (panel as HTMLElement).hidePopover !== 'function') return
-	const element = panel as HTMLElement
-	if (element.matches(':popover-open')) {
-		element.hidePopover()
-	}
-}
-
-type SwitcherRow = {
-	key: string
-	href: string
-	label: string
-	detail: string | null
-	ariaCurrent: 'true' | 'page' | undefined
-	/** The organization the header is acting in; drawn with a check. */
-	selected: boolean
-	leading: RemixNode
-	badge: string | null
-}
-
-function renderSwitcherRow(row: SwitcherRow) {
-	return (
-		<a
-			key={row.key}
-			href={row.href}
-			aria-current={row.ariaCurrent}
-			data-testid={`org-switcher-${row.key}`}
-			data-selected={row.selected ? '' : undefined}
-			mix={css(switcherRowCss)}
-		>
-			<span mix={css(switcherLeadingCss)}>{row.leading}</span>
-			<span mix={css(switcherRowTextCss)}>
-				<span mix={css(switcherRowLabelCss)}>{row.label}</span>
-				{row.detail ? (
-					<span mix={css(switcherRowDetailCss)}>{row.detail}</span>
-				) : null}
-			</span>
-			{row.badge ? <span mix={css(switcherCountCss)}>{row.badge}</span> : null}
-			{row.selected ? (
-				<span mix={css(switcherCheckCss)}>
-					{renderIcon('check', { size: '1.1rem' })}
-				</span>
-			) : null}
-		</a>
-	)
-}
-
-function renderIconWell(name: IconName) {
-	return (
-		<span aria-hidden="true" mix={css(switcherIconWellCss)}>
-			{renderIcon(name, { size: '1rem' })}
-		</span>
-	)
-}
 
 function renderLogoutRow() {
 	return (
@@ -155,242 +112,6 @@ function renderLogoutRow() {
 			</button>
 		</form>
 	)
-}
-
-/** Focus order for the arrow keys: the trigger, then every row in the panel. */
-function moveSwitcherFocus(event: KeyboardEvent, panel: HTMLElement | null) {
-	if (!panel || !panel.matches(':popover-open')) return
-	const rows = Array.from(
-		panel.querySelectorAll<HTMLElement>('a[href], button'),
-	)
-	if (rows.length === 0) return
-	const index = rows.indexOf(document.activeElement as HTMLElement)
-	const next =
-		event.key === 'ArrowDown'
-			? rows[(index + 1) % rows.length]
-			: event.key === 'ArrowUp'
-				? rows[index <= 0 ? rows.length - 1 : index - 1]
-				: event.key === 'Home'
-					? rows[0]
-					: event.key === 'End'
-						? rows[rows.length - 1]
-						: null
-	if (!next) return
-	event.preventDefault()
-	next.focus()
-}
-
-function OrgSwitcher(
-	handle: Handle<{
-		organizations: Array<OrganizationSummary>
-		inviteCount: number
-		lastUsedOrganization: string | null
-		username: string
-		displayName: string
-		avatarUrl: string | null
-		currentPathname: string
-		menu?: boolean
-	}>,
-) {
-	let open = false
-
-	function onToggle(event: { newState?: string }) {
-		const next = event.newState === 'open'
-		if (next === open) return
-		open = next
-		handle.update()
-	}
-
-	return () => {
-		const organizations = organizationsWithSignupFallback({
-			organizations: handle.props.organizations,
-			username: handle.props.username,
-		})
-		if (organizations.length === 0) return null
-		const viewer = {
-			displayName: handle.props.displayName,
-			avatarUrl: handle.props.avatarUrl,
-		}
-		const entries = orgSwitcherEntries(organizations, handle.props.inviteCount)
-		const currentSlug = currentSwitcherSlug({
-			pathname: handle.props.currentPathname,
-			organizations,
-			lastUsedSlug: handle.props.lastUsedOrganization,
-		})
-		const listedCurrent = organizations.find((org) => org.slug === currentSlug)
-		// Stale session lists can omit the URL org on `/@slug/-/…`. Synthesize
-		// a member-shaped row for the trigger label and a dedicated switcher
-		// entry — do not invent Owner (Billing) links.
-		const synthesizedCurrent =
-			listedCurrent || !currentSlug
-				? null
-				: {
-						slug: currentSlug,
-						displayName: null,
-						role: 'member' as const,
-						personal: currentSlug === handle.props.username,
-					}
-		const current = listedCurrent ?? synthesizedCurrent ?? undefined
-		const currentIdentity = current ? orgIdentity(current, viewer) : null
-		const label = currentIdentity?.handle ?? 'Organizations'
-		const avatarSize = handle.props.menu ? 32 : 28
-		const toRow = (entry: OrgSwitcherEntry): SwitcherRow => {
-			switch (entry.kind) {
-				case 'create':
-					return {
-						key: 'create',
-						href: routes.accountOrganizationsNew.href(),
-						label: 'Create organization',
-						detail: null,
-						ariaCurrent:
-							handle.props.currentPathname ===
-							routes.accountOrganizationsNew.href()
-								? 'page'
-								: undefined,
-						selected: false,
-						leading: renderIconWell('plus'),
-						badge: null,
-					}
-				case 'invites':
-					return {
-						key: 'invites',
-						href: `${routes.accountOrganizations.href()}#invites`,
-						label: 'Invites',
-						detail: null,
-						ariaCurrent: undefined,
-						selected: false,
-						leading: renderIconWell('mail'),
-						badge: entry.count > 0 ? String(entry.count) : null,
-					}
-				case 'org': {
-					const identity = orgIdentity(entry.org, viewer)
-					const role = entry.showRole ? orgRoleLabel(entry.org.role) : null
-					const selected = entry.org.slug === currentSlug
-					return {
-						key: entry.org.slug,
-						href: workspaceSwitchHref(handle.props.currentPathname, entry.org),
-						label: identity.name,
-						detail: identity.hasName
-							? [identity.handle, role].filter(Boolean).join(' · ')
-							: role,
-						ariaCurrent: selected ? 'true' : undefined,
-						selected,
-						leading: (
-							<UserAvatar
-								displayName={identity.avatarName}
-								avatarUrl={identity.avatarUrl}
-								size={avatarSize}
-								variant="well"
-							/>
-						),
-						badge: null,
-					}
-				}
-				default: {
-					const exhaustive: never = entry
-					return exhaustive
-				}
-			}
-		}
-		const orgRowsFromSession = entries
-			.filter((entry) => entry.kind === 'org')
-			.map(toRow)
-		// Dedicated row when the URL org is missing from the session list so
-		// the person can still see and re-select it in the switcher.
-		const orgRows =
-			synthesizedCurrent !== null
-				? [
-						toRow({
-							kind: 'org',
-							org: synthesizedCurrent,
-							showRole: true,
-						}),
-						...orgRowsFromSession,
-					]
-				: orgRowsFromSession
-		const actionRows = entries
-			.filter((entry) => entry.kind !== 'org')
-			.map(toRow)
-		const body = (
-			<>
-				<p mix={css(switcherEyebrowCss)}>Organizations</p>
-				<ul aria-label="Organizations" mix={css(switcherListCss)}>
-					{orgRows.map((row) => (
-						<li key={row.key}>{renderSwitcherRow(row)}</li>
-					))}
-				</ul>
-				{actionRows.length > 0 ? (
-					<div mix={css(switcherActionsCss)}>
-						{actionRows.map(renderSwitcherRow)}
-					</div>
-				) : null}
-			</>
-		)
-
-		// The phone menu has no room for a second trigger, so the person's
-		// own links follow the organizations in the same panel.
-		if (handle.props.menu) {
-			return (
-				<div
-					data-menu-group
-					data-testid="org-switcher-menu"
-					mix={css(switcherMenuGroupCss)}
-				>
-					{body}
-					{renderAccountGroup({
-						username: handle.props.username,
-						currentPathname: handle.props.currentPathname,
-						organizations,
-						heading: true,
-					})}
-				</div>
-			)
-		}
-
-		return (
-			<div
-				mix={[
-					css(orgSwitcherCss),
-					on('keydown', (event: KeyboardEvent) => {
-						moveSwitcherFocus(
-							event,
-							document.getElementById(orgSwitcherPanelId),
-						)
-					}),
-				]}
-			>
-				<button
-					type="button"
-					popovertarget={orgSwitcherPanelId}
-					aria-controls={orgSwitcherPanelId}
-					aria-label={`${label}: switch organization`}
-					aria-expanded={open ? 'true' : 'false'}
-					data-open={open ? '' : undefined}
-					data-testid="org-switcher"
-					mix={css(orgSwitcherButtonCss)}
-				>
-					<UserAvatar
-						displayName={currentIdentity?.avatarName ?? label}
-						avatarUrl={currentIdentity?.avatarUrl ?? null}
-						size={26}
-						variant="well"
-					/>
-					<span mix={css(orgSwitcherLabelCss)}>{label}</span>
-					<span aria-hidden="true" mix={css(orgSwitcherChevronCss)}>
-						{renderIcon('chevron-down', { size: '1rem' })}
-					</span>
-				</button>
-				<div
-					id={orgSwitcherPanelId}
-					popover
-					data-testid="org-switcher-panel"
-					mix={[css(orgSwitcherPanelCss), on('toggle', onToggle)]}
-				>
-					{body}
-				</div>
-			</div>
-		)
-	}
 }
 
 /**
@@ -463,18 +184,99 @@ function accountRows(input: {
 	]
 }
 
+export type AccountMenuManageLink = {
+	key: string
+	href: string
+	label: string
+	detail: string | null
+	icon: IconName
+}
+
+/**
+ * The account menu's Manage links: one `@slug` row per workspace, each opening
+ * that workspace's home. The URL's org (if any) leads; otherwise the signup org
+ * does. Each workspace rail lists every section, so any section stays two
+ * clicks from the avatar. Unlike switcher rows, which keep the current page,
+ * these always open a home.
+ */
+export function accountMenuManageLinks(input: {
+	pathname: string
+	organizations: ReadonlyArray<OrganizationSummary>
+}): Array<AccountMenuManageLink> {
+	const ordered = orderOrganizations(input.organizations)
+	const currentSlug = urlOrgSlug(input)
+	if (!currentSlug) return ordered.map(manageLink)
+	const current = ordered.find((org) => org.slug === currentSlug)
+	return [
+		current
+			? manageLink(current)
+			: {
+					key: `manage-${currentSlug}`,
+					// A URL org missing from a stale session list could be a renamed
+					// person's signup org, so its kind is unknown. `/-/overview`
+					// serves the signup org and redirects a team to its home.
+					href: orgOverviewPath(currentSlug),
+					label: `@${currentSlug}`,
+					detail: null,
+					icon: 'home',
+				},
+		...ordered.filter((org) => org.slug !== currentSlug).map(manageLink),
+	]
+}
+
+function manageLink(org: OrganizationSummary): AccountMenuManageLink {
+	return {
+		key: `manage-${org.slug}`,
+		href: workspaceHomeHref(org),
+		label: `@${org.slug}`,
+		detail: null,
+		icon: org.personal ? 'user' : 'users',
+	}
+}
+
+function renderManageGroup(input: {
+	links: ReadonlyArray<AccountMenuManageLink>
+	currentPathname: string
+	divided: boolean
+}) {
+	if (input.links.length === 0) return null
+	return (
+		<div
+			role="group"
+			aria-label="Manage"
+			data-testid="account-menu-manage-group"
+			mix={css(input.divided ? switcherActionsCss : switcherAccountListCss)}
+		>
+			<p mix={css(switcherEyebrowCss)}>Manage</p>
+			{input.links.map((link) =>
+				renderSwitcherRow({
+					key: link.key,
+					href: link.href,
+					label: link.label,
+					detail: link.detail,
+					ariaCurrent: input.currentPathname === link.href ? 'page' : undefined,
+					selected: false,
+					leading: renderIconWell(link.icon),
+					badge: null,
+				}),
+			)}
+		</div>
+	)
+}
+
 function renderAccountGroup(input: {
 	username: string
 	currentPathname: string
 	organizations: ReadonlyArray<OrganizationSummary>
 	heading: boolean
+	divided: boolean
 }) {
 	return (
 		<div
 			role="group"
 			aria-label="Your account"
 			data-testid="org-switcher-account-group"
-			mix={css(input.heading ? switcherActionsCss : switcherAccountListCss)}
+			mix={css(input.divided ? switcherActionsCss : switcherAccountListCss)}
 		>
 			{input.heading ? <p mix={css(switcherEyebrowCss)}>Your account</p> : null}
 			{accountRows(input).map(renderSwitcherRow)}
@@ -484,8 +286,49 @@ function renderAccountGroup(input: {
 }
 
 /**
- * The person's own menu: their avatar, apart from the organization
- * switcher, so "who am I" and "which workspace am I in" are two controls.
+ * The phone menu has no room for the avatar trigger, so the avatar menu's
+ * groups follow the site links in the same panel.
+ */
+function renderPhoneAccountGroups(input: {
+	username: string
+	currentPathname: string
+	organizations: ReadonlyArray<OrganizationSummary>
+}) {
+	const organizations = organizationsWithSignupFallback({
+		organizations: input.organizations,
+		username: input.username,
+	})
+	const manageLinks = accountMenuManageLinks({
+		pathname: input.currentPathname,
+		organizations,
+	})
+	return (
+		<div
+			data-menu-group
+			data-testid="site-menu-account"
+			mix={css(phoneAccountGroupsCss)}
+		>
+			{renderManageGroup({
+				links: manageLinks,
+				currentPathname: input.currentPathname,
+				divided: false,
+			})}
+			{renderAccountGroup({
+				username: input.username,
+				currentPathname: input.currentPathname,
+				organizations,
+				heading: true,
+				divided: manageLinks.length > 0,
+			})}
+		</div>
+	)
+}
+
+/**
+ * The person's own menu: their avatar. "Which workspace am I in" is the
+ * workspace rail's switcher. Manage lists every workspace, the URL's org
+ * first, so pages without a workspace rail
+ * (account, packages) still reach every organization from here.
  */
 function AccountMenu(
 	handle: Handle<{
@@ -507,10 +350,18 @@ function AccountMenu(
 
 	return () => {
 		const name = handle.props.displayName.trim() || handle.props.username
+		const organizations = organizationsWithSignupFallback({
+			organizations: handle.props.organizations ?? [],
+			username: handle.props.username,
+		})
+		const manageLinks = accountMenuManageLinks({
+			pathname: handle.props.currentPathname,
+			organizations,
+		})
 		return (
 			<div
 				mix={[
-					css(orgSwitcherCss),
+					css(accountMenuCss),
 					on('keydown', (event: KeyboardEvent) => {
 						moveSwitcherFocus(
 							event,
@@ -550,14 +401,17 @@ function AccountMenu(
 							</span>
 						) : null}
 					</div>
+					{renderManageGroup({
+						links: manageLinks,
+						currentPathname: handle.props.currentPathname,
+						divided: false,
+					})}
 					{renderAccountGroup({
 						username: handle.props.username,
 						currentPathname: handle.props.currentPathname,
-						organizations: organizationsWithSignupFallback({
-							organizations: handle.props.organizations ?? [],
-							username: handle.props.username,
-						}),
+						organizations,
 						heading: false,
+						divided: manageLinks.length > 0,
 					})}
 				</div>
 			</div>
@@ -573,7 +427,6 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 		// nothing would otherwise dismiss the panel.
 		listenToRouterNavigation(handle, () => {
 			dismissOpenPopoverPanel(document.getElementById(menuPanelId))
-			dismissOpenPopoverPanel(document.getElementById(orgSwitcherPanelId))
 			dismissOpenPopoverPanel(document.getElementById(accountMenuPanelId))
 		})
 	}
@@ -588,6 +441,33 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 	}
 
 	return () => {
+		if (handle.props.focused) {
+			return (
+				<header class="site-header" data-focused-header mix={css(headerCss)}>
+					<div mix={css(navCss)}>
+						<a href="/" mix={css(brandCss)}>
+							<img src="/images/kody-mark.png" alt="" width={34} height={34} />
+							<span>Kody</span>
+						</a>
+						<div mix={css({ marginLeft: 'auto', display: 'flex' })}>
+							{handle.props.loggedIn ? (
+								<AccountMenu
+									username={handle.props.username}
+									displayName={handle.props.displayName}
+									avatarUrl={handle.props.avatarUrl}
+									currentPathname={handle.props.currentPathname}
+									organizations={handle.props.organizations ?? []}
+								/>
+							) : (
+								<a href={handle.props.loginHref} mix={css(navLoginCss)}>
+									Log in
+								</a>
+							)}
+						</div>
+					</div>
+				</header>
+			)
+		}
 		return (
 			<header class="site-header" mix={css(headerCss)}>
 				<nav aria-label="Main" mix={css(navCss)}>
@@ -624,17 +504,6 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 					<div mix={css(navActionsCss)}>
 						{handle.props.loggedIn ? (
 							<>
-								<OrgSwitcher
-									organizations={handle.props.organizations ?? []}
-									inviteCount={handle.props.inviteCount ?? 0}
-									lastUsedOrganization={
-										handle.props.lastUsedOrganization ?? null
-									}
-									username={handle.props.username}
-									displayName={handle.props.displayName}
-									avatarUrl={handle.props.avatarUrl}
-									currentPathname={handle.props.currentPathname}
-								/>
 								<AccountMenu
 									username={handle.props.username}
 									displayName={handle.props.displayName}
@@ -705,18 +574,13 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 								</a>
 							) : null}
 						</div>
-						{handle.props.loggedIn ? (
-							<OrgSwitcher
-								organizations={handle.props.organizations ?? []}
-								inviteCount={handle.props.inviteCount ?? 0}
-								lastUsedOrganization={handle.props.lastUsedOrganization ?? null}
-								username={handle.props.username}
-								displayName={handle.props.displayName}
-								avatarUrl={handle.props.avatarUrl}
-								currentPathname={handle.props.currentPathname}
-								menu
-							/>
-						) : null}
+						{handle.props.loggedIn
+							? renderPhoneAccountGroups({
+									username: handle.props.username,
+									currentPathname: handle.props.currentPathname,
+									organizations: handle.props.organizations ?? [],
+								})
+							: null}
 						{handle.props.loggedIn ? null : (
 							<div data-menu-group mix={css(menuGroupCss)}>
 								<a href={handle.props.loginHref}>Log in</a>
@@ -762,13 +626,6 @@ const brandCss = {
 	letterSpacing: '-0.01em',
 	'&:hover': { color: colors.text },
 }
-
-/**
- * Below this the inline nav and session corner would crowd the brand, so both
- * fold into the menu panel. Wider than the mobile token: it is the width the
- * links themselves stop fitting, not a device class.
- */
-const headerNavMq = '@media (max-width: 820px)'
 
 const navLinksCss = {
 	display: 'flex',
@@ -954,56 +811,6 @@ const navLoginCss = {
 	'&:hover': { color: colors.primaryText },
 }
 
-/** The trigger names this; the panel positions against it (CSS anchor positioning). */
-const orgSwitcherAnchor = '--org-switcher'
-
-const orgSwitcherCss = {
-	position: 'relative' as const,
-}
-
-const orgSwitcherButtonCss = {
-	anchorName: orgSwitcherAnchor,
-	display: 'inline-flex',
-	alignItems: 'center',
-	gap: '0.45rem',
-	minHeight: '44px',
-	padding: '0.2rem 0.6rem 0.2rem 0.2rem',
-	borderRadius: radius.full,
-	border: `1.5px solid ${colors.border}`,
-	background: 'transparent',
-	color: colors.text,
-	// Buttons do not inherit the page face on their own.
-	font: `600 0.95rem/1 ${typography.fontFamily}`,
-	cursor: 'pointer',
-	transition: `border-color ${transitions.fast}, background-color ${transitions.fast}`,
-	'&[data-open]': {
-		borderColor: colors.textMuted,
-		backgroundColor: colors.surface,
-	},
-	[hoverMq]: {
-		'&:hover': { borderColor: colors.textMuted },
-	},
-}
-
-const orgSwitcherLabelCss = {
-	maxWidth: '14rem',
-	// The trigger's font shorthand is line-height 1. Overflow on that em-square
-	// line box cuts off descenders (g, j, p, q, y). 1.25 is this face's normal
-	// line box, so those glyphs and the @ sit fully inside the clip.
-	lineHeight: 1.25,
-	overflow: 'hidden',
-	textOverflow: 'ellipsis',
-	whiteSpace: 'nowrap' as const,
-}
-
-const orgSwitcherChevronCss = {
-	display: 'inline-flex',
-	color: colors.textMuted,
-	transition: `rotate 180ms ${transitions.easeOut}`,
-	'[data-open] > &': { rotate: '180deg' },
-	'@media (prefers-reduced-motion: reduce)': { transition: 'none' },
-}
-
 /**
  * Hangs under the trigger with its inline end against the trigger's, so the
  * menu grows into the header instead of past the header's right edge. The
@@ -1017,6 +824,10 @@ const orgSwitcherChevronCss = {
 const headerContentEndInset = `max(${pageGutter}, calc((100% - ${layoutMaxWidths.extended}) / 2 + ${pageGutter}))`
 
 const accountMenuAnchor = '--account-menu'
+
+const accountMenuCss = {
+	position: 'relative' as const,
+}
 
 const accountMenuButtonCss = {
 	anchorName: accountMenuAnchor,
@@ -1051,180 +862,26 @@ const switcherAccountListCss = {
 	paddingTop: '0.35rem',
 }
 
-const orgSwitcherPanelCss = {
-	position: 'fixed' as const,
-	inset: 'auto' as const,
+const accountMenuPanelCss = {
+	...switcherPanelCss,
 	top: '4.15rem',
 	right: headerContentEndInset,
-	width: 'min(20rem, calc(100vw - 2rem))',
-	maxHeight: 'calc(100dvh - 6rem)',
-	overflowY: 'auto' as const,
-	margin: 0,
-	padding: '0.5rem',
-	boxSizing: 'border-box' as const,
-	border: `1.5px solid ${colors.border}`,
-	borderRadius: '18px',
-	backgroundColor: colors.surface,
-	boxShadow: shadows.md,
-	color: colors.text,
+	width: 'min(16rem, calc(100vw - 2rem))',
+	transformOrigin: 'top right',
 	'@supports (anchor-name: --a)': {
-		positionAnchor: orgSwitcherAnchor,
+		positionAnchor: accountMenuAnchor,
 		top: 'anchor(bottom)',
 		right: 'anchor(right)',
 		left: 'auto',
 		marginTop: '0.5rem',
 		positionTryFallbacks: 'flip-inline',
 	},
-	opacity: 0,
-	translate: '0 -6px',
-	transformOrigin: 'top right',
-	transition: `opacity 160ms ${transitions.easeOut}, translate 160ms ${transitions.easeOut}, display 160ms allow-discrete, overlay 160ms allow-discrete`,
-	'&:popover-open': {
-		display: 'grid',
-		opacity: 1,
-		translate: '0 0',
-		'@starting-style': { opacity: 0, translate: '0 -6px' },
-	},
-	'@media (prefers-reduced-motion: reduce)': {
-		translate: 'none',
-		transition: `opacity 120ms ${transitions.easeOut}, display 120ms allow-discrete, overlay 120ms allow-discrete`,
-	},
 }
 
-const accountMenuPanelCss = {
-	...orgSwitcherPanelCss,
-	width: 'min(16rem, calc(100vw - 2rem))',
-	'@supports (anchor-name: --a)': {
-		...orgSwitcherPanelCss['@supports (anchor-name: --a)'],
-		positionAnchor: accountMenuAnchor,
-	},
-}
-
-const switcherEyebrowCss = {
-	margin: 0,
-	padding: '0.35rem 0.6rem 0.3rem',
-	[headerNavMq]: { paddingInline: '0.85rem' },
-	fontSize: typography.fontSize.xs,
-	fontWeight: 650,
-	letterSpacing: '0.06em',
-	textTransform: 'uppercase' as const,
-	color: colors.textMuted,
-}
-
-const switcherListCss = {
-	display: 'grid',
-	gap: '0.15rem',
-	listStyle: 'none',
-	margin: 0,
-	padding: 0,
-}
-
-const switcherActionsCss = {
-	display: 'grid',
-	gap: '0.15rem',
-	marginTop: '0.35rem',
-	paddingTop: '0.4rem',
-	borderTop: `1px solid ${colors.border}`,
-}
-
-/** Mobile menu: the same rows as one of the menu panel's groups. */
-const switcherMenuGroupCss = {
+/** Mobile menu: the avatar menu's rows as one of the menu panel's groups. */
+const phoneAccountGroupsCss = {
 	display: 'grid',
 	...menuGroupDividerCss,
-}
-
-const switcherRowCss = {
-	display: 'flex',
-	alignItems: 'center',
-	gap: '0.7rem',
-	minHeight: '44px',
-	padding: '0.4rem 0.6rem',
-	[headerNavMq]: { paddingInline: '0.85rem' },
-	boxSizing: 'border-box' as const,
-	borderRadius: '12px',
-	color: colors.text,
-	textDecoration: 'none',
-	transition: `background-color ${transitions.fast}`,
-	'&[aria-current="page"]': { backgroundColor: colors.primarySoft },
-	'&:active': { backgroundColor: colors.primarySoftest },
-	[hoverMq]: {
-		'&:hover': { backgroundColor: colors.primarySoftest, color: colors.text },
-	},
-}
-
-const switcherButtonRowCss = {
-	...switcherRowCss,
-	width: '100%',
-	border: 'none',
-	background: 'transparent',
-	font: 'inherit',
-	textAlign: 'start' as const,
-	cursor: 'pointer',
-}
-
-const switcherLeadingCss = {
-	display: 'inline-flex',
-	flexShrink: 0,
-	lineHeight: 0,
-}
-
-const switcherIconWellCss = {
-	display: 'inline-flex',
-	alignItems: 'center',
-	justifyContent: 'center',
-	width: '28px',
-	height: '28px',
-	boxSizing: 'border-box' as const,
-	borderRadius: radius.full,
-	border: `1px dashed ${colors.border}`,
-	color: colors.textMuted,
-	[headerNavMq]: { width: '32px', height: '32px' },
-}
-
-const switcherRowTextCss = {
-	display: 'grid',
-	gap: '0.1rem',
-	minWidth: 0,
-	flex: '1 1 auto',
-}
-
-const switcherRowLabelCss = {
-	fontWeight: 600,
-	fontSize: '0.95rem',
-	lineHeight: 1.25,
-	overflow: 'hidden',
-	textOverflow: 'ellipsis',
-	whiteSpace: 'nowrap' as const,
-	[headerNavMq]: { fontSize: '1rem' },
-}
-
-const switcherRowDetailCss = {
-	fontSize: typography.fontSize.sm,
-	lineHeight: 1.25,
-	color: colors.textMuted,
-	overflow: 'hidden',
-	textOverflow: 'ellipsis',
-	whiteSpace: 'nowrap' as const,
-}
-
-const switcherCountCss = {
-	flexShrink: 0,
-	minWidth: '1.4rem',
-	padding: '0.1rem 0.45rem',
-	boxSizing: 'border-box' as const,
-	borderRadius: radius.full,
-	backgroundColor: colors.primary,
-	color: colors.onPrimary,
-	fontSize: typography.fontSize.xs,
-	fontWeight: 700,
-	textAlign: 'center' as const,
-	fontVariantNumeric: 'tabular-nums',
-}
-
-const switcherCheckCss = {
-	display: 'inline-flex',
-	flexShrink: 0,
-	color: colors.primaryText,
 }
 
 const demoIndicatorCss = {

@@ -208,7 +208,8 @@ function createFeatureFlagsTestEnv(
 				// Metric readout queries (D1 fallback path); no data in this test.
 				if (
 					normalized.includes('from feature_flag_exposure_rollups') ||
-					normalized.includes('from usage_rollups')
+					normalized.includes('from usage_rollups') ||
+					normalized.includes('from feature_flag_repo_overrides')
 				) {
 					return { results: [] as Array<T>, meta: { changes: 0 } }
 				}
@@ -302,6 +303,9 @@ function createFeatureFlagsTestEnv(
 				) {
 					const existed = globals.delete(String(params[0]))
 					return { meta: { changes: existed ? 1 : 0 } }
+				}
+				if (normalized.startsWith('delete from feature_flag_repo_overrides')) {
+					return { meta: { changes: 0 } }
 				}
 				throw new Error(`Unsupported run query: ${query}`)
 			},

@@ -154,6 +154,7 @@ type TestUser = {
 	password_hash: string
 	plan: string | null
 	stable_user_id: string
+	personal_org_id: string
 } & Record<(typeof utmColumns)[number], string | null>
 
 function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
@@ -209,6 +210,7 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 							password_hash: String(values.password_hash ?? ''),
 							plan: nullable(values.plan),
 							stable_user_id: String(values.stable_user_id ?? ''),
+							personal_org_id: String(values.personal_org_id ?? ''),
 							...Object.fromEntries(
 								utmColumns.map((column) => [column, nullable(values[column])]),
 							),
@@ -311,6 +313,7 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 			password_hash: await createPasswordHash(password),
 			plan: 'free',
 			stable_user_id: testStableUserIdFromEmail(email),
+			personal_org_id: testStableUserIdFromEmail(email),
 			...Object.fromEntries(utmColumns.map((column) => [column, null])),
 		} as TestUser
 		nextId += 1
@@ -410,9 +413,13 @@ test('auth handler login and signup workflow', async () => {
 	)
 	expect(allowedSignupResponse.status).toBe(200)
 	expect(await allowedSignupResponse.json()).toEqual(signupAccepted)
-	expect(signupContext.testDb.users.get('allowed@example.com')).toMatchObject({
+	const allowedUser = signupContext.testDb.users.get('allowed@example.com')
+	expect(allowedUser).toMatchObject({
 		username: 'allowed-jane',
 	})
+	expect(allowedUser?.personal_org_id).not.toBe('')
+	expect(allowedUser?.personal_org_id).not.toBe(allowedUser?.stable_user_id)
+	expect(allowedUser?.personal_org_id).toMatch(/^[a-f0-9]{64}$/)
 	expect(
 		allowedSignupResponse.headers
 			.getSetCookie()
@@ -547,8 +554,12 @@ test('password signup schedules user.created with first-touch attribution and pe
 		welcomeCreditMocks.maybeGrantSignupWelcomeCredits,
 	).toHaveBeenCalledWith({
 		db: expect.anything(),
-		userId: plainStableUserId,
+		userId: expect.stringMatching(/^[a-f0-9]{64}$/),
 	})
+	expect(
+		welcomeCreditMocks.maybeGrantSignupWelcomeCredits.mock.calls[0]?.[0]
+			?.userId,
+	).not.toBe(plainStableUserId)
 
 	const email = 'attributed@example.com'
 	const response = await context.signup(email, 'attributed', {

@@ -19,6 +19,7 @@ import {
 import {
 	createEditorStateFromNewSecretQuery,
 	type EditorState,
+	readAccountSecretsSaveWarning,
 } from '#client/routes/account-secrets-shared.ts'
 import { getNewSecretValueAutofocusKey } from '#client/routes/new-secret-query.ts'
 import { normalizeAllowedHosts } from '#client/routes/secret-normalization.ts'
@@ -267,6 +268,7 @@ export function ConnectSecretSetRoute(handle: Handle) {
 	let saved = false
 	let savedForQueryKey = ''
 	let message: string | null = null
+	let saveWarning: string | null = null
 	let showSecretValue = false
 	let loadError: string | null = null
 
@@ -313,6 +315,7 @@ export function ConnectSecretSetRoute(handle: Handle) {
 			saved = false
 			savedForQueryKey = ''
 			message = null
+			saveWarning = null
 			saving = false
 			showSecretValue = false
 		}
@@ -347,6 +350,7 @@ export function ConnectSecretSetRoute(handle: Handle) {
 		const requestHref = getCurrentHref()
 		saving = true
 		message = null
+		saveWarning = null
 		handle.update()
 		try {
 			const invalidExpires = readInvalidExpiresAtQuery(requestHref)
@@ -420,6 +424,7 @@ export function ConnectSecretSetRoute(handle: Handle) {
 			if (requestQueryKey !== appliedQueryKey) return
 			saved = true
 			savedForQueryKey = requestQueryKey
+			saveWarning = readAccountSecretsSaveWarning(payload)
 			editorState = {
 				...editorState,
 				currentId: payload.selectedSecret?.id ?? editorState.currentId,
@@ -691,6 +696,15 @@ export function ConnectSecretSetRoute(handle: Handle) {
 						mix={css(cardCss)}
 						data-testid="connect-secret-set-saved-card"
 					>
+						{saveWarning ? (
+							<p
+								mix={css({ margin: 0, color: colors.warningText })}
+								data-testid="connect-secret-set-save-warning"
+								role="status"
+							>
+								{saveWarning}
+							</p>
+						) : null}
 						<div mix={css({ display: 'grid', gap: spacing.sm })}>
 							<div mix={css({ display: 'grid', gap: spacing.xs })}>
 								<span mix={css({ color: colors.textMuted })}>Secret</span>

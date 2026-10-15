@@ -24,14 +24,23 @@ const mocks = vi.hoisted(() => ({
 	),
 	applyArtifactSourcePushToHeadCache: vi.fn(async () => {}),
 	isDeletedArtifactRefCommit: (commit: string) => /^0+$/.test(commit),
+	readCachedArtifactSourceBranch: vi.fn(async () => null as string | null),
 	refreshIdentityIconForSource: vi.fn<
 		typeof IdentityIcon.refreshIdentityIconForSource
 	>(async () => {}),
+	recordFollowDefaultBranchPush: vi.fn(async () => undefined),
 }))
 
-vi.mock('#worker/package-invocations/service.ts', () => ({
-	invokePackageSubscription: mocks.invokePackageSubscription,
-}))
+vi.mock('#worker/package-invocations/service.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<
+			typeof import('#worker/package-invocations/service.ts')
+		>()
+	return {
+		...actual,
+		invokePackageSubscription: mocks.invokePackageSubscription,
+	}
+})
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	listSavedPackagesByUserId: mocks.listSavedPackagesByUserId,
@@ -63,10 +72,15 @@ vi.mock('./artifacts.ts', () => ({
 vi.mock('./artifact-head-cache.ts', () => ({
 	applyArtifactSourcePushToHeadCache: mocks.applyArtifactSourcePushToHeadCache,
 	isDeletedArtifactRefCommit: mocks.isDeletedArtifactRefCommit,
+	readCachedArtifactSourceBranch: mocks.readCachedArtifactSourceBranch,
 }))
 
 vi.mock('./identity-icon.ts', () => ({
 	refreshIdentityIconForSource: mocks.refreshIdentityIconForSource,
+}))
+
+vi.mock('#worker/follow/push-ingress.ts', () => ({
+	recordFollowDefaultBranchPush: mocks.recordFollowDefaultBranchPush,
 }))
 
 const { dispatchRepoSubscriptionEvents, processCloudflareArtifactsRepoEvent } =
@@ -333,6 +347,7 @@ test('repo.pushed refreshes identity icons only for the current default-branch H
 	}
 
 	mocks.refreshIdentityIconForSource.mockClear()
+	mocks.recordFollowDefaultBranchPush.mockClear()
 	consoleError.mockImplementation(() => {})
 	mocks.resolveArtifactSourceHead.mockRejectedValueOnce(
 		new Error(
@@ -346,6 +361,7 @@ test('repo.pushed refreshes identity icons only for the current default-branch H
 	})
 	expect(lookupFailed.outcome).toBe('dispatched')
 	expect(mocks.refreshIdentityIconForSource).not.toHaveBeenCalled()
+	expect(mocks.recordFollowDefaultBranchPush).not.toHaveBeenCalled()
 	expect(consoleError).toHaveBeenCalledWith(
 		'identity-icon-push-refresh-failed',
 		'repo-user-repo-1',
@@ -353,5 +369,97 @@ test('repo.pushed refreshes identity icons only for the current default-branch H
 			message:
 				'Artifacts repo "repo-user-repo-1" is importing. Retry after 5s.',
 		}),
+	)
+})
+
+test('a default-branch tip is recorded for follows when icon refresh throws', async () => {
+	consoleError.mockImplementation(() => {})
+	mocks.recordFollowDefaultBranchPush.mockClear()
+	mocks.refreshIdentityIconForSource.mockRejectedValueOnce(
+		new Error('icon bytes missing'),
+	)
+	seedMatchedSource()
+	const result = await processCloudflareArtifactsRepoEvent({
+		env,
+		body: pushedEvent,
+	})
+	expect(result.outcome).toBe('dispatched')
+	expect(mocks.recordFollowDefaultBranchPush).toHaveBeenCalledTimes(1)
+	expect(mocks.recordFollowDefaultBranchPush).toHaveBeenCalledWith({
+		env,
+		source,
+		event: pushedEvent,
+	})
+	expect(consoleError).toHaveBeenCalledWith(
+		'identity-icon-push-refresh-failed',
+		'repo-user-repo-1',
+		expect.objectContaining({ message: 'icon bytes missing' }),
+	)
+})
+
+test('a default-branch push that is not the live tip is still recorded', async () => {
+	mocks.recordFollowDefaultBranchPush.mockClear()
+	mocks.refreshIdentityIconForSource.mockClear()
+	mocks.resolveArtifactSourceHead.mockResolvedValueOnce({
+		branch: 'main',
+		commit: 'live-head-commit-not-this-push-000000000000',
+	})
+	seedMatchedSource()
+	const result = await processCloudflareArtifactsRepoEvent({
+		env,
+		body: pushedEvent,
+	})
+	expect(result.outcome).toBe('dispatched')
+	expect(mocks.refreshIdentityIconForSource).not.toHaveBeenCalled()
+	expect(mocks.recordFollowDefaultBranchPush).toHaveBeenCalledTimes(1)
+	expect(mocks.recordFollowDefaultBranchPush).toHaveBeenCalledWith({
+		env,
+		source,
+		event: pushedEvent,
+	})
+})
+
+test('a non-default or deleted push is not recorded for follows', async () => {
+	mocks.recordFollowDefaultBranchPush.mockClear()
+	mocks.refreshIdentityIconForSource.mockClear()
+	seedMatchedSource()
+	const feature = await processCloudflareArtifactsRepoEvent({
+		env,
+		body: pushEvent({
+			ref: 'refs/heads/feature',
+			after: 'aaa111bbb222aaa111bbb222aaa111bbb222aaa1',
+		}),
+	})
+	expect(feature.outcome).toBe('dispatched')
+	seedMatchedSource()
+	const deleted = await processCloudflareArtifactsRepoEvent({
+		env,
+		body: pushEvent({ after: '0000000000000000000000000000000000000000' }),
+	})
+	expect(deleted.outcome).toBe('dispatched')
+	expect(mocks.recordFollowDefaultBranchPush).not.toHaveBeenCalled()
+	expect(mocks.refreshIdentityIconForSource).not.toHaveBeenCalled()
+})
+
+test('a default-branch push is recorded from the cached branch when head lookup throws', async () => {
+	consoleError.mockImplementation(() => {})
+	mocks.recordFollowDefaultBranchPush.mockClear()
+	mocks.refreshIdentityIconForSource.mockClear()
+	mocks.resolveArtifactSourceHead.mockRejectedValueOnce(
+		new Error('Artifacts repo is importing'),
+	)
+	mocks.readCachedArtifactSourceBranch.mockResolvedValueOnce('main')
+	seedMatchedSource()
+	const result = await processCloudflareArtifactsRepoEvent({
+		env,
+		body: pushedEvent,
+	})
+	expect(result.outcome).toBe('dispatched')
+	expect(mocks.refreshIdentityIconForSource).not.toHaveBeenCalled()
+	expect(mocks.recordFollowDefaultBranchPush).toHaveBeenCalledTimes(1)
+	expect(consoleError).toHaveBeenCalledWith(
+		'identity-icon-push-refresh-failed',
+		'repo-user-repo-1',
+		expect.objectContaining({ message: 'Artifacts repo is importing' }),
 	)
 })

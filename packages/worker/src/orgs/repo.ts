@@ -6,6 +6,7 @@ import {
 	type OrgRole,
 	type RequestOrg,
 } from '@kody-internal/shared/request-context.ts'
+import { memoizePerRequest } from '#worker/request-context.ts'
 import {
 	andActiveOrgSql,
 	andLiveDeletedAtSql,
@@ -294,8 +295,13 @@ export type PendingInviteSummary = {
 	id: string
 	orgSlug: string
 	orgDisplayName: string | null
+	orgPersonal: boolean
 	kind: string
 	role: string | null
+	resourceType: string | null
+	preset: string | null
+	/** Set for a grant invite on a live package in the inviting org. */
+	packageName: string | null
 	expiresAt: string
 }
 
@@ -306,9 +312,20 @@ export async function listPendingInvitesForPerson(
 	const rows = await db
 		.prepare(
 			`SELECT i.id AS id, o.slug AS org_slug, o.display_name AS org_display_name,
-			        i.kind AS kind, i.role AS role, i.expires_at AS expires_at
+			        i.kind AS kind, i.role AS role, i.resource_type AS resource_type,
+			        i.preset AS preset, i.expires_at AS expires_at,
+			        sp.name AS package_name,
+			        EXISTS (
+			          SELECT 1 FROM users owner
+			          WHERE COALESCE(NULLIF(TRIM(owner.personal_org_id), ''), owner.stable_user_id) = o.id
+			            AND owner.deleted_at IS NULL
+			        ) AS org_personal
 			 FROM invites i
 			 INNER JOIN orgs o ON o.id = i.org_id
+			 LEFT JOIN saved_packages sp
+			   ON i.kind = 'grant' AND i.resource_type = 'package'
+			  AND sp.id = i.resource_id AND sp.user_id = i.org_id
+			  AND sp.deleted_at IS NULL
 			 WHERE i.status = 'pending'
 			   AND i.expires_at > ?${andActiveOrgSql('o')}
 			   AND (
@@ -324,21 +341,32 @@ export async function listPendingInvitesForPerson(
 			org_display_name: string | null
 			kind: string
 			role: string | null
+			resource_type: string | null
+			preset: string | null
 			expires_at: string
+			package_name: string | null
+			org_personal: number | null
 		}>()
 	return (rows.results ?? []).map((row) => ({
 		id: row.id,
 		orgSlug: row.org_slug,
 		orgDisplayName: row.org_display_name,
+		orgPersonal: row.org_personal === 1,
 		kind: row.kind,
 		role: row.role,
+		resourceType: row.resource_type,
+		preset: row.preset,
+		packageName: row.package_name,
 		expiresAt: row.expires_at,
 	}))
 }
 
 type OrgBindingRow = { org_id: string; org_slug: string; role: OrgRole }
 
-/** Live personal-org membership row for a person (org_id = user_id). */
+/**
+ * Live personal-org membership for a person via `users.personal_org_id`
+ * (fallback: founding `org_id = user_id` when the column is blank).
+ */
 export function orgBindingForPersonStatement(
 	db: D1Database,
 	personId: string,
@@ -346,11 +374,14 @@ export function orgBindingForPersonStatement(
 	return db
 		.prepare(
 			`SELECT o.id AS org_id, o.slug AS org_slug, m.role AS role
-			 FROM org_memberships m
+			 FROM users u
+			 INNER JOIN org_memberships m
+			   ON m.user_id = u.stable_user_id
+			  AND m.org_id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)
+			  AND m.deleted_at IS NULL
 			 INNER JOIN orgs o ON o.id = m.org_id
-			 WHERE m.user_id = ?
-			   AND m.org_id = m.user_id
-			   AND m.deleted_at IS NULL${andLiveDeletedAtSql('o')}
+			 WHERE u.stable_user_id = ?
+			   AND u.deleted_at IS NULL${andLiveDeletedAtSql('o')}
 			 LIMIT 1`,
 		)
 		.bind(personId)
@@ -362,7 +393,7 @@ export function orgBindingForPersonFromRow(
 ): OrgBinding {
 	if (!row) {
 		throw new Error(
-			`No live personal-org membership for person ${personIdFromStored(personId)}. Every person must have an org_memberships row where org_id = user_id.`,
+			`No live personal-org membership for person ${personIdFromStored(personId)}. Every person must have users.personal_org_id (or legacy org_id = user_id) with a live membership.`,
 		)
 	}
 	return toBinding(row)
@@ -423,19 +454,30 @@ export function orgBindingForOrgFromRows(rows: {
 	return toBinding({ ...rows.grant, role: null })
 }
 
+/**
+ * Live membership or grant binding for `(personId, orgId)`. Memoized once per
+ * HTTP request (same key) so package-page / viewer-access fans that call this
+ * from several permission helpers do not re-query D1 for the same pair
+ * (KODY-98). Outside a request context every call hits D1.
+ */
 export async function loadOrgBindingForOrg(
 	db: D1Database,
 	personId: string,
 	orgId: string,
 ): Promise<OrgBinding | null> {
-	const statements = orgBindingForOrgStatements(db, personId, orgId)
-	const membership = await statements.membership.first<OrgBindingRow>()
-	if (membership) return toBinding(membership)
-	const grant = await statements.grant.first<{
-		org_id: string
-		org_slug: string
-	}>()
-	return orgBindingForOrgFromRows({ membership: null, grant })
+	return memoizePerRequest({
+		key: `org-binding:${personId}:${orgId}`,
+		load: async () => {
+			const statements = orgBindingForOrgStatements(db, personId, orgId)
+			const membership = await statements.membership.first<OrgBindingRow>()
+			if (membership) return toBinding(membership)
+			const grant = await statements.grant.first<{
+				org_id: string
+				org_slug: string
+			}>()
+			return orgBindingForOrgFromRows({ membership: null, grant })
+		},
+	})
 }
 
 /** True when the org exists and is neither soft-deleted nor suspended. */

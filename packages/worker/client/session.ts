@@ -27,7 +27,6 @@ export type SessionInfo = {
 	featureFlags: Record<FeatureFlagKey, boolean>
 	organizations?: Array<OrganizationSummary>
 	inviteCount?: number
-	lastUsedOrganization?: string | null
 }
 
 export type SessionStatus = 'idle' | 'loading' | 'ready'
@@ -99,10 +98,6 @@ export async function fetchSessionInfo(
 					featureFlags,
 					organizations: readOrganizations(payload?.session?.organizations),
 					inviteCount: readInviteCount(payload?.session?.inviteCount),
-					lastUsedOrganization:
-						typeof payload?.session?.lastUsedOrganization === 'string'
-							? payload.session.lastUsedOrganization
-							: null,
 				}
 			: null
 	} catch {

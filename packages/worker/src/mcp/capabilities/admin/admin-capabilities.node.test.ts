@@ -562,8 +562,16 @@ test('adminUserCreate records audit metadata and assigns the default role', asyn
 	const created = t.userRow('person+launch@example.com')
 	expect(created).toMatchObject({
 		stable_user_id: stableUserId,
-		plan: 'free',
 	})
+	expect(
+		t.sqlite
+			.prepare(
+				`SELECT o.plan FROM users u
+				 INNER JOIN orgs o ON o.id = u.personal_org_id
+				 WHERE u.email = ?`,
+			)
+			.get('person+launch@example.com'),
+	).toEqual({ plan: 'free' })
 	expect(
 		t.sqlite
 			.prepare(
@@ -916,13 +924,6 @@ const triggeredAdminRefusals: Array<{
 	denial: string
 }> = [
 	{
-		name: 'caller lacks the admin role',
-		roles: ['user'],
-		error:
-			/MCP user lacks required role "admin" for capability "adminUserVerify"/,
-		denial: 'role',
-	},
-	{
 		name: 'enabler admin role revoked in D1 while cached roles still say admin',
 		prepare: (sqlite) =>
 			sqlite
@@ -988,3 +989,118 @@ test.each(triggeredAdminRefusals)(
 		expect(t.userRow('jane@example.com')?.['email_verified_at']).toBeNull()
 	},
 )
+
+test('a team-org triggered run with org caller roles still reaches site-admin when the enabler is admin (#3541)', async () => {
+	const teamOrgId = testStableUserIdFromEmail('team-org@example.com')
+	const source: RequestSource = {
+		kind: 'schedule',
+		jobId: 'job-team',
+		enablement: adminEnablement,
+	}
+	const t = createAdminCapabilityTest([admin, jane], undefined, ['user'], {
+		source,
+	})
+	t.ctx.callerContext = createMcpCallerContext({
+		source,
+		executionOrigin: 'background',
+		baseUrl: 'https://example.com',
+		user: {
+			userId: personIdFromStored(teamOrgId),
+			email: '',
+			username: 'team-org',
+			displayName: 'Team Org',
+			roles: ['user'],
+		},
+		storageContext: {
+			sessionId: null,
+			appId: automationPackageId,
+			packageId: automationPackageId,
+			storageId: null,
+		},
+	})
+	expect(t.ctx.callerContext.request?.actor?.userId).toBe(adminPersonId)
+	const verified = await adminUserVerifyCapability.handler(
+		{ email: 'jane@example.com', action: 'mark_verified' },
+		t.ctx,
+	)
+	expect(verified.user.email_verified).toBe(true)
+})
+
+test('a team-org jobRunNow with org caller roles reaches site-admin when the clicker is admin (#3541)', async () => {
+	const teamOrgId = testStableUserIdFromEmail('team-org@example.com')
+	const clickerLineage = createMcpCallerContext({
+		source: { kind: 'session' },
+		baseUrl: 'https://example.com',
+		user: {
+			userId: adminPersonId,
+			email: 'admin@example.com',
+			username: 'admin',
+			displayName: 'admin',
+			roles: ['admin'],
+		},
+	}).request!
+	const source: RequestSource = {
+		kind: 'inherited',
+		lineage: clickerLineage,
+	}
+	const t = createAdminCapabilityTest([admin, jane], undefined, ['user'], {
+		source,
+	})
+	t.ctx.callerContext = createMcpCallerContext({
+		source,
+		executionOrigin: 'background',
+		baseUrl: 'https://example.com',
+		user: {
+			userId: personIdFromStored(teamOrgId),
+			email: '',
+			username: 'team-org',
+			displayName: 'Team Org',
+			roles: ['user'],
+		},
+		storageContext: {
+			sessionId: null,
+			appId: automationPackageId,
+			packageId: automationPackageId,
+			storageId: null,
+		},
+	})
+	expect(t.ctx.callerContext.request?.actor?.userId).toBe(adminPersonId)
+	const verified = await adminUserVerifyCapability.handler(
+		{ email: 'jane@example.com', action: 'mark_verified' },
+		t.ctx,
+	)
+	expect(verified.user.email_verified).toBe(true)
+	expect(t.auditEvents()).toEqual(
+		expect.arrayContaining([
+			{
+				action: 'adminUserVerify',
+				result: 'success',
+				reason: triggerAudit('run-now', ''),
+			},
+		]),
+	)
+	// Team-org MCP user has no email; the wrapper row still hashes the clicker
+	// so email-filtered audit queries find the run-now invocation.
+	const runNowAudit = t.auditSqlite
+		.prepare(
+			`SELECT email_hash, reason FROM audit_events
+			 WHERE action = 'adminUserVerify' AND reason LIKE 'trigger=run-now%'
+			 ORDER BY id DESC LIMIT 1`,
+		)
+		.get() as { email_hash: string | null; reason: string } | undefined
+	expect(runNowAudit?.reason).toBe(triggerAudit('run-now', ''))
+	expect(runNowAudit?.email_hash).toBeTruthy()
+})
+
+test('an interactive caller without the admin role is still refused', async () => {
+	const t = createAdminCapabilityTest([admin, jane], undefined, ['user'])
+	await expect(
+		adminUserVerifyCapability.handler(
+			{ email: 'jane@example.com', action: 'mark_verified' },
+			t.ctx,
+		),
+	).rejects.toThrow(
+		/MCP user lacks required role "admin" for capability "adminUserVerify"/,
+	)
+	expect(t.userRow('jane@example.com')?.['email_verified_at']).toBeNull()
+})

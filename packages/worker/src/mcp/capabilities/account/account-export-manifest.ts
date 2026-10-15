@@ -1,4 +1,3 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -10,6 +9,7 @@ import {
 	createAccountExportManifest,
 	resolveAccountExportDbUserId,
 } from '#worker/account/export.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { accountExportManifestOutputSchema } from './account-export-shared.ts'
 
 export const accountExportManifestCapability = defineDomainCapability(
@@ -27,15 +27,19 @@ export const accountExportManifestCapability = defineDomainCapability(
 		outputSchema: accountExportManifestOutputSchema,
 		async handler(_args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
+			// GDPR export is always the personal account — never a bound team org.
+			const ownerUserId = personalOrgIdForPerson(user)
+			const personUserId = user.userId
 			const dbUserId = await resolveAccountExportDbUserId({
 				env: ctx.env,
-				mcpUserId: personalOrgId(user.userId),
+				personUserId,
 				email: user.email,
 			})
 			const manifest = await createAccountExportManifest({
 				env: ctx.env,
 				dbUserId,
-				mcpUserId: personalOrgId(user.userId),
+				ownerUserId,
+				personUserId,
 			})
 			return { manifest }
 		},

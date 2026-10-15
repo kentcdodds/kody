@@ -9,10 +9,8 @@ import {
 	chunkArray,
 	maxD1BoundParameters,
 } from '@kody-internal/shared/chunk.ts'
-import {
-	personalOrgId,
-	type OwnerId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { loadPersonalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { earliestSecretExpiresAt } from '@kody-internal/shared/secret-expires-at.ts'
 import {
@@ -21,6 +19,7 @@ import {
 } from '#worker/authorization/authorize.ts'
 import { getIntegrationAllowedHosts } from '#mcp/execute-modules/integration-host-allowlist.ts'
 import { isReservedSecretName } from '#mcp/secrets/name-guards.ts'
+import { oauthCredentialListStatus } from '#worker/integrations/connected.ts'
 import {
 	type CredentialInjectView,
 	type CredentialKind,
@@ -208,8 +207,11 @@ async function loadIntegrationRows(input: {
 		return result.results ?? []
 	})
 	return rows.map((row): ListedRow => {
-		const connected = row.connected_at !== null
-		const failed = row.auth_failed_at !== null
+		const { status, statusMessage } = oauthCredentialListStatus({
+			connectedAt: row.connected_at,
+			authFailedAt: row.auth_failed_at,
+			authFailedReason: row.auth_failed_reason,
+		})
 		return {
 			family: 'integration',
 			id: row.id,
@@ -233,12 +235,8 @@ async function loadIntegrationRows(input: {
 			expiresAt: null,
 			createdAt: row.created_at,
 			updatedAt: row.updated_at,
-			status: connected && !failed ? 'ok' : 'needs_attention',
-			statusMessage: !connected
-				? 'Not connected yet.'
-				: failed
-					? `Reconnect needed${row.auth_failed_reason ? ` (${row.auth_failed_reason})` : ''}.`
-					: null,
+			status,
+			statusMessage,
 			mcp: null,
 		}
 	})
@@ -375,7 +373,7 @@ export async function listCredentialsForViewer(input: {
 			)
 		const personalRows = await loadOwnerRows({
 			db,
-			ownerId: personalOrgId(actor),
+			ownerId: await loadPersonalOrgIdForPerson(db, actor),
 			ids: personal.map((credential) => credential.id),
 			now,
 		})

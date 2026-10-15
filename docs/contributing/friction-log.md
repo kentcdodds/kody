@@ -20,6 +20,7 @@ one clear contract over aliases, special-cases, or session noise.
 File when the pain is **durable**, **recurring**, and has a **clear owner** plus
 a **reproducible contract gap** (missing step, lying type, broken harness,
 docs/code mismatch). The next agent should be able to act without your session.
+A brittle test that was not a great test to begin with counts — file it.
 
 Do **not** file:
 

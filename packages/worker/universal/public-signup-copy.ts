@@ -7,7 +7,7 @@ import { routes } from './routes.ts'
  */
 export const publicSignupHref = routes.signup.href()
 
-export const publicCreateAccountLabel = 'Create a free account'
+const publicCreateAccountLabel = 'Create a free account'
 
 export type PublicSignupCta = {
 	href: string

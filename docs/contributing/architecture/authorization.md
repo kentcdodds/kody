@@ -276,36 +276,39 @@ it, and when a site-admin capability does.
 ### Site-admin capabilities from triggered runs
 
 Site-admin capabilities (`requiredRole` or `requiredPermission`) do not need a
-live person. A job, webhook, subscription, or inbound email run, or package code
-one of those started, may call them when the person the run acts for (its
-enabler) is a site admin. `defineCapability` adds two steps when
-`nonInteractiveTriggerOf` (`packages/worker/src/authorization/authorize.ts`)
-finds no live person behind the request:
+live person. A job, webhook, subscription, or inbound email run, package code
+one of those started, or a background `jobRunNow` in a team org, may call them
+when the person the run acts for (its enabler, or the run-now clicker) is a site
+admin. `defineCapability` adds two steps when `shouldDeferSiteAccessToActor`
+(`access-control.ts`) is true:
 
-- after the usual role check against the caller's roles, the run's actor must
-  hold the role or permission in D1 right now
-  (`getActiveStableUserRolesAndPermissions`), and must not be suspended or
-  deleted. The background caller's roles are cached for up to a minute and name
-  the org's identity, so they are not trusted on their own. A run with no actor
-  (a trigger nobody turned on) is refused.
+- enablement-backed runs (job, webhook, subscription, email) and background runs
+  whose MCP user is not the actor (team-org `jobRunNow` inherits a live person
+  credential but keeps the org as `callerContext.user`) defer the caller's
+  site-admin role check to the run's actor in D1
+  (`getActiveStableUserRolesAndPermissions`). The background caller's roles are
+  cached for up to a minute and name the org's identity, so they are not trusted
+  on their own. The actor must hold the role or permission right now and must
+  not be suspended or deleted. A run with no actor (a trigger nobody turned on)
+  is refused. Package-app and unattended runs still fail closed on the caller's
+  roles. Attribution helpers (`resolveActingAdminPerson`) also prefer
+  `request.actor` when access is deferred so grants and audit rows name the
+  enabler or clicker, not the org.
 - every call that passes writes one `admin` audit row, on success or failure,
   whose action is the capability name and whose reason is
-  `trigger=<job|webhook|subscription|email|package-app|unattended>;trigger_id=<id>;actor=<stable id>;package_id=<id>`,
+  `trigger=<job|webhook|subscription|email|run-now|package-app|unattended>;trigger_id=<id>;actor=<stable id>;package_id=<id>`,
   plus `;error=<message>` on failure. `trigger_id` is the enablement id when an
-  enablement runs it, otherwise the job, webhook, or event source id. The row
-  covers input validation through output validation, and its result says whether
-  the call returned or threw. It is in addition to any audit row the capability
-  writes itself, which keeps the capability's own verdict (for example a refused
-  `adminOrgResourceTransfer` that returns normally).
+  enablement runs it, otherwise the job, webhook, or event source id (empty for
+  session-backed run-now). The row covers input validation through output
+  validation, and its result says whether the call returned or threw. It is in
+  addition to any audit row the capability writes itself, which keeps the
+  capability's own verdict (for example a refused `adminOrgResourceTransfer`
+  that returns normally).
 
 Both steps live in
 `packages/worker/src/mcp/capabilities/triggered-site-access.ts`. Interactive
-calls skip those two steps and use the usual role check.
-
-A team org's runs call as the org's identity, which holds no site role, so the
-role check still refuses them even when the enabler is an admin. Site-admin
-automation runs from the admin's personal org. Package app visitors carry no
-site roles and are refused the same way.
+calls skip those two steps and use the usual role check. Package app visitors
+carry no site roles and are refused on the caller role check.
 
 API tokens carry org-permission scopes (`org:execute`, `package:read`, …).
 `authorize` step 4 narrows the compiled role by `credential.scopes`. There is no
@@ -557,7 +560,8 @@ grant props. They would go stale on revocation.
 const userId = grantProps.userId.trim()
 const row = await env.APP_DB.prepare(
 	`SELECT id, email, username, display_name, stable_user_id,
-		deleting_at, email_verified_at, suspended_at, password_changed_at
+		personal_org_id, deleting_at, email_verified_at, suspended_at,
+		password_changed_at
 	 FROM users
 	 WHERE stable_user_id = ?`,
 )
@@ -754,13 +758,15 @@ admin owners only, metadata-only listing fields (including canonical
 `public_url`), permanent cancellation for missing or inactive listings, and
 enqueue failures that never fail `communityPublish`.
 
-A republish that moves the pinned commit fans `community.fork.upstream_updated`
-out across accounts, and only to accounts that hold a `community_forks` row for
-that listing. Each forker receives public listing metadata (id, name, package
-name leaf, `public_url`, publisher username, pinned commits and versions) plus
-identifiers of their own fork. The event never carries the publisher's stable
-id, email, or source, and never names other forkers. Delivery goes only to
-packages owned by that forker.
+A republish that moves the pinned commit fans `follow.published` to follows of
+that package, and emits `community.fork.upstream_updated` from the same pipeline
+for accounts that hold a `community_forks` row. Each forker receives public
+listing metadata (id, name, package name leaf, `public_url`, publisher username,
+pinned commits and versions) plus identifiers of their own fork. The event never
+carries the publisher's stable id, email, or source, and never names other
+forkers. Delivery goes only to packages owned by that forker. Follow create and
+push checks use `package:read` (org-wide for plain repos), never a grant preset
+name.
 
 **Admins can subscribe to public status-page incidents.** The isolated status
 worker records component incidents in its own Durable Object, then best-effort

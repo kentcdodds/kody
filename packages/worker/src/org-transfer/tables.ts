@@ -29,6 +29,9 @@ export const orgTransferTables: Record<string, OrgTransferTableDisposition> = {
 	package_capability_approvals: keep(
 		'Internet-visible capability approvals are owner attestations. Rows for moved packages are deleted so the destination owner must re-approve; is_internet_visible is cleared on transfer.',
 	),
+	package_security_audits: keep(
+		'Informational package security audits. Rows for moved packages are deleted so the destination owner can re-audit.',
+	),
 	package_app_custom_hostnames: keep(
 		'App-level rows bind by package_id (unchanged on transfer), so the hostname follows the moved package. Org-level rows bind by org_id and stay with the source org. created_by_user_id is attribution only.',
 	),
@@ -50,6 +53,9 @@ export const orgTransferTables: Record<string, OrgTransferTableDisposition> = {
 	),
 	community_forks: move(
 		'forker_user_id re-pointed for forks that produced a moved package.',
+	),
+	follows: keep(
+		'Follow rows stay with the follower org (follower_org_id is not re-pointed). The transfer batch rewrites denormalized target_owner_id and target_name so followers keep watching the same target ids under the destination owner.',
 	),
 	mcp_memories: move('user_id re-pointed; vectors reindexed under the target.'),
 	mcp_memory_conversation_suppressions: move(
@@ -110,6 +116,12 @@ export const orgTransferTables: Record<string, OrgTransferTableDisposition> = {
 		'Usage history keyed by the acting person, not the package owner org.',
 	),
 	api_tokens: keep(personOwned),
+	approval_bundle_decisions: keep(
+		'Decisions belong to bundles, which stay with the source org.',
+	),
+	approval_bundles: keep(
+		'Bundles name source-org approvals; an agent bundles again in the target org.',
+	),
 	billing_promo_claims: keep(usageHistory),
 	cli_credential_bootstrap_codes: keep(personOwned),
 	community_activity_events: keep('Historical activity log.'),
@@ -152,6 +164,7 @@ export const orgTransferTables: Record<string, OrgTransferTableDisposition> = {
 		'Client callback subscriptions belong to the OAuth client connection.',
 	),
 	oauth_connections: keep(personOwned),
+	org_invite_link_pending: keep(orgMembershipShape),
 	org_invite_link_redemptions: keep(orgMembershipShape),
 	org_invite_links: keep(orgMembershipShape),
 	org_limit_overrides: keep(orgMembershipShape),

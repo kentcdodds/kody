@@ -21,15 +21,17 @@ Agent notes — for AI agents driving first-run from a copied onboarding prompt:
   Keep each message under roughly 120 words.
 - After they pick, do one small concrete win from that playbook. Stay on that
   win.
-- Kody is Your agents' cloud: memory, secrets, packages, jobs, workflows, and
-  apps. They keep or switch agents without rebuilding that stack.
+- Kody is Your agents' cloud for individuals and teams: memory, credentials,
+  packages, jobs, workflows, and apps. They keep or switch agents without
+  rebuilding that stack.
 - Kody is not a service gateway, Composio-like middleware, or "connect APIs
   for your agent." Integrations exist. The center is owned memory and owned
   packages that run in Kody's cloud and are callable from any MCP host.
 - Prefer webhook and event framing for apps, workflows, and jobs. A schedule
   is optional, not the hero.
-- Secrets are usable by packages. Secrets stay on the setup page; send the URL
-  and wait until they confirm save. Use the secret name (`{{secret:name}}`).
+- Credentials are usable by packages. Credentials stay on the setup page; send
+  the URL and wait until they confirm save. Use the credential name
+  (`{{secret:name}}`).
 - Integration difficulty: MCP is the easy path, a PAT/API key is harder and
   more powerful, OAuth is hardest and most powerful. Say that out loud before
   you start a setup.
@@ -50,10 +52,11 @@ this guide with `search({ entity: "guide:onboarding" })`.
 
 ## What Kody is
 
-Kody is Your agents' cloud. You connect the agent you already use. That agent
-gains durable state that outlives the chat: memory, secrets, saved packages,
-jobs, workflows, and apps. Work runs in Kody's cloud. You can keep that agent or
-switch to another without rebuilding the stack.
+Kody is Your agents' cloud for individuals and teams (orgs, teams, and grants).
+You connect the agent you already use. That agent gains durable state that
+outlives the chat: memory, credentials, saved packages, jobs, workflows, and
+apps. Work runs in Kody's cloud. You can keep that agent or switch to another
+without rebuilding the stack.
 
 You do not chat with Kody directly. You talk to your agent; it does the
 reasoning and uses your computer. Kody holds what should outlive the chat.
@@ -161,7 +164,8 @@ Small win: one useful execute from their answer. Show the result.
 ## Packages
 
 A package is owned code they save and invoke from any MCP host. The repo is the
-source. Credentials stay in secrets. Runtime knobs live in package storage.
+source. Credentials stay in credential storage. Runtime knobs live in package
+storage.
 
 Prefer a close public package (`communitySearch`) before creating a new one.
 Create when nothing close exists, or when they want something they will keep
@@ -207,9 +211,9 @@ registration. Otherwise the user brings their own app.
 
 ## Secrets
 
-Packages use secrets. Secrets stay on the setup page; send the URL and wait
-until they confirm save. List, set, delete, and sign with the secret’s name.
-`secretLock` returns a website Allow link for package access. The grant is
+Packages use credentials. Credentials stay on the setup page; send the URL and
+wait until they confirm save. List, set, delete, and sign with the secret’s
+name. `secretLock` returns a website Allow link for package access. The grant is
 written when they confirm that page.
 
 Small win: name a credential they already have and store it as a secret, or skip

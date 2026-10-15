@@ -40,6 +40,7 @@ import {
 	credentialStatusLabel,
 	filterCredentialList,
 } from '#universal/credentials-list.ts'
+import { docHref } from '#universal/docs-nav.ts'
 import { orgResourcePath, orgSlugFromPathname } from '#universal/org-pages.ts'
 import {
 	getGhostButtonCss,
@@ -300,22 +301,30 @@ export function AccountCredentialsRoute(handle: Handle) {
 					description="Keys, OAuth connections, MCP servers, and every other way Kody reaches a service for you. Kody places each value at the network boundary; values never appear here."
 					currentHref={currentHref}
 					actions={
-						orgSlug ? (
-							<div mix={headerActionsCss}>
-								<a
-									href={orgCredentialCreatePath(orgSlug)}
-									mix={css(getPillButtonCss({ size: 'sm' }))}
-								>
-									Add credential
-								</a>
-								<a
-									href={orgResourcePath(orgSlug, 'secret-providers')}
-									mix={css(getGhostButtonCss({ size: 'sm' }))}
-								>
-									Secret providers
-								</a>
-							</div>
-						) : null
+						<div mix={headerActionsCss}>
+							{orgSlug ? (
+								<>
+									<a
+										href={orgCredentialCreatePath(orgSlug)}
+										mix={css(getPillButtonCss({ size: 'sm' }))}
+									>
+										Add credential
+									</a>
+									<a
+										href={orgResourcePath(orgSlug, 'secret-providers')}
+										mix={css(getGhostButtonCss({ size: 'sm' }))}
+									>
+										Secret providers
+									</a>
+								</>
+							) : null}
+							<a
+								href={docHref('credentials')}
+								mix={css(getGhostButtonCss({ size: 'sm' }))}
+							>
+								How credentials work
+							</a>
+						</div>
 					}
 				/>
 
@@ -350,6 +359,12 @@ export function AccountCredentialsRoute(handle: Handle) {
 									}),
 									teamOrg,
 									packagesById,
+									href: currentHref,
+									onHostsSaved: () =>
+										credentialsData.reload(
+											handle,
+											readCurrentRouterHref(handle),
+										),
 								})
 							: undefined
 					}

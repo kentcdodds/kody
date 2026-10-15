@@ -6,7 +6,30 @@ import {
 	readInvalidExpiresAtQuery,
 	resolvePackageIdForSecretSet,
 } from './connect-secret-set.tsx'
-import { createEmptyEditorState } from './account-secrets-shared.ts'
+import {
+	createEmptyEditorState,
+	readAccountSecretsSaveWarning,
+} from './account-secrets-shared.ts'
+
+test('readAccountSecretsSaveWarning combines non-fatal save warnings', () => {
+	expect(readAccountSecretsSaveWarning({})).toBeNull()
+	expect(
+		readAccountSecretsSaveWarning({
+			providerLinkError: 'provider link failed',
+		}),
+	).toBe('provider link failed')
+	expect(
+		readAccountSecretsSaveWarning({
+			renameCleanupError: 'old secret remains',
+		}),
+	).toBe('old secret remains')
+	expect(
+		readAccountSecretsSaveWarning({
+			providerLinkError: 'provider link failed',
+			renameCleanupError: 'old secret remains',
+		}),
+	).toBe('provider link failed old secret remains')
+})
 
 test('connect secret-set view focuses the form when a name is present', () => {
 	expect(

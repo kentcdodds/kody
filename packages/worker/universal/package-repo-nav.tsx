@@ -2,6 +2,7 @@
 /** @jsxRuntime automatic */
 import { type RemixNode, css } from 'remix/component'
 import { IdentityIconMark } from '#universal/identity-icon-mark.tsx'
+import { packageCollaboratorsHref } from '#universal/package-collaborators.ts'
 import { getPackageSettingsHref } from '#universal/package-files.ts'
 import {
 	type PackageCredentialsTab,
@@ -17,6 +18,7 @@ export type PackageRepoNavActive =
 	| 'repo'
 	| 'files'
 	| 'settings'
+	| 'collaborators'
 	| PackageCredentialsTab
 
 function renderPackageRepoNav(input: {
@@ -26,6 +28,8 @@ function renderPackageRepoNav(input: {
 	viewerCanManage: boolean
 	/** Saved packages the viewer's org owns: credential and trigger tabs. */
 	showCredentialTabs: boolean
+	/** Saved packages the viewer may manage access to (`package:manage_access`). */
+	showCollaboratorsTab: boolean
 	/** Defaults to true. Pass false only to hide Files intentionally. */
 	showFilesNav?: boolean
 	active: PackageRepoNavActive
@@ -80,6 +84,19 @@ function renderPackageRepoNav(input: {
 						</a>
 					))
 				: null}
+			{input.showCollaboratorsTab ? (
+				<a
+					href={packageCollaboratorsHref({
+						username: input.username,
+						kodyId: input.kodyId,
+					})}
+					aria-current={input.active === 'collaborators' ? 'page' : undefined}
+					data-testid="package-repo-nav-collaborators"
+					mix={css(tabCss)}
+				>
+					Collaborators
+				</a>
+			) : null}
 			{input.viewerCanManage ? (
 				<a
 					href={settingsHref}
@@ -103,6 +120,8 @@ export function renderPackageRepoChrome(input: {
 	hasPackage?: boolean
 	viewerIsOwner: boolean
 	viewerCanManage: boolean
+	/** Shows the Collaborators tab. Defaults to false. */
+	viewerCanManageAccess?: boolean
 	active: PackageRepoNavActive
 	filesHref: string
 	description?: string
@@ -189,6 +208,8 @@ export function renderPackageRepoChrome(input: {
 					filesHref: input.filesHref,
 					viewerCanManage: input.viewerCanManage,
 					showCredentialTabs: input.viewerIsOwner && hasPackage,
+					showCollaboratorsTab:
+						input.viewerCanManageAccess === true && hasPackage,
 					active: input.active,
 				})}
 				{input.actions ? (

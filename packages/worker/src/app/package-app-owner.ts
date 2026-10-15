@@ -9,6 +9,7 @@ import { findPublicOwnerIdentityByHandle } from '#worker/identity/user-lookup.ts
 import { resolveDisplayName } from '#worker/identity/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { getOrgById } from '#worker/orgs/repo.ts'
+import { personalOrgIdFromUserRow } from '#worker/orgs/personal-org-id.ts'
 import {
 	invokeContractFreshnessCacheLimit,
 	invokeContractFreshnessTtlMs,
@@ -33,6 +34,8 @@ import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export type PackageAppOwner = {
 	/** Stable (hashed) user id used for every userId-scoped read. */
 	userId: OwnerId
+	/** `users.personal_org_id`, so callers can tell a personal-org visit. */
+	personalOrgId: OwnerId
 	username: string
 	email: string
 	displayName: string
@@ -46,6 +49,7 @@ export type PackageAppOwner = {
  */
 type CachedPackageAppOwnerRow = {
 	userId: OwnerId
+	personalOrgId: OwnerId
 	username: string
 	email: string
 	deletingAt: string | null
@@ -77,23 +81,43 @@ export type PackageAppOrgOwner = {
 	displayName: string
 }
 
+/**
+ * Per-isolate cache for handle → org resolution on the package-app serving
+ * path, same 15 s freshness tier as the owner row cache. Every package-app
+ * request (HTML and `/_assets`) names its org by handle, so without this each
+ * one pays the handle and org reads. Misses are not retained.
+ */
+const packageAppOrgOwnerCache = new PromiseLruCache<PackageAppOrgOwner | null>({
+	ttlMs: invokeContractFreshnessTtlMs,
+	limit: invokeContractFreshnessCacheLimit,
+})
+
 export async function resolvePackageAppOrgOwnerByHandle(input: {
 	env: Env
 	handle: string
 }): Promise<PackageAppOrgOwner | null> {
-	const identity = await findPublicOwnerIdentityByHandle({
-		db: input.env.APP_DB,
-		handle: input.handle,
+	const cacheKey = input.handle.trim().toLowerCase()
+	return await packageAppOrgOwnerCache.getOrCreate({
+		cacheKey,
+		create: async () => {
+			const identity = await findPublicOwnerIdentityByHandle({
+				db: input.env.APP_DB,
+				handle: input.handle,
+			})
+			const org = identity
+				? await getOrgById(input.env.APP_DB, identity.ownerId)
+				: null
+			if (!identity || !org) {
+				packageAppOrgOwnerCache.delete(cacheKey)
+				return null
+			}
+			return {
+				userId: identity.ownerId,
+				username: identity.handle,
+				displayName: org.display_name?.trim() || org.slug,
+			}
+		},
 	})
-	if (!identity) return null
-	const org = await getOrgById(input.env.APP_DB, identity.ownerId)
-	if (!org) return null
-	const displayName = org.display_name?.trim() || org.slug
-	return {
-		userId: identity.ownerId,
-		username: identity.handle,
-		displayName,
-	}
 }
 
 export function invalidatePackageAppOwnerCache(input: {
@@ -141,6 +165,7 @@ function packageAppOwnerFromCachedRow(input: {
 	}
 	return {
 		userId: input.row.userId,
+		personalOrgId: input.row.personalOrgId,
 		username: input.row.username,
 		email: input.row.email,
 		displayName: resolveDisplayName({
@@ -180,6 +205,7 @@ async function loadPackageAppOwnerRowWithCache(input: {
 			}
 			return {
 				userId: personalOrgId(personIdFromStored(userRecord.stable_user_id)),
+				personalOrgId: personalOrgIdFromUserRow(userRecord),
 				username: userRecord.username,
 				email: userRecord.email,
 				deletingAt: userRecord.deleting_at ?? null,

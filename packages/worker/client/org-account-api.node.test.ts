@@ -1,10 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest'
-import {
-	commitLastUsedOrgAfterPrefetchAdopt,
-	lastUsedOrgCommitApiPath,
-	orgAccountApiFetchInit,
-	resetOrgAccountPrefetchCookieState,
-} from '#client/org-account-api.ts'
+import { orgAccountApiFetchInit } from '#client/org-account-api.ts'
 import { accountJobsRouteLoader } from '#client/routes/account-jobs-shared.ts'
 import { accountSecretsRouteLoader } from '#client/routes/account-secrets-shared.ts'
 import { orgAccountClientLoaders } from '#client/routes/org-account-routes.tsx'
@@ -13,13 +8,11 @@ import { prefetchRouteOnIntent } from './intent-prefetch.ts'
 
 afterEach(() => {
 	vi.unstubAllGlobals()
-	resetOrgAccountPrefetchCookieState()
 })
 
-test('prefetch AbortSignal marks X-Kody-Prefetch; adopt commits that page only', async () => {
+test('prefetch and navigation account JSON loads send the same request', async () => {
 	const fetchMock = stubBrowser({ ok: true })
 	const acme = 'https://kody.test/@acme/-/waiting'
-	const other = 'https://kody.test/@other/-/waiting'
 	prefetchRouteOnIntent(
 		'/@acme/-/waiting',
 		async (_url, signal) => {
@@ -28,121 +21,19 @@ test('prefetch AbortSignal marks X-Kody-Prefetch; adopt commits that page only',
 		},
 		new URL(acme),
 	)
-	prefetchRouteOnIntent(
-		'/@other/-/waiting',
-		async (_url, signal) => {
-			fetch('/account/waiting.json', orgAccountApiFetchInit(other, signal))
-			return {}
-		},
-		new URL(other),
-	)
 	await Promise.resolve()
-	expect(fetchMock).toHaveBeenCalled()
-	const prefetchInit = fetchMock.mock.calls[0]?.[1]
-	expect(prefetchInit?.headers).toMatchObject({ 'X-Kody-Prefetch': '1' })
-
-	fetchMock.mockClear()
-	// Adopting a different page must not consume acme's pending cookie write.
-	commitLastUsedOrgAfterPrefetchAdopt('/account')
-	expect(fetchMock).not.toHaveBeenCalled()
-
+	expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+		headers: { Accept: 'application/json' },
+		credentials: 'include',
+		referrer: acme,
+	})
 	const navigation = new AbortController()
-	commitLastUsedOrgAfterPrefetchAdopt('/@acme/-/waiting', navigation.signal)
-	await Promise.resolve()
-	expect(fetchMock).toHaveBeenCalledWith(
-		lastUsedOrgCommitApiPath,
-		expect.objectContaining({
-			referrer: acme,
-			credentials: 'include',
-		}),
-	)
-	const commitInit = fetchMock.mock.calls[0]?.[1]
-	expect(commitInit?.headers).toEqual({ Accept: 'application/json' })
-	// Cookie write must not ride the navigation AbortSignal: a follow-up hop
-	// would abort it and drop last-used for an org page already opened.
-	expect(commitInit?.signal).toBeUndefined()
-
-	fetchMock.mockClear()
-	commitLastUsedOrgAfterPrefetchAdopt('/@acme/-/waiting', navigation.signal)
-	expect(fetchMock).not.toHaveBeenCalled()
-})
-
-test('query-bearing settings prefetch key matches adopt', async () => {
-	const fetchMock = stubBrowser({ ok: true })
-	const settings = 'https://kody.test/@acme/-/settings?tab=members'
-	prefetchRouteOnIntent(
-		'/@acme/-/settings?tab=members',
-		async (_url, signal) => {
-			fetch('/@acme/-/settings.json', orgAccountApiFetchInit(settings, signal))
-			return {}
-		},
-		new URL(settings),
-	)
-	await Promise.resolve()
-	fetchMock.mockClear()
-	commitLastUsedOrgAfterPrefetchAdopt('/@acme/-/settings?tab=members')
-	expect(fetchMock).toHaveBeenCalledWith(
-		lastUsedOrgCommitApiPath,
-		expect.objectContaining({ referrer: settings }),
-	)
-})
-
-test('adopt commits last-used via dedicated path for Connections pages', async () => {
-	const fetchMock = stubBrowser({ ok: true })
-	const connections = 'https://kody.test/@acme/-/agents'
-	prefetchRouteOnIntent(
-		'/@acme/-/agents',
-		async (_url, signal) => {
-			fetch(
-				'/account/connected-agents.json',
-				orgAccountApiFetchInit(connections, signal),
-			)
-			return {}
-		},
-		new URL(connections),
-	)
-	await Promise.resolve()
-	fetchMock.mockClear()
-	commitLastUsedOrgAfterPrefetchAdopt('/@acme/-/agents')
-	expect(fetchMock).toHaveBeenCalledWith(
-		lastUsedOrgCommitApiPath,
-		expect.objectContaining({
-			referrer: connections,
-			credentials: 'include',
-		}),
-	)
-})
-
-test('aborted navigation does not commit last-used org', async () => {
-	const fetchMock = stubBrowser({ ok: true })
-	const destination = 'https://kody.test/@acme/-/secrets'
-	prefetchRouteOnIntent(
-		'/@acme/-/secrets',
-		async (_url, signal) => {
-			fetch(
-				'/account/secrets.json',
-				orgAccountApiFetchInit(destination, signal),
-			)
-			return {}
-		},
-		new URL(destination),
-	)
-	await Promise.resolve()
-	fetchMock.mockClear()
-	const navigation = new AbortController()
-	navigation.abort()
-	commitLastUsedOrgAfterPrefetchAdopt('/@acme/-/secrets', navigation.signal)
-	expect(fetchMock).not.toHaveBeenCalled()
-})
-
-test('a real navigation signal overlapping prefetch is not marked prefetch', () => {
-	stubBrowser({ ok: true })
-	const navigation = new AbortController()
-	const init = orgAccountApiFetchInit(
-		'https://kody.test/@acme/-/secrets',
-		navigation.signal,
-	)
-	expect(init.headers).toEqual({ Accept: 'application/json' })
+	expect(orgAccountApiFetchInit(acme, navigation.signal)).toEqual({
+		headers: { Accept: 'application/json' },
+		credentials: 'include',
+		referrer: acme,
+		signal: navigation.signal,
+	})
 })
 
 function stubBrowser(body: unknown, status = 200) {

@@ -2,6 +2,11 @@ import {
 	listPublicWebsitePages,
 	listPublicBlogPages,
 } from '#app/public-content.ts'
+import {
+	kodyMcpServerName,
+	kodyMcpServerTitle,
+	kodyMcpServerVersion,
+} from '#mcp/kody-mcp-server-info.ts'
 import { listGuides } from '#worker/guides/catalog.ts'
 import { mcpOauthScopes } from '#worker/mcp-oauth-scopes.ts'
 import { docHref, docsIntroSlug } from '#universal/docs-nav.ts'
@@ -25,7 +30,7 @@ export const openaiAppsChallengeToken =
 	'cgisbN1peOFC_FcpE83Zn5gihUckKsjEVj-tItKRkxU'
 
 /** Matches the MCP server `version` advertised on both protocol lanes. */
-export const kodyMcpServerCardVersion = '1.0.0'
+export const kodyMcpServerCardVersion = kodyMcpServerVersion
 
 const aiCrawlerUserAgents = [
 	'GPTBot',
@@ -68,10 +73,10 @@ export type AgentSkillDefinition = {
 
 const connectKodySkillBody = `# Connect Kody
 
-Kody is Your agents' cloud: an OAuth-protected MCP personal assistant. You use
-it from an existing MCP host (Cursor, ChatGPT, Claude Desktop, Claude Code,
-Codex, Copilot, Grok, OpenCode, OpenClaw, Muse). There is no separate Kody chat
-app.
+Kody is Your agents' cloud: an OAuth-protected MCP cloud for individuals and
+teams. You use it from an existing MCP host (Cursor, ChatGPT, Claude Desktop,
+Claude Code, Codex, Copilot, Grok, OpenCode, OpenClaw, Muse). There is no
+separate Kody chat app.
 
 ## When to use
 
@@ -90,16 +95,16 @@ land on kody.codes and need to add the MCP server.
    introduction plus an index of every doc.
 
 Client-specific setup lives on \`/onboarding\` and in
-\`/docs/connect-your-agent.md\`. Do not ask anyone to paste secrets, tokens,
+\`/docs/connect-your-agent.md\`. Do not ask anyone to paste credentials, tokens,
 or passwords into chat.
 `
 
 const whatIsKodySkillBody = `# What is Kody
 
-Kody is Your agents' cloud: a per-user personal assistant reached over MCP.
-Each signed-in user gets an isolated assistant (packages, jobs, secrets,
-memories, email, storage). The public MCP surface is two tools: \`search\` and
-\`execute\`.
+Kody is Your agents' cloud: for individuals and teams (orgs, teams, grants),
+reached over MCP. Accounts hold packages, jobs, credentials, memories, email,
+and storage under org isolation. The public MCP surface is two tools:
+\`search\` and \`execute\`.
 
 ## When to use
 
@@ -214,11 +219,14 @@ export function buildMcpServerCard(origin: string) {
 	const endpoint = `${origin}${mcpResourcePath}`
 	return {
 		serverInfo: {
-			name: 'Kody',
+			// Match handshake Implementation.name / title so discovery clients
+			// that compare card identity to initialize serverInfo agree.
+			name: kodyMcpServerName,
+			title: kodyMcpServerTitle,
 			version: kodyMcpServerCardVersion,
 		},
 		description:
-			"Your agents' cloud. Per-user MCP assistant with search and execute. OAuth required. Connect from an existing MCP host. There is no separate Kody chat app.",
+			"Your agents' cloud for individuals and teams. MCP with search and execute. OAuth required. Connect from an existing MCP host. There is no separate Kody chat app.",
 		url: endpoint,
 		transport: {
 			type: 'streamable-http',
@@ -297,9 +305,9 @@ export function buildAuthMarkdown(origin: string): string {
 	return [
 		'# auth.md',
 		'',
-		"Kody is Your agents' cloud: an OAuth-protected MCP personal assistant.",
+		"Kody is Your agents' cloud: an OAuth-protected MCP cloud for individuals and teams.",
 		`Agents connect at \`${mcp}\` from an existing MCP host. People complete`,
-		'sign-in and consent in the browser; do not ask anyone to paste secrets',
+		'sign-in and consent in the browser; do not ask anyone to paste credentials',
 		'or tokens into chat.',
 		'',
 		'## Add the MCP server',
@@ -339,10 +347,9 @@ export function buildHomeMarkdown(origin: string): string {
 	return [
 		'# Kody',
 		'',
-		"Kody is Your agents' cloud: a per-user personal assistant for builders",
-		'who would rather own their automations than rent them. You use it from',
-		'Cursor, ChatGPT, Claude, Codex, Copilot, Grok, or any MCP host, not from',
-		'a separate Kody chat app.',
+		"Kody is Your agents' cloud: for individuals and teams (orgs, teams,",
+		'and grants). You use it from Cursor, ChatGPT, Claude, Codex, Copilot,',
+		'Grok, or any MCP host, not from a separate Kody chat app.',
 		'',
 		`MCP URL: \`${origin}${mcpResourcePath}\` (OAuth required).`,
 		'',

@@ -90,27 +90,54 @@ export function coalesceFirstPartyDetails(
 	return out
 }
 
-export function firstPartyAlertKind(token: Token): FirstPartyAlertKind | null {
+function blockquoteMarker(token: Token, marker: RegExp) {
 	if (token.type !== 'blockquote') return null
 	const first = token.tokens?.[0]
 	if (first?.type !== 'paragraph' || typeof first.text !== 'string') return null
-	const match = alertMarkerRe.exec(first.text.trimStart())
-	if (!match) return null
-	return match[1] as FirstPartyAlertKind
+	return marker.exec(first.text.trimStart())
+}
+
+export function firstPartyAlertKind(token: Token): FirstPartyAlertKind | null {
+	const match = blockquoteMarker(token, alertMarkerRe)
+	return match ? (match[1] as FirstPartyAlertKind) : null
 }
 
 export function stripFirstPartyAlertMarker(
 	tokens: Array<Token> | undefined,
+): Array<Token> {
+	return stripLeadingMarker(tokens, alertMarkerRe)
+}
+
+/**
+ * `> [!DIAGRAM] <id>` names a first-party figure the docs renderer draws;
+ * the rest of the blockquote is its caption. Raw markdown keeps the caption
+ * as a plain blockquote, so agents still read what the figure shows.
+ */
+const diagramMarkerRe = /^\[!DIAGRAM\][ \t]+([a-z0-9-]+)\s*/
+
+export function firstPartyDiagramId(token: Token): string | null {
+	return blockquoteMarker(token, diagramMarkerRe)?.[1] ?? null
+}
+
+export function stripFirstPartyDiagramMarker(
+	tokens: Array<Token> | undefined,
+): Array<Token> {
+	return stripLeadingMarker(tokens, diagramMarkerRe)
+}
+
+function stripLeadingMarker(
+	tokens: Array<Token> | undefined,
+	marker: RegExp,
 ): Array<Token> {
 	if (!tokens?.length) return []
 	const [first, ...rest] = tokens
 	if (first?.type !== 'paragraph' || typeof first.text !== 'string') {
 		return tokens
 	}
-	const stripped = first.text.trimStart().replace(alertMarkerRe, '')
+	const stripped = first.text.trimStart().replace(marker, '')
 	if (stripped === first.text) return tokens
 	const nextTokens = first.tokens?.length
-		? stripAlertMarkerFromInline(first.tokens)
+		? stripMarkerFromInline(first.tokens, marker)
 		: first.tokens
 	return [
 		{
@@ -122,10 +149,13 @@ export function stripFirstPartyAlertMarker(
 	]
 }
 
-function stripAlertMarkerFromInline(tokens: Array<Token>): Array<Token> {
+function stripMarkerFromInline(
+	tokens: Array<Token>,
+	marker: RegExp,
+): Array<Token> {
 	const [first, ...rest] = tokens
 	if (first?.type !== 'text' || typeof first.text !== 'string') return tokens
-	const stripped = first.text.trimStart().replace(alertMarkerRe, '')
+	const stripped = first.text.trimStart().replace(marker, '')
 	if (!stripped) return rest
 	return [{ ...first, text: stripped }, ...rest]
 }

@@ -1,6 +1,6 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
 import { type BillingPageOrg } from '#app/account-billing-data.ts'
 import { loadAccountUsageData } from '#app/account-usage-data.ts'
@@ -89,7 +89,8 @@ async function resolveOrgUsageAccess(input: {
 			id: resolution.org.id,
 			slug: record.slug,
 			displayName: record.display_name,
-			personal: resolution.org.id === personalOrgId(input.user.mcpUser.userId),
+			personal:
+				resolution.org.id === personalOrgIdForPerson(input.user.mcpUser),
 		},
 	}
 }

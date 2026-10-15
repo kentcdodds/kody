@@ -59,6 +59,8 @@ function createFlagMap(enabled: boolean): CallerFeatureFlags {
 		'mcp-skills-extension': false,
 		'mcp-events-extension': false,
 		'package-app-custom-domains': false,
+		'repo-push-queue': false,
+		'credential-need-enforcement': false,
 	}
 }
 
@@ -221,6 +223,109 @@ test('featureFlag-gated capabilities require an authenticated caller', async () 
 	)
 	expect(filtered.capabilityMap.example_flagged).toBeUndefined()
 	expect(filtered.capabilityMap.example_open).toBeTruthy()
+})
+
+test('team-org schedule, webhook, and jobRunNow keep admin tools; interactive member cannot (#3541)', () => {
+	const adminCapability: Capability = {
+		...createCapability('adminExample'),
+		requiredRole: 'admin',
+	}
+	const teamOrgId = testStableUserIdFromEmail('team-org@example.com')
+	const adminPersonId = personIdFromStored(
+		testStableUserIdFromEmail('admin@example.com'),
+	)
+	const teamOrgUser = {
+		userId: personIdFromStored(teamOrgId),
+		email: '',
+		username: 'team-org',
+		displayName: 'Team Org',
+		roles: ['user'] as Array<'user'>,
+	}
+	const enablement = {
+		id: 'en-1',
+		enabler: { userId: adminPersonId, username: 'admin' },
+		role: 'owner' as const,
+	}
+	const scheduleOrgCaller = createMcpCallerContext({
+		source: {
+			kind: 'schedule',
+			jobId: 'job-team',
+			enablement,
+		},
+		executionOrigin: 'background',
+		baseUrl: 'https://example.com',
+		user: teamOrgUser,
+	})
+	const webhookOrgCaller = createMcpCallerContext({
+		source: {
+			kind: 'webhook',
+			sourceId: 'ep-1',
+			enablement,
+		},
+		executionOrigin: 'background',
+		baseUrl: 'https://example.com',
+		user: teamOrgUser,
+	})
+	const clickerLineage = createMcpCallerContext({
+		source: { kind: 'session' },
+		baseUrl: 'https://example.com',
+		user: {
+			userId: adminPersonId,
+			email: 'admin@example.com',
+			username: 'admin',
+			displayName: 'admin',
+			roles: ['admin'],
+		},
+	}).request!
+	const jobRunNowOrgCaller = createMcpCallerContext({
+		source: { kind: 'inherited', lineage: clickerLineage },
+		executionOrigin: 'background',
+		baseUrl: 'https://example.com',
+		user: teamOrgUser,
+	})
+	const interactiveMember = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
+		baseUrl: 'https://example.com',
+		user: {
+			userId: personIdFromStored(
+				testStableUserIdFromEmail('member@example.com'),
+			),
+			email: 'member@example.com',
+			displayName: 'member',
+			roles: ['user'],
+		},
+	})
+
+	expect(callerCanAccessCapability(scheduleOrgCaller, adminCapability)).toBe(
+		true,
+	)
+	expect(callerCanAccessCapability(webhookOrgCaller, adminCapability)).toBe(
+		true,
+	)
+	expect(callerCanAccessCapability(jobRunNowOrgCaller, adminCapability)).toBe(
+		true,
+	)
+	expect(callerCanAccessCapability(interactiveMember, adminCapability)).toBe(
+		false,
+	)
+
+	const registry = createRegistry([adminCapability, open])
+	expect(
+		filterCapabilityRegistryForCaller(registry, scheduleOrgCaller).capabilityMap
+			.adminExample,
+	).toBeTruthy()
+	expect(
+		filterCapabilityRegistryForCaller(registry, webhookOrgCaller).capabilityMap
+			.adminExample,
+	).toBeTruthy()
+	expect(
+		filterCapabilityRegistryForCaller(registry, jobRunNowOrgCaller)
+			.capabilityMap.adminExample,
+	).toBeTruthy()
+	expect(
+		filterCapabilityRegistryForCaller(registry, interactiveMember).capabilityMap
+			.adminExample,
+	).toBeUndefined()
 })
 
 test('discovery filter hides package-locked MCP server capabilities by server id', () => {

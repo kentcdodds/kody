@@ -1,4 +1,7 @@
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { quoteSqlIdentifier } from '@kody-internal/shared/sql-literals.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
@@ -10,6 +13,7 @@ import {
 	createAccountExportManifest,
 	getAccountExportD1UserColumnCoverage,
 	readAccountExportSection,
+	resolveAccountExportDbUserId,
 } from './export.ts'
 import {
 	createMigratedDb,
@@ -21,6 +25,8 @@ import {
 } from '#worker/test-support/account-export.ts'
 import { accountUserDataPendingDropTables } from '#worker/account/data-targets.ts'
 import { createMemoryKvNamespace } from '#worker/test-support/memory-kv.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const exportFor = (env: Env, dbUserId = 1, mcpUserId = 'user-aaa') =>
 	createAccountExport({
@@ -641,4 +647,93 @@ test('account export reads OAuth grant metadata from OAUTH_KV when the provider 
 	expect(withoutOAuthSurface.manifest.warnings).toContain(
 		'OAuth provider binding and OAUTH_KV were unavailable; OAuth grant metadata was not exported.',
 	)
+})
+
+test('distinct personal org resolves export identity and splits oauth vs inventory ids', async () => {
+	const { db } = createMigratedDb()
+	const email = 'distinct-export@example.com'
+	const personStable = testStableUserIdFromEmail(email)
+	const personUserId = personIdFromStored(personStable)
+	const ownerUserId = ownerIdFromStored('d'.repeat(64))
+	expect(ownerUserId).not.toBe(personUserId)
+
+	await db
+		.prepare(
+			`INSERT INTO users (
+				id, username, email, password_hash, created_at, updated_at,
+				email_verified_at, stable_user_id, personal_org_id
+			) VALUES (1, 'distinctexp', ?, 'hash', '2026-07-05', '2026-07-05',
+				'2026-07-05', ?, ?)`,
+		)
+		.bind(email, personStable, ownerUserId)
+		.run()
+	await provisionPersonalOrg(db, {
+		stableUserId: personStable,
+		orgId: ownerUserId,
+		username: 'distinctexp',
+		createdAt: '2026-07-05T00:00:00.000Z',
+	})
+
+	await db
+		.prepare(
+			`INSERT INTO user_storage_buckets (
+				user_id, storage_id, kind, created_at, last_seen_at
+			) VALUES (?, 'storage-org-1', 'package', '2026-07-05', '2026-07-05')`,
+		)
+		.bind(ownerUserId)
+		.run()
+
+	const listedGrantUserIds: Array<string> = []
+	const env = {
+		APP_DB: db,
+		MAILBOX: createMailboxBinding(),
+		OAUTH_PROVIDER: {
+			async listUserGrants(userId: string) {
+				listedGrantUserIds.push(userId)
+				return {
+					items:
+						userId === personStable
+							? [{ id: 'grant-person-1', clientId: 'client' }]
+							: [],
+					cursor: undefined,
+				}
+			},
+		},
+	} as unknown as Env
+
+	const dbUserId = await resolveAccountExportDbUserId({
+		env,
+		personUserId,
+		email,
+	})
+	expect(dbUserId).toBe(1)
+	await expect(
+		resolveAccountExportDbUserId({
+			env,
+			personUserId: personIdFromStored(ownerUserId as string),
+			email,
+		}),
+	).rejects.toThrow(/identity did not match/)
+
+	const manifest = await createAccountExportManifest({
+		env,
+		dbUserId,
+		ownerUserId,
+		personUserId,
+	})
+	expect(manifest.user.userId).toBe(ownerUserId)
+	expect(manifest.sections.oauth_grants?.count).toBe(1)
+	expect(manifest.sections.storage_runners?.count).toBe(1)
+	expect(listedGrantUserIds).toEqual([personStable])
+
+	const oauthSection = await readAccountExportSection({
+		env,
+		dbUserId,
+		ownerUserId,
+		personUserId,
+		section: 'oauth_grants',
+	})
+	expect(oauthSection.items).toEqual([
+		{ id: 'grant-person-1', clientId: 'client' },
+	])
 })

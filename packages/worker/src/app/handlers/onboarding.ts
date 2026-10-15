@@ -289,6 +289,7 @@ async function redirectOnboardingIndex(env: Env, request: Request) {
 	}
 	const progress = await loadOnboardingResumeProgress(
 		env,
+		// person-keyed (not personal org)
 		personalOrgId(user.mcpUser.userId),
 	)
 	return Response.redirect(

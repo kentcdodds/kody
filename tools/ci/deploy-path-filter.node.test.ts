@@ -1,7 +1,13 @@
 import { expect, test } from 'vitest'
 import { classifyProductionDeployPaths } from './deploy-path-filter.ts'
 
-type Script = 'main' | 'platform' | 'runtime' | 'jobs' | 'highlight'
+type Script =
+	| 'main'
+	| 'platform'
+	| 'runtime'
+	| 'jobs'
+	| 'highlight'
+	| 'push-queue'
 
 function deploys(...scripts: Array<Script>) {
 	return {
@@ -10,6 +16,7 @@ function deploys(...scripts: Array<Script>) {
 		deployRuntime: scripts.includes('runtime'),
 		deployJobs: scripts.includes('jobs'),
 		deployHighlight: scripts.includes('highlight'),
+		deployPushQueue: scripts.includes('push-queue'),
 	}
 }
 
@@ -44,7 +51,22 @@ test('production deploy path filter selects worker scripts only when their sourc
 			],
 			deploys('main', 'highlight'),
 		],
-		[[], deploys('main', 'platform', 'runtime', 'jobs', 'highlight')],
+		[
+			[],
+			deploys('main', 'platform', 'runtime', 'jobs', 'highlight', 'push-queue'),
+		],
+		[
+			['packages/push-queue-worker/src/repo-push-queue.ts'],
+			deploys('push-queue'),
+		],
+		[
+			['packages/shared/src/artifacts-receive-pack-wait.ts'],
+			deploys('main', 'push-queue'),
+		],
+		[
+			['packages/shared/src/repo-push-queue-protocol.ts'],
+			deploys('main', 'push-queue'),
+		],
 		// MCP + fetch-gateway run on platform and runtime; do not skip those
 		// scripts the way a UI-only origin path would.
 		[

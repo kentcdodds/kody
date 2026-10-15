@@ -1,6 +1,9 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { runWithRequestContext } from '#worker/request-context.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { isOrgBindingMembershipQuery } from '#worker/test-support/org-binding-query.ts'
+import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { ensureOrgsTestSchema } from './orgs-test-schema.ts'
 import { provisionPersonalOrg } from './provision.ts'
 import {
@@ -14,11 +17,40 @@ import {
 } from './repo.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
-async function createDb() {
+async function createDb(options?: { queries?: Array<string> }) {
 	const sqlite = new DatabaseSync(':memory:')
-	const db = createD1FromSqlite(sqlite)
+	const db = createD1FromSqlite(sqlite, options)
+	await ensureUsersTestSchema({ db })
 	await ensureOrgsTestSchema(db)
+	sqlite.exec(
+		`CREATE TABLE saved_packages (
+			id TEXT PRIMARY KEY NOT NULL,
+			name TEXT,
+			kody_id TEXT,
+			user_id TEXT,
+			deleted_at TEXT
+		)`,
+	)
 	return db
+}
+
+async function insertPerson(
+	db: D1Database,
+	input: {
+		stableUserId: string
+		username: string
+		email: string
+		personalOrgId?: string
+	},
+) {
+	const personalOrgId = input.personalOrgId ?? input.stableUserId
+	await db
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, stable_user_id, personal_org_id)
+			 VALUES (?, ?, 'hash', ?, ?)`,
+		)
+		.bind(input.username, input.email, input.stableUserId, personalOrgId)
+		.run()
 }
 
 test('loadOrgBindingForPerson throws when personal org membership is missing', async () => {
@@ -26,6 +58,11 @@ test('loadOrgBindingForPerson throws when personal org membership is missing', a
 	const stableUserId = testStableUserIdFromEmail(
 		'missing-membership@example.com',
 	)
+	await insertPerson(db, {
+		stableUserId,
+		username: 'missing',
+		email: 'missing-membership@example.com',
+	})
 	await expect(loadOrgBindingForPerson(db, stableUserId)).rejects.toThrow(
 		/No live personal-org membership/,
 	)
@@ -34,6 +71,11 @@ test('loadOrgBindingForPerson throws when personal org membership is missing', a
 test('loadOrgBindingForPerson returns personal org slug and owner role', async () => {
 	const db = await createDb()
 	const stableUserId = testStableUserIdFromEmail('ada@example.com')
+	await insertPerson(db, {
+		stableUserId,
+		username: 'ada',
+		email: 'ada@example.com',
+	})
 	await provisionPersonalOrg(db, {
 		stableUserId,
 		username: 'ada',
@@ -50,6 +92,16 @@ test('loadOrgBindingForOrg requires membership or a live grant', async () => {
 	const db = await createDb()
 	const ada = testStableUserIdFromEmail('ada@example.com')
 	const gus = testStableUserIdFromEmail('gus@example.com')
+	await insertPerson(db, {
+		stableUserId: ada,
+		username: 'ada',
+		email: 'ada@example.com',
+	})
+	await insertPerson(db, {
+		stableUserId: gus,
+		username: 'gus',
+		email: 'gus@example.com',
+	})
 	await provisionPersonalOrg(db, {
 		stableUserId: ada,
 		username: 'ada',
@@ -88,6 +140,62 @@ test('loadOrgBindingForOrg requires membership or a live grant', async () => {
 		org: { id: gus, slug: 'gus' },
 		role: null,
 	})
+})
+
+test('loadOrgBindingForOrg hits D1 once per (personId, orgId) within a request', async () => {
+	const queries: Array<string> = []
+	const db = await createDb({ queries })
+	const ada = testStableUserIdFromEmail('ada-memo@example.com')
+	const gus = testStableUserIdFromEmail('gus-memo@example.com')
+	await provisionPersonalOrg(db, {
+		stableUserId: ada,
+		username: 'ada-memo',
+		createdAt: '2026-01-02T00:00:00.000Z',
+	})
+	await provisionPersonalOrg(db, {
+		stableUserId: gus,
+		username: 'gus-memo',
+		createdAt: '2026-01-02T00:00:00.000Z',
+	})
+	queries.length = 0
+
+	const membershipPrepares = () =>
+		queries.filter((query) =>
+			isOrgBindingMembershipQuery(
+				query.replace(/\s+/g, ' ').trim().toLowerCase(),
+			),
+		).length
+
+	const request = new Request(
+		'https://kody.test/profiles/ada/packages/demo/files.json',
+	)
+	const expected = {
+		org: { id: ada, slug: 'ada-memo' },
+		role: 'owner' as const,
+	}
+	// Same fan-out shape as loadPackagePageUncached: one read check, then four
+	// manage/publish/delete/owner checks in parallel (KODY-98).
+	const results = await runWithRequestContext(request, () =>
+		Promise.all([
+			loadOrgBindingForOrg(db, ada, ada),
+			loadOrgBindingForOrg(db, ada, ada),
+			loadOrgBindingForOrg(db, ada, ada),
+			loadOrgBindingForOrg(db, ada, ada),
+			loadOrgBindingForOrg(db, ada, ada),
+		]),
+	)
+	expect(results).toEqual([expected, expected, expected, expected, expected])
+	expect(membershipPrepares()).toBe(1)
+
+	const other = await runWithRequestContext(request, () =>
+		loadOrgBindingForOrg(db, ada, gus),
+	)
+	expect(other).toBeNull()
+	expect(membershipPrepares()).toBe(2)
+
+	await expect(loadOrgBindingForOrg(db, ada, ada)).resolves.toEqual(expected)
+	await expect(loadOrgBindingForOrg(db, ada, ada)).resolves.toEqual(expected)
+	expect(membershipPrepares()).toBe(4)
 })
 
 test('listOrgsForPerson unions memberships and live grant orgs', async () => {
@@ -215,8 +323,12 @@ test('listOrganizationsForPerson puts the signup organization first and includes
 			id: 'invite-1',
 			orgSlug: 'zeta',
 			orgDisplayName: 'Zeta',
+			orgPersonal: false,
 			kind: 'membership',
 			role: null,
+			resourceType: null,
+			preset: null,
+			packageName: null,
 			expiresAt: '2099-01-01T00:00:00.000Z',
 		},
 	])

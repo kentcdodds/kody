@@ -4,6 +4,7 @@ import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	viewerCanDeleteSavedPackage,
 	viewerCanManageSavedPackage,
+	viewerCanManageSavedPackageAccess,
 	viewerCanPublishSavedPackage,
 	viewerCanReadSavedPackage,
 	viewerIsSavedPackageOrgOwner,
@@ -25,6 +26,8 @@ import { resolveCachedArtifactSourceHead } from '#worker/repo/artifact-head-cach
 import { getEntitySourceByEntity } from '#worker/repo/entity-sources.ts'
 import { getUserRepoByName } from '#worker/repo/user-repos.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import { viewerOrgsFollowTarget } from '#worker/follow/repo.ts'
+import { type FollowTargetKind } from '#worker/follow/types.ts'
 import {
 	type AccountPackageDetail,
 	type CommunityDetailLoaderData,
@@ -35,6 +38,19 @@ export type PackagePageAccess =
 	| { kind: 'redirect'; to: string; shared: boolean }
 	| { kind: 'not_found' }
 	| { kind: 'unauthorized' }
+	/**
+	 * Signed-in viewer reached a real saved package they cannot read. Distinct
+	 * from `not_found` so a shared private-app link never looks like the
+	 * package was deleted — show "you don't have access" with a request path.
+	 * Anonymous visitors still get `not_found` so private packages stay opaque.
+	 */
+	| {
+			kind: 'no_access'
+			username: string
+			kodyId: string
+			packageName: string
+			viewerUsername: string
+	  }
 	| {
 			kind: 'page'
 			username: string
@@ -58,9 +74,15 @@ export type PackagePageAccess =
 			viewerCanManage: boolean
 			viewerCanPublish: boolean
 			viewerCanDelete: boolean
+			/** May change who can use the package (`package:manage_access`). */
+			viewerCanManageAccess: boolean
 			/** May adopt a community fork (org owner only; widens secret access). */
 			viewerCanAdoptCommunityFork: boolean
 			loggedIn: boolean
+			/** Saved package or plain repo a Follow control acts on. */
+			followTarget: { kind: FollowTargetKind; id: string } | null
+			/** One of the viewer's orgs follows this target (active or paused). */
+			viewerFollowing?: boolean
 			invocationUrlOrigin: string
 			ownerUserId: string
 			/** True when `/@owner` is publicly reachable. */
@@ -123,10 +145,19 @@ export function loadPackagePage(input: {
 	request: Request
 	username: string
 	kodyId: string
+	/**
+	 * Viewer already authenticated another way (a `kody_at_` bearer on raw
+	 * file reads). Omit to read the session cookie; `null` is anonymous.
+	 */
+	viewer?: McpUserContext | null
 }): Promise<PackagePageAccess> {
+	const viewerKey =
+		input.viewer === undefined
+			? 'session'
+			: `viewer:${input.viewer?.userId ?? 'anonymous'}`
 	return memoizePerRequest({
 		request: input.request,
-		key: `package-page:${input.username}:${input.kodyId}`,
+		key: `package-page:${input.username}:${input.kodyId}:${viewerKey}`,
 		load: () =>
 			recordServerTiming(
 				'package-page',
@@ -201,7 +232,7 @@ async function loadPlainRepoPage(input: {
 	request: Request
 	username: string
 	kodyId: string
-	user: Awaited<ReturnType<typeof readAuthenticatedAppUser>>
+	viewer: McpUserContext | null
 }): Promise<PackagePageAccess> {
 	const username = normalizeUsername(input.username.trim())
 	const slug = input.kodyId.trim().toLowerCase()
@@ -217,7 +248,7 @@ async function loadPlainRepoPage(input: {
 	})
 	if (!repo) return { kind: 'not_found' }
 
-	const viewer = input.user?.mcpUser ?? null
+	const viewer = input.viewer
 	const canAccess = await viewerCanAccessPlainRepo({
 		env: input.env,
 		viewer,
@@ -294,8 +325,10 @@ async function loadPlainRepoPage(input: {
 		viewerCanManage: false,
 		viewerCanPublish: false,
 		viewerCanDelete: false,
+		viewerCanManageAccess: false,
 		viewerCanAdoptCommunityFork: false,
-		loggedIn: Boolean(input.user),
+		loggedIn: Boolean(viewer),
+		followTarget: { kind: 'repo', id: repo.id },
 		invocationUrlOrigin: getAppBaseUrl({
 			env: input.env,
 			requestUrl: input.request.url,
@@ -310,10 +343,11 @@ async function loadPackagePageUncached(input: {
 	request: Request
 	username: string
 	kodyId: string
+	viewer?: McpUserContext | null
 }): Promise<PackagePageAccess> {
 	// The URL lookup only needs the pair; the viewer lookup only needs the
 	// cookie. Neither waits on the other.
-	const [target, user] = await Promise.all([
+	const [target, viewer] = await Promise.all([
 		recordServerTiming(
 			'resolve-url',
 			() =>
@@ -324,23 +358,54 @@ async function loadPackagePageUncached(input: {
 				}),
 			input.request,
 		),
-		recordServerTiming(
-			'auth',
-			() => readAuthenticatedAppUser(input.request, input.env),
+		input.viewer === undefined
+			? recordServerTiming(
+					'auth',
+					async () =>
+						(await readAuthenticatedAppUser(input.request, input.env))
+							?.mcpUser ?? null,
+					input.request,
+				)
+			: input.viewer,
+	])
+	const page = await resolvePackagePageForViewer(input, target, viewer)
+	if (page.kind !== 'page' || !viewer) return page
+	const followTarget = page.followTarget
+	if (!followTarget) return page
+	return {
+		...page,
+		viewerFollowing: await recordServerTiming(
+			'viewer-follow',
+			() =>
+				viewerOrgsFollowTarget(input.env.APP_DB, {
+					personId: viewer.userId,
+					targetKind: followTarget.kind,
+					targetId: followTarget.id,
+				}),
 			input.request,
 		),
-	])
+	}
+}
+
+async function resolvePackagePageForViewer(
+	input: {
+		env: Env
+		request: Request
+		username: string
+		kodyId: string
+	},
+	target: Awaited<ReturnType<typeof resolvePackagePageUrl>>,
+	viewer: McpUserContext | null,
+): Promise<PackagePageAccess> {
 	if (!target) {
 		return await loadPlainRepoPage({
 			env: input.env,
 			request: input.request,
 			username: input.username,
 			kodyId: input.kodyId,
-			user,
+			viewer,
 		})
 	}
-
-	const viewer = user?.mcpUser ?? null
 
 	if (target.kind === 'redirect') {
 		// A listing move is public. An unlisted rename must not leak the new
@@ -418,6 +483,7 @@ async function loadPackagePageUncached(input: {
 			viewerCanManage,
 			viewerCanPublish,
 			viewerCanDelete,
+			viewerCanManageAccess,
 			viewerCanAdoptCommunityFork,
 		] = await Promise.all([
 			viewerCanManageSavedPackage({
@@ -433,6 +499,12 @@ async function loadPackagePageUncached(input: {
 				packageId,
 			}),
 			viewerCanDeleteSavedPackage({
+				env: input.env,
+				viewer,
+				ownerId,
+				packageId,
+			}),
+			viewerCanManageSavedPackageAccess({
 				env: input.env,
 				viewer,
 				ownerId,
@@ -474,8 +546,10 @@ async function loadPackagePageUncached(input: {
 			viewerCanManage,
 			viewerCanPublish,
 			viewerCanDelete,
+			viewerCanManageAccess,
 			viewerCanAdoptCommunityFork,
 			loggedIn: true,
+			followTarget: { kind: 'package', id: packageId },
 			invocationUrlOrigin,
 			ownerUserId: target.userId,
 			ownerProfilePublic,
@@ -500,8 +574,12 @@ async function loadPackagePageUncached(input: {
 			viewerCanManage: false,
 			viewerCanPublish: false,
 			viewerCanDelete: false,
+			viewerCanManageAccess: false,
 			viewerCanAdoptCommunityFork: false,
-			loggedIn: Boolean(user),
+			loggedIn: Boolean(viewer),
+			followTarget: target.savedPackage
+				? { kind: 'package', id: target.savedPackage.id }
+				: null,
 			invocationUrlOrigin,
 			ownerUserId: target.userId,
 			ownerProfilePublic: listing.ownerProfilePublic,
@@ -509,6 +587,22 @@ async function loadPackagePageUncached(input: {
 	}
 
 	if (!target.savedPackage || !isPublicSavedPackage(target.savedPackage)) {
+		// Package exists (or is hidden/private) but this viewer cannot open it.
+		// Signed-in outsiders get an explicit no-access page — never the
+		// generic "doesn't quite connect" 404 that made shared private-app
+		// handoffs look like the package was gone. Anonymous visitors still
+		// get not_found, so private packages stay opaque without a session.
+		// Revealing existence to signed-in people who already know the URL
+		// (share links / handoffs) is intentional product policy.
+		if (viewer && target.savedPackage) {
+			return {
+				kind: 'no_access',
+				username: target.username,
+				kodyId: target.kodyId,
+				packageName: target.savedPackage.name,
+				viewerUsername: viewer.username ?? 'unknown',
+			}
+		}
 		return { kind: 'not_found' }
 	}
 

@@ -8,12 +8,12 @@
 Every Kody surface used one string, `users.stable_user_id`, for two jobs: whose
 data an operation touches (D1 `user_id` columns, Durable Object names, Vectorize
 namespaces, R2/KV key prefixes, secret AAD) and who is acting (sessions,
-passkeys, OAuth/CLI/API-token principals, audit, RBAC). Orgs will own resources:
-a user's **personal org** reuses their existing `stable_user_id` as its org id,
-so no data moves, and every other org gets a separately minted random id. The
-future tables are `orgs` and `org_memberships`. Stable ids are opaque: new
-accounts get 32 random bytes, and legacy accounts may hold SHA-256(email), so
-ids are never public.
+passkeys, OAuth/CLI/API-token principals, audit, RBAC). Orgs own resources.
+Legacy personal orgs reuse `stable_user_id` as `orgs.id` (no data move);
+[ADR 0063](./0063-teams-expand-orgs.md) #3053 phase 2+ mints a distinct
+`orgs.id` for new personal orgs and records it on `users.personal_org_id`.
+Stable ids are opaque: new accounts get 32 random bytes, and legacy accounts may
+hold SHA-256(email), so ids are never public.
 
 ## Decision
 
@@ -23,9 +23,10 @@ them is a compile error.
 - `OwnerId` is the id of the org that owns a resource, and is used for storage.
 - `PersonId` is the acting person, and is used for audit, RBAC, and attribution.
 
-`personalOrgId(person)` is the only conversion between the two. Today it is the
-identity function. Acting in any other org must go through an explicit
-membership or grant check, never through this function.
+`personalOrgId(person)` brands a person id into `OwnerId` for **person-keyed**
+storage only. Personal org resolution reads `users.personal_org_id` (see
+[ADR 0063](./0063-teams-expand-orgs.md) #3053 phase 3). Acting in any other org
+must go through an explicit membership or grant check.
 `resolvePackageOwnerContext` (platform scope grants) and
 `resolvePackageStorageOwner` (share grants) are the two existing checks. Caller
 contexts carry both ids, derived when constructed and never serialized:
@@ -49,6 +50,7 @@ their client wrappers, secret AAD builders, and the pinned R2, KV, and Vectorize
 key builders take `OwnerId`. Callers pass `request.org.id` or an id already
 branded at the storage read. Those builders do not call `ownerIdFromStored`, and
 RunLog, UserMeter, Mailbox, RepoSessionIndex, and JobManager names stay the
-stored bytes (untrimmed). `personalOrgId` stays the only person-to-owner
-conversion. Org membership is the other resolver (see
+stored bytes (untrimmed). Person→owner branding for person-keyed slots uses
+`personalOrgId`; personal org ids come from `users.personal_org_id` /
+`request.org.id`. Org membership is the other resolver (see
 [ADR 0063](./0063-teams-expand-orgs.md)).

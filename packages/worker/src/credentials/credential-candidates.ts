@@ -16,15 +16,17 @@ import {
 	maxD1BoundParameters,
 } from '@kody-internal/shared/chunk.ts'
 import {
-	personalOrgId,
 	type OwnerId,
+	personIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
+import { loadPersonalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import {
 	listScopeIncludes,
 	loadResourceListScope,
 } from '#worker/authorization/authorize.ts'
 import { getIntegrationAllowedHosts } from '#mcp/execute-modules/integration-host-allowlist.ts'
+import { integrationConnectedSql } from '#worker/integrations/connected.ts'
 import {
 	isFetchCapableCredentialKind,
 	type PackageCredentialKind,
@@ -80,7 +82,7 @@ const usableRowQueries = [
 				ON a.user_id = i.user_id AND a.slug = i.app_slug AND a.deleted_at IS NULL
 			LEFT JOIN platform_oauth_apps p ON p.slug = i.platform_app_slug
 			WHERE i.user_id = ? AND i.deleted_at IS NULL
-				AND i.connected_at IS NOT NULL${filter('i.id')}`,
+				AND ${integrationConnectedSql('i.connected_at')}${filter('i.id')}`,
 		binds: () => [],
 	},
 	{
@@ -203,6 +205,50 @@ export async function findCredentialById(input: {
 }
 
 /**
+ * Every live credential a run of the org could resolve for some member: the
+ * org's own credentials plus each member's personal credentials granted to
+ * the org. Says nothing about who may use which, and reads no value.
+ */
+export async function listOrgReachableCredentials(input: {
+	db: D1Database
+	orgId: OwnerId
+	now?: Date
+}): Promise<Array<UsableCredential>> {
+	const now = (input.now ?? new Date()).toISOString()
+	const orgRows = await loadRows({
+		db: input.db,
+		ownerId: input.orgId,
+		ids: null,
+		now,
+	})
+	const credentials = orgRows.map((row) => toUsable(row, 'org'))
+	const grantors = await input.db
+		.prepare(
+			`SELECT DISTINCT user_id FROM credential_org_grants
+			WHERE org_id = ? ORDER BY user_id`,
+		)
+		.bind(input.orgId)
+		.all<{ user_id: string }>()
+	for (const { user_id } of grantors.results ?? []) {
+		const person = personIdFromStored(user_id)
+		const personal = await listPersonalCredentialCandidates({
+			db: input.db,
+			actorPersonId: person,
+			orgId: input.orgId,
+		})
+		if (personal.length === 0) continue
+		const personalRows = await loadRows({
+			db: input.db,
+			ownerId: await loadPersonalOrgIdForPerson(input.db, person),
+			ids: personal.map((credential) => credential.id),
+			now,
+		})
+		credentials.push(...personalRows.map((row) => toUsable(row, 'personal')))
+	}
+	return credentials
+}
+
+/**
  * Every credential the actor can Use in the run org, by kind: the org's own
  * credentials the actor holds Use on, and the actor's own personal
  * credentials granted to the org. In the actor's personal org, its
@@ -241,7 +287,7 @@ export async function listUsableCredentials(input: {
 	if (actor && personal.length > 0) {
 		const personalRows = await loadRows({
 			db: input.env.APP_DB,
-			ownerId: personalOrgId(actor),
+			ownerId: await loadPersonalOrgIdForPerson(input.env.APP_DB, actor),
 			ids: personal.map((credential) => credential.id),
 			now,
 		})

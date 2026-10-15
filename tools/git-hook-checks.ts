@@ -1,6 +1,13 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, rmSync, symlinkSync } from 'node:fs'
-import { join } from 'node:path'
+import {
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+} from 'node:fs'
+import { dirname, join } from 'node:path'
 import { resolveNpmCommand, isExecutedDirectly } from './node-runtime.ts'
 import {
 	createFileProvenanceStore,
@@ -290,17 +297,26 @@ export async function withStagedTreeForTypecheck<T>(input: {
 		return 1 as T
 	}
 
-	const nodeModules = join(repoRoot, 'node_modules')
-	const worktreeNodeModules = join(worktreePath, 'node_modules')
-	if (existsSync(nodeModules) && !existsSync(worktreeNodeModules)) {
+	// npm nests a workspace's deps under packages/<name>/node_modules when they
+	// cannot hoist, so link every installed node_modules, not just the root.
+	const nodeModulesDirs = listInstalledNodeModulesDirs(repoRoot)
+	for (const relative of nodeModulesDirs) {
+		const worktreeNodeModules = join(worktreePath, relative)
+		if (existsSync(worktreeNodeModules)) continue
 		try {
-			symlinkSync(nodeModules, worktreeNodeModules, 'junction')
+			mkdirSync(dirname(worktreeNodeModules), { recursive: true })
+			symlinkSync(join(repoRoot, relative), worktreeNodeModules, 'junction')
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error)
 			log(
-				`pre-commit: could not link node_modules into staged worktree (${message})`,
+				`pre-commit: could not link ${relative} into staged worktree (${message})`,
 			)
-			removeStagedTypecheckWorktree(input.git, worktreePath, log)
+			removeStagedTypecheckWorktree(
+				input.git,
+				worktreePath,
+				nodeModulesDirs,
+				log,
+			)
 			return 1 as T
 		}
 	}
@@ -308,22 +324,61 @@ export async function withStagedTreeForTypecheck<T>(input: {
 	try {
 		return await input.run(worktreePath)
 	} finally {
-		removeStagedTypecheckWorktree(input.git, worktreePath, log)
+		removeStagedTypecheckWorktree(input.git, worktreePath, nodeModulesDirs, log)
+	}
+}
+
+export function listInstalledNodeModulesDirs(repoRoot: string): string[] {
+	const dirs: string[] = []
+	if (existsSync(join(repoRoot, 'node_modules'))) dirs.push('node_modules')
+	let workspaces: unknown = []
+	try {
+		const manifest = JSON.parse(
+			readFileSync(join(repoRoot, 'package.json'), 'utf8'),
+		) as { workspaces?: unknown }
+		workspaces = manifest.workspaces ?? []
+	} catch {
+		return dirs
+	}
+	if (!Array.isArray(workspaces)) return dirs
+	for (const pattern of workspaces) {
+		if (typeof pattern !== 'string') continue
+		const workspaceDirs = pattern.endsWith('/*')
+			? listChildDirs(repoRoot, pattern.slice(0, -2))
+			: [pattern]
+		for (const workspaceDir of workspaceDirs) {
+			const relative = join(workspaceDir, 'node_modules')
+			if (existsSync(join(repoRoot, relative))) dirs.push(relative)
+		}
+	}
+	return dirs
+}
+
+function listChildDirs(repoRoot: string, parent: string): string[] {
+	try {
+		return readdirSync(join(repoRoot, parent), { withFileTypes: true })
+			.filter((entry) => entry.isDirectory())
+			.map((entry) => join(parent, entry.name))
+	} catch {
+		return []
 	}
 }
 
 function removeStagedTypecheckWorktree(
 	git: GitRunner,
 	worktreePath: string,
+	nodeModulesDirs: ReadonlyArray<string>,
 	log: (message: string) => void,
 ) {
-	try {
-		// Drop the junction/symlink first so recursive deletes (and older Git
-		// for Windows worktree remove) cannot traverse into the real
-		// repo node_modules.
-		rmSync(join(worktreePath, 'node_modules'), { force: true })
-	} catch {
-		// Missing link is fine.
+	// Drop the junctions/symlinks first so recursive deletes (and older Git
+	// for Windows worktree remove) cannot traverse into the real
+	// repo node_modules.
+	for (const relative of nodeModulesDirs) {
+		try {
+			rmSync(join(worktreePath, relative), { force: true })
+		} catch {
+			// Missing link is fine.
+		}
 	}
 	const remove = gitWithoutIndexFile(git, [
 		'worktree',

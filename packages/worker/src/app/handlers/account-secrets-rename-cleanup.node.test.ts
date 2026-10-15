@@ -1,0 +1,480 @@
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
+import { expect, test, vi } from 'vitest'
+import type * as authenticatedUserModule from '#app/authenticated-user.ts'
+import type * as secretsService from '#mcp/secrets/service.ts'
+import type * as valuesService from '#mcp/values/service.ts'
+import type * as packageRepo from '#worker/package-registry/repo.ts'
+import type * as platformApps from '#worker/integrations/platform-apps.ts'
+import type * as packageSubscriptions from '#worker/integrations/package-subscriptions.ts'
+import type * as AllowedHosts from '#mcp/secrets/allowed-hosts.ts'
+import type * as HostApproval from '#mcp/secrets/host-approval.ts'
+import type * as IntegrationsService from '#worker/integrations/service.ts'
+import type * as IntegrationsCredentials from '#worker/integrations/credentials.ts'
+import type * as CredentialFields from '#worker/credentials/credential-fields.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
+const mockModule = vi.hoisted(() => ({
+	readAuthenticatedAppUser: vi.fn<
+		typeof authenticatedUserModule.readAuthenticatedAppUser
+	>(async () => ({
+		sessionUserId: '42',
+		userId: 42,
+		username: 'test-user',
+		email: 'user@example.com',
+		emailVerified: true,
+		emailVerificationDelivery: null,
+		displayName: 'user',
+		roles: ['user'],
+		permissions: [],
+		artifactOwnerIds: [],
+		mcpUser: {
+			userId: personIdFromStored('stable-user-1'),
+			email: 'user@example.com',
+			displayName: 'user',
+		},
+		request: sessionRequestContext('stable-user-1'),
+	})),
+	readAuthSessionResult: async () => ({ session: null, setCookie: null }),
+	saveSecret: vi.fn<typeof secretsService.saveSecret>(async () => ({
+		name: 'githubAccessToken',
+		scope: 'user',
+		description: '',
+		packageId: null,
+		allowedHosts: [],
+		allowedPackages: [],
+		createdAt: new Date(0).toISOString(),
+		updatedAt: new Date(0).toISOString(),
+		expiresAt: null,
+		ttlMs: null,
+	})),
+	setSecretAllowedHosts: vi.fn<typeof secretsService.setSecretAllowedHosts>(
+		async (input) => ({
+			name: input.name,
+			scope: input.scope,
+			description: '',
+			packageId: null,
+			allowedHosts: input.allowedHosts,
+			allowedPackages: [],
+			createdAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
+			expiresAt: null,
+			ttlMs: null,
+		}),
+	),
+	saveValue: vi.fn<typeof valuesService.saveValue>(async (input) => ({
+		name: input.name,
+		scope: input.scope,
+		value: input.value,
+		description: '',
+		appId: null,
+		createdAt: new Date(0).toISOString(),
+		updatedAt: new Date(0).toISOString(),
+		ttlMs: null,
+	})),
+	buildSecretHostApprovalUrl: vi.fn<
+		typeof HostApproval.buildSecretHostApprovalUrl
+	>(
+		(input: { name: string; requestedHost: string }) =>
+			`https://example.com/account/secrets/user/${input.name}?allowed-host=${input.requestedHost}`,
+	),
+	listSavedPackagesByUserId: vi.fn<
+		typeof packageRepo.listSavedPackagesByUserId
+	>(async () => []),
+	listSecrets: vi.fn<typeof secretsService.listSecrets>(async () => []),
+	listPackageSecretsByPackageIds: vi.fn<
+		typeof secretsService.listPackageSecretsByPackageIds
+	>(async () => new Map()),
+	resolveSecret: vi.fn<typeof secretsService.resolveSecret>(async () => ({
+		credentialId: null,
+		found: false,
+		value: null,
+		scope: null,
+		allowedHosts: [],
+		allowedPackages: [],
+	})),
+	deleteSecret: vi.fn<typeof secretsService.deleteSecret>(async () => false),
+	findSecret: vi.fn<typeof secretsService.findSecret>(async () => ({
+		found: true,
+		credentialId: 'cred-saved',
+		scope: 'user',
+		allowedHosts: [],
+		allowedPackages: [],
+	})),
+	updateCredentialFields: vi.fn<typeof CredentialFields.updateCredentialFields>(
+		async () => ({}) as never,
+	),
+	readStoredCredentialPlacement: vi.fn<
+		typeof CredentialFields.readStoredCredentialPlacement
+	>(async () => null),
+	setSecretAllowedPackages: vi.fn<
+		typeof secretsService.setSecretAllowedPackages
+	>(async (input) => ({
+		name: input.name,
+		scope: input.scope,
+		description: '',
+		packageId: null,
+		allowedHosts: [],
+		allowedPackages: input.allowedPackages,
+		createdAt: new Date(0).toISOString(),
+		updatedAt: new Date(0).toISOString(),
+		expiresAt: null,
+		ttlMs: null,
+	})),
+	getValue: vi.fn<typeof valuesService.getValue>(async () => null),
+	upsertIntegration: vi.fn<typeof IntegrationsService.upsertIntegration>(
+		async (input) => ({
+			...input.config,
+			name: String(input.config.name).toLowerCase(),
+		}),
+	),
+	upsertOauthAppWithoutConnection: vi.fn<
+		typeof IntegrationsService.upsertOauthAppWithoutConnection
+	>(async (input) => ({
+		userId: ownerIdFromStored('stable-user-1'),
+		slug: String(input.config.name).toLowerCase().replace(/\s+/g, '-'),
+		provider:
+			String(input.config.name)
+				.toLowerCase()
+				.replace(/\s+/g, '-')
+				.split('-')[0] ?? '',
+		label: null,
+		clientId: input.config.clientId,
+		hasClientSecret: false,
+		tokenUrl: input.config.tokenUrl,
+		authorizeUrl: null,
+		apiBaseUrl: input.config.apiBaseUrl ?? null,
+		flow: input.config.flow,
+		usePkce: input.config.usePkce ?? null,
+		tokenExchangeStyle: input.config.tokenExchangeStyle ?? null,
+		scopeSeparator: null,
+		extraAuthorizeParams: {},
+		createdAt: new Date(0).toISOString(),
+		updatedAt: new Date(0).toISOString(),
+	})),
+	getAvailablePlatformApp: vi.fn<
+		typeof IntegrationsService.getAvailablePlatformApp
+	>(async () => null),
+	upsertPlatformIntegration: vi.fn<
+		typeof IntegrationsService.upsertPlatformIntegration
+	>(async (input) => ({
+		name: String(input.name ?? input.platformAppSlug).toLowerCase(),
+		tokenUrl: 'https://example.com/oauth/token',
+		flow: 'confidential',
+		clientId: 'platform-client-id',
+		platform: true,
+	})),
+	getPlatformOauthAppClientSecret: vi.fn<
+		typeof platformApps.getPlatformOauthAppClientSecret
+	>(async () => null),
+	dispatchIntegrationAuthSucceededSubscriptionEvents: vi.fn<
+		typeof packageSubscriptions.dispatchIntegrationAuthSucceededSubscriptionEvents
+	>(async () => []),
+	persistIntegrationTokens: vi.fn<
+		typeof IntegrationsCredentials.persistIntegrationTokens
+	>(async () => undefined),
+	persistUserOauthAppClientSecret: vi.fn<
+		typeof IntegrationsCredentials.persistUserOauthAppClientSecret
+	>(async () => undefined),
+	resolveUserOauthAppClientSecret: vi.fn<
+		typeof IntegrationsCredentials.resolveUserOauthAppClientSecret
+	>(async () => null),
+	getOauthApp: vi.fn<typeof IntegrationsService.getOauthApp>(async () => null),
+	findOauthAppForProviderSetup: vi.fn<
+		typeof IntegrationsService.findOauthAppForProviderSetup
+	>(async () => null),
+	getJoinedIntegration: vi.fn<typeof IntegrationsService.getJoinedIntegration>(
+		async (input) => {
+			const name = String(input.name).toLowerCase()
+			return {
+				lane: 'user',
+				app: {
+					userId: ownerIdFromStored('stable-user-1'),
+					slug: name,
+					provider: name,
+					label: null,
+					clientId: `${name}-client-id`,
+					hasClientSecret: false,
+					tokenUrl: 'https://example.com/oauth/token',
+					authorizeUrl: null,
+					apiBaseUrl: null,
+					flow: 'pkce',
+					usePkce: null,
+					tokenExchangeStyle: null,
+					scopeSeparator: null,
+					extraAuthorizeParams: {},
+					createdAt: new Date(0).toISOString(),
+					updatedAt: new Date(0).toISOString(),
+				},
+				connection: {
+					userId: ownerIdFromStored('stable-user-1'),
+					credentialId: 'cred-integration',
+					name,
+					appSlug: name,
+					platformAppSlug: null,
+					accountLabel: null,
+					description: '',
+					scopes: [],
+					requiredHosts: [],
+					usageMode: 'any',
+					allowedPackageIds: [],
+					connectedAt: null,
+					tokenRefreshedAt: null,
+					createdAt: new Date(0).toISOString(),
+					updatedAt: new Date(0).toISOString(),
+				},
+			}
+		},
+	),
+}))
+
+vi.mock('#app/authenticated-user.ts', () => ({
+	readAuthenticatedAppUser: (
+		...args: Parameters<typeof authenticatedUserModule.readAuthenticatedAppUser>
+	) => mockModule.readAuthenticatedAppUser(...args),
+}))
+
+vi.mock('#app/auth-session.ts', () => ({
+	readAuthSessionResult: () => mockModule.readAuthSessionResult(),
+}))
+
+vi.mock('#app/auth-redirect.ts', () => ({
+	redirectToLogin: () => new Response(null, { status: 302 }),
+}))
+
+vi.mock('#app/ssr-render.tsx', () => ({
+	renderAppPage: async () => new Response('ok'),
+}))
+
+vi.mock('#mcp/secrets/allowed-hosts.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof AllowedHosts>()
+	return {
+		normalizeAllowedHosts: actual.normalizeAllowedHosts,
+		normalizeHost: actual.normalizeHost,
+	}
+})
+
+vi.mock('#mcp/secrets/host-approval.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof HostApproval>()
+	return {
+		...actual,
+		buildSecretHostApprovalUrl: (
+			...args: Parameters<typeof HostApproval.buildSecretHostApprovalUrl>
+		) => mockModule.buildSecretHostApprovalUrl(...args),
+	}
+})
+
+vi.mock('#mcp/secrets/service.ts', () => ({
+	saveSecret: (...args: Parameters<typeof secretsService.saveSecret>) =>
+		mockModule.saveSecret(...args),
+	setSecretAllowedHosts: (
+		...args: Parameters<typeof secretsService.setSecretAllowedHosts>
+	) => mockModule.setSecretAllowedHosts(...args),
+	listSecrets: (...args: Parameters<typeof secretsService.listSecrets>) =>
+		mockModule.listSecrets(...args),
+	listPackageSecretsByPackageIds: (
+		...args: Parameters<typeof secretsService.listPackageSecretsByPackageIds>
+	) => mockModule.listPackageSecretsByPackageIds(...args),
+	resolveSecret: (...args: Parameters<typeof secretsService.resolveSecret>) =>
+		mockModule.resolveSecret(...args),
+	deleteSecret: (...args: Parameters<typeof secretsService.deleteSecret>) =>
+		mockModule.deleteSecret(...args),
+	findSecret: (...args: Parameters<typeof secretsService.findSecret>) =>
+		mockModule.findSecret(...args),
+	setSecretAllowedPackages: (
+		...args: Parameters<typeof secretsService.setSecretAllowedPackages>
+	) => mockModule.setSecretAllowedPackages(...args),
+}))
+
+vi.mock('#worker/credentials/credential-fields.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof CredentialFields>()
+	return {
+		...actual,
+		updateCredentialFields: (
+			...args: Parameters<typeof CredentialFields.updateCredentialFields>
+		) => mockModule.updateCredentialFields(...args),
+		readStoredCredentialPlacement: (
+			...args: Parameters<typeof CredentialFields.readStoredCredentialPlacement>
+		) => mockModule.readStoredCredentialPlacement(...args),
+	}
+})
+
+vi.mock('#worker/orgs/org-audit.ts', () => ({
+	orgAuditWriterFromRequest: () => ({ audit: 'writer' }),
+}))
+
+vi.mock('#mcp/values/service.ts', () => ({
+	getValue: (...args: Parameters<typeof valuesService.getValue>) =>
+		mockModule.getValue(...args),
+	saveValue: (...args: Parameters<typeof valuesService.saveValue>) =>
+		mockModule.saveValue(...args),
+}))
+
+vi.mock('#worker/integrations/service.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof IntegrationsService>()
+	return {
+		upsertIntegration: (
+			...args: Parameters<typeof IntegrationsService.upsertIntegration>
+		) => mockModule.upsertIntegration(...args),
+		upsertOauthAppWithoutConnection: (
+			...args: Parameters<
+				typeof IntegrationsService.upsertOauthAppWithoutConnection
+			>
+		) => mockModule.upsertOauthAppWithoutConnection(...args),
+		getAvailablePlatformApp: (
+			...args: Parameters<typeof IntegrationsService.getAvailablePlatformApp>
+		) => mockModule.getAvailablePlatformApp(...args),
+		upsertPlatformIntegration: (
+			...args: Parameters<typeof IntegrationsService.upsertPlatformIntegration>
+		) => mockModule.upsertPlatformIntegration(...args),
+		getJoinedIntegration: (
+			...args: Parameters<typeof IntegrationsService.getJoinedIntegration>
+		) => mockModule.getJoinedIntegration(...args),
+		getOauthApp: (
+			...args: Parameters<typeof IntegrationsService.getOauthApp>
+		) => mockModule.getOauthApp(...args),
+		findOauthAppForProviderSetup: (
+			...args: Parameters<
+				typeof IntegrationsService.findOauthAppForProviderSetup
+			>
+		) => mockModule.findOauthAppForProviderSetup(...args),
+		// Real scope validation so handler ordering tests exercise the actual
+		// allowlist semantics.
+		assertScopesAllowedForPlatformApp: actual.assertScopesAllowedForPlatformApp,
+	}
+})
+
+vi.mock('#worker/integrations/package-subscriptions.ts', () => ({
+	dispatchIntegrationAuthSucceededSubscriptionEvents: (
+		...args: Parameters<
+			typeof packageSubscriptions.dispatchIntegrationAuthSucceededSubscriptionEvents
+		>
+	) => mockModule.dispatchIntegrationAuthSucceededSubscriptionEvents(...args),
+	dispatchIntegrationAuthFailedSubscriptionEvents: vi.fn(async () => []),
+	integrationAuthFailedTopic: 'integration.auth.failed',
+	integrationAuthSucceededTopic: 'integration.auth.succeeded',
+}))
+
+vi.mock('#worker/integrations/platform-apps.ts', () => ({
+	getPlatformOauthAppClientSecret: (
+		...args: Parameters<typeof platformApps.getPlatformOauthAppClientSecret>
+	) => mockModule.getPlatformOauthAppClientSecret(...args),
+}))
+
+vi.mock('#worker/integrations/credentials.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof IntegrationsCredentials>()
+	return {
+		...actual,
+		persistIntegrationTokens: (
+			...args: Parameters<
+				typeof IntegrationsCredentials.persistIntegrationTokens
+			>
+		) => mockModule.persistIntegrationTokens(...args),
+		persistUserOauthAppClientSecret: (
+			...args: Parameters<
+				typeof IntegrationsCredentials.persistUserOauthAppClientSecret
+			>
+		) => mockModule.persistUserOauthAppClientSecret(...args),
+		resolveUserOauthAppClientSecret: (
+			...args: Parameters<
+				typeof IntegrationsCredentials.resolveUserOauthAppClientSecret
+			>
+		) => mockModule.resolveUserOauthAppClientSecret(...args),
+	}
+})
+
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	listSavedPackagesByUserId: (
+		...args: Parameters<typeof packageRepo.listSavedPackagesByUserId>
+	) => mockModule.listSavedPackagesByUserId(...args),
+}))
+
+const { createAccountSecretsApiHandler } = await import('./account-secrets.ts')
+
+const secretsUrl = 'https://example.com/account/secrets.json'
+const epoch = new Date(0).toISOString()
+
+function createHandler() {
+	const { handler } = createAccountSecretsApiHandler({
+		APP_DB: {} as D1Database,
+		COOKIE_SECRET: 'secret',
+	} as Env)
+	return (request: Request) => handler({ request, params: {} } as never)
+}
+
+function postRequest(body: Record<string, unknown>, search = '') {
+	return new Request(`${secretsUrl}${search}`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body),
+	})
+}
+
+function makeSecret(name: string, overrides: Record<string, unknown> = {}) {
+	return {
+		credentialId: `cred-${name}`,
+		name,
+		scope: 'user' as const,
+		description: '',
+		packageId: null,
+		allowedHosts: [] as Array<string>,
+		allowedPackages: [] as Array<string>,
+		createdAt: epoch,
+		updatedAt: epoch,
+		expiresAt: null,
+		ttlMs: null,
+		...overrides,
+	}
+}
+
+test('account secrets save reports rename cleanup failure without failing the save', async () => {
+	const existing = makeSecret('oldApiKey')
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
+	mockModule.listSecrets
+		.mockResolvedValueOnce([existing])
+		.mockResolvedValueOnce([makeSecret('renamedApiKey')])
+	mockModule.saveSecret.mockResolvedValueOnce({
+		name: 'renamedApiKey',
+		scope: 'user',
+		description: '',
+		packageId: null,
+		allowedHosts: [],
+		allowedPackages: [],
+		createdAt: epoch,
+		updatedAt: epoch,
+		expiresAt: null,
+		ttlMs: null,
+	} as never)
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		value: 'fresh-secret',
+	} as never)
+	mockModule.deleteSecret.mockRejectedValueOnce(
+		new Error('delete prior secret failed'),
+	)
+
+	const call = createHandler()
+	const response = await call(
+		postRequest({
+			action: 'save',
+			currentId: 'user::::oldApiKey',
+			name: 'renamedApiKey',
+			scope: 'user',
+			value: 'fresh-secret',
+			allowedHosts: [],
+			allowedPackages: [],
+		}),
+	)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		renameCleanupError: 'delete prior secret failed',
+		selectedSecret: { name: 'renamedApiKey' },
+	})
+	expect(mockModule.deleteSecret).toHaveBeenCalledWith(
+		expect.objectContaining({ name: 'oldApiKey', scope: 'user' }),
+	)
+})

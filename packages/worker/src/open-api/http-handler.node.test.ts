@@ -696,6 +696,133 @@ export default async () => x`,
 	).toBe(false)
 })
 
+test('package-graph accepts code over the old 512k char cap and imports-only prep', async () => {
+	const { maxLocalExecutePackageGraphCodeBytes } =
+		await import('./local-execute-package-graph.ts')
+	const api = await createApi()
+	const token = await mintWithLocalExecute(api)
+
+	// Former Zod `.max(512_000)` rejected TanStack / React worker bundles
+	// (~1.2–1.7 MiB). Inline code may now approach the Open API JSON body cap
+	// (minus JSON-wrapper headroom).
+	const overLegacyCap = `${'//'.padEnd(512_001, 'x')}\nexport default async function main() { return 1 }\n`
+	expect(overLegacyCap.length).toBeGreaterThan(512_000)
+	expect(overLegacyCap.length).toBeLessThan(
+		maxLocalExecutePackageGraphCodeBytes,
+	)
+	const large = await api.call('POST', '/v1/local-execute/package-graph', {
+		token,
+		body: { code: overLegacyCap },
+	})
+	expect(large.status).toBe(200)
+	expect(large.body).toMatchObject({
+		imports: [],
+		modules: [{ name: '.__kody_virtual__/runtime.js' }],
+	})
+
+	// Same size class with a real `kody:@` import so resolution still runs.
+	const largeUnresolved = await api.call(
+		'POST',
+		'/v1/local-execute/package-graph',
+		{
+			token,
+			body: {
+				code: `import x from 'kody:@missing/pkg/export'\n${'//'.padEnd(512_001, 'x')}\nexport default async () => x\n`,
+			},
+		},
+	)
+	expect(largeUnresolved.status).toBe(400)
+	expect(largeUnresolved.body.error?.code).toBe('package_import_unresolved')
+
+	// Large `kody dev` bundles: pass imports alone (origin synthesizes entry).
+	const importsOnly = await api.call(
+		'POST',
+		'/v1/local-execute/package-graph',
+		{
+			token,
+			body: { imports: [] },
+		},
+	)
+	expect(importsOnly.status).toBe(200)
+	expect(importsOnly.body).toMatchObject({
+		imports: [],
+		modules: [{ name: '.__kody_virtual__/runtime.js' }],
+	})
+
+	const unresolvedImportsOnly = await api.call(
+		'POST',
+		'/v1/local-execute/package-graph',
+		{
+			token,
+			body: { imports: ['kody:@missing/pkg/export'] },
+		},
+	)
+	expect(unresolvedImportsOnly.status).toBe(400)
+	expect(unresolvedImportsOnly.body.error?.code).toBe(
+		'package_import_unresolved',
+	)
+
+	const neither = await api.call('POST', '/v1/local-execute/package-graph', {
+		token,
+		body: {},
+	})
+	expect(neither.status).toBe(400)
+	expect(neither.body.error?.code).toBe('invalid_request')
+
+	// Over the shared JSON body / code ceiling: stay under the HTTP body reader
+	// (5 MiB) so the handler's size assert runs. Message must name actual size
+	// and limit — not a bare "Invalid parameters."
+	const [{ packageGraphCodeTooLargeMessage }, { maxApiRequestBodyBytes }] =
+		await Promise.all([
+			import('./local-execute-package-graph.ts'),
+			import('./request-params.ts'),
+		])
+	const overCeilingBytes = maxLocalExecutePackageGraphCodeBytes + 1
+	const overCeiling = await api.call(
+		'POST',
+		'/v1/local-execute/package-graph',
+		{
+			token,
+			body: { code: 'x'.repeat(overCeilingBytes) },
+		},
+	)
+	expect(overCeiling.status).toBe(400)
+	expect(overCeiling.body.error?.code).toBe('invalid_request')
+	expect(overCeiling.body.error?.message).toBe(
+		packageGraphCodeTooLargeMessage(overCeilingBytes),
+	)
+	expect(overCeiling.body.error?.message).toMatch(
+		new RegExp(
+			`code is ${overCeilingBytes} UTF-8 bytes; the maximum is ${maxLocalExecutePackageGraphCodeBytes}`,
+		),
+	)
+	expect(overCeiling.body.error?.message).not.toBe('Invalid parameters.')
+
+	// Multibyte source under the character maxLength can still blow the UTF-8
+	// byte budget. Keep the JSON body under 5 MiB so the handler assert runs
+	// (not the generic payload_too_large path).
+	const euroCount = Math.floor(maxLocalExecutePackageGraphCodeBytes / 3) + 1
+	const multibyteNearCeiling = '€'.repeat(euroCount)
+	const multibyteBytes = new TextEncoder().encode(
+		multibyteNearCeiling,
+	).byteLength
+	expect(multibyteNearCeiling.length).toBeLessThanOrEqual(
+		maxLocalExecutePackageGraphCodeBytes,
+	)
+	expect(multibyteBytes).toBeGreaterThan(maxLocalExecutePackageGraphCodeBytes)
+	expect(multibyteBytes).toBeLessThan(maxApiRequestBodyBytes)
+	const multibyte = await api.call('POST', '/v1/local-execute/package-graph', {
+		token,
+		body: { code: multibyteNearCeiling },
+	})
+	expect(multibyte.status).toBe(400)
+	expect(multibyte.body.error?.code).toBe('invalid_request')
+	expect(multibyte.body.error?.message).toBe(
+		packageGraphCodeTooLargeMessage(multibyteBytes),
+	)
+	expect(multibyte.body.error?.message).not.toBe('Invalid parameters.')
+})
+
 test('MCP OAuth Bearer authenticates CapabilityProxy and package-graph', async () => {
 	const oauthToken = 'cli-oauth-access-token-not-kody-at'
 	const api = await createApi({

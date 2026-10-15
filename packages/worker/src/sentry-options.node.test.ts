@@ -184,6 +184,11 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		'D1_ERROR: Internal error in Durable Object storage caused object to be reset; reference = b44vvje0qcq0ubd9ea522366',
 		'Error: D1_ERROR: Internal error in Durable Object storage caused object to be reset; reference = b44vvje0qcq0ubd9ea522366',
 		'Internal error in Durable Object storage caused object to be reset; reference = 849rqmf6-1lg3qbmtb3j6moc4',
+		// KODY-95: startup phrasing of the same DO-storage-reset family.
+		'Internal error while starting up Durable Object storage caused object to be reset; reference = 9k2mnpq7rstuvwxyzabcdefg',
+		'Error: Internal error while starting up Durable Object storage caused object to be reset; reference = e_Gz3hrU_5c47162d21d24e238a5c25e98b89ee39',
+		'D1_ERROR: Internal error while starting up Durable Object storage caused object to be reset; reference = b44vvje0qcq0ubd9ea522366',
+		'Error: D1_ERROR: Internal error while starting up Durable Object storage caused object to be reset; reference = b44vvje0qcq0ubd9ea522366',
 		noPeriod(durableObjectInstanceInactiveCloseMessage),
 		// DO queue saturation (KODY-6J).
 		durableObjectOverloadedRequestsQueuedTooLongMessage,
@@ -229,6 +234,11 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		`rebuildPublishedPackageArtifactsViaRepoSession could not recover after 3 transient platform error attempts: Package source publish succeeded, but bundle artifact rebuild failed for source "source-1" at commit "commit-1". Succeeded: none. Failed: ${durableObjectCodeUpdatedResetMessage} Re-run the publish capability to repair artifacts.`,
 		'Internal error in Durable Object storage caused object to be reset',
 		'D1_ERROR: Internal error in Durable Object storage caused object to be reset',
+		// KODY-95: startup phrasing without reference, wrapped, or unrelated.
+		'Internal error while starting up Durable Object storage caused object to be reset',
+		'D1_ERROR: Internal error while starting up Durable Object storage caused object to be reset',
+		'Internal error while starting up the package executor',
+		`serveMcp could not recover after retries: Internal error while starting up Durable Object storage caused object to be reset; reference = 9k2mnpq7rstuvwxyzabcdefg`,
 		'Durable Object was reset during migration',
 		`serveMcp could not recover after retries: ${durableObjectOverloadedRequestsQueuedTooLongMessage}`,
 		`authorize could not recover after ${cimdFetch404}`,

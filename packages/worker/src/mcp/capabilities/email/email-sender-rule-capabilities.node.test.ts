@@ -47,23 +47,28 @@ function createEnv() {
 	} as unknown as Env
 }
 
-function createUserContext(userId = 'user-1') {
+const personId = 'user-1'
+const personalOrgId = 'org-distinct-1'
+
+function createUserContext() {
 	return createMcpCallerContext({
 		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 		user: {
-			userId: personIdFromStored(userId),
-			email: `${userId}@example.com`,
+			userId: personIdFromStored(personId),
+			personalOrgId: ownerIdFromStored(personalOrgId),
+			email: `${personId}@example.com`,
 			displayName: 'User Example',
 		},
 	})
 }
 
-test('emailSenderRuleSet/list/delete scopes to the caller and maps domain errors', async () => {
+test('emailSenderRuleSet/list/delete scopes to the mailbox owner org and maps domain errors', async () => {
 	const env = createEnv()
+	const mailboxOwnerId = ownerIdFromStored(personalOrgId)
 	const rule = {
 		id: 'rule-1',
-		userId: ownerIdFromStored('user-1'),
+		userId: mailboxOwnerId,
 		kind: 'domain' as const,
 		value: 'spam.example',
 		effect: 'block' as const,
@@ -86,7 +91,7 @@ test('emailSenderRuleSet/list/delete scopes to the caller and maps domain errors
 	)
 	expect(mocks.upsertEmailSenderRule).toHaveBeenCalledWith({
 		db: env.APP_DB,
-		userId: ownerIdFromStored('user-1'),
+		userId: mailboxOwnerId,
 		kind: 'domain',
 		value: 'Spam.Example',
 		effect: 'block',
@@ -108,7 +113,7 @@ test('emailSenderRuleSet/list/delete scopes to the caller and maps domain errors
 	)
 	expect(mocks.listEmailSenderRules).toHaveBeenCalledWith({
 		db: env.APP_DB,
-		userId: ownerIdFromStored('user-1'),
+		userId: mailboxOwnerId,
 	})
 	expect(listResult.rules).toEqual([setResult.rule])
 
@@ -118,7 +123,7 @@ test('emailSenderRuleSet/list/delete scopes to the caller and maps domain errors
 	)
 	expect(mocks.deleteEmailSenderRule).toHaveBeenCalledWith({
 		db: env.APP_DB,
-		userId: ownerIdFromStored('user-1'),
+		userId: mailboxOwnerId,
 		ruleId: 'rule-1',
 	})
 	expect(deleteResult).toEqual({ deleted: true })
@@ -154,12 +159,12 @@ test('emailSenderRuleSet/list/delete scopes to the caller and maps domain errors
 	await expect(
 		emailSenderRuleDeleteCapability.handler(
 			{ rule_id: 'other-user-rule' },
-			{ env, callerContext: createUserContext('user-1') },
+			{ env, callerContext: createUserContext() },
 		),
 	).rejects.toThrow('Email sender rule not found: other-user-rule')
 	expect(mocks.deleteEmailSenderRule).toHaveBeenLastCalledWith({
 		db: env.APP_DB,
-		userId: ownerIdFromStored('user-1'),
+		userId: mailboxOwnerId,
 		ruleId: 'other-user-rule',
 	})
 })

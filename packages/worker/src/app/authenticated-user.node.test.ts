@@ -58,8 +58,9 @@ function createUsersDb(
 					bind: () => statement,
 					first: async () => {
 						if (
-							normalized.includes('from org_memberships') &&
-							normalized.includes('inner join orgs')
+							(normalized.includes('from org_memberships') ||
+								normalized.includes('join org_memberships')) &&
+							normalized.includes('join orgs')
 						) {
 							const slug =
 								typeof user?.username === 'string' ? user.username : 'html-user'

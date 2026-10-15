@@ -19,6 +19,7 @@ export {
 } from './connect-credential.tsx'
 export { AccountEmailRoute, accountEmailRouteLoader } from './account-email.tsx'
 export { AccountUsageRoute, accountUsageRouteLoader } from './account-usage.tsx'
+export { OrgCreditsRoute, orgCreditsRouteLoader } from './org-credits.tsx'
 export {
 	AccountWaitingRoute,
 	accountWaitingRouteLoader,
@@ -62,6 +63,10 @@ export {
 	accountPackageApproveCapabilitiesRouteLoader,
 } from './account-package-approve-capabilities.tsx'
 export {
+	ApprovalBundleRoute,
+	approvalBundleRouteLoader,
+} from './approval-bundle.tsx'
+export {
 	AccountPasskeysRoute,
 	accountPasskeysRouteLoader,
 } from './account-passkeys.tsx'
@@ -97,6 +102,7 @@ export { OrgSettingsRoute, orgSettingsRouteLoader } from './org-settings.tsx'
 export { OrgMembersRoute, orgMembersRouteLoader } from './org-members.tsx'
 export { OrgTeamsRoute, orgTeamsRouteLoader } from './org-teams.tsx'
 export { OrgGrantsRoute, orgGrantsRouteLoader } from './org-grants.tsx'
+export { OrgFollowsRoute, orgFollowsRouteLoader } from './org-follows.tsx'
 export {
 	OrgCollaboratorsRoute,
 	orgCollaboratorsRouteLoader,

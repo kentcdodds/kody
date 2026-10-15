@@ -191,6 +191,7 @@ test('small machine skips the startup-time check after a suite failure', async (
 				'nx-cache-build',
 				'jobs-build',
 				'highlight-build',
+				'push-queue-build',
 				'api-build',
 				'api-docs-build',
 				'runtime-build',

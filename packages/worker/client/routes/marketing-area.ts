@@ -1,3 +1,5 @@
+export { BelieveRoute } from './believe.tsx'
+export { WithAgentRoute } from './with-agent.tsx'
 export { BusinessRoute } from './business.tsx'
 export { AcquisitionRoute } from './acquisition.tsx'
 export { CaseStudiesRoute } from './case-studies.tsx'
@@ -10,9 +12,8 @@ export { TermsRoute } from './terms.tsx'
 export {
 	FeaturesRoute,
 	MemoryRoute,
-	SecretsRoute,
 	PackagesRoute,
 	TriggersRoute,
-	IntegrationsRoute,
+	CredentialsRoute,
 	AppsRoute,
 } from './features.tsx'

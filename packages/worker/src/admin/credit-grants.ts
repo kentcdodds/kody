@@ -49,6 +49,7 @@ export class AdminCreditGrantError extends Error {
 type CreditGrantTargetRow = UserEntitlementRow & {
 	id: number
 	stable_user_id: string
+	org_id: string
 	username: string
 }
 
@@ -56,8 +57,8 @@ async function loadCreditGrantTarget(
 	db: D1Database,
 	target: AdminUserTarget,
 ): Promise<CreditGrantTargetRow | null> {
-	const columns = `u.id, u.stable_user_id, u.username, ${userEntitlementColumnsSql('o')}`
-	const fromSql = `users u INNER JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}`
+	const columns = `u.id, u.stable_user_id, o.id AS org_id, u.username, ${userEntitlementColumnsSql('o')}`
+	const fromSql = `users u INNER JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)${andLiveDeletedAtSql('o')}`
 	if (target.stableUserId !== undefined) {
 		const stableUserId = parseOwnerId(target.stableUserId)
 		if (!stableUserId) return null
@@ -113,12 +114,13 @@ export async function loadAdminCreditWallet(
 	const row = await loadCreditGrantTarget(db, target)
 	if (!row) return null
 	const stableUserId = row.stable_user_id
+	const orgId = row.org_id
 	const [entitlement, wallet, entries] = await Promise.all([
-		resolveUserEntitlementFromRow({ db, stableUserId, row }),
-		readCreditWallet(db, stableUserId),
+		resolveUserEntitlementFromRow({ db, stableUserId: orgId, row }),
+		readCreditWallet(db, orgId),
 		listCreditLedgerEntries({
 			db,
-			userId: stableUserId,
+			userId: orgId,
 			limit: adminCreditLedgerLimit,
 		}),
 	])
@@ -186,13 +188,13 @@ export async function grantAdminCreditsToUser(input: {
 	const now = input.now ?? new Date()
 	const row = await loadCreditGrantTarget(db, input.target)
 	if (!row) throw new AdminCreditGrantError(404, 'User not found.')
-	const user = { stableUserId: row.stable_user_id }
+	const orgId = row.org_id
 	await ensureCreditWallet({
 		db,
-		userId: user.stableUserId,
+		userId: orgId,
 		entitlement: await resolveUserEntitlementFromRow({
 			db,
-			stableUserId: user.stableUserId,
+			stableUserId: orgId,
 			row,
 			now,
 		}),
@@ -200,7 +202,7 @@ export async function grantAdminCreditsToUser(input: {
 	})
 	const grant = await grantAdminCredits({
 		db,
-		recipientUserId: user.stableUserId,
+		recipientUserId: orgId,
 		grantedByUserId: input.grantedBy.stableUserId,
 		amountCents: amount.cents,
 		note,
@@ -216,14 +218,14 @@ export async function grantAdminCreditsToUser(input: {
 			ip: input.ip,
 			path: input.path,
 			reason: formatAdminCreditGrantAuditReason({
-				stableUserId: user.stableUserId,
+				stableUserId: row.stable_user_id,
 				amountCents: amount.cents,
 				entryId: grant.entryId,
 			}),
 		})
 	}
 	const wallet = await loadAdminCreditWallet(input.env, {
-		stableUserId: user.stableUserId,
+		stableUserId: row.stable_user_id,
 	})
 	if (!wallet) throw new AdminCreditGrantError(404, 'User not found.')
 	return { entryId: grant.entryId, amountCents: amount.cents, wallet }
@@ -263,10 +265,10 @@ export async function setAdminCreditEligibility(input: {
 	const row = await loadCreditGrantTarget(db, input.target)
 	if (!row) throw new AdminCreditGrantError(404, 'User not found.')
 	const previousAdminCreditsEligible = Number(row.admin_credits_eligible) === 1
-	const stableUserId = row.stable_user_id
+	const orgId = row.org_id
 	await forgiveCreditUsageBeforeUnlock({
 		db,
-		userId: stableUserId,
+		userId: orgId,
 		current: row,
 		next: { ...row, admin_credits_eligible: input.creditsEligible ? 1 : 0 },
 		now,
@@ -275,11 +277,13 @@ export async function setAdminCreditEligibility(input: {
 	const adminCreditsEligible = input.creditsEligible ? 1 : 0
 	await updateOrgBillingColumns({
 		db,
-		orgId: stableUserId,
+		orgId,
 		setClause: 'admin_credits_eligible = ?, updated_at = ?',
 		values: [adminCreditsEligible, updatedAt],
 	})
-	const wallet = await loadAdminCreditWallet(input.env, { stableUserId })
+	const wallet = await loadAdminCreditWallet(input.env, {
+		stableUserId: row.stable_user_id,
+	})
 	if (!wallet) throw new AdminCreditGrantError(404, 'User not found.')
 	return { previousAdminCreditsEligible, note, wallet }
 }

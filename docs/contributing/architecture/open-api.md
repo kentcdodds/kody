@@ -166,12 +166,12 @@ module and does not silently hop to `kody.execute`. See
 [Local CLI execute](../../guides/local-execute.md) and
 [Open API](../../guides/open-api.md).
 
-| Route                                     | Body                                            | 200 response                                                                              |
-| ----------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `GET /v1/capability-proxy/session`        | none                                            | `{ scopes, expiresAt, maxExpiresAt, idleTtlSeconds, user, features, limits }` (camelCase) |
-| `POST /v1/capability-proxy/call`          | `{ path, args, conversationId?, credentials? }` | `{ result }`                                                                              |
-| `POST /v1/capability-proxy/gateway-fetch` | raw outbound fetch body (streamed)              | upstream HTTP response (status, headers, body), streamed                                  |
-| `POST /v1/local-execute/package-graph`    | `{ code, imports?, conversationId? }`           | `{ modules: [{ name, esModule }], imports, warnings }`                                    |
+| Route                                     | Body                                                                                                             | 200 response                                                                              |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `GET /v1/capability-proxy/session`        | none                                                                                                             | `{ scopes, expiresAt, maxExpiresAt, idleTtlSeconds, user, features, limits }` (camelCase) |
+| `POST /v1/capability-proxy/call`          | `{ path, args, conversationId?, credentials? }`                                                                  | `{ result }`                                                                              |
+| `POST /v1/capability-proxy/gateway-fetch` | raw outbound fetch body (streamed)                                                                               | upstream HTTP response (status, headers, body), streamed                                  |
+| `POST /v1/local-execute/package-graph`    | `{ code?, imports?, conversationId? }` (need `code` and/or `imports`; inline `code` ≤ ~5 MiB minus JSON wrapper) | `{ modules: [{ name, esModule }], imports, warnings }`                                    |
 
 - `path` is the `kody:runtime` property path: `['kody', name]`,
   `['kody', 'mcp', server, tool]`, or `['workflows', 'create']`. `args` are
@@ -184,7 +184,13 @@ module and does not silently hop to `kody.execute`. See
   cloud ad hoc execute (imports resolve only in the caller's org). Prefer
   published `importable-module` artifacts; unpublished or missing artifacts
   answer `400 package_import_unpublished`. Literal dynamic `import("kody:@…")`
-  answers `400 unsupported_dynamic_package_import`.
+  answers `400 unsupported_dynamic_package_import`. Inline `code` is capped just
+  under the Open API JSON body limit (5 MiB) so the JSON wrapper still fits —
+  the same body ceiling as every other JSON Open API op (publish's 10 MiB
+  per-file limit is Artifacts git, not this route). Callers with larger modules
+  (or `kody dev` worker bundles that only need stamped deps) pass `imports`
+  alone; origin synthesizes a tiny entry from that list so the multi-megabyte
+  bundle never crosses the wire.
 - Calls dispatch through the same `kody.*` tool map as ad hoc cloud execute, so
   capability behavior, `kody.mcp`, and workflows match the cloud. Caller errors
   from a capability keep their status and message. Unexpected capability

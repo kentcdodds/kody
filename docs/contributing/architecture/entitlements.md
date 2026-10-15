@@ -298,9 +298,22 @@ drops to Free limits.
   automation invocations) once either meter is past this UTC month's include
   (`resolvePastIncludeStop`). The check runs before the UserMeter counter, so a
   stopped attempt spends no daily quota. Hosted package apps have no daily
-  counter, so `buildPackageAppWorker` calls `assertWithinComputeInclude` (the
-  same rule) for HTTP requests and realtime hooks: HTTP gets a `429` "Monthly
-  include used up" page, and realtime sockets close with `include-used-up`.
+  counter, so `buildPackageAppWorker` applies `assertWithinComputeInclude` (the
+  same rule) to HTTP requests and realtime hooks through a circuit breaker
+  (`package-app-usage-breaker.ts`). The breaker never makes a request wait on
+  the check: while closed it serves and runs the check after the response
+  (`waitUntil`, at most once per org and visitor per 5 s per isolate). A denial
+  opens it with a KV deny entry per org and visitor, which refuses requests
+  without other reads for a 10 s cooldown. After the cooldown, one request per
+  isolate runs the check first (half-open): passing closes the breaker, and a
+  denial re-opens it in that isolate (KV is written only on the first open and
+  on close). The probe's uncached re-read means a top-up, a raised budget, or a
+  new month resumes serving within one cooldown. The trip threshold is `PACKAGE_APP_USAGE_BREAKER_LIMIT_PERCENT`
+  percent of the existing limit (default 100). If the deny entry cannot be read,
+  the check runs before serving. Refused HTTP requests get a `429` "Monthly
+  include used up" page, and realtime sockets close with `include-used-up`. A
+  visitor can therefore get a few seconds of requests past the stop before the
+  breaker opens.
   Outbound fetches are exempt from the monthly stop because they happen inside a
   run that was already admitted; their daily and weekly include still stops at
   $0.
@@ -655,9 +668,11 @@ Cross-UTC-day retries use the original claim's resource/day.
 ### D1 payload storage bytes — UserMeter authority
 
 **Authority:** the UserMeter `storage_bytes_state` singleton is the sole
-enforcement and usage counter. The reconcile lane walks users by
-`stable_user_id` keyset from the platform-owned `d1_storage_reconcile_cursor`
-singleton (advanced once per processed page, wrapping at the tail).
+enforcement and usage counter. The reconcile lane walks every live owner —
+personal orgs (`users.stable_user_id`) and team orgs (`orgs.id`, no `users` row)
+— by one keyset from the platform-owned `d1_storage_reconcile_cursor` singleton
+(advanced once per processed page, wrapping at the tail). Cold bootstrap
+zero-inits any live owner; the lane then corrects it to physical bytes.
 
 **Reserve path (`assertWithinStorageBytesEntitlement`):**
 

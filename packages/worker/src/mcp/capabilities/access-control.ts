@@ -1,6 +1,10 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { auditDatabaseFromEnv } from '#worker/audit-log.ts'
 import {
+	nonInteractiveTriggerOf,
+	type NonInteractiveTriggerType,
+} from '#worker/authorization/authorize.ts'
+import {
 	type PermissionString,
 	type RoleName,
 	userHasPermission,
@@ -21,6 +25,10 @@ import {
 	recordMcpAuthDenial,
 } from '#mcp/auth-audit.ts'
 import { type BuiltCapabilityRegistry } from './build-capability-registry.ts'
+import {
+	requiresSiteAccess,
+	type SiteAccessActorTrigger,
+} from './triggered-site-access.ts'
 import { type Capability, type CapabilitySpec } from './types.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
@@ -235,6 +243,69 @@ export async function resolveCallerFeatureFlags(
 	return await promise
 }
 
+/**
+ * Whether site-admin role/permission checks should key on `request.actor`
+ * (D1) instead of `callerContext.user.roles`.
+ *
+ * Enablement-backed runs (job, webhook, subscription, email) always defer:
+ * the MCP user is the org's identity (`roles: ['user']`) and is not trusted
+ * for site-admin. Package-app and unattended runs still fail closed on
+ * caller roles.
+ *
+ * Background `jobRunNow` inherits a live-person credential, so it is not a
+ * non-interactive trigger, but the MCP user is still the org when the job
+ * belongs to a team org. Defer whenever a background run's actor is a
+ * different person from the MCP user so admin tools stay visible and the
+ * actor D1 gate can run (#3541 follow-up).
+ */
+export function shouldDeferSiteAccessToActor(
+	callerContext: McpCallerContext,
+): boolean {
+	const trigger = nonInteractiveTriggerOf(callerContext.request)
+	if (trigger) {
+		const type: NonInteractiveTriggerType = trigger.type
+		switch (type) {
+			case 'job':
+			case 'webhook':
+			case 'subscription':
+			case 'email':
+				return true
+			case 'package-app':
+			case 'unattended':
+				return false
+			default: {
+				const exhaustive: never = type
+				throw new Error(
+					`Unhandled non-interactive trigger: ${String(exhaustive)}`,
+				)
+			}
+		}
+	}
+	if (callerContext.executionOrigin !== 'background') return false
+	const actorId = callerContext.request?.actor?.userId
+	const userId = callerContext.user?.userId
+	if (!actorId || !userId) return false
+	return String(actorId) !== String(userId)
+}
+
+/**
+ * The actor-gate trigger when site-admin access defers to `request.actor`,
+ * or null when the caller's roles are checked instead.
+ */
+export function siteAccessActorTriggerOf(
+	callerContext: McpCallerContext,
+): SiteAccessActorTrigger | null {
+	if (!shouldDeferSiteAccessToActor(callerContext)) return null
+	const trigger = nonInteractiveTriggerOf(callerContext.request)
+	if (trigger) return trigger
+	const request = callerContext.request
+	if (!request?.actor) return null
+	return {
+		type: 'run-now',
+		credentialId: request.credential.id,
+	}
+}
+
 export function callerCanAccessCapability(
 	callerContext: McpCallerContext,
 	capability: CapabilityAccessRequirement,
@@ -251,9 +322,17 @@ export function callerCanAccessCapability(
 	// evaluated per user, so there is no meaningful anonymous flag state.
 	const user = getUserAccessContext(callerContext)
 	if (!user) return false
-	if (requiredRole && !hasRequiredRole(user, requiredRole)) return false
-	if (requiredPermission && !hasRequiredPermission(user, requiredPermission)) {
-		return false
+	const deferSiteAccess =
+		requiresSiteAccess(capability) &&
+		shouldDeferSiteAccessToActor(callerContext)
+	if (!deferSiteAccess) {
+		if (requiredRole && !hasRequiredRole(user, requiredRole)) return false
+		if (
+			requiredPermission &&
+			!hasRequiredPermission(user, requiredPermission)
+		) {
+			return false
+		}
 	}
 	if (requiredFeatureFlag) {
 		// Fail closed when the per-request flag map was not resolved.
@@ -281,7 +360,7 @@ export async function assertCallerCanAccessCapability(
 	}
 
 	const user = getUserAccessContext(callerContext)
-	const denial = describeCapabilityDenial(user, capability)
+	const denial = describeCapabilityDenial(callerContext, user, capability)
 	// A denial is the one signal we would have that a principal is walking the
 	// capability surface, so it is recorded even though it is not an error.
 	await recordMcpAuthDenial({
@@ -295,6 +374,7 @@ export async function assertCallerCanAccessCapability(
 }
 
 function describeCapabilityDenial(
+	callerContext: McpCallerContext,
 	user: ReturnType<typeof getUserAccessContext>,
 	capability: CapabilityAccessRequirement,
 ): { reason: McpAuthDenialReason; message: string } {
@@ -304,22 +384,27 @@ function describeCapabilityDenial(
 			message: `Authenticated MCP user is required to execute capability "${capability.name}".`,
 		}
 	}
-	if (
-		capability.requiredRole &&
-		!hasRequiredRole(user, capability.requiredRole)
-	) {
-		return {
-			reason: 'role',
-			message: `MCP user lacks required role "${capability.requiredRole}" for capability "${capability.name}".`,
+	const deferSiteAccess =
+		requiresSiteAccess(capability) &&
+		shouldDeferSiteAccessToActor(callerContext)
+	if (!deferSiteAccess) {
+		if (
+			capability.requiredRole &&
+			!hasRequiredRole(user, capability.requiredRole)
+		) {
+			return {
+				reason: 'role',
+				message: `MCP user lacks required role "${capability.requiredRole}" for capability "${capability.name}".`,
+			}
 		}
-	}
-	if (
-		capability.requiredPermission &&
-		!hasRequiredPermission(user, capability.requiredPermission)
-	) {
-		return {
-			reason: 'permission',
-			message: `MCP user lacks required permission "${capability.requiredPermission}" for capability "${capability.name}".`,
+		if (
+			capability.requiredPermission &&
+			!hasRequiredPermission(user, capability.requiredPermission)
+		) {
+			return {
+				reason: 'permission',
+				message: `MCP user lacks required permission "${capability.requiredPermission}" for capability "${capability.name}".`,
+			}
 		}
 	}
 	if (capability.featureFlag) {

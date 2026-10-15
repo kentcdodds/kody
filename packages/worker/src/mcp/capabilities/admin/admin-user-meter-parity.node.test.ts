@@ -38,6 +38,7 @@ function createCapabilityTestDb() {
 		CREATE TABLE users (
 			id INTEGER PRIMARY KEY,
 			stable_user_id TEXT UNIQUE NOT NULL,
+			personal_org_id TEXT,
 			username TEXT NOT NULL,
 			email TEXT NOT NULL,
 			deleting_at TEXT,
@@ -46,8 +47,20 @@ function createCapabilityTestDb() {
 			created_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z',
 			updated_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z'
 		);
+		CREATE TABLE orgs (
+			id TEXT PRIMARY KEY,
+			slug TEXT NOT NULL,
+			display_name TEXT,
+			plan TEXT NOT NULL DEFAULT 'free',
+			deleting_at TEXT,
+			deleted_at TEXT,
+			created_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z',
+			updated_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z'
+		);
 		INSERT INTO users (stable_user_id, username, email)
 		VALUES ('${stableUserId}', 'parity-cap', 'parity-cap@example.com');
+		INSERT INTO orgs (id, slug, plan)
+		VALUES ('${stableUserId}', 'parity-cap', 'free');
 	`)
 	return createD1FromSqlite(sqlite)
 }

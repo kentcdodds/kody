@@ -1,47 +1,18 @@
 import { expect, test } from 'vitest'
-import { clearOnboardingPayloadCache } from './onboarding-payload.ts'
 import { homeRouteLoader } from './home.tsx'
 import { isRouteLoaderRedirect } from '#client/route-loader.ts'
 import { routes } from '#universal/routes.ts'
 
-test('homeRouteLoader fail-opens when the hero JSON fetch throws', async () => {
-	clearOnboardingPayloadCache()
+test('homeRouteLoader fail-opens when the hero JSON fetch throws and fetches nothing else', async () => {
 	const originalFetch = globalThis.fetch
+	const requested: Array<string> = []
 	globalThis.fetch = ((input: RequestInfo | URL) => {
 		const url = String(input)
+		requested.push(url)
 		if (url === routes.landingHeroVideosApi.href()) {
 			return Promise.reject(new TypeError('Failed to fetch'))
 		}
-		return Promise.resolve(
-			Response.json({
-				ok: true,
-				loggedIn: false,
-				username: null,
-				mcpServerUrl: 'https://example.com/mcp',
-				setupPrompt: '',
-				discoveryPrompt: '',
-				persistPrompt: '',
-				hasAccessWin: false,
-				hasSecondMcpClient: false,
-				hasMcpClient: false,
-				connectedAgents: [],
-				secondAgentStandardGift: {
-					received: false,
-					active: false,
-					status: 'none',
-					expiresAt: null,
-					grantedAt: null,
-				},
-				emailVerified: false,
-				needsOnboarding: true,
-				featuredListings: [],
-				featuredMcpServers: [],
-				customMcpServers: [],
-				persistedPackageName: null,
-				accessWinMemorySubject: null,
-				checklist: null,
-			}),
-		)
+		return Promise.resolve(Response.json({ ok: true }))
 	}) as typeof fetch
 
 	try {
@@ -53,15 +24,17 @@ test('homeRouteLoader fail-opens when the hero JSON fetch throws', async () => {
 			throw new Error('expected home loader data, not a redirect')
 		}
 		expect(result.landingHeroVideos).toEqual([])
-		expect(result.onboarding).toMatchObject({ ok: true, loggedIn: false })
+		expect(result.walkthroughHosts).toBeDefined()
+		// The homepage renders no onboarding state, so navigation never
+		// waits on the onboarding payload.
+		expect(result.onboarding).toBeUndefined()
+		expect(requested).toEqual([routes.landingHeroVideosApi.href()])
 	} finally {
 		globalThis.fetch = originalFetch
-		clearOnboardingPayloadCache()
 	}
 })
 
 test('homeRouteLoader rethrows when the hero JSON fetch is aborted', async () => {
-	clearOnboardingPayloadCache()
 	const originalFetch = globalThis.fetch
 	const controller = new AbortController()
 	controller.abort()
@@ -78,6 +51,5 @@ test('homeRouteLoader rethrows when the hero JSON fetch is aborted', async () =>
 		).rejects.toMatchObject({ name: 'AbortError' })
 	} finally {
 		globalThis.fetch = originalFetch
-		clearOnboardingPayloadCache()
 	}
 })

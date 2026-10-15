@@ -16,16 +16,14 @@ import {
 import { mintPersonId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 import { bumpAccessEpochStatement } from '#worker/authorization/access-compile.ts'
-import {
-	getEffectiveUsernameValidationError,
-	normalizeUsername,
-} from '#worker/identity/username.ts'
+import { normalizeUsername } from '#worker/identity/username.ts'
 import {
 	FREE_ORG_LIMIT_MESSAGE,
 	FreeOrgLimitError,
 	MAX_FREE_ORGS_PER_USER,
 	liveFreeOwnedOrgCountSql,
 } from '#worker/orgs/billing.ts'
+import { getOrgHandleClaimError } from '#worker/orgs/org-handle-claim.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import {
 	recordOrgAuditEvent,
@@ -512,7 +510,10 @@ export async function updateOrgMemberRole(input: {
 	})
 }
 
-/** The slug failed format or reserved-name validation; message is user-facing. */
+/**
+ * The slug failed format, reserved-name, or shared-namespace claim validation;
+ * message is user-facing (same reserved copy as username signup).
+ */
 export class OrgSlugValidationError extends Error {}
 
 export async function createOrg(input: {
@@ -524,7 +525,7 @@ export async function createOrg(input: {
 	audit: OrgAuditWriter
 }) {
 	const slug = normalizeUsername(input.slug)
-	const slugError = await getEffectiveUsernameValidationError(slug, input.env)
+	const slugError = await getOrgHandleClaimError(slug, input.db, input.env)
 	if (slugError) throw new OrgSlugValidationError(slugError)
 	const orgId = mintPersonId()
 	const now = new Date().toISOString()
@@ -970,6 +971,15 @@ export async function getInviteById(input: {
 	return row ? parseStoredInvite(row) : null
 }
 
+/** Any org's invite by id, for the recipient's own accept or decline. */
+export async function getInviteByIdAnyOrg(db: D1Database, inviteId: string) {
+	const row = await db
+		.prepare(`${inviteSelect} WHERE id = ?`)
+		.bind(inviteId)
+		.first<InviteRow>()
+	return row ? parseStoredInvite(row) : null
+}
+
 async function setInviteStatus(input: {
 	db: D1Database
 	inviteId: string
@@ -1046,6 +1056,44 @@ export async function markInviteRevoked(input: {
 			action: 'invite.revoked',
 			resourceType: 'invite',
 			resourceId: input.inviteId,
+		},
+	})
+}
+
+/**
+ * The recipient declined. An invite has exactly one recipient, so it closes
+ * like a revoke; the audit event says who turned it down.
+ */
+export async function markInviteDeclined(input: {
+	db: D1Database
+	orgId: string
+	inviteId: string
+	declinedByUserId: string
+	audit: OrgAuditWriter
+}) {
+	const pending = await input.db
+		.prepare(`SELECT 1 AS ok FROM invites WHERE id = ? AND status = 'pending'`)
+		.bind(input.inviteId)
+		.first<{ ok: number }>()
+	if (!pending) throw new Error('Only a pending invite can be declined.')
+	await runAccessBatchWithAudit({
+		db: input.db,
+		audit: input.audit,
+		statements: [
+			input.db
+				.prepare(
+					`UPDATE invites
+					 SET status = 'revoked'
+					 WHERE id = ? AND status = 'pending'`,
+				)
+				.bind(input.inviteId),
+		],
+		event: {
+			orgId: input.orgId,
+			action: 'invite.declined',
+			resourceType: 'invite',
+			resourceId: input.inviteId,
+			targetUserId: input.declinedByUserId,
 		},
 	})
 }

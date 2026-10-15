@@ -82,13 +82,34 @@ const slotKindByNameKind: Record<NameKind, 'secret' | 'oauth'> = {
 	integration: 'oauth',
 }
 
-type Scan = {
+/**
+ * Where a credential reference comes from: a placeholder in a string, or the
+ * `kody:runtime` helper named here.
+ */
+export type CredentialReferenceVia =
+	| 'placeholder'
+	| 'createAuthenticatedFetch'
+	| 'packageSecrets'
+	| 'basic'
+	| 'oauthClientCredentials'
+	| 'secretJwtSign'
+	| 'packageSecretGet'
+	| 'packageSecretHas'
+	| 'integrationTokenRefresh'
+
+/** What a module scan reports, one call per reference. */
+export type CredentialReferenceHandlers = {
+	/** A pattern that names no credential (`kody.mcp`, `|scope=`, ...). */
 	add: (pattern: LegacyCredentialPattern) => void
-	/**
-	 * A credential named by a known string. Not a finding when it names a
-	 * declared kody.credentials slot of the matching kind.
-	 */
-	named: (name: string, kind: NameKind) => void
+	/** A credential named by a known string. */
+	named: (name: string, kind: NameKind, via: CredentialReferenceVia) => void
+	/** A credential whose name is only known at run time. */
+	computed: (kind: NameKind, via: CredentialReferenceVia) => void
+	/** A literal reference that names no slot: a vault ref or unreadable text. */
+	unnamed: (via: CredentialReferenceVia) => void
+}
+
+type Scan = CredentialReferenceHandlers & {
 	/** Module-level string constants, declared or relatively imported. */
 	constants: ReadonlyMap<string, string>
 }
@@ -105,14 +126,20 @@ const textKodyMcpPattern =
 	/\bkody\s*(?:\?\.|\.)\s*mcp\b|\bkody\s*\[\s*['"`]mcp['"`]/
 
 /** Group 1 captures the opening quote when the first argument is a literal. */
-const textNameArgumentCalls: Array<{ pattern: RegExp; kind: NameKind }> = [
+const textNameArgumentCalls: Array<{
+	pattern: RegExp
+	kind: NameKind
+	via: CredentialReferenceVia
+}> = [
 	{
 		pattern: /\bcreateAuthenticatedFetch\s*\(\s*(['"`])?/g,
 		kind: 'integration',
+		via: 'createAuthenticatedFetch',
 	},
 	{
 		pattern: /\bpackageSecrets\s*(?:\?\.|\.)\s*(?:get|has)\s*\(\s*(['"`])?/g,
 		kind: 'secret',
+		via: 'packageSecrets',
 	},
 ]
 
@@ -126,27 +153,46 @@ const nameArgumentCallees: Record<string, NameKind> = {
 }
 const nameFieldCallees: Record<
 	string,
-	{ kind: NameKind; fields: Array<string>; scopeFields: Array<string> }
+	{
+		kind: NameKind
+		via: CredentialReferenceVia
+		fields: Array<string>
+		scopeFields: Array<string>
+	}
 > = {
 	basic: {
 		kind: 'secret',
+		via: 'basic',
 		fields: ['usernameSecret', 'passwordSecret'],
 		scopeFields: ['scope'],
 	},
 	oauthClientCredentials: {
 		kind: 'secret',
+		via: 'oauthClientCredentials',
 		fields: ['clientIdSecret', 'clientSecretSecret'],
 		scopeFields: ['scope'],
 	},
 	secretJwtSign: {
 		kind: 'secret',
+		via: 'secretJwtSign',
 		fields: ['private_key_secret_name'],
 		scopeFields: ['private_key_secret_scope'],
 	},
-	packageSecretGet: { kind: 'secret', fields: ['alias'], scopeFields: [] },
-	packageSecretHas: { kind: 'secret', fields: ['alias'], scopeFields: [] },
+	packageSecretGet: {
+		kind: 'secret',
+		via: 'packageSecretGet',
+		fields: ['alias'],
+		scopeFields: [],
+	},
+	packageSecretHas: {
+		kind: 'secret',
+		via: 'packageSecretHas',
+		fields: ['alias'],
+		scopeFields: [],
+	},
 	integrationTokenRefresh: {
 		kind: 'integration',
+		via: 'integrationTokenRefresh',
 		fields: ['name'],
 		scopeFields: [],
 	},
@@ -195,14 +241,14 @@ function classifyStringPiece(
 			case 'secret':
 			case 'integration':
 				for (const name of placeholder.names) {
-					scan.named(name, placeholder.kind)
+					scan.named(name, placeholder.kind, 'placeholder')
 				}
 				break
 			case 'vault':
-				scan.add('literal secret')
+				scan.unnamed('placeholder')
 				break
 			case 'computed':
-				scan.add(computedPattern(placeholder.nameKind))
+				scan.computed(placeholder.nameKind, 'placeholder')
 				break
 			default: {
 				const exhaustive: never = placeholder
@@ -246,6 +292,7 @@ function hasComputedScopeContinuation(
 function classifyNameExpression(
 	node: AstNode | undefined,
 	kind: NameKind,
+	via: CredentialReferenceVia,
 	scan: Scan,
 	ancestors: ReadonlyArray<AstNode> = [],
 ) {
@@ -253,8 +300,8 @@ function classifyNameExpression(
 		node,
 		constantsWithoutShadows(scan.constants, ancestors),
 	)
-	if (name == null) scan.add(computedPattern(kind))
-	else scan.named(name, kind)
+	if (name == null) scan.computed(kind, via)
+	else scan.named(name, kind, via)
 }
 
 function computedPattern(kind: NameKind): LegacyCredentialPattern {
@@ -268,12 +315,12 @@ function classifyNamedFields(
 	ancestors: ReadonlyArray<AstNode>,
 ) {
 	if (argument?.type !== 'ObjectExpression') {
-		if (argument) scan.add(computedPattern(spec.kind))
+		if (argument) scan.computed(spec.kind, spec.via)
 		return
 	}
 	for (const property of argument.properties ?? []) {
 		if (property.type !== 'ObjectProperty' || property.computed === true) {
-			scan.add(computedPattern(spec.kind))
+			scan.computed(spec.kind, spec.via)
 			continue
 		}
 		const key = getNodeName(property.key)
@@ -286,6 +333,7 @@ function classifyNamedFields(
 			classifyNameExpression(
 				property.value as AstNode,
 				spec.kind,
+				spec.via,
 				scan,
 				ancestors,
 			)
@@ -429,7 +477,13 @@ function detectInParsedModule(parsed: AstNode, scan: Scan) {
 				const nameKind = ownEntry(nameArgumentCallees, calleeName)
 				if (nameKind) {
 					if (firstArgument) {
-						classifyNameExpression(firstArgument, nameKind, scan, ancestors)
+						classifyNameExpression(
+							firstArgument,
+							nameKind,
+							'createAuthenticatedFetch',
+							scan,
+							ancestors,
+						)
 					}
 					return
 				}
@@ -440,7 +494,13 @@ function detectInParsedModule(parsed: AstNode, scan: Scan) {
 				) {
 					if (calleeName === 'get') add('packageSecrets.get')
 					if (firstArgument) {
-						classifyNameExpression(firstArgument, 'secret', scan, ancestors)
+						classifyNameExpression(
+							firstArgument,
+							'secret',
+							'packageSecrets',
+							scan,
+							ancestors,
+						)
 					}
 					return
 				}
@@ -463,21 +523,27 @@ function detectInParsedModule(parsed: AstNode, scan: Scan) {
 function detectInUnparsedModule(source: string, scan: Scan) {
 	const { add } = scan
 	/** The quoted name opened at `match`, or a computed finding. */
-	const classifyQuoted = (match: RegExpMatchArray, kind: NameKind) => {
+	const classifyQuoted = (
+		match: RegExpMatchArray,
+		kind: NameKind,
+		via: CredentialReferenceVia,
+	) => {
 		const quote = match[1]
 		if (!quote) {
-			add(computedPattern(kind))
+			scan.computed(kind, via)
 			return
 		}
 		const start = match.index! + match[0].length
 		const end = source.indexOf(quote, start)
-		if (end === -1) add('literal secret')
-		else scan.named(source.slice(start, end), kind)
+		if (end === -1) scan.unnamed(via)
+		else scan.named(source.slice(start, end), kind, via)
 	}
 	classifyStringPiece(source, scan)
 	if (textKodyMcpPattern.test(source)) add('kody.mcp')
-	for (const { pattern, kind } of textNameArgumentCalls) {
-		for (const match of source.matchAll(pattern)) classifyQuoted(match, kind)
+	for (const { pattern, kind, via } of textNameArgumentCalls) {
+		for (const match of source.matchAll(pattern)) {
+			classifyQuoted(match, kind, via)
+		}
 	}
 	if (
 		/\bpackageSecrets\s*(?:\?\.|\.)\s*get\s*\(|\bpackageSecretGet\s*\(/.test(
@@ -498,10 +564,10 @@ function detectInUnparsedModule(source: string, scan: Scan) {
 				new RegExp(`\\b${field}\\s*:\\s*(['"\`])?`, 'g'),
 			)) {
 				namedField = true
-				classifyQuoted(match, spec.kind)
+				classifyQuoted(match, spec.kind, spec.via)
 			}
 		}
-		if (!namedField) add(computedPattern(spec.kind))
+		if (!namedField) scan.computed(spec.kind, spec.via)
 		for (const field of spec.scopeFields) {
 			if (new RegExp(`\\b${field}\\s*:`).test(source)) add('|scope=')
 		}
@@ -561,6 +627,36 @@ function readDeclaredSlotKinds(manifestSource: string | undefined) {
 	return kinds
 }
 
+/**
+ * Scan every runtime-reachable module for credential references, in path
+ * order. Unparseable modules fall back to a weaker text scan.
+ */
+export function scanModuleCredentialReferences(
+	files: Record<string, string>,
+	handlersFor: (path: string) => CredentialReferenceHandlers,
+) {
+	const modulePaths = listScannableModulePaths(files)
+	const parsedModules = new Map(
+		modulePaths.map((path) => [path, parseModule(files[path]!)]),
+	)
+	const moduleConstants = createModuleConstantsReader(parsedModules)
+	for (const path of modulePaths) {
+		const handlers = handlersFor(path)
+		const parsed = parsedModules.get(path)
+		if (parsed) {
+			detectInParsedModule(parsed, {
+				...handlers,
+				constants: moduleConstants(path),
+			})
+		} else {
+			detectInUnparsedModule(files[path]!, {
+				...handlers,
+				constants: new Map(),
+			})
+		}
+	}
+}
+
 function detectLegacyCredentialPatterns(
 	files: Record<string, string>,
 ): Array<PackageCodemodFinding> {
@@ -569,15 +665,23 @@ function detectLegacyCredentialPatterns(
 		? files[packageManifestPath]
 		: undefined
 	const slotKinds = readDeclaredSlotKinds(manifestSource)
-	const modulePaths = listScannableModulePaths(files)
-	const parsedModules = new Map(
-		modulePaths.map((path) => [path, parseModule(files[path]!)]),
-	)
-	const moduleConstants = createModuleConstantsReader(parsedModules)
-	const scanPath = (path: string, source: string) => {
+	const findingSets: Array<{
+		path: string
+		patterns: Set<LegacyCredentialPattern>
+	}> = []
+	const patternsFor = (path: string) => {
 		const patterns = new Set<LegacyCredentialPattern>()
+		findingSets.push({ path, patterns })
+		return patterns
+	}
+	if (manifestSource != null) {
+		const patterns = patternsFor(packageManifestPath)
+		detectInManifest(manifestSource, (pattern) => patterns.add(pattern))
+	}
+	scanModuleCredentialReferences(files, (path) => {
+		const patterns = patternsFor(path)
 		const add = (pattern: LegacyCredentialPattern) => patterns.add(pattern)
-		const scan: Scan = {
+		return {
 			add,
 			named: (name, kind) => {
 				if (!slotKinds.has(name)) {
@@ -592,21 +696,11 @@ function detectLegacyCredentialPatterns(
 					add('literal secret')
 				}
 			},
-			constants: new Map(),
+			computed: (kind) => add(computedPattern(kind)),
+			unnamed: () => add('literal secret'),
 		}
-		if (path === packageManifestPath) {
-			detectInManifest(source, add)
-		} else if (parsedModules.has(path)) {
-			const parsed = parsedModules.get(path)
-			if (parsed) {
-				detectInParsedModule(parsed, {
-					...scan,
-					constants: moduleConstants(path),
-				})
-			} else {
-				detectInUnparsedModule(source, scan)
-			}
-		}
+	})
+	for (const { path, patterns } of findingSets) {
 		for (const pattern of legacyCredentialPatterns) {
 			if (patterns.has(pattern)) {
 				findings.push({
@@ -615,10 +709,6 @@ function detectLegacyCredentialPatterns(
 				})
 			}
 		}
-	}
-	if (manifestSource != null) scanPath(packageManifestPath, manifestSource)
-	for (const path of modulePaths) {
-		scanPath(path, files[path]!)
 	}
 	return findings.sort((left, right) =>
 		(left.path ?? '').localeCompare(right.path ?? ''),

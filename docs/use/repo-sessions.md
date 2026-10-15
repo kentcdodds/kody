@@ -57,7 +57,7 @@ Merge drift from the published default branch is handled separately by
 | `repoLog`            | Commit history (`depth` optional)                                                                          |
 | `repoCommit`         | Stage all changes and commit with a message                                                                |
 | `repoRestore`        | Restore paths to content at a commit (default: session base)                                               |
-| `repoRunChecks`      | Run Worker-native validation                                                                               |
+| `repoRunChecks`      | MCP/tool-only pre-publish validate (manifest, typecheck, bundle, credentials, …)                           |
 | `repoPublishSession` | Publish after checks pass                                                                                  |
 
 ### Unified-diff patch format

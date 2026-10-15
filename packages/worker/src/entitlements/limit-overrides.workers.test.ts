@@ -469,6 +469,19 @@ test('a monthly override moves the $0 past-include stop; it does not touch the d
 test('admin capabilities: non-admins are denied; admins set and read overrides by org handle', async () => {
 	const org = await seedOrg({ label: 'override-capability' })
 	await ensureOrgAuditTable()
+	await env.APP_DB.prepare(
+		`INSERT INTO users (
+			username, email, password_hash, email_verified_at, stable_user_id
+		) VALUES (?, ?, ?, ?, ?)`,
+	)
+		.bind(
+			'limits-admin',
+			'limits-admin@example.com',
+			'test-password-hash',
+			now.toISOString(),
+			adminId,
+		)
+		.run()
 	const callerFor = (roles: Array<'admin' | 'user'>) =>
 		createMcpCallerContext({
 			source: { kind: 'mcp-oauth' },

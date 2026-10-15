@@ -58,14 +58,18 @@ const timestampColumns = [
 
 /**
  * Mirrors migrations 0052 + 0075 (`stable_user_id` NOT NULL + unique index),
- * account deletion/suspension state, and profile display names. Plan,
- * Stripe, gift, retention, and outbound-pause columns live on `orgs`
- * (`ensureOrgsTestSchema`), not `users`.
+ * 0142 (`personal_org_id`), account deletion/suspension state, and profile
+ * display names. Plan, Stripe, gift, retention, and outbound-pause columns
+ * live on `orgs` (`ensureOrgsTestSchema`), not `users`.
  */
 const alwaysAdditiveColumns: Record<string, UsersColumnDefinition> = {
 	// Preexisting shared tables: ALTER ADD COLUMN cannot express NOT NULL
 	// without a default; nullable TEXT matches migration 0052's add step.
 	stable_user_id: { create: 'TEXT NOT NULL', alter: 'TEXT' },
+	// 0142 widen. Fresh tables require the column. The empty default lets
+	// shared workers-test inserts that only set `stable_user_id` succeed.
+	// Production 0142 backfills real ids and does not default the column.
+	personal_org_id: { create: "TEXT NOT NULL DEFAULT ''", alter: 'TEXT' },
 	deleting_at: { create: 'TEXT' },
 	deleted_at: { create: 'TEXT' },
 	suspended_at: { create: 'TEXT' },
@@ -158,6 +162,20 @@ export async function ensureUsersTestSchema(input: {
 	} catch {
 		// Index already exists, or a partial legacy index remains from an
 		// earlier suite sharing this database.
+	}
+	try {
+		// Ignore blank defaults from fixture inserts that omit the column.
+		// Migration 0142 indexes every live row after backfill.
+		await input.db
+			.prepare(
+				`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_personal_org_id
+				 ON users(personal_org_id)
+				 WHERE ${liveDeletedAtSql()}
+				   AND length(trim(personal_org_id)) > 0`,
+			)
+			.run()
+	} catch {
+		// Index already exists on a suite that shares this database.
 	}
 	await ensureCreditWalletsTestTable(input.db)
 	await ensureOrgLimitOverridesTestTable(input.db)

@@ -265,6 +265,16 @@ export function isStripeNothingToRefundError(error: unknown) {
 	)
 }
 
+/**
+ * Stripe rejects a reused idempotency key when the new request body does not
+ * match the first request (for example after billing metadata keys changed).
+ */
+export function isStripeIdempotencyParameterMismatchError(error: unknown) {
+	if (!(error instanceof StripeApiError)) return false
+	if (error.status !== 400 || !error.stripeMessage) return false
+	return /can only be used with the same parameters/i.test(error.stripeMessage)
+}
+
 function resolveStripeApiBaseUrl(env: StripeEnv) {
 	return (env.STRIPE_API_BASE_URL?.trim() || defaultStripeApiBaseUrl).replace(
 		/\/$/,
@@ -1309,4 +1319,74 @@ export async function createOffSessionPaymentIntent(
 		})
 	}
 	return parsed.value
+}
+
+const paymentIntentListItemSchema = object({
+	id: string(),
+	status: string(),
+	amount: number(),
+	currency: string(),
+	metadata: optional(record(string(), string())),
+})
+
+const paymentIntentListSchema = object({
+	data: array(paymentIntentListItemSchema),
+	has_more: optional(boolean()),
+})
+
+export type StripePaymentIntentListItem = InferOutput<
+	typeof paymentIntentListItemSchema
+>
+
+/** Cap pages so a pathological customer history cannot hang the refill sweep. */
+const paymentIntentListMaxPages = 5
+
+/** Recent PaymentIntents for a customer (newest first), following `has_more`. */
+export async function listPaymentIntentsForCustomer(
+	env: StripeEnv,
+	customerId: string,
+	options?: { limit?: number; maxPages?: number },
+): Promise<Array<StripePaymentIntentListItem>> {
+	const trimmed = customerId.trim()
+	if (!trimmed) {
+		throw new StripeApiError('Customer id is required.', { status: 400 })
+	}
+	const limit = options?.limit ?? 100
+	if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 100) {
+		throw new StripeApiError('Payment intent list limit must be 1–100.', {
+			status: 400,
+		})
+	}
+	const maxPages = options?.maxPages ?? paymentIntentListMaxPages
+	if (!Number.isSafeInteger(maxPages) || maxPages <= 0) {
+		throw new StripeApiError('Payment intent list maxPages must be >= 1.', {
+			status: 400,
+		})
+	}
+	const collected: Array<StripePaymentIntentListItem> = []
+	let startingAfter: string | undefined
+	for (let page = 0; page < maxPages; page += 1) {
+		const query: Record<string, string> = {
+			customer: trimmed,
+			limit: String(limit),
+		}
+		if (startingAfter) query.starting_after = startingAfter
+		const body = await stripeRequest(env, {
+			method: 'GET',
+			path: '/v1/payment_intents',
+			query,
+		})
+		const parsed = parseSafe(paymentIntentListSchema, body)
+		if (!parsed.success) {
+			throw new StripeApiError('Unexpected Stripe payment intent list shape.', {
+				status: 502,
+			})
+		}
+		const pageData = parsed.value.data
+		collected.push(...pageData)
+		if (!parsed.value.has_more || pageData.length === 0) break
+		startingAfter = pageData[pageData.length - 1]?.id
+		if (!startingAfter) break
+	}
+	return collected
 }

@@ -1,8 +1,15 @@
 import { normalizeUsername } from '#worker/identity/username.ts'
+import { mintOwnerId } from '#worker/orgs/personal-org-id.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type ProvisionPersonalOrgInput = {
 	stableUserId: string
+	/**
+	 * Org row id. Signup callers pass a freshly minted id (phase 2 #3053).
+	 * Seeds and `ensurePersonalOrg` may omit it to keep `orgs.id = stableUserId`
+	 * for fixtures that still model the legacy equal-id shape.
+	 */
+	orgId?: string
 	username: string
 	createdAt?: string
 	displayName?: string | null
@@ -21,6 +28,16 @@ export type ProvisionPersonalOrgInput = {
 	secondAgentStandardGiftExpiresAt?: string | null
 	referralStandardCreditExpiresAt?: string | null
 	signupWelcomeCreditsPending?: number | null
+}
+
+function resolveProvisionOrgId(input: ProvisionPersonalOrgInput) {
+	const explicit = input.orgId?.trim() ?? ''
+	return explicit === '' ? input.stableUserId : explicit
+}
+
+/** Mint a personal org id for a new signup (distinct from the person id). */
+export function mintPersonalOrgIdForSignup() {
+	return mintOwnerId()
 }
 
 function orgSlugFromUsername(username: string) {
@@ -45,9 +62,10 @@ export async function ensurePersonalOrg(
 	db: D1Database,
 	input: ProvisionPersonalOrgInput,
 ) {
+	const orgId = resolveProvisionOrgId(input)
 	const existing = await db
 		.prepare(`SELECT id FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`)
-		.bind(input.stableUserId)
+		.bind(orgId)
 		.first<{ id: string }>()
 	if (existing) return
 	await provisionPersonalOrg(db, input)
@@ -62,6 +80,7 @@ export async function provisionPersonalOrg(
 	input: ProvisionPersonalOrgInput,
 ) {
 	const createdAt = input.createdAt ?? new Date().toISOString()
+	const orgId = resolveProvisionOrgId(input)
 	const slug = orgSlugFromUsername(input.username)
 	const handle = slug
 	const plan = input.plan?.trim() || 'free'
@@ -103,7 +122,7 @@ export async function provisionPersonalOrg(
 				)`,
 			)
 			.bind(
-				input.stableUserId,
+				orgId,
 				slug,
 				input.displayName ?? null,
 				input.bio ?? null,
@@ -131,34 +150,41 @@ export async function provisionPersonalOrg(
 					org_id, user_id, role, invited_by_user_id, created_at, deleted_at
 				) VALUES (?, ?, 'owner', NULL, ?, NULL)`,
 			)
-			.bind(input.stableUserId, input.stableUserId, createdAt),
+			.bind(orgId, input.stableUserId, createdAt),
 		db
 			.prepare(
 				`INSERT INTO handles (handle, user_id, org_id, created_at)
 				 VALUES (?, ?, ?, ?)`,
 			)
-			.bind(handle, input.stableUserId, input.stableUserId, createdAt),
+			.bind(handle, input.stableUserId, orgId, createdAt),
 	])
 }
 
-/** Best-effort cleanup when account creation rolls back after user insert. */
+/**
+ * Best-effort cleanup when account creation rolls back after user insert.
+ * Deletes membership and org by the provisioned org id (defaults to the
+ * person id). Handle cleanup matches either the person id or that org id so
+ * a distinct `orgId` from provision does not leave a reserved handle.
+ */
 export async function deletePersonalOrgForRollback(
 	db: D1Database,
 	stableUserId: string,
+	orgId?: string,
 ) {
+	const resolvedOrgId = orgId?.trim() || stableUserId
 	try {
 		await runProvisionStatements([
 			db
 				.prepare(
 					`DELETE FROM org_memberships WHERE org_id = ?${andLiveDeletedAtSql()}`,
 				)
-				.bind(stableUserId),
+				.bind(resolvedOrgId),
 			db
 				.prepare(`DELETE FROM handles WHERE user_id = ? OR org_id = ?`)
-				.bind(stableUserId, stableUserId),
+				.bind(stableUserId, resolvedOrgId),
 			db
 				.prepare(`DELETE FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`)
-				.bind(stableUserId),
+				.bind(resolvedOrgId),
 		])
 	} catch (error) {
 		console.error('Failed to roll back personal org rows:', error)

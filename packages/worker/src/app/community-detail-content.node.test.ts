@@ -32,6 +32,7 @@ type RenderInput = Omit<
 	loggedIn: boolean
 	hasApp: boolean
 	listingNeedsRepublish: boolean
+	follow?: Parameters<typeof buildPackageRepoActions>[0]['follow']
 }
 type ViewerInstall = NonNullable<PublicCommunityListing['viewerInstall']>
 
@@ -40,7 +41,13 @@ type ViewerInstall = NonNullable<PublicCommunityListing['viewerInstall']>
  * action group comes from the same builder the frame uses.
  */
 function render(overrides: Partial<RenderInput> = {}) {
-	const { loggedIn, hasApp, listingNeedsRepublish, ...props }: RenderInput = {
+	const {
+		loggedIn,
+		hasApp,
+		listingNeedsRepublish,
+		follow,
+		...props
+	}: RenderInput = {
 		listing: sampleListing,
 		username: 'kentcdodds',
 		kodyId: 'github-triage',
@@ -64,6 +71,7 @@ function render(overrides: Partial<RenderInput> = {}) {
 			viewerCanManage: props.viewerCanManage,
 			loggedIn,
 			ownerPackage: { hasApp, listingNeedsRepublish },
+			follow,
 		}),
 	})
 }
@@ -324,6 +332,27 @@ test('package chrome is shared for public listings and private owner packages', 
 		'href="/@kentcdodds"',
 		'← @kentcdodds',
 	])
+	expect(
+		await render({ viewerIsOwner: true, viewerCanManage: true }),
+	).not.toContain(testId('package-repo-nav-collaborators'))
+	expectMarkers(
+		await render({
+			viewerIsOwner: true,
+			viewerCanManage: true,
+			viewerCanManageAccess: true,
+		}),
+		[
+			testId('package-repo-nav-collaborators'),
+			'href="/@kentcdodds/github-triage/collaborators"',
+		],
+	)
+	expect(
+		await render({
+			viewerIsOwner: true,
+			viewerCanManageAccess: true,
+			hasPackage: false,
+		}),
+	).not.toContain(testId('package-repo-nav-collaborators'))
 
 	// A teammate who can read a team package opens it but cannot manage it.
 	expectMarkers(
@@ -484,4 +513,48 @@ test('open package app link shows for the owner, and hides without an app or acc
 		['data-signifier="private"', 'data-icon="lock"'],
 		[openApp, 'data-signifier="unpublished"'],
 	)
+})
+
+test('Follow opens the Repo tab panel, says Following, and sends signed-out visitors to sign in', async () => {
+	const followHtml = await render({
+		follow: { kind: 'package', viewerFollowing: false },
+	})
+	expectMarkers(followHtml, [
+		testId('package-follow-toggle'),
+		'data-package-follow="package"',
+		'data-following="false"',
+		'aria-controls="package-follow-panel"',
+		'href="/@kentcdodds/github-triage#follow"',
+		'data-icon="eye"',
+		'<span>Follow</span>',
+		'Get new versions and pushes from this in your workspace.',
+	])
+	expect(followHtml.indexOf(testId('package-follow-toggle'))).toBeLessThan(
+		followHtml.indexOf(testId('community-detail-install')),
+	)
+
+	expectMarkers(
+		await render({ follow: { kind: 'repo', viewerFollowing: false } }),
+		['Get pushes from this repository in your workspace.'],
+		['Get new versions and pushes'],
+	)
+
+	expectMarkers(
+		await render({ follow: { kind: 'repo', viewerFollowing: true } }),
+		['data-following="true"', 'data-icon="check"', '<span>Following</span>'],
+	)
+
+	expectMarkers(
+		await render({
+			loggedIn: false,
+			follow: { kind: 'package', viewerFollowing: false },
+		}),
+		[
+			testId('package-follow-toggle'),
+			'href="/login?redirectTo=%2F%40kentcdodds%2Fgithub-triage"',
+		],
+		['data-package-follow', 'aria-controls="package-follow-panel"'],
+	)
+
+	expectMarkers(await render(), [], [testId('package-follow-toggle')])
 })

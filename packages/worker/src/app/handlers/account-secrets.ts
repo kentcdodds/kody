@@ -498,43 +498,35 @@ async function handleConnectOauthAction(input: {
 						}
 					: null,
 			})
+	const ownerId = ownerIdFromCaller({
+		request: input.user.request,
+		user: input.user.mcpUser,
+	})
 	await persistIntegrationTokens({
 		env: input.env,
-		userId: ownerIdFromCaller({
-			request: input.user.request,
-			user: input.user.mcpUser,
-		}),
+		userId: ownerId,
 		name: integrationName,
 		accessToken,
 		refreshToken,
 		refreshPolicy: inferIntegrationRefreshPolicy(tokenRecord),
 	})
+	const connected = await getJoinedIntegration({
+		env: input.env,
+		userId: ownerId,
+		name: integrationName,
+	})
 	if (!platformApp) {
 		const clientSecret = await resolveConnectClientSecret({
 			env: input.env,
-			userId: ownerIdFromCaller({
-				request: input.user.request,
-				user: input.user.mcpUser,
-			}),
+			userId: ownerId,
 			provider: integrationName,
 			clientSecret: readOptionalString(input.body, 'clientSecret'),
 		})
-		const saved = await getJoinedIntegration({
-			env: input.env,
-			userId: ownerIdFromCaller({
-				request: input.user.request,
-				user: input.user.mcpUser,
-			}),
-			name: integrationName,
-		})
-		if (clientSecret && saved?.lane === 'user') {
+		if (clientSecret && connected?.lane === 'user') {
 			await persistUserOauthAppClientSecret({
 				env: input.env,
-				userId: ownerIdFromCaller({
-					request: input.user.request,
-					user: input.user.mcpUser,
-				}),
-				slug: saved.app.slug,
+				userId: ownerId,
+				slug: connected.app.slug,
 				value: clientSecret,
 			})
 		}
@@ -559,20 +551,17 @@ async function handleConnectOauthAction(input: {
 
 	await emitConnectOauthAuthSucceeded({
 		env: input.env,
-		userId: ownerIdFromCaller({
-			request: input.user.request,
-			user: input.user.mcpUser,
-		}),
+		userId: ownerId,
 		integration: {
 			name: integrationName,
 			lane: platformApp ? 'platform' : 'user',
-			account_label: null,
-			description: null,
+			account_label: connected?.connection.accountLabel ?? null,
+			description: connected?.connection.description ?? null,
 			provider: platformApp?.provider ?? null,
 			platform_app_slug: platformApp?.slug ?? null,
 			scopes,
-			connected_at: null,
-			token_refreshed_at: null,
+			connected_at: connected?.connection.connectedAt ?? null,
+			token_refreshed_at: connected?.connection.tokenRefreshedAt ?? null,
 		},
 	})
 
@@ -1515,6 +1504,7 @@ async function handleSaveAction(input: {
 	// Post-commit provider link must not claim the save failed — a create retry
 	// with currentId null would 409 on the same name (#3725 / #3698).
 	let providerLinkError: string | null = null
+	let renameCleanupError: string | null = null
 	if ((provider?.success || clearProvider) && scope === 'user' && !credential) {
 		try {
 			const stored = await findSecret({
@@ -1563,8 +1553,20 @@ async function handleSaveAction(input: {
 				scope: currentSecret.scope,
 				storageContext: getSecretContextForAccountSecret(currentSecret),
 			})
-		} catch {
+		} catch (error) {
 			// New secret is already saved; leaving the prior name is recoverable.
+			renameCleanupError =
+				error instanceof Error
+					? error.message
+					: 'Secret saved under the new name, but removing the previous secret failed.'
+		}
+	}
+
+	function withSaveWarnings<T extends AccountSecretsLoaderData>(payload: T) {
+		return {
+			...payload,
+			...(providerLinkError ? { providerLinkError } : {}),
+			...(renameCleanupError ? { renameCleanupError } : {}),
 		}
 	}
 
@@ -1577,9 +1579,7 @@ async function handleSaveAction(input: {
 			savedPackages,
 			selectedSecretId: nextId,
 		})
-		return jsonResponse(
-			providerLinkError ? { ...payload, providerLinkError } : payload,
-		)
+		return jsonResponse(withSaveWarnings(payload))
 	} catch {
 		// Write already succeeded. Do not report ok:false — a create retry with
 		// currentId null would 409 on the same name.
@@ -1633,9 +1633,8 @@ async function handleSaveAction(input: {
 			selectedSecret,
 			approval: null,
 			approvalError: null,
-			...(providerLinkError ? { providerLinkError } : {}),
 		}
-		return jsonResponse(fallback)
+		return jsonResponse(withSaveWarnings(fallback))
 	}
 }
 

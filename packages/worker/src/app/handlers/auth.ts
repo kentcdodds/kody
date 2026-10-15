@@ -66,6 +66,7 @@ import {
 } from '#worker/billing/signup-welcome-credits.ts'
 import { attributeReferralAtSignup } from '#worker/entitlements/referral-program.ts'
 import {
+	mintPersonalOrgIdForSignup,
 	provisionPersonalOrgForSignup,
 	rollbackPersonalOrgAfterFailedSignup,
 } from '#worker/orgs/signup-provision.ts'
@@ -84,7 +85,7 @@ const dummyPasswordHash =
 	'pbkdf2_sha256$100000$00000000000000000000000000000000$0000000000000000000000000000000000000000000000000000000000000000'
 
 function signupUniqueConflict(
-	uniqueField: 'email' | 'username' | 'stable_user_id',
+	uniqueField: 'email' | 'username' | 'stable_user_id' | 'personal_org_id',
 ) {
 	switch (uniqueField) {
 		case 'username':
@@ -98,6 +99,7 @@ function signupUniqueConflict(
 				error: 'Email already registered.',
 			}
 		case 'stable_user_id':
+		case 'personal_org_id':
 			return {
 				reason: 'former_email_claimed',
 				error: formerEmailClaimedSignupMessage,
@@ -326,10 +328,15 @@ export function createAuthHandler(env: Env) {
 					)
 				}
 
-				let record: { id: number; stableUserId: string } | null = null
+				let record: {
+					id: number
+					stableUserId: string
+					personalOrgId: string
+				} | null = null
 				const signupCreatedAt = new Date().toISOString()
 				try {
 					const stableUserId = allocated.stableUserId
+					const personalOrgId = mintPersonalOrgIdForSignup()
 					const createdAt = signupCreatedAt
 					const createdUser = await db.create(
 						usersTable,
@@ -337,6 +344,7 @@ export function createAuthHandler(env: Env) {
 							username: normalizedUsername,
 							email: normalizedEmail,
 							stable_user_id: stableUserId,
+							personal_org_id: personalOrgId,
 							password_hash: passwordHash,
 							...firstTouchAttributionCreateFields(signupAttribution),
 							last_active_at: createdAt,
@@ -345,13 +353,14 @@ export function createAuthHandler(env: Env) {
 							returnRow: true,
 						},
 					)
-					record = { id: createdUser.id, stableUserId }
+					record = { id: createdUser.id, stableUserId, personalOrgId }
 				} catch (error) {
 					const uniqueField = getUniqueConstraintField(error)
 					if (
 						uniqueField === 'email' ||
 						uniqueField === 'username' ||
-						uniqueField === 'stable_user_id'
+						uniqueField === 'stable_user_id' ||
+						uniqueField === 'personal_org_id'
 					) {
 						const conflict = signupUniqueConflict(uniqueField)
 						void logAuditEvent({
@@ -369,8 +378,11 @@ export function createAuthHandler(env: Env) {
 						if (uniqueField === 'email') {
 							return Response.json(signupAcceptedBody(normalizedMode))
 						}
+						const personIdConflict =
+							uniqueField === 'stable_user_id' ||
+							uniqueField === 'personal_org_id'
 						return Response.json(
-							uniqueField === 'stable_user_id'
+							personIdConflict
 								? {
 										error: conflict.error,
 										code: formerEmailClaimedSignupCode,
@@ -402,6 +414,7 @@ export function createAuthHandler(env: Env) {
 				try {
 					await provisionPersonalOrgForSignup(env.APP_DB, {
 						stableUserId: signupUser.stableUserId,
+						orgId: signupUser.personalOrgId,
 						username: normalizedUsername,
 						createdAt: signupCreatedAt,
 						plan: resolvePlanWrite(null),
@@ -416,6 +429,7 @@ export function createAuthHandler(env: Env) {
 						await rollbackPersonalOrgAfterFailedSignup(
 							env.APP_DB,
 							signupUser.stableUserId,
+							signupUser.personalOrgId,
 						)
 						await env.APP_DB.prepare(
 							`DELETE FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
@@ -451,6 +465,7 @@ export function createAuthHandler(env: Env) {
 					await rollbackPersonalOrgAfterFailedSignup(
 						env.APP_DB,
 						signupUser.stableUserId,
+						signupUser.personalOrgId,
 					)
 					await env.APP_DB.prepare(
 						`DELETE FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
@@ -611,7 +626,7 @@ export function createAuthHandler(env: Env) {
 				})
 				await maybeGrantSignupWelcomeCredits({
 					db: env.APP_DB,
-					userId: record.stableUserId,
+					userId: record.personalOrgId,
 				})
 				try {
 					await attributeReferralAtSignup({

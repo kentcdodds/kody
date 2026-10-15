@@ -9,6 +9,7 @@ import {
 } from '#worker/account/data-targets.ts'
 import {
 	hardPurgeDataTargets,
+	hardPurgeOrgDataTargets,
 	orgOwnedBucketChildSoftDeleteTables,
 	orgOwnedUserIdSoftDeleteTables,
 } from './data-targets.ts'
@@ -28,6 +29,7 @@ test('person hard purge is the account inventory', () => {
 
 test('org hard purge is the org-owned slice of the account inventory plus the org graph', () => {
 	const orgTargets = hardPurgeDataTargets('org')
+	expect(orgTargets).toEqual(hardPurgeOrgDataTargets('team'))
 	const kinds = new Set(orgTargets.map((target) => target.kind))
 	expect(kinds.has('db_user_id')).toBe(false)
 	expect(kinds.has('db_user_target')).toBe(false)
@@ -48,6 +50,12 @@ test('org hard purge is the org-owned slice of the account inventory plus the or
 		}
 		expect(userIdTables).toContain(table)
 	}
+	// Owner-scoped inventory without deleted_at (#3121).
+	expect(userIdTables).toContain('published_bundle_artifacts')
+	expect(userIdTables).toContain('vector_embed_fingerprints')
+	expect(userIdTables).toContain('saved_package_search_index_debt')
+	expect(userIdTables).not.toContain('org_memberships')
+	expect(userIdTables).not.toContain('org_invite_link_redemptions')
 
 	for (const child of orgOwnedBucketChildSoftDeleteTables) {
 		const childIndex = orgTargets.findIndex(
@@ -92,6 +100,26 @@ test('org hard purge is the org-owned slice of the account inventory plus the or
 	expect(sqlFor(orgTargets[grantPermissions]!)).toContain(
 		'SELECT id FROM grants WHERE org_id = ?',
 	)
+})
+
+test('personal org hard purge is org-graph only so user purge retains inventory', () => {
+	const personalTargets = hardPurgeOrgDataTargets('personal')
+	expect(
+		personalTargets.every(
+			(target) => target.kind === 'org_id' || target.kind === 'org_via_parent',
+		),
+	).toBe(true)
+	expect(
+		personalTargets.some(
+			(target) =>
+				'table' in target && target.table === 'published_bundle_artifacts',
+		),
+	).toBe(false)
+	expect(
+		personalTargets.some(
+			(target) => target.kind === 'org_id' && target.table === 'handles',
+		),
+	).toBe(true)
 })
 
 test('wrangler keeps soft-delete purge writes disabled', () => {

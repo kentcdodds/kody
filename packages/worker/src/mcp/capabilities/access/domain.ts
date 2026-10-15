@@ -17,6 +17,11 @@ import {
 	orgMemberUpdateCapability,
 } from './org-members.ts'
 import {
+	packageCollaboratorListCapability,
+	packageCollaboratorRemoveCapability,
+	packageCollaboratorSetCapability,
+} from './package-collaborators.ts'
+import {
 	teamCreateCapability,
 	teamListCapability,
 	teamMemberAddCapability,
@@ -41,6 +46,9 @@ export const accessDomain = defineDomain({
 		accessGrantCapability,
 		accessRevokeCapability,
 		accessListCapability,
+		packageCollaboratorListCapability,
+		packageCollaboratorSetCapability,
+		packageCollaboratorRemoveCapability,
 		inviteCreateCapability,
 		inviteAcceptCapability,
 		inviteRevokeCapability,

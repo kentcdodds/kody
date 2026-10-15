@@ -141,15 +141,23 @@ import {
 	createOrgUsageHandler,
 } from '#app/handlers/org-usage.ts'
 import {
+	createOrgApprovalBundleApiHandler,
+	createOrgApprovalBundleHandler,
+} from '#app/handlers/approval-bundle.ts'
+import {
+	createOrgCreditsApiHandler,
+	createOrgCreditsHandler,
+} from '#app/handlers/org-credits.ts'
+import {
 	createAccountWaitingApiHandler,
 	createAccountWaitingClickHandler,
 } from '#app/handlers/account-waiting.ts'
-import { createAccountLastUsedOrgApiHandler } from '#app/handlers/account-last-used-org.ts'
 import {
 	createAccountExperimentsApiHandler,
 	createAccountExperimentsHandler,
 } from '#app/handlers/account-experiments.ts'
 import { createPackageCredentialApprovalApiHandler } from '#app/handlers/package-credential-approval.ts'
+import { createPackageCollaboratorsApiHandler } from '#app/handlers/package-collaborators.ts'
 import { createPackageCredentialsApiHandler } from '#app/handlers/package-credentials.ts'
 import { createCommunityPackageWebhooksApiHandler } from '#app/handlers/package-webhooks.ts'
 import { createAccountResendVerificationHandler } from '#app/handlers/account-resend-verification.ts'
@@ -270,12 +278,17 @@ import {
 	createDiscordApiHandler,
 	createDiscordHandler,
 } from '#app/handlers/discord.ts'
-import { createFeaturesHandler } from '#app/handlers/features.ts'
+import {
+	createFeaturesHandler,
+	createLegacyFeatureCredentialsRedirectHandler,
+} from '#app/handlers/features.ts'
 import { createBusinessHandler } from '#app/handlers/business.ts'
 import { createPricingHandler } from '#app/handlers/pricing.ts'
 import { createFaqHandler } from '#app/handlers/faq.ts'
+import { createWithAgentHandler } from '#app/handlers/with-agent.ts'
 import { createAcquisitionHandler } from '#app/handlers/acquisition.ts'
 import { createCaseStudiesHandler } from '#app/handlers/case-studies.ts'
+import { createBelieveHandler } from '#app/handlers/believe.ts'
 import { createPrivacyHandler } from '#app/handlers/privacy.ts'
 import { createSupportHandler } from '#app/handlers/support.ts'
 import { createTermsHandler } from '#app/handlers/terms.ts'
@@ -322,17 +335,35 @@ import {
 	createOrgRepositoriesApiHandler,
 	createOrgSectionHandler,
 } from '#app/handlers/org-section.ts'
+import {
+	createCommunityPackageFollowApiHandler,
+	createOrgFollowsApiHandler,
+	createOrgFollowsApiPostHandler,
+} from '#app/handlers/org-follows.ts'
 import { createOrgAvatarHandler } from '#app/handlers/org-avatar.ts'
 import {
+	createAccountInviteAcceptPostHandler,
+	createAccountInviteDeclinePostHandler,
+} from '#app/handlers/account-invites.ts'
+import {
+	createAccountInviteLinkAcceptPostHandler,
+	createAccountInviteLinkDeclinePostHandler,
+	createOrgInviteJoinDeclinePostHandler,
 	createOrgInviteJoinHandler,
 	createOrgInviteJoinPostHandler,
 } from '#app/handlers/org-invite-join.ts'
+import {
+	createOrgTeamsInviteLinksPostHandler,
+	createOrgTeamsInviteLinksRevokePostHandler,
+} from '#app/handlers/org-teams-invite-links.ts'
+import { createPackageInviteLinksApiHandler } from '#app/handlers/package-invite-links.ts'
 import {
 	createOrgMembersApiHandler,
 	createOrgMembersHandler,
 	createOrgMembersInviteLinksPostHandler,
 	createOrgMembersInviteLinksRevokePostHandler,
 	createOrgMembersInvitePostHandler,
+	createOrgMembersInviteRevokePostHandler,
 	createOrgMembersRemovePostHandler,
 	createOrgMembersRolePostHandler,
 } from '#app/handlers/org-members.ts'
@@ -421,15 +452,18 @@ export function createAppRouter(env: Env) {
 			legacyGuidesPath: createLegacyGuidesPathRedirectHandler(env),
 			features: createFeaturesHandler(env),
 			featureMemory: createFeaturesHandler(env),
-			featureSecrets: createFeaturesHandler(env),
+			featureSecrets: createLegacyFeatureCredentialsRedirectHandler(env),
+			featureCredentials: createFeaturesHandler(env),
 			featurePackages: createFeaturesHandler(env),
 			featureTriggers: createFeaturesHandler(env),
-			featureIntegrations: createFeaturesHandler(env),
+			featureIntegrations: createLegacyFeatureCredentialsRedirectHandler(env),
 			featureApps: createFeaturesHandler(env),
 			business: createBusinessHandler(env),
 			pricing: createPricingHandler(env),
 			faq: createFaqHandler(env),
 			caseStudies: createCaseStudiesHandler(env),
+			believe: createBelieveHandler(env),
+			withAgent: createWithAgentHandler(env),
 			n8nAlternatives: createAcquisitionHandler(env),
 			mcpGateway: createAcquisitionHandler(env),
 			sharedMemory: createAcquisitionHandler(env),
@@ -474,6 +508,12 @@ export function createAppRouter(env: Env) {
 			accountOrganizationsNew: createAccountOrganizationsNewHandler(env),
 			accountOrganizationsNewPost:
 				createAccountOrganizationsNewPostHandler(env),
+			accountInviteLinkAcceptPost:
+				createAccountInviteLinkAcceptPostHandler(env),
+			accountInviteLinkDeclinePost:
+				createAccountInviteLinkDeclinePostHandler(env),
+			accountInviteAcceptPost: createAccountInviteAcceptPostHandler(env),
+			accountInviteDeclinePost: createAccountInviteDeclinePostHandler(env),
 			accountDelete: createAccountDeleteHandler(env),
 			accountExport: createAccountExportHandler(env),
 			accountIntegrationsApi: createAccountIntegrationsApiHandler(env),
@@ -507,6 +547,14 @@ export function createAppRouter(env: Env) {
 			communityPackageCredentialsApi: createPackageCredentialsApiHandler(env),
 			communityPackageCredentialsApiPost:
 				createPackageCredentialsApiHandler(env),
+			communityPackageFollowApi: createCommunityPackageFollowApiHandler(env),
+			communityPackageCollaboratorsApi:
+				createPackageCollaboratorsApiHandler(env),
+			communityPackageCollaboratorsApiPost:
+				createPackageCollaboratorsApiHandler(env),
+			communityPackageInviteLinksApi: createPackageInviteLinksApiHandler(env),
+			communityPackageInviteLinksApiPost:
+				createPackageInviteLinksApiHandler(env),
 			communityPackageApproveCredentialsApi:
 				createPackageCredentialApprovalApiHandler(env),
 			communityPackageApproveCredentialsApiPost:
@@ -543,7 +591,6 @@ export function createAppRouter(env: Env) {
 			accountUsageApi: createAccountUsageApiHandler(env),
 			accountWaitingApi: createAccountWaitingApiHandler(env),
 			accountWaitingClickPost: createAccountWaitingClickHandler(env),
-			accountLastUsedOrgApi: createAccountLastUsedOrgApiHandler(env),
 			accountExperiments: createAccountExperimentsHandler(env),
 			accountExperimentsApi: createAccountExperimentsApiHandler(env),
 			accountExperimentsApiPost: createAccountExperimentsApiHandler(env),
@@ -555,6 +602,7 @@ export function createAppRouter(env: Env) {
 			accountPassword: createAccountPasswordHandler(env),
 			accountResendVerification: createAccountResendVerificationHandler(env),
 			accountCredentialsApi: createAccountCredentialsApiHandler(env),
+			accountCredentialsApiPost: createAccountCredentialsApiHandler(env),
 			accountSecretsApi: createAccountSecretsApiHandler(env),
 			accountSecretsApiPost: createAccountSecretsApiHandler(env),
 			accountSecretProvidersApi: createAccountSecretProvidersApiHandler(env),
@@ -642,6 +690,10 @@ export function createAppRouter(env: Env) {
 				env,
 				'triggers',
 			),
+			communityPackageCollaborators: createCommunityPackageCredentialsHandler(
+				env,
+				'collaborators',
+			),
 			communityPackageApproveCredentials:
 				createCommunityPackageCredentialApprovalHandler(env),
 			communityPackageFiles: createCommunityPackageFilesHandler(env),
@@ -661,6 +713,9 @@ export function createAppRouter(env: Env) {
 			communityFeatureApiPost: createCommunityFeatureApiPostHandler(env),
 			communityInstallApiPost: createCommunityInstallApiPostHandler(env),
 			orgActivity: createOrgSectionHandler(env, 'activity'),
+			orgApprovalBundle: createOrgApprovalBundleHandler(env),
+			orgApprovalBundleApi: createOrgApprovalBundleApiHandler(env),
+			orgApprovalBundleApiPost: createOrgApprovalBundleApiHandler(env),
 			orgAgents: createOrgSectionHandler(env, 'agents'),
 			orgBilling: createOrgBillingHandler(env),
 			orgBillingApi: createOrgBillingApiHandler(env),
@@ -669,6 +724,8 @@ export function createAppRouter(env: Env) {
 			orgBillingPortal: createOrgBillingPortalHandler(env),
 			orgUsage: createOrgUsageHandler(env),
 			orgUsageApi: createOrgUsageApiHandler(env),
+			orgCredits: createOrgCreditsHandler(env),
+			orgCreditsApi: createOrgCreditsApiHandler(env),
 			orgConnections: createLegacyOrgConnectionsRedirectHandler(env),
 			orgCredentials: createOrgSectionHandler(env, 'credentials'),
 			orgCredentialNew: createOrgCredentialNewHandler(env),
@@ -683,6 +740,9 @@ export function createAppRouter(env: Env) {
 			orgMcpServerAuthorize: createOrgMcpServerAuthorizeHandler(env),
 			orgMcpServerAuthorizePost: createOrgMcpServerAuthorizePostHandler(env),
 			orgMemories: createOrgSectionHandler(env, 'memories'),
+			orgFollows: createOrgSectionHandler(env, 'follows'),
+			orgFollowsApi: createOrgFollowsApiHandler(env),
+			orgFollowsApiPost: createOrgFollowsApiPostHandler(env),
 			orgOverview: createOrgOverviewHandler(env),
 			orgRepositories: createOrgSectionHandler(env, 'repositories'),
 			orgRepositoriesApi: createOrgRepositoriesApiHandler(env),
@@ -708,11 +768,16 @@ export function createAppRouter(env: Env) {
 			orgMembersRolePost: createOrgMembersRolePostHandler(env),
 			orgMembersRemovePost: createOrgMembersRemovePostHandler(env),
 			orgMembersInvitePost: createOrgMembersInvitePostHandler(env),
+			orgMembersInviteRevokePost: createOrgMembersInviteRevokePostHandler(env),
 			orgMembersInviteLinksPost: createOrgMembersInviteLinksPostHandler(env),
 			orgMembersInviteLinksRevokePost:
 				createOrgMembersInviteLinksRevokePostHandler(env),
 			orgInviteJoin: createOrgInviteJoinHandler(env),
 			orgInviteJoinPost: createOrgInviteJoinPostHandler(env),
+			orgInviteJoinDeclinePost: createOrgInviteJoinDeclinePostHandler(env),
+			orgTeamsInviteLinksPost: createOrgTeamsInviteLinksPostHandler(env),
+			orgTeamsInviteLinksRevokePost:
+				createOrgTeamsInviteLinksRevokePostHandler(env),
 			orgTeams: createOrgTeamsHandler(env),
 			orgTeamsApi: createOrgTeamsApiHandler(env),
 			orgTeamsCreatePost: createOrgTeamsCreatePostHandler(env),

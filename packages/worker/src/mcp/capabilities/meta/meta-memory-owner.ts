@@ -67,9 +67,13 @@ export function requirePersonalMemoryAuth(
 	const request = personalMemoryOwnerRequest({
 		request: bound,
 		userId: personId,
+		personalOrgId: user.personalOrgId,
 	})
 	return {
-		userId: personalMemoryOwnerId(personId),
+		userId: personalMemoryOwnerId({
+			userId: personId,
+			personalOrgId: user.personalOrgId,
+		}),
 		request,
 		// May be empty for team synthetic MCP users; authorizePersonalMemory
 		// loads the acting person's email before entitlement checks.

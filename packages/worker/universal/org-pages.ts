@@ -12,6 +12,7 @@ const orgOwnedAccountSections = [
 	'agents',
 	'credentials',
 	'email',
+	'follows',
 	'integrations',
 	'jobs',
 	'mcp-servers',
@@ -31,6 +32,7 @@ const orgOwnedSectionSet: ReadonlySet<string> = new Set(orgOwnedAccountSections)
 
 /** Sections whose org URL is only the index. Nested paths stay on other routes. */
 const exactOrgSections: ReadonlySet<string> = new Set([
+	'follows',
 	'repositories',
 	'webhooks',
 ])
@@ -171,6 +173,21 @@ export function parseOrgUsagePath(pathname: string): { slug: string } | null {
 	return isOrganizationSlug(slug) ? { slug } : null
 }
 
+/**
+ * `/@acme/-/approvals/:bundleId` and its `.json`: an approval bundle made for
+ * one person in the organization.
+ */
+export function parseOrgApprovalBundlePath(
+	pathname: string,
+): { slug: string; bundleId: string } | null {
+	const match = /^\/@([^/]+)\/-\/approvals\/([^/.]+)(?:\.json)?\/?$/.exec(
+		pathname,
+	)
+	const slug = match?.[1] ?? ''
+	const bundleId = match?.[2] ?? ''
+	return isOrganizationSlug(slug) && bundleId ? { slug, bundleId } : null
+}
+
 export function orgUsagePath(slug: string) {
 	return `/@${slug}/${orgPageSeparator}/usage`
 }
@@ -178,6 +195,28 @@ export function orgUsagePath(slug: string) {
 /** Credits section of the organization usage page. */
 export function orgUsageCreditsPath(slug: string) {
 	return `${orgUsagePath(slug)}#credits`
+}
+
+/** Anchor of the usage page's per-package credit breakdown. */
+export const whereItWentSectionId = 'where-it-went'
+
+export function orgUsageWhereItWentPath(slug: string) {
+	return `${orgUsagePath(slug)}#${whereItWentSectionId}`
+}
+
+/**
+ * `/@acme/-/credits` and `/@acme/-/credits.json`: the organization's credit
+ * balance, budgets, and full ledger. Open to every member; the ledger and
+ * balance need `billing:read`, everyone else sees only their own budget.
+ */
+export function parseOrgCreditsPath(pathname: string): { slug: string } | null {
+	const match = /^\/@([^/]+)\/-\/credits(?:\.json)?\/?$/.exec(pathname)
+	const slug = match?.[1] ?? ''
+	return isOrganizationSlug(slug) ? { slug } : null
+}
+
+export function orgCreditsPath(slug: string) {
+	return `/@${slug}/${orgPageSeparator}/credits`
 }
 
 /**
@@ -339,6 +378,8 @@ export function orgSlugFromOrgOwnedPath(pathname: string) {
 		parseOrgResourceApiPath(pathname)?.slug ??
 		parseOrgBillingPath(pathname)?.slug ??
 		parseOrgUsagePath(pathname)?.slug ??
+		parseOrgApprovalBundlePath(pathname)?.slug ??
+		parseOrgCreditsPath(pathname)?.slug ??
 		parseOrgManagementPath(pathname)?.slug ??
 		parseOrgOverviewPath(pathname)?.slug ??
 		null
@@ -370,6 +411,7 @@ export function switchOrgPath(pathname: string, targetSlug: string) {
 	if (!isOrganizationSlug(targetSlug)) return '/'
 	if (parseOrgBillingPath(pathname)) return orgBillingPath(targetSlug)
 	if (parseOrgUsagePath(pathname)) return orgUsagePath(targetSlug)
+	if (parseOrgCreditsPath(pathname)) return orgCreditsPath(targetSlug)
 	const management = parseOrgManagementPath(pathname)
 	if (management) {
 		switch (management.section) {
@@ -489,29 +531,21 @@ export function orgIdentity(
 	}
 }
 
-export function currentSwitcherSlug(input: {
+/**
+ * The org this URL is in, or null. The URL is the only source of truth for
+ * which org is current; pages without an org in the URL have none.
+ */
+export function urlOrgSlug(input: {
 	pathname: string
 	organizations: ReadonlyArray<OrganizationSummary>
-	lastUsedSlug: string | null
 }) {
 	// Org-owned `/@slug/-/…` pages already authorized the URL org. Trust that
-	// slug even when the session membership list is empty or stale — otherwise
-	// the switcher falls back to the personal org beside team Settings.
+	// slug even when the session membership list is empty or stale.
 	const ownedPathSlug = orgSlugFromOrgOwnedPath(input.pathname)
 	if (ownedPathSlug) return ownedPathSlug
 	const fromPath = orgSlugFromPathname(input.pathname)
 	if (fromPath && input.organizations.some((org) => org.slug === fromPath)) {
 		return fromPath
 	}
-	if (
-		input.lastUsedSlug &&
-		input.organizations.some((org) => org.slug === input.lastUsedSlug)
-	) {
-		return input.lastUsedSlug
-	}
-	return (
-		input.organizations.find((org) => org.personal)?.slug ??
-		input.organizations[0]?.slug ??
-		null
-	)
+	return null
 }

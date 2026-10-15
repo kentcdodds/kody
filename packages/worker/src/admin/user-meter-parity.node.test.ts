@@ -41,9 +41,20 @@ function createParityTestDb() {
 		CREATE TABLE users (
 			id INTEGER PRIMARY KEY,
 			stable_user_id TEXT UNIQUE NOT NULL,
+			personal_org_id TEXT,
 			username TEXT NOT NULL,
 			email TEXT NOT NULL,
 			password_hash TEXT,
+			deleting_at TEXT,
+			deleted_at TEXT,
+			created_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z',
+			updated_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z'
+		);
+		CREATE TABLE orgs (
+			id TEXT PRIMARY KEY,
+			slug TEXT NOT NULL,
+			display_name TEXT,
+			plan TEXT NOT NULL DEFAULT 'free',
 			deleting_at TEXT,
 			deleted_at TEXT,
 			created_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z',
@@ -225,4 +236,28 @@ test('loadAdminUserMeterParityReport returns null for missing users', async () =
 			now,
 		}),
 	).resolves.toBeNull()
+})
+
+test('loadAdminUserMeterParityReport accepts a team org owner id', async () => {
+	const teamOrgId = testStableUserIdFromEmail('team-org@example.com')
+	const { sqlite, db } = createParityTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	sqlite
+		.prepare(
+			`INSERT INTO orgs (id, slug, display_name, plan) VALUES (?, ?, ?, ?)`,
+		)
+		.run(teamOrgId, 'acme', 'Acme', 'pro')
+	mockModule.calculateUserD1StorageBytes.mockResolvedValue(0)
+
+	const report = await loadAdminUserMeterParityReport({
+		db,
+		env: meter.env,
+		stableUserId: teamOrgId,
+		now,
+	})
+	expect(report?.stableUserId).toBe(teamOrgId)
+	expect(report?.deletion).toMatchObject({
+		d1DeletingAt: null,
+		deletingAtParity: true,
+	})
 })

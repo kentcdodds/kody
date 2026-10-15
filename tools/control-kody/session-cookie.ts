@@ -231,6 +231,8 @@ export function shouldRefreshSession(input: {
 	if (input.skipLogin) return false
 	if (input.status === 401) return true
 	if (input.path === '/login') return false
+	const method = input.method?.toUpperCase()
+	if (method === 'POST' && input.path === '/logout') return false
 	if (
 		(input.status === 302 || input.status === 303 || input.status === 307) &&
 		locationPointsToLogin(input.location)

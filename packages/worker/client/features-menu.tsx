@@ -1,6 +1,7 @@
 import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
+import { dismissOpenPopoverPanel } from '#client/popover-open.ts'
 import { renderIcon } from '#universal/icon.tsx'
 import { colors, shadows, typography } from '#universal/styles/tokens.ts'
 import {
@@ -9,28 +10,36 @@ import {
 } from '#universal/styles/style-primitives.ts'
 
 const features = [
-	{ id: 'memory', name: 'Memory', description: 'Context that comes with you.' },
 	{
-		id: 'secrets',
-		name: 'Secrets',
-		description: 'Credentials your agents can use safely.',
+		id: 'memory',
+		orb: 'memory',
+		name: 'Memory',
+		description: 'Context that comes with you.',
 	},
 	{
 		id: 'packages',
+		orb: 'packages',
 		name: 'Packages',
 		description: 'Keep the software your agent builds.',
 	},
 	{
 		id: 'triggers',
+		orb: 'triggers',
 		name: 'Triggers',
 		description: 'Run work when something happens.',
 	},
 	{
-		id: 'integrations',
-		name: 'Integrations',
-		description: 'Connect the accounts you work with.',
+		id: 'credentials',
+		orb: 'integrations',
+		name: 'Credentials',
+		description: 'Keys and OAuth your agents use, never see.',
 	},
-	{ id: 'apps', name: 'Apps', description: 'Give your work an interface.' },
+	{
+		id: 'apps',
+		orb: 'apps',
+		name: 'Apps',
+		description: 'Give your work an interface.',
+	},
 ] as const
 const panelId = 'features-navigation'
 
@@ -40,8 +49,7 @@ export function FeaturesMenu(handle: Handle<Props>) {
 	let open = false
 	if (typeof document !== 'undefined') {
 		listenToRouterNavigation(handle, () => {
-			const panel = document.getElementById(panelId)
-			if (panel?.matches(':popover-open')) panel.hidePopover()
+			dismissOpenPopoverPanel(document.getElementById(panelId))
 			const mobile = document.getElementById('features-navigation-mobile')
 			if (mobile instanceof HTMLDetailsElement) mobile.open = false
 		})
@@ -73,7 +81,7 @@ export function FeaturesMenu(handle: Handle<Props>) {
 							mix={css(featureCss)}
 						>
 							<img
-								src={`/images/lantern/kody-primitives-orb-${feature.id}.webp`}
+								src={`/images/lantern/kody-primitives-orb-${feature.orb}.webp`}
 								width="36"
 								height="36"
 								alt=""

@@ -44,7 +44,8 @@ type HomeOgVariantEntry = {
 }
 
 /**
- * `secrets` is an ICP door that also highlights the secrets orb.
+ * `secrets` is an ICP door that highlights the credentials orb (secrets
+ * fold into credentials; there is no secrets orb).
  * `triggers` is the generic triggers door (same orb as the other doors).
  */
 const homeOgVariants = {
@@ -74,7 +75,7 @@ const homeOgVariants = {
 	},
 	secrets: {
 		group: 'icp',
-		highlight: 'secrets',
+		highlight: 'integrations',
 		imageTitle: '**Secrets**\nyour agents\ncan use, not read',
 		imageSubtitle: 'The vault stays yours across every host',
 	},
@@ -119,25 +120,25 @@ const homeOgVariants = {
 		group: 'triggers-door',
 		highlight: 'triggers',
 		imageTitle: 'Trigger **anything**\nfrom webhooks',
-		imageSubtitle: 'Connect everything you own with personal software',
+		imageSubtitle: "Connect everything you own in Your agents' cloud",
 	},
 	email: {
 		group: 'triggers-door',
 		highlight: 'triggers',
 		imageTitle: 'Run code from\nyour **email**',
-		imageSubtitle: 'Connect everything you own with personal software',
+		imageSubtitle: "Connect everything you own in Your agents' cloud",
 	},
 	cron: {
 		group: 'triggers-door',
 		highlight: 'triggers',
 		imageTitle: 'Put your\nautomations\non a schedule',
-		imageSubtitle: 'Connect everything you own with personal software',
+		imageSubtitle: "Connect everything you own in Your agents' cloud",
 	},
 	subscriptions: {
 		group: 'triggers-door',
 		highlight: 'triggers',
 		imageTitle: 'Subscribe and\nemit custom\nevents',
-		imageSubtitle: 'Connect everything you own with personal software',
+		imageSubtitle: "Connect everything you own in Your agents' cloud",
 	},
 } as const satisfies Record<HomeOgVariantId, HomeOgVariantEntry>
 

@@ -71,68 +71,6 @@ export function memoryScene(state: {
 	)
 }
 
-// Secrets: the agent sends a reference; Kody attaches the key only for an
-// approved host.
-
-export const secretHosts = [
-	{ id: 'approved', host: 'api.stripe.com', label: 'Approved host' },
-	{ id: 'other', host: 'paste.example', label: 'Unknown host' },
-] as const
-
-export type SecretHostId = (typeof secretHosts)[number]['id']
-
-export function secretsScene(state: { host: SecretHostId; shot?: number }) {
-	const { host, shot = 0 } = state
-	const blocked = host === 'other'
-	const target = secretHosts.find((entry) => entry.id === host)
-	return (
-		<div
-			class="pw-run"
-			key={`run-${shot}`}
-			data-blocked={blocked ? '' : undefined}
-		>
-			{wires(
-				<>
-					{wire({ d: 'M70 62 L160 62', on: true })}
-					{wire({ d: 'M200 62 L276 62', on: !blocked })}
-				</>,
-			)}
-			<div class="pw-lane" style={{ left: '13%', width: '37%', top: '31%' }}>
-				<span class="pw-packet">secret:stripe</span>
-			</div>
-			<div
-				class="pw-lane pw-lane-2"
-				style={{ left: '50%', width: '36%', top: '31%' }}
-			>
-				<span class="pw-packet pw-packet-key">sk_••••</span>
-			</div>
-			<div class="pw-node pw-agent" style={at(13, 31)}>
-				{icon('claude')}
-				Agent
-			</div>
-			<div class="pw-node pw-vault" style={at(50, 31)}>
-				<span class="pw-lock" aria-hidden="true"></span>
-				Kody
-			</div>
-			<div class="pw-node pw-host" style={at(86, 31)}>
-				<span class="pw-host-name">{target?.host}</span>
-				<span class="pw-host-status">
-					{blocked ? 'Not approved' : '200 OK'}
-				</span>
-			</div>
-			<span class="pw-stamp" style={at(68, 31)} aria-hidden="true">
-				✕
-			</span>
-			<div class="pw-node pw-ledger" style={at(50, 76)}>
-				<span>Agent sees</span>
-				<code>secret:stripe</code>
-				<span>Host receives</span>
-				<code>{blocked ? 'Nothing' : 'sk_live_••••••••'}</code>
-			</div>
-		</div>
-	)
-}
-
 // Packages: write code once, publish it as a package, then any agent
 // invokes it and gets the result back.
 
@@ -642,8 +580,6 @@ export function primitiveRestScene(id: LandingPrimitiveId): RemixNode {
 	switch (id) {
 		case 'memory':
 			return memoryScene({ agent: 'cursor' })
-		case 'secrets':
-			return secretsScene({ host: 'approved' })
 		case 'packages':
 			return packagesScene({ version: 0 })
 		case 'triggers':

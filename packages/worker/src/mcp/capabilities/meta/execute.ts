@@ -113,6 +113,7 @@ export const executeCapability = defineDomainCapability(
 			const callerContext = ctx.callerContext
 			const conversationId = resolveConversationId(args.conversationId)
 			const idempotencyKey = args.idempotencyKey?.trim() || null
+			// person-keyed (not personal org): metering / run records
 			const userId = callerContext.user
 				? personalOrgId(callerContext.user.userId)
 				: null

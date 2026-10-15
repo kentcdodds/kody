@@ -99,6 +99,12 @@ secrets, jobs, and execute usage go through that function. A same-origin
 Route loaders run before the client router commits the URL, so they pass the
 destination page as `referrer` (`orgAccountApiReferrer`).
 
+The URL is the only source of truth for which org a browser request is in: the
+`/@slug/…` path, the page Referer for account JSON, or an explicit `?org=<slug>`
+(`/connect/oauth`). Nothing remembers a "current" org in a cookie or the
+session. A request with no org in its URL uses the signup org, and pages that
+need another org link to it explicitly.
+
 Every org-bound request passes the router-wide org binding guard
 (`packages/worker/src/app/org-binding-guard-middleware.ts`) before its handler.
 When the `/@slug/-/…` URL or the account JSON Referer names an org the person

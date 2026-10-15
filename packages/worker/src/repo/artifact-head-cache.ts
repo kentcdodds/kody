@@ -115,6 +115,26 @@ export function resolveCachedArtifactSourceHead(
  * a push to another branch leaves HEAD alone, and a repo nobody has viewed
  * has no entry to maintain.
  */
+/**
+ * Last known default-branch name from the KV head cache. Live
+ * `resolveArtifactSourceHead` is the source of truth; this is only a
+ * fallback when that lookup throws. The cached commit may already be the
+ * push under test (`applyArtifactSourcePushToHeadCache` writes it), so
+ * callers must not treat this as proof of the live tip.
+ */
+export async function readCachedArtifactSourceBranch(
+	env: Env,
+	repoId: string,
+): Promise<string | null> {
+	const kv = readHeadCacheKv(env)
+	if (!kv) return null
+	const cache = createKvCachifiedCache(kv)
+	const entry = await cache.get(buildArtifactSourceHeadCacheKey(env, repoId))
+	if (!entry || !isArtifactSourceHead(entry.value)) return null
+	const branch = entry.value.branch.trim()
+	return branch.length > 0 ? branch : null
+}
+
 export async function applyArtifactSourcePushToHeadCache(input: {
 	env: Env
 	repoId: string

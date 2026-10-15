@@ -353,13 +353,20 @@ Client routes: `packages/worker/client/routes/community*`
   same-origin `/raw/` route (`<img>` / `<video>` / `<audio>`). SVG is served
   only as `image/svg+xml` for `<img src>` — markup is never injected. Other
   binaries show a non-preview message instead of a latin1 code dump.
-- `/@:username/:kodyId/raw/:ref(/*relativePath)` — allowlisted media bytes for
-  that preview (same authz and tree resolution as the explorer). A hex ref that
-  only falls back to the listing pin snapshot 404s, same as the tree.
-  Listing-uuid fallback: `/community/:listingId/raw(/*relativePath)`.
-  `Content-Type` comes from the extension allowlist plus a magic-byte sniff;
-  responses are `nosniff` + `Content-Disposition: inline` and never `text/html`
-  or JavaScript.
+- `/@:username/:kodyId/raw/:ref(/*relativePath)` — GitHub-style raw bytes for
+  any file the viewer can open in the explorer (same authz and tree resolution;
+  the file view links it as **Raw**). Every denial, including private,
+  other-org, and signed-out reads, is a 404. Browsers use the session cookie;
+  agents send `Authorization: Bearer kody_at_…` with `package:read` (a token
+  without it reads like a signed-out visitor; an invalid token is 401). A hex
+  ref that only falls back to the listing pin snapshot 404s, same as the tree.
+  Listing-uuid fallback: `/community/:listingId/raw(/*relativePath)` (public
+  listing tree only). Sniffed media (extension allowlist plus magic bytes) keeps
+  its type for `<img>` / `<video>` previews; other text is
+  `text/plain; charset=utf-8`, and binaries download as
+  `application/octet-stream`. Every response is `nosniff` with
+  `Content-Security-Policy: default-src 'none'; sandbox`, so HTML, SVG, and JS
+  never run on the app origin.
 - `/community/:listingId` — the same page by listing id; redirects to the
   canonical URL. Metadata, ratings, README, one-click install (login required;
   other-account listings arm via `createDoubleCheck` and fork on the second
@@ -411,16 +418,13 @@ enqueue this topic. Enqueue failures are logged and never fail
 [the admin events guide](../guides/admin-events.md#communitylistingpublished-admins)
 for the handler payload.
 
-A republish whose pinned commit differs from the stored listing enqueues a
-`{ kind: 'fork_upstream_updated', eventId, listingId, previous, current, publishedAt }`
-message on the same queue. `previous` and `current` are
-`{ pinnedCommit, packageVersion }`. Change detection lives in
-`publishCommunityListing` (`hasCommunityListingReleaseChanged`); the consumer is
-`dispatchCommunityForkUpstreamUpdatedSubscriptionEvents`. It lists every
-`community_forks` row for the listing, skips forks already at the new pin, and
-invokes `community.fork.upstream_updated` on each forker's own subscribed
-packages, one event per fork. Forking is required: there is no listing watch.
-Payload:
+A republish whose pinned commit differs from the stored listing notifies follows
+of that package (`follow.published`) and emits `community.fork.upstream_updated`
+from that same pipeline, one event per fork still behind the new pin. The old
+`{ kind: 'fork_upstream_updated' }` queue message is no longer produced;
+in-flight copies are acknowledged without fan-out. Forking also creates a follow
+of the upstream. Watching without a fork is `followAdd`. The alias payload is
+unchanged. Payload:
 [Package subscriptions](../guides/package-subscriptions.md#communityforkupstream_updated).
 
 ## Inert fork mechanism

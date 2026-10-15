@@ -1,7 +1,7 @@
 import { type LandingHomePrimitive } from '#universal/landing-home-copy.ts'
 
 /**
- * Six-orb lantern for the homepage primitives section. The lantern is one
+ * Five-orb lantern for the `/features` primitives section. The lantern is one
  * still (glass, glow, and metal together). Each primitive orb is an overlay
  * clipped to the opening inside the frame, keyed to a `landingHomePrimitives`
  * id so the copy stays the single source of words and definitions. Orb
@@ -14,7 +14,6 @@ export type LandingPrimitiveId = LandingHomePrimitive['id']
 
 export const landingPrimitiveIds = [
 	'memory',
-	'secrets',
 	'packages',
 	'triggers',
 	'integrations',
@@ -37,7 +36,6 @@ export const landingLanternImage = {
 /** Orb cutouts. Each sprite is centered on its disc in the shell. */
 export const landingLanternOrbArt = {
 	memory: '/images/lantern/kody-primitives-orb-memory.webp',
-	secrets: '/images/lantern/kody-primitives-orb-secrets.webp',
 	packages: '/images/lantern/kody-primitives-orb-packages.webp',
 	triggers: '/images/lantern/kody-primitives-orb-triggers.webp',
 	integrations: '/images/lantern/kody-primitives-orb-integrations.webp',
@@ -112,16 +110,15 @@ const landingLanternFrameOpening = [
  * of width), and sprite width (percent of width). `size` is the painted
  * disc, so the hotspot, ring, collision radius, and leader rim match it.
  * `art` is the slightly larger sprite, cropped so that disc sits in the
- * middle of the image. Six discs at 16.2 stay inside the glass with room
- * to drift.
+ * middle of the image. Five discs at 16.2 sit on a pentagon inside the
+ * glass with room to drift.
  */
 export const landingLanternOrbs = [
-	{ id: 'memory', x: 50, y: 38.5, size: 16.2, art: 16.94 },
-	{ id: 'secrets', x: 29, y: 50, size: 16.2, art: 16.94 },
-	{ id: 'packages', x: 71, y: 50, size: 16.2, art: 16.95 },
-	{ id: 'triggers', x: 34, y: 63, size: 16.2, art: 16.94 },
-	{ id: 'integrations', x: 66, y: 63, size: 16.2, art: 16.93 },
-	{ id: 'apps', x: 50, y: 74.5, size: 16.2, art: 16.91 },
+	{ id: 'memory', x: 50, y: 40, size: 16.2, art: 16.94 },
+	{ id: 'packages', x: 72, y: 48, size: 16.2, art: 16.95 },
+	{ id: 'triggers', x: 37, y: 69, size: 16.2, art: 16.94 },
+	{ id: 'integrations', x: 28, y: 48, size: 16.2, art: 16.93 },
+	{ id: 'apps', x: 63, y: 69, size: 16.2, art: 16.94 },
 ] as const satisfies ReadonlyArray<{
 	id: LandingPrimitiveId
 	x: number
@@ -146,7 +143,7 @@ export function landingPrimitiveColorVar(id: LandingPrimitiveId) {
 	return `var(--primitive-${id})`
 }
 
-/** Palette tone for the nth orbit light; cycles through the six colors. */
+/** Palette tone for the nth orbit light; cycles through the five colors. */
 export function landingOrbitLightTone(index: number): LandingPrimitiveId {
 	const count = landingPrimitiveIds.length
 	return landingPrimitiveIds[((index % count) + count) % count]!

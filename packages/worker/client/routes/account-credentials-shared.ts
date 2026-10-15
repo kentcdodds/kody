@@ -13,6 +13,7 @@ import {
 import {
 	type AccountCredentialsResponse,
 	readCredentialListFilters,
+	type SetCredentialHostsResponse,
 	writeCredentialListQuery,
 } from '#universal/credentials-list.ts'
 import { orgResourcePath, orgSlugFromPathname } from '#universal/org-pages.ts'
@@ -116,6 +117,34 @@ export async function fetchAccountCredentials(
 	const payload = await readJson<AccountCredentialsResponse>(response)
 	if (!response.ok || !payload?.ok) {
 		throw new Error('Unable to load credentials.')
+	}
+	return payload
+}
+
+/** Replaces a credential's editable hosts from the page at `href`. */
+export async function saveCredentialHosts(input: {
+	href: string
+	credentialId: string
+	hosts: ReadonlyArray<string>
+}) {
+	const init = orgAccountApiFetchInit(input.href)
+	const response = await fetch(routes.accountCredentialsApiPost.href(), {
+		...init,
+		method: 'POST',
+		headers: { ...init.headers, 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			action: 'setHosts',
+			credentialId: input.credentialId,
+			hosts: input.hosts,
+		}),
+	})
+	const payload = await readJson<
+		SetCredentialHostsResponse | { ok: false; error?: string }
+	>(response)
+	if (!response.ok || !payload?.ok) {
+		throw new Error(
+			(payload && !payload.ok && payload.error) || 'Could not save the hosts.',
+		)
 	}
 	return payload
 }

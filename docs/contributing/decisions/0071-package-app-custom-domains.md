@@ -31,7 +31,10 @@ already bring their own DNS and certs.
    Enterprise.
 2. **Public and private apps** may use custom domains.
 3. **Two tiers:** an **org-level** custom domain replaces `kody.run` for that
-   org's **private** apps; **per-app** custom domains are for **public** apps.
+   org's **private** (session-gated) apps; **per-app** custom domains are for
+   **internet-visible** apps (`is_internet_visible`), not merely forkable /
+   community-listed packages. Forkable and internet-visible are independent
+   flags — see [internet-visible packages](../internet-visible-packages.md).
 4. **Resolution order:** app-level domain → org-level domain → `kody.run`.
 5. **Subdomains (CNAME) are the default.** Customers point a CNAME at
    `domains.kody.run`. Bare/apex domains work only through the customer's DNS

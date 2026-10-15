@@ -1,10 +1,10 @@
 import { type Action } from 'remix/router'
 import {
-	personalOrgId,
+	type OwnerId,
 	type PersonId,
 } from '@kody-internal/shared/owner-person-ids.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
-import { isSecureRequest } from '#app/auth-session.ts'
 import {
 	readAuthenticatedAppUser,
 	type AuthenticatedAppUser,
@@ -19,6 +19,7 @@ import { createAccountActivityHandler } from '#app/handlers/account-activity.ts'
 import { createAccountConnectionsHandler } from '#app/handlers/account-connected-agents.ts'
 import { createAccountCredentialsHandler } from '#app/handlers/account-credentials.ts'
 import { createAccountEmailHandler } from '#app/handlers/account-email.ts'
+import { createAccountFollowsHandler } from '#app/handlers/org-follows.ts'
 import { createAccountIntegrationsHandler } from '#app/handlers/account-integrations.ts'
 import { createAccountJobsHandler } from '#app/handlers/account-jobs.ts'
 import { createAccountMcpServersHandler } from '#app/handlers/account-mcp-servers.ts'
@@ -35,7 +36,6 @@ import {
 } from '#app/handlers/profile.tsx'
 import { jsonResponse } from '#worker/json-response.ts'
 import { loadOrgBindingForSlug, type OrgBinding } from '#worker/orgs/repo.ts'
-import { serializeLastUsedOrgCookie } from '#universal/org-last-used-cookie.ts'
 import {
 	toProfileListLoaderData,
 	toProfileShellLoaderData,
@@ -60,6 +60,8 @@ function sectionHandler(
 			return createAccountCredentialsHandler(env)
 		case 'email':
 			return createAccountEmailHandler(env)
+		case 'follows':
+			return createAccountFollowsHandler(env)
 		case 'integrations':
 			return createAccountIntegrationsHandler(env)
 		case 'jobs':
@@ -123,6 +125,7 @@ function sectionParams(
 			return {}
 		case 'credentials':
 			return first ? { credentialId: first } : {}
+		case 'follows':
 		case 'repositories':
 		case 'secret-providers':
 		case 'secrets':
@@ -137,8 +140,11 @@ function sectionParams(
 }
 
 /** Team-org packages are org-owned. The signup org keeps the person's profile list. */
-function isTeamOrg(binding: OrgBinding, personId: PersonId) {
-	return binding.org.id !== personalOrgId(personId)
+function isTeamOrg(
+	binding: OrgBinding,
+	user: { userId: PersonId; personalOrgId?: OwnerId | null },
+) {
+	return binding.org.id !== personalOrgIdForPerson(user)
 }
 
 export function createOrgSectionHandler(
@@ -169,7 +175,6 @@ export function createOrgSectionHandler(
 					status: 404,
 				})
 			}
-			const slug = resolution.org.slug ?? ctx.params.orgSlug ?? ''
 			const params = {
 				...ctx.params,
 				...sectionParams(section, ctx.params.rest),
@@ -177,33 +182,18 @@ export function createOrgSectionHandler(
 				// the immutable personal-org slug after a rename.
 				...(section === 'repositories' ? { username: user.username } : {}),
 			}
-			const response =
-				section === 'repositories' && isTeamOrg(resolution, user.mcpUser.userId)
-					? await renderTeamRepositoriesPage({
-							env,
-							request: ctx.request,
-							user,
-							binding: resolution,
-						})
-					: await inner.handler({
-							request: ctx.request,
-							params,
-							url: new URL(ctx.request.url),
-						} as never)
-			if (!slug) return response
-			const headers = new Headers(response.headers)
-			headers.append(
-				'Set-Cookie',
-				serializeLastUsedOrgCookie({
-					slug,
-					secure: isSecureRequest(ctx.request),
-				}),
-			)
-			return new Response(response.body, {
-				status: response.status,
-				statusText: response.statusText,
-				headers,
-			})
+			return section === 'repositories' && isTeamOrg(resolution, user.mcpUser)
+				? await renderTeamRepositoriesPage({
+						env,
+						request: ctx.request,
+						user,
+						binding: resolution,
+					})
+				: await inner.handler({
+						request: ctx.request,
+						params,
+						url: new URL(ctx.request.url),
+					} as never)
 		},
 	}
 }
@@ -267,7 +257,7 @@ export function createOrgRepositoriesApiHandler(env: Env) {
 					404,
 				)
 			}
-			if (isTeamOrg(binding, user.mcpUser.userId)) {
+			if (isTeamOrg(binding, user.mcpUser)) {
 				return jsonResponse(
 					await loadOrgRepositoriesData({ env, request, user, binding }),
 				)

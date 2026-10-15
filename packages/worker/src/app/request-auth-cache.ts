@@ -26,6 +26,7 @@ import {
 import { resolveDisplayName } from '#worker/identity/username.ts'
 import { isCredentialInvalidatedByStoredPasswordChange } from '#worker/password-change-lockout.ts'
 import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import { personalOrgIdFromUserRow } from '#worker/orgs/personal-org-id.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import {
 	parseEmailVerificationDelivery,
@@ -46,6 +47,7 @@ type AuthUserRow = {
 	suspended_at?: string | null
 	password_changed_at?: string | null
 	stable_user_id: string | null
+	personal_org_id?: string | null
 }
 
 type ResolvedAuthUser = {
@@ -218,8 +220,17 @@ async function resolveRequestAuth(
 				email: userRecord.email,
 				username: userRecord.username,
 				displayName,
+				personalOrgId: personalOrgIdFromUserRow({
+					personal_org_id: userRecord.personal_org_id,
+					stable_user_id: userRecord.stable_user_id ?? stableUserId,
+				}),
 			},
-			artifactOwnerIds: [stableUserId],
+			artifactOwnerIds: [
+				personalOrgIdFromUserRow({
+					personal_org_id: userRecord.personal_org_id,
+					stable_user_id: userRecord.stable_user_id ?? stableUserId,
+				}),
+			],
 		},
 	}
 }

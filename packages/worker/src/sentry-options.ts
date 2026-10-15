@@ -283,18 +283,20 @@ export const durableObjectInstanceInactiveCloseMessage =
 
 /**
  * Cloudflare Durable Object SQLite storage opaque platform fault with a
- * support reference, e.g.
- * `Internal error in Durable Object storage caused object to be reset; reference = <id>`.
+ * support reference. Two platform phrasings (KODY-82 / KODY-95):
+ * - `Internal error in Durable Object storage caused object to be reset; reference = <id>`
+ * - `Internal error while starting up Durable Object storage caused object to be reset; reference = <id>`
  * D1 bindings can surface the same DO-storage reset under optional `Error:` /
- * `D1_ERROR:` prefixes (KODY-82). Same class as D1's `Internal error in D1 DB
- * storage caused object to be reset` (see `d1-retry.ts`): not an application
- * defect — DO storage hit an internal fault. Require `reference =` and this
- * exact phrasing so bare / unrelated "Durable Object storage …" messages stay
+ * `D1_ERROR:` prefixes. Same class as D1's `Internal error in D1 DB storage
+ * caused object to be reset` (see `d1-retry.ts`): not an application defect —
+ * DO storage hit an internal fault (including during storage startup). Require
+ * `reference =` and one of these anchored sentences so bare / unrelated
+ * "Durable Object storage …" or "Internal error while …" messages stay
  * Sentry-visible. Reference ids use the same alphabet as D1: alphanumeric,
  * plus `_` or `-`.
  */
 const durableObjectStorageObjectResetPattern =
-	/^internal error in Durable Object storage caused object to be reset;\s*reference\s*=\s*[A-Za-z0-9_-]+$/i
+	/^internal error (?:in|while starting up) Durable Object storage caused object to be reset;\s*reference\s*=\s*[A-Za-z0-9_-]+$/i
 
 function normalizeDurableObjectIsolateResetMessage(message: string) {
 	const withoutErrorPrefix = message.trim().replace(/^Error:\s*/i, '')
@@ -679,9 +681,10 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// Object platform reset strings (memory/CPU limits, DO SQLite
 		// SQLITE_NOMEM, deploy-time code updates, blockConcurrencyWhile
 		// timeouts, DO storage operation timeouts, and DO storage object-reset
-		// with a support reference — including D1_ERROR:-prefixed forms D1
-		// bindings emit) are dropped the same way — see
-		// filterDurableObjectIsolateResetSentryEvent. Bare Durable Object queue
+		// with a support reference — `in` or `while starting up` phrasing,
+		// including D1_ERROR:-prefixed forms D1 bindings emit) are dropped the
+		// same way — see filterDurableObjectIsolateResetSentryEvent. Bare Durable
+		// Object queue
 		// saturation strings ("… overloaded. Requests queued for too long", etc.)
 		// are dropped the same way — see filterDurableObjectOverloadedSentryEvent.
 		// Exact opaque Cloudflare "An internal error occurred." (and Artifacts

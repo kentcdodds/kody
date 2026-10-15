@@ -7,6 +7,7 @@ import {
 	type McpAuthDenialReason,
 	recordMcpAuthDenial,
 } from '#mcp/auth-audit.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { type Capability } from './types.ts'
 
 type SiteAccessRequirement = Pick<
@@ -14,23 +15,32 @@ type SiteAccessRequirement = Pick<
 	'name' | 'requiredRole' | 'requiredPermission'
 >
 
+/**
+ * Who a deferred site-admin check and audit row name. Enablement-backed
+ * triggers reuse {@link NonInteractiveTrigger}; background `jobRunNow` (live
+ * person credential, org MCP user) is `run-now`.
+ */
+export type SiteAccessActorTrigger =
+	| NonInteractiveTrigger
+	| { type: 'run-now'; credentialId: string | null }
+
 /** Site-admin capabilities: a site role or permission gates them. */
 export function requiresSiteAccess(capability: SiteAccessRequirement): boolean {
 	return Boolean(capability.requiredRole || capability.requiredPermission)
 }
 
 /**
- * A site-admin capability called from a run no live person made (a job,
- * webhook, subscription, or inbound email, or package code one of those
- * started) acts for the person the run acts as, usually its enabler. That
- * person must hold the role or permission in D1 right now: the caller's
- * roles are cached and belong to the org's identity, not the enabler.
+ * A site-admin capability called from a run whose MCP user is not the acting
+ * person (team-org schedule/webhook/email, or team-org `jobRunNow`) acts for
+ * `request.actor`. That person must hold the role or permission in D1 right
+ * now: the caller's roles are cached and belong to the org's identity, not
+ * the enabler or clicker.
  */
 export async function assertTriggeredRunCanAccessSiteCapability(input: {
 	env: Env
 	callerContext: McpCallerContext
 	capability: SiteAccessRequirement
-	trigger: NonInteractiveTrigger
+	trigger: SiteAccessActorTrigger
 }): Promise<void> {
 	const { capability, trigger } = input
 	const actor = input.callerContext.request?.actor
@@ -55,9 +65,10 @@ export async function assertTriggeredRunCanAccessSiteCapability(input: {
 function describeDenial(
 	access: Awaited<ReturnType<typeof getActiveStableUserRolesAndPermissions>>,
 	capability: SiteAccessRequirement,
-	trigger: NonInteractiveTrigger,
+	trigger: SiteAccessActorTrigger,
 ): { reason: McpAuthDenialReason; message: string } | null {
-	const run = `This ${trigger.type} run`
+	const run =
+		trigger.type === 'run-now' ? 'This run-now' : `This ${trigger.type} run`
 	if (!access) {
 		return {
 			reason: 'no_user',
@@ -86,18 +97,40 @@ function describeDenial(
 }
 
 /**
- * Run a site-admin capability called from a non-interactive run and record
- * one `admin` audit row naming the trigger. `run` covers input validation
- * through output validation; the row's result says whether it returned or
- * threw. A capability that reports a failure in its returned result records
- * that verdict in its own audit row.
+ * Email for the deferred site-admin wrapper audit row. Team-org background
+ * callers have an empty org email; prefer that when set, otherwise the
+ * actor's live users.email so email-hash filters find the clicker/enabler.
+ */
+async function resolveTriggeredSiteAuditEmail(
+	env: Env,
+	callerContext: McpCallerContext,
+): Promise<string | undefined> {
+	const callerEmail = callerContext.user?.email?.trim()
+	if (callerEmail) return callerEmail
+	const actorId = callerContext.request?.actor?.userId
+	if (!actorId || !env.APP_DB) return undefined
+	const row = await env.APP_DB.prepare(
+		`SELECT email FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+	)
+		.bind(String(actorId))
+		.first<{ email: string }>()
+	const actorEmail = row?.email?.trim()
+	return actorEmail || undefined
+}
+
+/**
+ * Run a site-admin capability called from a deferred actor-gated run and
+ * record one `admin` audit row naming the trigger. `run` covers input
+ * validation through output validation; the row's result says whether it
+ * returned or threw. A capability that reports a failure in its returned
+ * result records that verdict in its own audit row.
  */
 export async function auditTriggeredSiteCapabilityCall<TResult>(
 	input: {
 		env: Env
 		callerContext: McpCallerContext
 		capabilityName: string
-		trigger: NonInteractiveTrigger
+		trigger: SiteAccessActorTrigger
 	},
 	run: () => Promise<TResult>,
 ): Promise<TResult> {
@@ -108,13 +141,14 @@ export async function auditTriggeredSiteCapabilityCall<TResult>(
 		`actor=${callerContext.request?.actor?.userId ?? ''}`,
 		`package_id=${callerContext.storageContext?.packageId ?? ''}`,
 	].join(';')
+	const email = await resolveTriggeredSiteAuditEmail(input.env, callerContext)
 	const audit = (result: 'success' | 'failure', detail?: string) =>
 		logAuditEvent({
 			db: auditDatabaseFromEnv(input.env),
 			category: 'admin',
 			action: input.capabilityName,
 			result,
-			email: callerContext.user?.email,
+			email,
 			path: '/mcp',
 			reason: detail ? `${reason};error=${detail}` : reason,
 		})

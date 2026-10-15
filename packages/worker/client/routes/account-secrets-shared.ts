@@ -59,6 +59,19 @@ export const secretsRoute = createListDetailRoute(secretsBasePath, {
 	},
 })
 
+/** Non-fatal warnings after a successful secret save (provider link, rename cleanup). */
+export function readAccountSecretsSaveWarning(payload: {
+	providerLinkError?: string | null
+	renameCleanupError?: string | null
+}): string | null {
+	const parts: Array<string> = []
+	const provider = payload.providerLinkError?.trim()
+	const renameCleanup = payload.renameCleanupError?.trim()
+	if (provider) parts.push(provider)
+	if (renameCleanup) parts.push(renameCleanup)
+	return parts.length > 0 ? parts.join(' ') : null
+}
+
 export function formatRelativeTtl(ttlMs: number | null) {
 	if (ttlMs == null) return 'No expiry'
 	if (ttlMs <= 0) return 'Expired'

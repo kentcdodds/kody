@@ -92,6 +92,26 @@ export type AccountCredentialDetail = {
 	usageTruncated: boolean
 	/** Checked packages whose published needs could not be read. */
 	usageUnreadable: number
+	/**
+	 * The hosts this org can edit on the website, or null when the kind takes
+	 * its hosts some other way, it connects to a built-in app, or it belongs
+	 * to another org.
+	 */
+	hostSettings: CredentialHostSettings | null
+}
+
+/** Where a Key or an OAuth connection may be sent. */
+export type CredentialHostSettings = {
+	/** Hosts the credential's manager can add or remove. */
+	hosts: Array<string>
+	/** Hosts the credential always allows: an OAuth connection's API base and token hosts. */
+	fixedHosts: Array<string>
+}
+
+/** `POST /account/credentials.json` `{action: 'setHosts'}` success body. */
+export type SetCredentialHostsResponse = CredentialHostSettings & {
+	ok: true
+	changed: boolean
 }
 
 /** The contract response plus what the website page needs to render it. */

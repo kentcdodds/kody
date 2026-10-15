@@ -219,11 +219,43 @@ export async function ensureOrgsTestSchema(db: D1Database) {
 		.run()
 	await db
 		.prepare(
+			`CREATE TABLE IF NOT EXISTS approval_bundles (
+				id TEXT PRIMARY KEY NOT NULL,
+				org_id TEXT NOT NULL,
+				person_user_id TEXT NOT NULL,
+				agent_credential_kind TEXT,
+				agent_credential_id TEXT,
+				note TEXT,
+				items_json TEXT NOT NULL,
+				created_at TEXT NOT NULL
+			)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS approval_bundle_decisions (
+				bundle_id TEXT NOT NULL,
+				item_key TEXT NOT NULL,
+				decision TEXT NOT NULL CHECK (decision IN ('approved', 'denied')),
+				decided_by_user_id TEXT NOT NULL,
+				decided_at TEXT NOT NULL,
+				finalized_at TEXT,
+				PRIMARY KEY (bundle_id, item_key)
+			)`,
+		)
+		.run()
+	await db
+		.prepare(
 			`CREATE TABLE IF NOT EXISTS org_invite_links (
 				id TEXT PRIMARY KEY NOT NULL,
 				org_id TEXT NOT NULL,
 				token_hash TEXT NOT NULL UNIQUE,
-				role TEXT NOT NULL,
+				kind TEXT NOT NULL DEFAULT 'membership',
+				role TEXT,
+				team_id TEXT,
+				resource_type TEXT,
+				resource_id TEXT,
+				preset TEXT,
 				allowed_email_domains_json TEXT,
 				max_uses INTEGER,
 				use_count INTEGER NOT NULL DEFAULT 0,
@@ -238,6 +270,16 @@ export async function ensureOrgsTestSchema(db: D1Database) {
 	await db
 		.prepare(
 			`CREATE TABLE IF NOT EXISTS org_invite_link_redemptions (
+				link_id TEXT NOT NULL,
+				user_id TEXT NOT NULL,
+				created_at TEXT NOT NULL,
+				PRIMARY KEY (link_id, user_id)
+			)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS org_invite_link_pending (
 				link_id TEXT NOT NULL,
 				user_id TEXT NOT NULL,
 				created_at TEXT NOT NULL,

@@ -518,7 +518,11 @@ export async function listCreditLedgerEntries(input: {
 		)
 		.bind(input.userId, input.limit)
 		.all<CreditLedgerRow>()
-	return (rows.results ?? []).map((row) => ({
+	return (rows.results ?? []).map(toCreditLedgerEntry)
+}
+
+function toCreditLedgerEntry(row: CreditLedgerRow): CreditLedgerEntry {
+	return {
 		id: row.id,
 		kind: row.kind,
 		amountMicroUsd: Number(row.amount_micro_usd),
@@ -528,7 +532,75 @@ export async function listCreditLedgerEntries(input: {
 		grantedByUserId: row.granted_by_user_id,
 		note: row.note,
 		createdAt: row.created_at,
-	}))
+	}
+}
+
+/** Position in the ledger's newest-first order: the last row already shown. */
+export type CreditLedgerCursor = { createdAt: string; id: string }
+
+/**
+ * One newest-first page of a wallet's ledger, older than `before` when set.
+ * The balance, the page, and `newerAmountMicroUsd` (every row newer than
+ * this page) come from one D1 batch, so walking the running balance back from
+ * `balanceMicroUsd` cannot straddle a concurrent write.
+ */
+export async function listCreditLedgerPage(input: {
+	db: D1Database
+	userId: string
+	limit: number
+	before: CreditLedgerCursor | null
+}): Promise<{
+	balanceMicroUsd: number
+	entries: Array<CreditLedgerEntry>
+	hasMore: boolean
+	newerAmountMicroUsd: number
+}> {
+	const { before } = input
+	const olderThanCursorSql = before
+		? ' AND (created_at < ? OR (created_at = ? AND id < ?))'
+		: ''
+	const cursorBindings = before
+		? [before.createdAt, before.createdAt, before.id]
+		: []
+	const statements = [
+		input.db
+			.prepare(
+				`SELECT balance_micro_usd AS value FROM credit_wallets WHERE user_id = ?`,
+			)
+			.bind(input.userId),
+		input.db
+			.prepare(
+				`SELECT id, kind, amount_micro_usd, meter, month, units,
+					granted_by_user_id, note, created_at
+				 FROM credit_ledger_entries
+				 WHERE user_id = ?${olderThanCursorSql}
+				 ORDER BY created_at DESC, id DESC
+				 LIMIT ?`,
+			)
+			.bind(input.userId, ...cursorBindings, input.limit + 1),
+		...(before
+			? [
+					input.db
+						.prepare(
+							`SELECT COALESCE(SUM(amount_micro_usd), 0) AS value
+							 FROM credit_ledger_entries
+							 WHERE user_id = ?
+							   AND (created_at > ? OR (created_at = ? AND id >= ?))`,
+						)
+						.bind(input.userId, before.createdAt, before.createdAt, before.id),
+				]
+			: []),
+	]
+	const [balance, rows, newer] = await input.db.batch(statements)
+	const results = (rows?.results ?? []) as Array<CreditLedgerRow>
+	const firstValue = (result: D1Result | undefined) =>
+		Number((result?.results?.[0] as { value?: number } | undefined)?.value ?? 0)
+	return {
+		balanceMicroUsd: firstValue(balance),
+		entries: results.slice(0, input.limit).map(toCreditLedgerEntry),
+		hasMore: results.length > input.limit,
+		newerAmountMicroUsd: firstValue(newer),
+	}
 }
 
 function describeLedgerEntry(entry: CreditLedgerEntry): string {

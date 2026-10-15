@@ -254,9 +254,9 @@ reserves `GITHUB_*`. Deploy maps them to Worker secrets `GITHUB_CLIENT_ID` /
 
 `PREVIEW_ENVIRONMENT_ADMIN_TOKEN` is a PAT (or equivalent) with repository
 administration write, used by preview cleanup to delete leftover `preview-<pr>`
-GitHub Environments on PR close. Preview deploys no longer create those
-Environments; the token remains so cleanup can remove legacy and race-recreated
-entries.
+GitHub Environments on PR close. Preview deploys do not set a GitHub Actions
+`environment:`; the token is there so cleanup can remove leftover and
+race-recreated entries.
 
 `KODY_WEBHOOK_URL_RUN` is the minted inbound webhook URL for
 `@kentcdodds/weekly-site-perf` webhook `run`. Copy of the Kody user secret
@@ -555,7 +555,8 @@ up the version first: a matching already-published payload is a successful
 no-op, and metadata edits that reuse a published version fail with a bump
 instruction. A late duplicate-version error re-fetches and succeeds only when
 the published payload still matches. `npm run workflows:check` requires that
-same version bump on PRs and main pushes (pre-push SHA).
+same version bump on PRs and main pushes (pre-push SHA), and that `description`
+stays at most 100 characters.
 
 Dashboard: [MCP Registry](https://github.com/modelcontextprotocol/registry).
 Recovery: GitHub repo admin + OIDC trust on the registry side.

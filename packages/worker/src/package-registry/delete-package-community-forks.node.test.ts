@@ -96,12 +96,14 @@ function createDeleteForkDb() {
 	sqlite.exec(`
 		CREATE TABLE users (
 			stable_user_id TEXT PRIMARY KEY NOT NULL,
+			personal_org_id TEXT,
 			deleting_at TEXT,
 			deleted_at TEXT
 		);
 		CREATE TABLE orgs (
 			id TEXT PRIMARY KEY NOT NULL,
 			slug TEXT NOT NULL UNIQUE,
+			access_epoch INTEGER NOT NULL DEFAULT 0,
 			deleted_at TEXT,
 			deleting_at TEXT,
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),

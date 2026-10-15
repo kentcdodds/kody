@@ -29,6 +29,7 @@ export type CommunityDetailApiPayload = {
 	viewerIsAdmin: boolean
 	viewerIsOwner: boolean
 	viewerCanManage: boolean
+	viewerCanManageAccess?: boolean
 	viewerCanPublish?: boolean
 	viewerCanDelete?: boolean
 	viewerCanAdoptCommunityFork?: boolean
@@ -50,6 +51,16 @@ export type CommunityPackageMovedPayload = {
 	ok: false
 	// The canonical pair the requested one was renamed to.
 	redirectTo?: string
+}
+
+export type CommunityPackageNoAccessPayload = {
+	ok: false
+	noAccess: true
+	username: string
+	kodyId: string
+	packageName: string
+	viewerUsername: string
+	error?: string
 }
 
 export type CommunityInstallApiPayload = {
@@ -195,6 +206,13 @@ export type PackageSettingsShell =
 	| { kind: 'unauthorized' }
 	| { kind: 'not-found' }
 	| {
+			kind: 'no-access'
+			username: string
+			kodyId: string
+			packageName: string
+			viewerUsername: string
+	  }
+	| {
 			kind: 'owner'
 			ownerPackage: AccountPackageDetail
 			username: string
@@ -205,6 +223,7 @@ export type PackageSettingsShell =
 			defaultBranch: string | null
 			/** True when `/@owner` is publicly reachable. Omit to keep the owner link. */
 			ownerProfilePublic?: boolean
+			viewerCanManageAccess: boolean
 			viewerCanPublish: boolean
 			viewerCanDelete: boolean
 			viewerCanAdoptCommunityFork: boolean
@@ -217,6 +236,15 @@ export function toPackageSettingsShell(
 	if (!routeData.ok) {
 		if ('unauthorized' in routeData) return { kind: 'unauthorized' }
 		if ('notFound' in routeData) return { kind: 'not-found' }
+		if ('noAccess' in routeData) {
+			return {
+				kind: 'no-access',
+				username: routeData.username,
+				kodyId: routeData.kodyId,
+				packageName: routeData.packageName,
+				viewerUsername: routeData.viewerUsername,
+			}
+		}
 		const exhaustive: never = routeData
 		throw new Error(`Unhandled community shell: ${String(exhaustive)}`)
 	}
@@ -230,6 +258,7 @@ export function toPackageSettingsShell(
 		listingId: routeData.listingId,
 		defaultBranch: routeData.defaultBranch ?? null,
 		ownerProfilePublic: routeData.ownerProfilePublic,
+		viewerCanManageAccess: routeData.viewerCanManageAccess === true,
 		viewerCanPublish: routeData.viewerCanPublish === true,
 		viewerCanDelete: routeData.viewerCanDelete === true,
 		viewerCanAdoptCommunityFork: routeData.viewerCanAdoptCommunityFork === true,
@@ -295,15 +324,38 @@ export async function communityDetailRouteLoader(
 
 	const response = await shellPromise
 	const payload = await readJson<
-		CommunityDetailApiPayload | CommunityPackageMovedPayload
+		| CommunityDetailApiPayload
+		| CommunityPackageMovedPayload
+		| CommunityPackageNoAccessPayload
 	>(response)
 	if (response.status === 401) {
 		return {
 			communityDetailShell: { ok: false, unauthorized: true },
 		}
 	}
+	if (
+		response.status === 403 &&
+		payload &&
+		!payload.ok &&
+		'noAccess' in payload &&
+		payload.noAccess
+	) {
+		return {
+			communityDetailShell: {
+				ok: false,
+				noAccess: true,
+				username: payload.username,
+				kodyId: payload.kodyId,
+				packageName: payload.packageName,
+				viewerUsername: payload.viewerUsername,
+			},
+		}
+	}
 	if (response.status === 404) {
-		const movedTo = payload && !payload.ok ? payload.redirectTo : null
+		const movedTo =
+			payload && !payload.ok && 'redirectTo' in payload
+				? payload.redirectTo
+				: null
 		// A renamed package is a real destination, not a dead link: leave the SPA
 		// so the visitor lands on (and can copy) the canonical URL.
 		if (movedTo) {
@@ -340,6 +392,7 @@ export async function communityDetailRouteLoader(
 			viewerIsAdmin: payload.viewerIsAdmin,
 			viewerIsOwner: payload.viewerIsOwner,
 			viewerCanManage: payload.viewerCanManage,
+			viewerCanManageAccess: payload.viewerCanManageAccess === true,
 			viewerCanPublish: payload.viewerCanPublish === true,
 			viewerCanDelete: payload.viewerCanDelete === true,
 			viewerCanAdoptCommunityFork: payload.viewerCanAdoptCommunityFork === true,

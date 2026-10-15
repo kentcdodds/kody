@@ -40,12 +40,19 @@ badges), `/@username/:kodyId/tree/:ref` (**Files** tab),
 `/@username/:kodyId/assets/…` (README-relative images from the published or
 pinned commit), `/@username/:kodyId/settings` (**Settings** tab for packages:
 lock, forkable visibility, internet-visible, webhooks, delete),
+`/@username/:kodyId/collaborators` (**Collaborators** tab, shown only with
+`package:manage_access`: teams, org members, and outside collaborators with
+their preset; add a team or org member, change preset, remove),
 `/@username/:kodyId/approve-publish` (published-vs-HEAD review), and
 `/@username/:kodyId/approve-capabilities` (credential/capability summary before
-internet-visible). Opening an allowlisted image or video in the tree renders a
-preview; the bytes come from `/@username/:kodyId/raw/:ref/…` (same authz as the
-tree). `/account/packages` 404s. `/account/packages/:packageId` redirects to the
-canonical package page.
+internet-visible). `/@:orgSlug/-/approvals/:bundleId` is an agent-prefilled
+bundle of pending approvals across packages (`approvalBundleCreate`), with
+Approve all and per-item Approve or Deny; only the person it was made for can
+open it. Opening an allowlisted image or video in the tree renders a preview;
+the bytes come from `/@username/:kodyId/raw/:ref/…` (same authz as the tree, 404
+on every denial). Every file view links that URL as **Raw**; agents can fetch it
+with `Authorization: Bearer kody_at_…` (`package:read`). `/account/packages`
+404s. `/account/packages/:packageId` redirects to the canonical package page.
 
 ## Drive it
 
@@ -82,12 +89,17 @@ fixtures use `control-kody execute` / `search` against the same origin.
 - `GET /profiles/:username/packages/:kodyId/files.json`
 - `GET /@:username/:kodyId/icon/:iconCommit` (package or plain-repo list mark)
 - `GET /account/repos/:repoId/icon/:iconCommit` (MCP/owner-only repo mark)
-- `GET /@:username/:kodyId/raw/:ref(/*relativePath)` (allowlisted media bytes)
+- `GET /@:username/:kodyId/raw/:ref(/*relativePath)` (raw file bytes)
 - `GET /profiles/:username/packages/:kodyId/approve-publish.json`
+- `GET|POST /profiles/:username/packages/:kodyId/collaborators.json` (view / one
+  change: `grant`, `revoke`; 403 without `package:manage_access`)
 - `GET|POST /profiles/:username/packages/:kodyId/approve-capabilities.json`
 - `GET /account/packages/:packageId/files.json` (404 + `redirectTo` the tree)
 - `GET|POST /account/packages/:packageId/approve-publish.json`
 - `GET|POST /account/packages/:packageId/approve-capabilities.json`
+- `GET|POST /@:orgSlug/-/approvals/:bundleId.json` (approval bundle view; POST
+  `{ action: 'approve' | 'deny', item, fingerprint }` decides one item, session
+  only)
 
 ## Gotchas
 

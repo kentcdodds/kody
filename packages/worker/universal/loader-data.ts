@@ -21,7 +21,9 @@ import {
 } from '#universal/community-categories.ts'
 import { type CommunityListingSort } from '#universal/community-search.ts'
 import { type AccountCredentialsResponse } from '#universal/credentials-list.ts'
+import { type ApprovalBundleLoaderData } from '#universal/approval-bundles.ts'
 import { type PackageCredentialApprovalLoaderData } from '#universal/package-credential-approval-page.ts'
+import { type PackageCollaboratorsLoaderData } from '#universal/package-collaborators.ts'
 import { type PackageCredentialsLoaderData } from '#universal/package-credentials-page.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { type PackageFilesContentKind } from '#universal/package-file-media.ts'
@@ -68,6 +70,7 @@ import {
 	type AccountActivityViewFilter,
 } from '#universal/account-activity-filters.ts'
 import { type FleetPackageErrorRateConcentration } from '#universal/fleet-package-error-rate-concentration.ts'
+import { type OrgFollowsLoaderData } from '#universal/follows.ts'
 
 export type { ProfileVisibility }
 export type { AdminFeatureFlag }
@@ -213,12 +216,15 @@ export type PackageFilesLoaderData = {
 	language: string | null
 	contentByteLength?: number | null
 	mediaHref?: string | null
+	/** `/raw/` URL for the selected file; null on directory views. */
+	rawHref?: string | null
 	contentHighlighted?: HighlightedCode | null
 	contentFences?: Array<HighlightedCode>
 	username?: string
 	kodyId?: string
 	viewerIsOwner?: boolean
 	viewerCanManage?: boolean
+	viewerCanManageAccess?: boolean
 	isPrivate?: boolean
 	isListed?: boolean
 	/** False for plain repos that share package chrome. Defaults to true. */
@@ -259,6 +265,7 @@ type CommunityDetailShellLoaderData = {
 	kodyId: string
 	viewerIsOwner: boolean
 	viewerCanManage: boolean
+	viewerCanManageAccess?: boolean
 	viewerCanPublish?: boolean
 	viewerCanDelete?: boolean
 	viewerCanAdoptCommunityFork?: boolean
@@ -276,6 +283,16 @@ type CommunityPackageUnauthorizedLoaderData = {
 type CommunityPackageNotFoundLoaderData = {
 	ok: false
 	notFound: true
+}
+
+/** Signed-in viewer cannot open this saved package (private/hidden, no grant). */
+type CommunityPackageNoAccessLoaderData = {
+	ok: false
+	noAccess: true
+	username: string
+	kodyId: string
+	packageName: string
+	viewerUsername: string
 }
 
 export type ProfileLoaderData = {
@@ -1196,15 +1213,6 @@ export type AccountOrganizationSummary = {
 	avatarUrl?: string | null
 }
 
-type AccountInviteSummary = {
-	id: string
-	orgSlug: string
-	orgDisplayName: string | null
-	kind: string
-	role: string | null
-	expiresAt: string
-}
-
 export type AccountProfileLoaderData = {
 	ok: true
 	email: string
@@ -1225,14 +1233,30 @@ type AccountOrganizationsNewLoaderData = {
 	draft: { displayName: string; slug: string }
 }
 
+/**
+ * Something waiting on the signed-in person to accept or decline: an invite
+ * link they opened (`link`) or an invite addressed to their email or
+ * username (`invite`). `id` is only used to build the accept and decline
+ * URLs. `label` says what accepting gives ("Join as Member", "Join the
+ * Design team", "Use access to weather").
+ */
+export type AccountPendingInvite = {
+	source: 'link' | 'invite'
+	id: string
+	orgSlug: string
+	orgDisplayName: string | null
+	orgPersonal: boolean
+	label: string
+	expiresAt: string
+}
+
 export type AccountOrganizationsLoaderData = {
 	ok: true
 	username: string
 	/** The signup organization is named and pictured after the person. */
 	viewer: { displayName: string; avatarUrl: string | null }
 	organizations: Array<AccountOrganizationSummary>
-	lastUsedOrganization: string | null
-	invites: Array<AccountInviteSummary>
+	pendingInvites: Array<AccountPendingInvite>
 }
 
 type OrgManagementOrg = {
@@ -1323,6 +1347,26 @@ export type OrgMembersLoaderData = {
 	canManage: boolean
 }
 
+/** What accepting an invite link gives, as the join page describes it. */
+export type OrgInviteJoinOffer =
+	| { kind: 'membership'; role: 'member' | 'billing'; roleLabel: string }
+	| {
+			kind: 'team'
+			teamName: string
+			/** The viewer is not a member yet, so accepting also joins the org. */
+			joinsOrg: boolean
+	  }
+	| {
+			kind: 'resource'
+			packageName: string
+			packageHref: string
+			preset: 'use' | 'contribute' | 'manage'
+			presetLabel: string
+			presetDescription: string
+			/** The viewer is not a member, so they stay an outside collaborator. */
+			outsideCollaborator: boolean
+	  }
+
 export type OrgInviteJoinLoaderData =
 	| {
 			ok: true
@@ -1331,9 +1375,12 @@ export type OrgInviteJoinLoaderData =
 				slug: string
 				displayName: string | null
 				avatarUrl: string | null
+				personal: boolean
 			}
-			role: 'member' | 'billing'
-			roleLabel: string
+			offer: OrgInviteJoinOffer
+			invitedBy: string | null
+			expiresAt: string
+			/** The viewer already has everything the link gives. */
 			alreadyMember: boolean
 			authenticated: boolean
 	  }
@@ -1348,7 +1395,30 @@ export type OrgInviteJoinLoaderData =
 				| 'exhausted'
 				| 'org_inactive'
 				| 'personal_org'
+				| 'target_gone'
+				| 'inviter_gone'
+				| 'already_used'
 	  }
+
+/**
+ * An active invite link on a Teams or package Collaborators page. `teamId`
+ * groups team links under their team and is never shown.
+ */
+export type ScopedInviteLinkView = {
+	id: string
+	label: string
+	teamId: string | null
+	maxUses: number | null
+	useCount: number
+	expiresAt: string
+	createdByUsername: string | null
+	createdByDisplayName: string | null
+}
+
+export type PackageInviteLinksView = {
+	ok: true
+	links: Array<ScopedInviteLinkView>
+}
 
 export type OrgTeamMemberView = {
 	userId: string
@@ -1374,6 +1444,9 @@ export type OrgTeamsLoaderData = {
 	orgMembers: Array<OrgMemberView>
 	canManage: boolean
 	canRemoveMembers: boolean
+	/** True when the viewer may create team invite links (team and member write). */
+	canCreateInviteLinks: boolean
+	inviteLinks: Array<ScopedInviteLinkView>
 }
 
 export type OrgGrantView = {
@@ -2195,6 +2268,12 @@ export type AccountPackagePendingApproval = {
 export type AccountPackageApproveCapabilitiesLoaderData = {
 	ok: true
 	pendingApprovals: Array<AccountPackagePendingApproval>
+	/**
+	 * Pending `went_public` request to approve together with the capability
+	 * set (`approve-capabilities-and-go-public`). Null unless the owner asked
+	 * to go public and the live capability set is not yet approved.
+	 */
+	goPublicRequestId: string | null
 	email: string
 	package: {
 		id: string
@@ -2210,6 +2289,10 @@ export type AccountPackageApproveCapabilitiesLoaderData = {
 		kind: 'credential' | 'storage'
 		credentialId?: string
 		name?: string
+		/** How the package reaches the credential: need, mount, grant, or package. */
+		source?: 'need' | 'mount' | 'grant' | 'package'
+		/** The declared `kody.credentials` key a `need` credential fills. */
+		needKey?: string
 		credentialKind?: string
 		hosts: Array<string>
 		placement?: string | null
@@ -2218,10 +2301,29 @@ export type AccountPackageApproveCapabilitiesLoaderData = {
 	}>
 	fingerprintMatchesApproval: boolean
 	latestApprovedAt: string | null
+	securityAudit: AccountPackageSecurityAudit
 	settingsHref: string
 	packageHref: string
 	approveHref: string
 }
+
+/**
+ * Security audit for the current published commit + capability fingerprint.
+ * Informational only: it never approves anything.
+ */
+export type AccountPackageSecurityAudit =
+	| { status: 'unpublished' }
+	| { status: 'not_audited'; prompt: string }
+	| {
+			status: 'audited'
+			verdict: 'pass' | 'concerns'
+			summary: string
+			/** Agent or person named by the recorder, else the recorder. */
+			auditor: string
+			/** `@username` that recorded it, when different from `auditor`. */
+			recordedBy: string | null
+			recordedAt: string
+	  }
 
 export type AccountPackagesSort = 'updated' | 'created' | 'name'
 
@@ -2338,6 +2440,11 @@ export type AccountSecretsLoaderData = {
 	 * save (retrying create would 409).
 	 */
 	providerLinkError?: string | null
+	/**
+	 * Set when the secret saved under a new name but deleting the prior secret
+	 * failed. Callers must not treat this as a failed save.
+	 */
+	renameCleanupError?: string | null
 }
 
 export type AccountValueListItem = {
@@ -2771,6 +2878,7 @@ export type AppLoaderData = {
 		| CommunityDetailShellLoaderData
 		| CommunityPackageUnauthorizedLoaderData
 		| CommunityPackageNotFoundLoaderData
+		| CommunityPackageNoAccessLoaderData
 	packageFiles?: PackageFilesLoaderData
 	profileShell?: ProfileShellLoaderData | ProfileUnavailableLoaderData
 	profileList?: ProfileListLoaderData
@@ -2816,7 +2924,9 @@ export type AppLoaderData = {
 	accountPackageApproveCapabilities?: AccountPackageApproveCapabilitiesLoaderData
 	accountCredentials?: AccountCredentialsResponse
 	packageCredentials?: PackageCredentialsLoaderData
+	packageCollaborators?: PackageCollaboratorsLoaderData
 	packageCredentialApproval?: PackageCredentialApprovalLoaderData
+	approvalBundle?: ApprovalBundleLoaderData
 	accountSecrets?: AccountSecretsLoaderData
 	accountSecretProviders?: AccountSecretProvidersLoaderData
 	accountValues?: AccountValuesLoaderData
@@ -2832,10 +2942,14 @@ export type AppLoaderData = {
 	accountBilling?: AccountBillingLoaderData
 	accountBillingSuccess?: AccountBillingSuccessLoaderData
 	accountUsage?: AccountUsageLoaderData
+	orgCredits?: OrgCreditsLoaderData
 	accountWaiting?: AccountWaitingLoaderData
+	orgFollows?: OrgFollowsLoaderData
 	accountExperiments?: AccountExperimentsLoaderData
 	discord?: DiscordPageLoaderData
 	walkthroughHosts?: WalkthroughHostPick
+	/** Homepage agent marquee: one SSR shuffle of `withAgents` slugs. */
+	landingAgentOrder?: Array<string>
 	onboardingAgentChooser?: OnboardingAgentChooserPick
 }
 
@@ -2892,6 +3006,70 @@ export type AccountCreditsLedgerItem = {
 	amountMicroUsd: number
 	description: string
 	createdAt: string
+}
+
+/** One row of the organization credit ledger on `/@slug/-/credits`. */
+export type OrgCreditsLedgerEntry = {
+	id: string
+	kind: AccountCreditsLedgerItem['kind']
+	/** Purchase, Auto-refill, Grant, or Usage. */
+	typeLabel: string
+	description: string
+	/** What the row paid for or where it came from; null when nothing to add. */
+	detail: string | null
+	amountMicroUsd: number
+	/** Wallet balance right after this row (ledger rows explain every change). */
+	balanceAfterMicroUsd: number
+	createdAt: string
+}
+
+export type OrgCreditsLedgerPage = {
+	entries: Array<OrgCreditsLedgerEntry>
+	/** Pass as `?cursor=` to `/@slug/-/credits.json` for older rows. */
+	nextCursor: string | null
+}
+
+/** A monthly spend budget and what it has used this UTC month. */
+export type OrgCreditsBudget = {
+	budgetMicroUsd: number
+	/** Null when the spend counter could not be read right now. */
+	spentMicroUsd: number | null
+}
+
+export type OrgCreditsBudgets = {
+	/** UTC month the spend counters cover (`YYYY-MM`). */
+	month: string
+	/**
+	 * The viewer's own monthly budget in this organization. `individual` is a
+	 * budget set for them; `orgDefault` is the organization default. Null when
+	 * no budget applies.
+	 */
+	yours: (OrgCreditsBudget & { source: 'individual' | 'orgDefault' }) | null
+	/** Organization-wide settings. Only for owners and billing admins. */
+	org: {
+		defaultUserBudgetMicroUsd: number | null
+		automation: OrgCreditsBudget | null
+	} | null
+}
+
+export type OrgCreditsLoaderData = {
+	ok: true
+	org: { slug: string; displayName: string | null; personal: boolean }
+	/** `billing` sees balance and ledger; `member` sees only their budget. */
+	access: 'billing' | 'member'
+	/** Null for members without `billing:read`. */
+	wallet: {
+		balanceMicroUsd: number
+		/** Usage past the include draws on credits (purchasable Pro wallet). */
+		creditsEligible: boolean
+		autoRefillEnabled: boolean
+		/** Usage page Credits section: top-ups and auto-refill settings. */
+		manageHref: string
+		/** Usage page breakdown of what spent credits this month. */
+		whereItWentHref: string
+	} | null
+	budgets: OrgCreditsBudgets
+	ledger: OrgCreditsLedgerPage | null
 }
 
 /**
@@ -3064,6 +3242,8 @@ export type AccountUsageLoaderData = AccountUsageStoryData & {
 export type AccountWaitingLoaderData = {
 	ok: true
 	items: Array<WaitingItem>
+	/** Invites to accept or decline, shown above the other items. */
+	invites: Array<AccountPendingInvite>
 }
 
 export type AccountExperimentsLoaderData = {

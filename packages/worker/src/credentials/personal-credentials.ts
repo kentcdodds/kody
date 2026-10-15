@@ -16,7 +16,6 @@
  */
 import {
 	ownerIdFromStored,
-	personalOrgId,
 	type OwnerId,
 	type PersonId,
 } from '@kody-internal/shared/owner-person-ids.ts'
@@ -26,9 +25,11 @@ import {
 } from '@kody-internal/shared/chunk.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { AuthorizationError } from '#worker/authorization/authorize.ts'
+import { loadPersonalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { type OrgAuditWriter } from '#worker/orgs/org-audit-outbox.ts'
 import { runAppDbBatchWithOrgAudit } from '#worker/orgs/org-audit.ts'
 import { isOrgActive, loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
+import { integrationConnectedSql } from '#worker/integrations/connected.ts'
 import {
 	credentialPermissionFamily,
 	getOrgCredential,
@@ -69,7 +70,7 @@ const usableQueries: Record<
 	}),
 	integration: (placeholders) => ({
 		sql: `SELECT id FROM user_integrations
-			WHERE user_id = ? AND deleted_at IS NULL AND connected_at IS NOT NULL
+			WHERE user_id = ? AND deleted_at IS NULL AND ${integrationConnectedSql()}
 				AND id IN (${placeholders})`,
 		binds: () => [],
 	}),
@@ -93,7 +94,7 @@ async function loadPersonalCredentials(
 	ids: ReadonlyArray<string>,
 	now: Date,
 ): Promise<Map<string, OrgCredential>> {
-	const ownerOrgId = personalOrgId(ownerPersonId)
+	const ownerOrgId = await loadPersonalOrgIdForPerson(db, ownerPersonId)
 	if (ids.length === 0 || !(await isOrgActive(db, ownerOrgId))) {
 		return new Map()
 	}
@@ -130,7 +131,10 @@ export async function grantPersonalCredentialToOrg(input: {
 	now?: Date
 	audit?: OrgAuditWriter
 }): Promise<PersonalCredential & { created: boolean }> {
-	const ownerOrgId = personalOrgId(input.ownerPersonId)
+	const ownerOrgId = await loadPersonalOrgIdForPerson(
+		input.db,
+		input.ownerPersonId,
+	)
 	if (input.orgId === ownerOrgId) {
 		throw new McpCallerError(
 			'A personal credential already works in your personal org; grant it to another org.',
@@ -224,7 +228,10 @@ export async function revokePersonalCredentialOrgGrant(input: {
 		const result = await remove.run()
 		return (result.meta.changes ?? 0) > 0
 	}
-	const ownerOrgId = personalOrgId(input.ownerPersonId)
+	const ownerOrgId = await loadPersonalOrgIdForPerson(
+		input.db,
+		input.ownerPersonId,
+	)
 	const credential = await getOrgCredential(
 		input.db,
 		ownerOrgId,
@@ -271,7 +278,10 @@ export async function listPersonalCredentialOrgGrants(input: {
 	credentialId?: string
 	now?: Date
 }): Promise<Array<PersonalCredentialOrgGrant>> {
-	const ownerOrgId = personalOrgId(input.ownerPersonId)
+	const ownerOrgId = await loadPersonalOrgIdForPerson(
+		input.db,
+		input.ownerPersonId,
+	)
 	const rows = await input.db
 		.prepare(
 			`SELECT g.credential_id, g.org_id, g.created_at, o.slug, o.display_name
@@ -356,7 +366,9 @@ export async function listPersonalCredentialCandidates(input: {
 	now?: Date
 }): Promise<Array<PersonalCredential>> {
 	const actor = input.actorPersonId
-	if (!actor || input.orgId === personalOrgId(actor)) return []
+	if (!actor) return []
+	const actorPersonalOrgId = await loadPersonalOrgIdForPerson(input.db, actor)
+	if (input.orgId === actorPersonalOrgId) return []
 	if (!(await loadOrgBindingForOrg(input.db, actor, input.orgId))) return []
 	const rows = await input.db
 		.prepare(
@@ -401,7 +413,7 @@ export async function authorizePersonalCredentialUse(input: {
 	const own = input.actorPersonId
 		? await getOrgCredential(
 				input.db,
-				personalOrgId(input.actorPersonId),
+				await loadPersonalOrgIdForPerson(input.db, input.actorPersonId),
 				input.credentialId,
 			)
 		: null

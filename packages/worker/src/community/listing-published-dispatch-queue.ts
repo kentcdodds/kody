@@ -1,6 +1,5 @@
 import { CommunityListingPublishedDispatchCancelledError } from './errors.ts'
 import { type CommunityListingRelease } from './fork-upstream-updated-subscription-event.ts'
-import { dispatchCommunityForkUpstreamUpdatedSubscriptionEvents } from './fork-upstream-updated-package-subscriptions.ts'
 import {
 	communityForkUpstreamUpdatedDispatchKind,
 	type CommunityForkUpstreamUpdatedDispatchQueueMessage,
@@ -74,14 +73,11 @@ async function dispatchParsedMessage(
 				listingId: parsed.listingId,
 			})
 			return
-		case communityForkUpstreamUpdatedDispatchKind: {
-			const { kind: _kind, ...message } = parsed
-			await dispatchCommunityForkUpstreamUpdatedSubscriptionEvents({
-				env,
-				message,
-			})
+		case communityForkUpstreamUpdatedDispatchKind:
+			// In-flight messages from the retired fork-only dispatcher are
+			// acknowledged without fan-out. New pin moves emit
+			// community.fork.upstream_updated from the follow pipeline.
 			return
-		}
 		default: {
 			const exhaustive: never = parsed
 			return exhaustive

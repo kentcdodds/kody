@@ -5,10 +5,9 @@ import {
 } from '#universal/styles/style-primitives.ts'
 import { FeaturesOverview } from './features/overview.tsx'
 import { MemoryFeature } from './features/memory.tsx'
-import { SecretsFeature } from './features/secrets.tsx'
+import { CredentialsFeature } from './features/credentials.tsx'
 import { PackagesFeature } from './features/packages.tsx'
 import { TriggersFeature } from './features/triggers.tsx'
-import { IntegrationsFeature } from './features/integrations.tsx'
 import { AppsFeature } from './features/apps.tsx'
 
 const layout = {
@@ -30,13 +29,6 @@ export function MemoryRoute() {
 		</div>
 	)
 }
-export function SecretsRoute() {
-	return () => (
-		<div class="feature-detail" mix={css(layout)}>
-			<SecretsFeature />
-		</div>
-	)
-}
 export function PackagesRoute() {
 	return () => (
 		<div class="feature-detail" mix={css(layout)}>
@@ -51,10 +43,10 @@ export function TriggersRoute() {
 		</div>
 	)
 }
-export function IntegrationsRoute() {
+export function CredentialsRoute() {
 	return () => (
 		<div class="feature-detail" mix={css(layout)}>
-			<IntegrationsFeature />
+			<CredentialsFeature />
 		</div>
 	)
 }

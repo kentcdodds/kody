@@ -28,6 +28,7 @@ import {
 	getInviteById,
 	getInviteByTokenHash,
 	markInviteAccepted,
+	markInviteDeclined,
 	markInviteExpired,
 	markInviteRevoked,
 	upsertGrant,
@@ -359,6 +360,81 @@ async function acceptStoredInvite(input: {
 	})
 }
 
+/**
+ * Rejects a pending invite that can no longer be used, marking a lapsed one
+ * expired. Shared by accept and decline.
+ */
+async function assertInvitePending(db: D1Database, invite: StoredInvite) {
+	if (invite.status === 'revoked') {
+		throw new McpCallerError('This invite was revoked.')
+	}
+	if (invite.status === 'accepted') {
+		throw new McpCallerError('This invite was already accepted.')
+	}
+	const expiresAtMs = Date.parse(invite.expiresAt)
+	if (Number.isNaN(expiresAtMs)) {
+		throw new Error(`Invite ${invite.id} has expires_at ${invite.expiresAt}.`)
+	}
+	if (invite.status === 'expired' || expiresAtMs <= Date.now()) {
+		if (invite.status === 'pending') {
+			await markInviteExpired({ db, inviteId: invite.id })
+		}
+		throw new McpCallerError('This invite has expired.')
+	}
+}
+
+type InviteRecipient = { userId: string; email: string; username?: string }
+
+function assertInviteForRecipient(invite: StoredInvite, user: InviteRecipient) {
+	if (!inviteMatchesUser(invite, user)) {
+		throw new McpCallerError(
+			'This invite is addressed to a different email or username.',
+		)
+	}
+}
+
+/**
+ * Accept an invite already proven to be this person's (by its token, or by
+ * the web session for an invite addressed to them). Returns the live org.
+ */
+export async function acceptAddressedInvite(input: {
+	db: D1Database
+	env: Env
+	invite: StoredInvite
+	user: InviteRecipient
+	audit: OrgAuditWriter
+}) {
+	await assertInvitePending(input.db, input.invite)
+	assertInviteForRecipient(input.invite, input.user)
+	const org = await requireLiveOrg(input.db, input.invite.orgId)
+	await acceptStoredInvite({
+		db: input.db,
+		env: input.env,
+		invite: input.invite,
+		acceptedByUserId: input.user.userId,
+		audit: input.audit,
+	})
+	return org
+}
+
+/** The recipient turns down a pending invite addressed to them. */
+export async function declineAddressedInvite(input: {
+	db: D1Database
+	invite: StoredInvite
+	user: InviteRecipient
+	audit: OrgAuditWriter
+}) {
+	await assertInvitePending(input.db, input.invite)
+	assertInviteForRecipient(input.invite, input.user)
+	await markInviteDeclined({
+		db: input.db,
+		orgId: input.invite.orgId,
+		inviteId: input.invite.id,
+		declinedByUserId: input.user.userId,
+		audit: input.audit,
+	})
+}
+
 export const inviteCreateCapability = defineDomainCapability(
 	capabilityDomainNames.access,
 	{
@@ -554,35 +630,11 @@ export const inviteAcceptCapability = defineDomainCapability(
 				) {
 					throw new McpCallerError('Invite token is not valid.')
 				}
-				if (invite.status === 'revoked') {
-					throw new McpCallerError('This invite was revoked.')
-				}
-				if (invite.status === 'accepted') {
-					throw new McpCallerError('This invite was already accepted.')
-				}
-				const expiresAtMs = Date.parse(invite.expiresAt)
-				if (Number.isNaN(expiresAtMs)) {
-					throw new Error(
-						`Invite ${invite.id} has expires_at ${invite.expiresAt}.`,
-					)
-				}
-				if (invite.status === 'expired' || expiresAtMs <= Date.now()) {
-					if (invite.status === 'pending') {
-						await markInviteExpired({ db, inviteId: invite.id })
-					}
-					throw new McpCallerError('This invite has expired.')
-				}
-				if (!inviteMatchesUser(invite, user)) {
-					throw new McpCallerError(
-						'This invite is addressed to a different email or username.',
-					)
-				}
-				const org = await requireLiveOrg(db, invite.orgId)
-				await acceptStoredInvite({
+				const org = await acceptAddressedInvite({
 					db,
 					env: ctx.env,
 					invite,
-					acceptedByUserId: user.userId,
+					user,
 					audit: orgAuditWriterFromRequest(ctx.env, request),
 				})
 				return {

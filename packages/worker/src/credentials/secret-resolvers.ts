@@ -4,10 +4,8 @@
  * value is decrypted. A vault item's hosts come back with its value, so the
  * vault checks Use on the binding first and the host after the read.
  */
-import {
-	personalOrgId,
-	type OwnerId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { loadPersonalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import {
 	assertPackageCanAccessResolvedSecret,
 	loadPackageSecretMounts,
@@ -88,7 +86,10 @@ async function findSecretByName(
 			readValue: orgLookup.readValue,
 		}
 	}
-	const personalOwner = personalOrgId(person)
+	const personalOwner = await loadPersonalOrgIdForPerson(
+		call.input.env.APP_DB,
+		person,
+	)
 	const personalLookup = await findSecretForUse({
 		env: call.input.env,
 		userId: personalOwner,
@@ -162,7 +163,10 @@ export const secretResolver: CredentialResolver<'secret'> = {
 					env: input.env,
 					baseUrl: input.baseUrl,
 					orgSlug: credential.orgSlug,
-					userId: input.orgId,
+					// Package allowlists and implicit personal-secret access live on
+					// the credential's owning org (run org, or the actor's personal
+					// org for a granted personal Key) — same as oauth-resolvers.
+					userId: lookup.ownerId,
 					storageContext: credential.storageContext,
 					authorityPackageId: input.packageStamp?.packageId ?? null,
 					secretName: credential.name,

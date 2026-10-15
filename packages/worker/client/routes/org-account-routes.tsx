@@ -26,6 +26,10 @@ export const orgAccountClientLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(module) => module.accountActivityRouteLoader,
 	),
+	[routePattern(routes.orgApprovalBundle)]: lazyRouteLoader(
+		accountArea,
+		(module) => module.approvalBundleRouteLoader,
+	),
 	[routePattern(routes.orgBilling)]: lazyRouteLoader(
 		accountArea,
 		(module) => module.accountBillingRouteLoader,
@@ -37,6 +41,10 @@ export const orgAccountClientLoaders: Record<string, RouteLoader> = {
 	[routePattern(routes.orgUsage)]: lazyRouteLoader(
 		accountArea,
 		(module) => module.accountUsageRouteLoader,
+	),
+	[routePattern(routes.orgCredits)]: lazyRouteLoader(
+		accountArea,
+		(module) => module.orgCreditsRouteLoader,
 	),
 	[routePattern(routes.orgAgents)]: lazyRouteLoader(
 		accountArea,
@@ -53,6 +61,10 @@ export const orgAccountClientLoaders: Record<string, RouteLoader> = {
 	[routePattern(routes.orgEmail)]: lazyRouteLoader(
 		accountArea,
 		(module) => module.accountEmailRouteLoader,
+	),
+	[routePattern(routes.orgFollows)]: lazyRouteLoader(
+		accountArea,
+		(module) => module.orgFollowsRouteLoader,
 	),
 	[routePattern(routes.orgIntegrations)]: withCredentialRedirectLoader(
 		lazyRouteLoader(
@@ -140,6 +152,9 @@ export const orgAccountClientRoutes = {
 	[routePattern(routes.orgActivity)]: (
 		<LazyAccountRoute render={(module) => <module.AccountActivityRoute />} />
 	),
+	[routePattern(routes.orgApprovalBundle)]: (
+		<LazyAccountRoute render={(module) => <module.ApprovalBundleRoute />} />
+	),
 	[routePattern(routes.orgBilling)]: (
 		<LazyAccountRoute render={(module) => <module.AccountBillingRoute />} />
 	),
@@ -150,6 +165,9 @@ export const orgAccountClientRoutes = {
 	),
 	[routePattern(routes.orgUsage)]: (
 		<LazyAccountRoute render={(module) => <module.AccountUsageRoute />} />
+	),
+	[routePattern(routes.orgCredits)]: (
+		<LazyAccountRoute render={(module) => <module.OrgCreditsRoute />} />
 	),
 	[routePattern(routes.orgAgents)]: (
 		<LazyAccountRoute render={(module) => <module.AccountConnectionsRoute />} />
@@ -162,6 +180,9 @@ export const orgAccountClientRoutes = {
 	),
 	[routePattern(routes.orgEmail)]: (
 		<LazyAccountRoute render={(module) => <module.AccountEmailRoute />} />
+	),
+	[routePattern(routes.orgFollows)]: (
+		<LazyAccountRoute render={(module) => <module.OrgFollowsRoute />} />
 	),
 	[routePattern(routes.orgIntegrations)]: (
 		<LazyAccountRoute

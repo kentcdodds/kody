@@ -38,6 +38,8 @@ Then drive the surface with `login`, `request`, `preview`, and `health`. Run
 - [webhooks](./webhooks.md) — `/@username/kodyId/settings#webhooks` (index at
   `/@<slug>/-/webhooks`; generic `http` apply approval at
   `/connect/webhook-apply`)
+- [follows](./follows.md) — `/@<slug>/-/follows` (Follow panel on
+  `/@owner/kodyId#follow`)
 - [activity](./activity.md) — `/@<slug>/-/activity`
 - [waiting](./waiting.md) — `/@<slug>/-/waiting`
 - [experiments](./experiments.md) — `/account/experiments`

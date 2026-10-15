@@ -87,6 +87,33 @@ test('account JSON without an org page stays on the signup org', async () => {
 	)
 })
 
+test('connect OAuth binds ?org= and account JSON can follow that Referer', async () => {
+	const env = await createEnv()
+	const page = await loadRequestOrgResolution(
+		new Request('https://kody.test/connect/oauth?org=acme&provider=github'),
+		env,
+		adaId,
+	)
+	expect(page).toMatchObject({ org: { id: acmeId, slug: 'acme' } })
+	await expect(
+		loadRequestOrgResolution(
+			new Request('https://kody.test/connect/oauth?provider=github'),
+			env,
+			adaId,
+		),
+	).resolves.toBe('personal')
+	const fromReferer = await loadRequestOrgResolution(
+		new Request('https://kody.test/account/secrets.json', {
+			headers: {
+				referer: 'https://kody.test/connect/oauth?org=acme&provider=github',
+			},
+		}),
+		env,
+		adaId,
+	)
+	expect(fromReferer).toMatchObject({ org: { id: acmeId, slug: 'acme' } })
+})
+
 test('credits mutations without a usage Referer are denied', async () => {
 	const env = await createEnv()
 	await expect(
@@ -180,6 +207,18 @@ test('a request naming an org the person cannot use is denied, never the signup 
 	await expect(denied('https://kody.test/account/memories.json')).resolves.toBe(
 		false,
 	)
+	await expect(denied('https://kody.test/connect/oauth')).resolves.toBe(false)
+	await expect(
+		denied('https://kody.test/connect/oauth?org=acme&provider=github'),
+	).resolves.toBe(false)
+	// ?org= for an org Ada cannot use must not fall through to the signup org.
+	await expect(
+		denied('https://kody.test/connect/oauth?org=ada&provider=github'),
+	).resolves.toBe(true)
+	// Explicit empty org must not fall through to the signup org either.
+	await expect(
+		denied('https://kody.test/connect/oauth?org=&provider=github'),
+	).resolves.toBe(true)
 	await expect(
 		denied(
 			'https://kody.test/account/profile.json',

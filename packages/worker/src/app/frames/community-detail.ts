@@ -37,6 +37,7 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 				ownerProfilePublic: page.ownerProfilePublic,
 				viewerIsOwner: page.viewerIsOwner,
 				viewerCanManage: page.viewerCanManage,
+				viewerCanManageAccess: page.viewerCanManageAccess,
 				repoActions: buildPackageRepoActionsForPage(page),
 				hasPackage: page.hasPackage,
 				packageShaped: page.packageShaped === true,

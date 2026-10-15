@@ -16,6 +16,7 @@ export const apiOperationTags = [
 	'memories',
 	'secrets',
 	'packages',
+	'follows',
 	'repos',
 	'jobs',
 	'webhooks',
@@ -236,9 +237,29 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		['GET', '/v1/packages', 'packageList'],
 		['POST', '/v1/packages', 'packageSave'],
 		['GET', '/v1/packages/{package_id}', 'packageGet'],
+		[
+			'GET',
+			'/v1/packages/{package_id}/collaborators',
+			'packageCollaboratorList',
+		],
+		[
+			'POST',
+			'/v1/packages/{package_id}/collaborators',
+			'packageCollaboratorSet',
+		],
+		[
+			'DELETE',
+			'/v1/packages/{package_id}/collaborators/{grant_id}',
+			'packageCollaboratorRemove',
+		],
 		['PATCH', '/v1/packages/{package_id}', 'packageUpdate'],
 		['DELETE', '/v1/packages/{package_id}', 'packageDelete'],
 		['POST', '/v1/packages/{package_id}/git-remote', 'packageGetGitRemote'],
+		[
+			'POST',
+			'/v1/packages/{package_id}/security-audits',
+			'packageSecurityAuditRecord',
+		],
 		[
 			'POST',
 			'/v1/packages/{package_id}/external-push',
@@ -248,6 +269,13 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		['GET', '/v1/enablements', 'enablementList'],
 		['POST', '/v1/enablements', 'enablementEnable'],
 		['POST', '/v1/enablements/{enablementId}/disable', 'enablementDisable'],
+		['GET', '/v1/approvals', 'approvalPendingList'],
+		['POST', '/v1/approval-bundles', 'approvalBundleCreate'],
+	]),
+	...capabilityRoutes('follows', [
+		['GET', '/v1/follows', 'followList'],
+		['POST', '/v1/follows', 'followAdd'],
+		['DELETE', '/v1/follows', 'followRemove'],
 	]),
 	...capabilityRoutes('repos', [
 		['GET', '/v1/repos', 'repoList'],

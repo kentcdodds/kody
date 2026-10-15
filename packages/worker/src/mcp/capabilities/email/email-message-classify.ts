@@ -1,11 +1,13 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { setEmailMessageClassification } from '#worker/email/service.ts'
 import { emailClassificationValues } from '#worker/email/types.ts'
-import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
+import {
+	emailOwnerOrgId,
+	requireVerifiedEmailAccountUser,
+} from './require-verified-user.ts'
 
 export const emailMessageClassifyCapability = defineDomainCapability(
 	capabilityDomainNames.email,
@@ -40,7 +42,7 @@ export const emailMessageClassifyCapability = defineDomainCapability(
 			const updated = await setEmailMessageClassification({
 				env: ctx.env,
 				db: ctx.env.APP_DB,
-				userId: personalOrgId(user.userId),
+				userId: emailOwnerOrgId(ctx, user),
 				messageId: args.message_id,
 				classification: args.classification,
 				classificationReason,

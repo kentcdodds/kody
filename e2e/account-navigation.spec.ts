@@ -115,7 +115,7 @@ test('account section switches keep the current page on screen (no loading flash
 	)
 })
 
-test('every workspace section is two clicks from /account', async ({
+test('every workspace section is reachable from /account through the avatar menu', async ({
 	page,
 	seedE2eUser,
 	login,
@@ -135,15 +135,14 @@ test('every workspace section is two clicks from /account', async ({
 		page.getByRole('heading', { level: 1, name: 'Profile' }),
 	).toBeVisible()
 
-	// The account rail lists each workspace; the signup org opens its
-	// overview, whose rail names every section.
-	const accountRail = page.getByRole('navigation', {
-		name: 'Account sections',
-	})
-	const workspaceRow = accountRail.getByRole('link', {
-		name: `@${user.username}`,
-		exact: true,
-	})
+	// The account rail holds only the person's pages. The avatar menu's
+	// Manage group opens the signup org's overview, whose rail names every
+	// section.
+	await page.getByTestId('account-menu').click()
+	const workspaceRow = page
+		.getByTestId('account-menu-panel')
+		.getByRole('group', { name: 'Manage' })
+		.getByRole('link', { name: `@${user.username}`, exact: true })
 	await expect(workspaceRow).toHaveAttribute(
 		'href',
 		`/@${user.username}/-/overview`,
@@ -164,13 +163,18 @@ test('every workspace section is two clicks from /account', async ({
 		workspaceRail.getByRole('link', { name: 'Credentials', exact: true }),
 	).toHaveAttribute('aria-current', 'page')
 
-	// From an account page the signup org row opens the workspace overview,
-	// which links every section.
+	// Account pages have no workspace rail (so no switcher); the avatar
+	// menu's Manage group opens the signup org's overview, which links every
+	// section.
 	await page.goto('/account/security')
 	await waitForClientHydration(page)
-	await page.getByTestId('org-switcher').click()
-	const panel = page.getByTestId('org-switcher-panel')
-	await panel.getByTestId(`org-switcher-${user.username}`).click()
+	await expect(page.getByTestId('org-switcher')).toHaveCount(0)
+	await page.getByTestId('account-menu').click()
+	await page
+		.getByTestId('account-menu-panel')
+		.getByRole('group', { name: 'Manage' })
+		.getByRole('link', { name: `@${user.username}`, exact: true })
+		.click()
 	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/overview$`))
 	await expect(
 		page.getByRole('heading', { level: 1, name: 'Overview' }),
@@ -301,7 +305,7 @@ test('credits live on the usage page: /account/credits redirects there', async (
 
 	const rail = page.getByRole('navigation', { name: 'Workspace sections' })
 	await expect(
-		rail.getByRole('link', { name: 'Usage & credits', exact: true }),
+		rail.getByRole('link', { name: 'Usage', exact: true }),
 	).toHaveAttribute('aria-current', 'page')
 })
 

@@ -50,3 +50,26 @@ grants, org switching, storage key migration, and soft-delete enforcement.
 inserts nothing new. The command and the `workflow_dispatch` workflow are
 documented in
 [Teams org.migrated audit backfill](../teams-org-migrated-audit-backfill.md).
+
+## Amendment (2026-10-14)
+
+Issue [#3053](https://github.com/kentcdodds/kody/issues/3053) separates a
+person's stable id from their personal org id in three expand/contract phases.
+Existing personal orgs keep `orgs.id = stable_user_id` forever; this does not
+move their storage keys.
+
+- **Phase 1 (widen).** `users.personal_org_id` is added, backfilled to
+  `stable_user_id`, and dual-written on signup. `orgs.id` still equals the
+  person id. `personalOrgId()` stays the identity cast.
+- **Phase 2 (switch).** Readers use `users.personal_org_id` / `request.org.id`
+  (SQL joins, binding, `isPersonalOrg`, write-lease fence, stamped
+  `mcpUser.personalOrgId`). New signups mint `orgs.id` distinct from
+  `stable_user_id`. Existing personal orgs keep equal ids.
+- **Phase 3 (narrow).** `personalOrgId(person)` is no longer the personal-org
+  resolver; it remains only a person→`OwnerId` brand for **person-keyed**
+  storage. Org-keyed readers use `personalOrgIdForPerson` /
+  `personalOrgIdFromUserRow` / `loadPersonalOrgIdForPerson` / `request.org.id`
+  (blank-column / unstamped callers still equal-id fall back for fixtures).
+  Migration `0146` re-asserts live rows have a non-blank `personal_org_id`.
+  Existing personal orgs still keep `orgs.id = stable_user_id` forever (no data
+  moves).

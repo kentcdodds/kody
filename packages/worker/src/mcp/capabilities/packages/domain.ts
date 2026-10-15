@@ -1,5 +1,7 @@
 import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '../domain-metadata.ts'
+import { approvalBundleCreateCapability } from './approval-bundle-create.ts'
+import { approvalPendingListCapability } from './approval-pending-list.ts'
 import { deletePackageCapability } from './delete-package.ts'
 import { enablementDisableCapability } from './enablement-disable.ts'
 import { enablementEnableCapability } from './enablement-enable.ts'
@@ -13,6 +15,7 @@ import { packageSubscriptionDispatchCapability } from './package-subscription-di
 import { packageUpdateCapability } from './package-update.ts'
 import { publishExternalPushCapability } from './publish-external-push.ts'
 import { savePackageCapability } from './save-package.ts'
+import { packageSecurityAuditRecordCapability } from './security-audit-record.ts'
 
 export const packagesDomain = defineDomain({
 	name: capabilityDomainNames.packages,
@@ -35,6 +38,8 @@ export const packagesDomain = defineDomain({
 		'synthetic',
 		'enablement',
 		'enable',
+		'approval',
+		'approve',
 	],
 	capabilities: [
 		savePackageCapability,
@@ -47,8 +52,11 @@ export const packagesDomain = defineDomain({
 		packageUpdateCapability,
 		publishExternalPushCapability,
 		deletePackageCapability,
+		packageSecurityAuditRecordCapability,
 		enablementListCapability,
 		enablementEnableCapability,
 		enablementDisableCapability,
+		approvalPendingListCapability,
+		approvalBundleCreateCapability,
 	],
 })

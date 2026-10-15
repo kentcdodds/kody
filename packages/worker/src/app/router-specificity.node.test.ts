@@ -99,6 +99,8 @@ test('organization section pages use /-/ and leave two-segment package urls free
 		'orgBillingPortal',
 		'orgUsage',
 		'orgUsageApi',
+		'orgCredits',
+		'orgCreditsApi',
 		'accountUsage',
 		'accountUsageApi',
 		'communityPackage',
@@ -112,6 +114,8 @@ test('organization section pages use /-/ and leave two-segment package urls free
 	expect(await resolve('/@acme/-/billing/portal')).toBe('orgBillingPortal')
 	expect(await resolve('/@acme/-/usage')).toBe('orgUsage')
 	expect(await resolve('/@acme/-/usage.json')).toBe('orgUsageApi')
+	expect(await resolve('/@acme/-/credits')).toBe('orgCredits')
+	expect(await resolve('/@acme/-/credits.json')).toBe('orgCreditsApi')
 	expect(await resolve('/account/usage')).toBe('accountUsage')
 	expect(await resolve('/account/usage.json')).toBe('accountUsageApi')
 	expect(await resolve('/account/billing')).toBe(404)
@@ -126,6 +130,7 @@ test('organization section pages use /-/ and leave two-segment package urls free
 	// A package whose id equals a former org section name is still a package.
 	expect(await resolve('/@ada/billing')).toBe('communityPackage')
 	expect(await resolve('/@ada/usage')).toBe('communityPackage')
+	expect(await resolve('/@ada/credits')).toBe('communityPackage')
 	expect(await resolve('/@ada/secrets')).toBe('communityPackage')
 	expect(await resolve('/@ada/jobs')).toBe('communityPackage')
 	expect(await resolve('/@ada/devin')).toBe('communityPackage')

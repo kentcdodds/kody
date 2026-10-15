@@ -321,6 +321,16 @@ export function createCommunityPackageFilesApiHandler(env: Env) {
 			if (page.kind === 'unauthorized') {
 				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
 			}
+			if (page.kind === 'no_access') {
+				return jsonResponse(
+					{
+						ok: false,
+						error: 'You do not have access to this package.',
+						noAccess: true,
+					},
+					403,
+				)
+			}
 			if (page.kind !== 'page') {
 				return jsonResponse(
 					{ ok: false, error: 'Package files not found.' },

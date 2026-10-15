@@ -1,11 +1,9 @@
 import { type Action } from 'remix/router'
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
-import { isSecureRequest } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { loadRequestOrgResolution } from '#app/org-request-binding.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { serializeLastUsedOrgCookie } from '#universal/org-last-used-cookie.ts'
 import { routes } from '#universal/routes.ts'
 
 /**
@@ -34,29 +32,16 @@ export function createOrgOverviewHandler(env: Env) {
 				})
 			}
 			const slug = resolution.org.slug ?? params.orgSlug
-			if (resolution.org.id !== personalOrgId(user.mcpUser.userId)) {
+			if (resolution.org.id !== personalOrgIdForPerson(user.mcpUser)) {
 				return Response.redirect(
 					new URL(routes.profile.href({ username: slug }), request.url),
 					302,
 				)
 			}
-			const response = await renderAppPage({
+			return renderAppPage({
 				request,
 				env,
 				title: 'Overview',
-			})
-			const headers = new Headers(response.headers)
-			headers.append(
-				'Set-Cookie',
-				serializeLastUsedOrgCookie({
-					slug,
-					secure: isSecureRequest(request),
-				}),
-			)
-			return new Response(response.body, {
-				status: response.status,
-				statusText: response.statusText,
-				headers,
 			})
 		},
 	} satisfies Action<typeof routes.orgOverview>

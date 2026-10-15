@@ -124,6 +124,8 @@ style, tests, MCP capabilities, and runtime architecture.
   ad hoc `credential()` / `credentials()` on CLI host `kody:runtime`
 - [Credential mappings API contract](./contracts/credential-mappings-api.md) —
   creation links, credentials list, package mappings, approval, runtime links
+- [Follow CLI contract](./contracts/follow-cli.md) — `kody follow add` /
+  `kody follow list` mapped to `followAdd` / `followList`
 
 Served usage docs are [`docs/guides/`](../guides/README.md) (`guide:{id}`,
 [kody.codes/docs](https://kody.codes/docs)). MCP field reference is

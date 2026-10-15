@@ -46,6 +46,21 @@ either lane:
   grant: `any` is execute plus every package; `packages` is only the listed
   saved package ids, and execute is denied)
 - optional `account_label` / `description`, plus connect/refresh timestamps
+- `connected_at` — set on platform-lane connection upsert, on every successful
+  token persist (`COALESCE` so refreshes keep the first connect time), and by
+  migration `0140-backfill-integration-connected-at.sql` for live rows that
+  already held tokens. Credential list status and candidate resolution both
+  treat `connected_at IS NOT NULL` as connected
+  (`packages/worker/src/integrations/connected.ts`); auth failure is a separate
+  list-status overlay.
+- `provider` — derived from the OAuth app slug via `providerFromSlug`
+  (`packages/worker/src/integrations/provider-from-slug.ts`). Collapse into a
+  parent family only when that family is a known provider mark
+  (`google-calendar` → `google`); compound products whose first segment is not a
+  mark keep the longest known mark prefix (`kody-exchange-work` →
+  `kody-exchange`) so package credential needs match. Migration
+  `0141-fix-compound-provider-marks.sql` restores truncated user and platform
+  rows, including suffixed account names.
 
 `JoinedIntegration` (`packages/worker/src/integrations/types.ts`) joins a
 connection to the app that owns its client credentials as a discriminated union
@@ -149,6 +164,19 @@ it. Refresh enforces the connection's `requiredHosts` against the token host.
 `integrationSave` cannot add new hosts or retarget `tokenUrl` to an unapproved
 host; reconnect at `/connect/oauth` to approve a new destination. Platform-lane
 destinations are operator-pinned rows, so no user-secret allowlist applies.
+
+The website can also replace a connection's (or a Key's) hosts:
+`POST /account/credentials.json` `{action: 'setHosts'}`
+(`credentials/credential-hosts.ts`) requires the credential family's `:write`
+permission, accepts public HTTPS host names only, always keeps the app's API
+base and token hosts (refresh needs the token host), and commits with a
+`credential.hosts_updated` org audit event. There is no capability for it: an
+agent that could add a host could send the token anywhere. Platform-lane
+connections are refused: reconnect resets them to the app's hosts. Migration
+0143 backfilled `api`, `content`, and `notify.dropboxapi.com` onto connections
+whose app mints tokens at Dropbox's token endpoint
+([Dropbox guide](../../guides/providers/dropbox.md)); support can check a
+connection's hosts with the `adminOauthConnectionHostsList` capability.
 
 Each `/connect/oauth` token persist writes `user_integrations.refresh_policy`
 from the provider token response (`refresh-policy.ts`): `required` when it

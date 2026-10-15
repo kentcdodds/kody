@@ -96,6 +96,8 @@ export function requireMcpEventsUserId(principal: McpEventsPrincipal): OwnerId {
 			'Webhook event subscriptions require an authenticated OAuth principal.',
 		)
 	}
+	// person-keyed (not personal org): subscription rows key on the OAuth
+	// principal (person id branded as OwnerId), not the personal org.
 	return personalOrgId(userId)
 }
 

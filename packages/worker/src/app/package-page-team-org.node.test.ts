@@ -161,15 +161,25 @@ test('team package pages open for viewers who can read the package in the team o
 	}
 })
 
-test('team package pages 404 for execute-only members, outsiders, and visitors', async () => {
+test('team package pages deny signed-in outsiders clearly and stay opaque to anonymous', async () => {
 	const env = await createEnv()
 
+	// Execute-only grant: package is real, but package:read is missing.
 	await expect(loadAs(env, memberId, 'secret')).resolves.toEqual({
-		kind: 'not_found',
+		kind: 'no_access',
+		username: 'acme',
+		kodyId: 'secret',
+		packageName: '@acme/secret',
+		viewerUsername: memberId,
 	})
 	await expect(loadAs(env, outsiderId, 'shared')).resolves.toEqual({
-		kind: 'not_found',
+		kind: 'no_access',
+		username: 'acme',
+		kodyId: 'shared',
+		packageName: '@acme/shared',
+		viewerUsername: outsiderId,
 	})
+	// Anonymous visitors must not learn that a private package exists.
 	await expect(loadAs(env, null, 'shared')).resolves.toEqual({
 		kind: 'not_found',
 	})

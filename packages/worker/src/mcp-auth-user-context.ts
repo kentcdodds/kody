@@ -2,6 +2,7 @@ import {
 	personIdFromStored,
 	type PersonId,
 } from '@kody-internal/shared/owner-person-ids.ts'
+import { personalOrgIdFromUserRow } from '#worker/orgs/personal-org-id.ts'
 import {
 	getUserRolesAndPermissions,
 	parseUserRolesAndPermissionRows,
@@ -46,6 +47,7 @@ type GrantUserRow = {
 	username: string | null
 	display_name: string | null
 	stable_user_id: string
+	personal_org_id: string | null
 	deleting_at: string | null
 	email_verified_at: string | null
 	suspended_at: string | null
@@ -103,7 +105,8 @@ export function personIdFromGrantProps(
 function grantUserStatement(env: Env, userId: PersonId) {
 	return env.APP_DB.prepare(
 		`SELECT id, email, username, display_name, stable_user_id,
-			deleting_at, email_verified_at, suspended_at, password_changed_at
+			personal_org_id, deleting_at, email_verified_at, suspended_at,
+			password_changed_at
 		 FROM users
 		 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 	).bind(userId)
@@ -150,6 +153,10 @@ function contextFromGrantUserRowAndRoles(input: {
 			userId,
 			email,
 			displayName,
+			personalOrgId: personalOrgIdFromUserRow({
+				personal_org_id: row.personal_org_id,
+				stable_user_id: row.stable_user_id,
+			}),
 			...(username ? { username } : {}),
 			roles,
 			permissions,

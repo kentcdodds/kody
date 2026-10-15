@@ -21,6 +21,7 @@ import {
 import { unusablePasswordHash } from '#worker/identity/usable-password.ts'
 import { maybeGrantSignupWelcomeCredits } from '#worker/billing/signup-welcome-credits.ts'
 import {
+	mintPersonalOrgIdForSignup,
 	provisionPersonalOrgForSignup,
 	rollbackPersonalOrgAfterFailedSignup,
 } from '#worker/orgs/signup-provision.ts'
@@ -85,8 +86,13 @@ async function deleteUserBestEffort(input: {
 	db: D1Database
 	userId: number
 	stableUserId: string
+	personalOrgId?: string
 }) {
-	await rollbackPersonalOrgAfterFailedSignup(input.db, input.stableUserId)
+	await rollbackPersonalOrgAfterFailedSignup(
+		input.db,
+		input.stableUserId,
+		input.personalOrgId,
+	)
 	try {
 		await input.db
 			.prepare(`DELETE FROM users WHERE id = ?${andLiveDeletedAtSql()}`)
@@ -140,14 +146,16 @@ export async function adminCreateUserWithPasswordSetup(input: {
 		throw new AdminCreateUserError('email_exists', 'Email already registered.')
 	}
 	const stableUserId = allocated.stableUserId
+	const personalOrgId = mintPersonalOrgIdForSignup()
 	let userId: number | null = null
 
 	try {
 		const result = await input.db
 			.prepare(
 				`INSERT INTO users (
-					username, email, password_hash, email_verified_at, stable_user_id
-				) VALUES (?, ?, ?, ?, ?)`,
+					username, email, password_hash, email_verified_at,
+					stable_user_id, personal_org_id
+				) VALUES (?, ?, ?, ?, ?, ?)`,
 			)
 			.bind(
 				username,
@@ -155,6 +163,7 @@ export async function adminCreateUserWithPasswordSetup(input: {
 				unusablePasswordHash.adminCreated,
 				nowIso,
 				stableUserId,
+				personalOrgId,
 			)
 			.run()
 		const lastRowId = result.meta.last_row_id
@@ -167,6 +176,7 @@ export async function adminCreateUserWithPasswordSetup(input: {
 		userId = lastRowId
 		await provisionPersonalOrgForSignup(input.db, {
 			stableUserId,
+			orgId: personalOrgId,
 			username,
 			createdAt: nowIso,
 			plan: 'free',
@@ -178,6 +188,7 @@ export async function adminCreateUserWithPasswordSetup(input: {
 				db: input.db,
 				userId,
 				stableUserId,
+				personalOrgId,
 			})
 		}
 		const uniqueField = getUniqueConstraintField(error)
@@ -206,6 +217,7 @@ export async function adminCreateUserWithPasswordSetup(input: {
 			db: input.db,
 			userId,
 			stableUserId,
+			personalOrgId,
 		})
 		throw new AdminCreateUserError(
 			'default_role_assignment_failed',
@@ -220,6 +232,7 @@ export async function adminCreateUserWithPasswordSetup(input: {
 			db: input.db,
 			userId,
 			stableUserId,
+			personalOrgId,
 		})
 		throw new AdminCreateUserError(
 			'create_failed',
@@ -240,6 +253,7 @@ export async function adminCreateUserWithPasswordSetup(input: {
 			db: input.db,
 			userId,
 			stableUserId,
+			personalOrgId,
 		})
 		throw new AdminCreateUserError(
 			'setup_token_failed',
@@ -249,7 +263,7 @@ export async function adminCreateUserWithPasswordSetup(input: {
 
 	await maybeGrantSignupWelcomeCredits({
 		db: input.db,
-		userId: stableUserId,
+		userId: personalOrgId,
 		now,
 	})
 

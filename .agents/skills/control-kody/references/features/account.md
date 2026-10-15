@@ -5,8 +5,9 @@ Pages about the person, split from the org workspace:
 - `/account` (Profile): name, avatar, email, onboarding banner.
 - `/account/security`: password, links to two-factor and passkeys, sign-in
   providers (Connected accounts), former emails.
-- `/account/organizations`: every org you belong to (Current marks the one the
-  switcher is acting in), pending invites (`#invites`), and Create organization.
+- `/account/organizations`: every org you belong to (no "current" marker: an org
+  is current only when its slug is in the URL), pending invites (`#invites`),
+  and Create organization.
 - `/account/experiments`: experiments opt-in.
 - `/account/data`: export and delete account.
 
@@ -14,15 +15,14 @@ Usage and credits live on the org workspace at `/@:orgSlug/-/usage` (credits are
 `#credits`). Legacy `/account/usage` and `/account/credits` redirect to the
 personal org's usage page.
 
-The account rail ("Account sections") lists those pages, then a Workspaces group
-with one row per org (`@<slug>`, signup org first). A row opens that org's home:
-the signup org's `/@<slug>/-/overview`, or a team org's `/@<slug>`. Every
-workspace section is on a separate "Workspace sections" rail under
-`/@<slug>/-/…`, so any section is two clicks from `/account`. That rail groups
-Build (Repositories, Jobs, Webhooks), Credentials (Secrets, Integrations, MCP
-servers, Secret providers), Agents & data (Agents, Memories, Email), Activity,
-and Organization (Usage & credits and Billing for owners/billing admins).
-Activity has Activity, Workflows, and Waiting as tabs under the page title
+The account rail ("Account sections") lists only those pages; it has no
+workspaces group. From account pages, orgs are reached through the avatar menu's
+Manage group (below) and the Organizations page. Every workspace section is on a
+separate "Workspace sections" rail under `/@<slug>/-/…`. That rail groups Build
+(Repositories, Jobs, Webhooks), Credentials (Secrets, Integrations, MCP servers,
+Secret providers), Agents & data (Agents, Memories, Email), Activity, and
+Organization (Usage & credits and Billing for owners/billing admins). Activity
+has Activity, Workflows, and Waiting as tabs under the page title
 (`data-testid="account-section-tabs"`, labelled "Activity pages"); the rail item
 stays current on all three. Repositories is `/@<slug>/-/repositories`, distinct
 from the public profile at `/@<slug>`. Former `/@<slug>/-/packages` URLs 301 to
@@ -33,16 +33,31 @@ overview URL redirects to its home at `/@<slug>`. Both rails come from
 `packages/worker/client/routes/account-management-components.tsx`. Below 860px a
 rail collapses to a `<details>` menu.
 
-The site header has two controls. The org switcher
-(`data-testid="org-switcher"`, "@slug: switch organization") lists orgs, then
-Create organization and an invites row when you have any. The account menu
-(`data-testid="account-menu"`, panel `account-menu-panel`) is the person's
-avatar: name and `@username`, then Your profile, Account settings, Usage &
-credits (current org from the URL only, else the personal org), and Log out.
-Narrow viewports show both in the one menu panel (orgs, then a "Your account"
-group). Own profile (`/@<username>`) also links **Workspace** (lands on
-`/@<slug>/-/repositories`) beside Edit profile. A team org home lists
-**Workspace** above its management links.
+The org switcher is the Workspace rail's heading: under the "Workspace" label,
+the org name is a button (`data-testid="org-switcher"`, "@slug: switch
+organization", panel `org-switcher-panel`) that lists orgs (avatar, `@slug`,
+role, check on the rail's org), then Create organization and an invites row when
+you have any. Each org row keeps the current section when that org can open it,
+otherwise it opens that org's workspace home (`workspaceSwitchHref`). Below
+860px the same switcher is the first item in the rail's `<details>` drawer
+(`org-switcher-drawer`, panel `org-switcher-drawer-panel`). The account rail has
+no switcher and no org list. Source:
+`packages/worker/client/workspace-switcher.tsx`.
+
+The site header has one session control, the account menu
+(`data-testid="account-menu"`, panel `account-menu-panel`): the person's avatar,
+name and `@username`, then a **Manage** group (`account-menu-manage-group`) with
+one `@<slug>` row per org (person icon for the signup org, people icon for
+teams). The URL's org leads when the page has one; otherwise the signup org
+does. Each row opens that org's workspace home (team `/@<slug>`, signup org
+`/@<slug>/-/overview`). Then Your profile, Account settings, Usage & credits
+(current org from the URL only, else the personal org), and Log out. So pages
+without a workspace rail (packages, org homes, account pages) still reach every
+org. Narrow viewports fold the account menu into the one menu panel
+(`site-menu-account`: Manage, then a "Your account" group). Own profile
+(`/@<username>`) also links **Workspace** (lands on `/@<slug>/-/repositories`)
+beside Edit profile. A team org home lists **Workspace** above its management
+links.
 
 ## How to get there
 
@@ -90,7 +105,7 @@ node tools/control-kody.ts request GET /account/connections.json
 ## APIs
 
 - `GET|POST /account/profile.json`
-- `GET /account/organizations.json` (orgs, last-used org, pending invites)
+- `GET /account/organizations.json` (orgs, pending invites)
 - `GET|POST /@<slug>/-/settings.json` (team org profile; personal orgs point at
   Account)
 - `POST /@<slug>/-/settings/avatar.json`
