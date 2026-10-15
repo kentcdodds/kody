@@ -242,6 +242,11 @@ export const routes = route({
 		'/@:orgSlug/-/mcp-servers/:serverId/authorize',
 	),
 	orgMemories: get('/@:orgSlug/-/memories(/*rest)'),
+	// Packages and plain repos this org follows. POST follows, changes events,
+	// or unfollows one target for the org in the URL.
+	orgFollows: get('/@:orgSlug/-/follows'),
+	orgFollowsApi: get('/@:orgSlug/-/follows.json'),
+	orgFollowsApiPost: post('/@:orgSlug/-/follows.json'),
 	orgOverview: get('/@:orgSlug/-/overview'),
 	orgRepositories: get('/@:orgSlug/-/repositories'),
 	orgRepositoriesApi: get('/@:orgSlug/-/repositories.json'),
@@ -347,6 +352,10 @@ export const routes = route({
 	// Package Collaborators tab: GET the grants and pending invites, POST one
 	// change (grant, revoke, invite, revoke-invite). Session-only; 404 without
 	// package:read, 403 without package:manage_access.
+	// Follow control on a package or plain repo page: which of the viewer's
+	// orgs follow it, and which events the viewer can receive. Writes go to
+	// `/@:orgSlug/-/follows.json` so the following org is always in the URL.
+	communityPackageFollowApi: '/profiles/:username/packages/:kodyId/follow.json',
 	communityPackageCollaboratorsApi:
 		'/profiles/:username/packages/:kodyId/collaborators.json',
 	communityPackageCollaboratorsApiPost: post(

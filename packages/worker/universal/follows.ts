@@ -102,6 +102,12 @@ export function followPausedDeleteAt(pausedAt: string | null) {
 
 export type FollowTargetKindName = 'package' | 'repo'
 
+export function isFollowTargetKindName(
+	value: unknown,
+): value is FollowTargetKindName {
+	return value === 'package' || value === 'repo'
+}
+
 export type FollowStatusName = 'active' | 'paused'
 
 /** One org's follow of one target, as the web UI shows it. */

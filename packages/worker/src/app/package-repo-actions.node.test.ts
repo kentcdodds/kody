@@ -51,6 +51,7 @@ test('visitors get only a fork action whose login link returns to the Repo tab',
 		},
 		publishHref: null,
 		packageAppHref: null,
+		follow: null,
 	})
 	expect(buildPackageRepoActions({ ...base, listing: null }).fork).toBeNull()
 })
@@ -91,6 +92,7 @@ test('owners get publish and open app actions but never fork', () => {
 		fork: null,
 		publishHref: '/@kentcdodds/github-triage/approve-publish',
 		packageAppHref: expect.stringContaining('github-triage'),
+		follow: null,
 	})
 })
 
@@ -112,7 +114,30 @@ test('owners get Publish changes when HEAD is ahead even without a listing', () 
 		publishHref:
 			'/@kentcdodds/github-triage/approve-publish?commit=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
 		packageAppHref: null,
+		follow: null,
 	})
+})
+
+test('followable targets get a follow action that opens the Repo tab panel', () => {
+	expect(
+		buildPackageRepoActions({
+			...base,
+			loggedIn: true,
+			follow: { kind: 'repo', viewerFollowing: true },
+		}).follow,
+	).toEqual({
+		kind: 'repo',
+		loggedIn: true,
+		loginHref: '/login?redirectTo=%2F%40kentcdodds%2Fgithub-triage',
+		repoHref: '/@kentcdodds/github-triage',
+		following: true,
+	})
+	expect(
+		buildPackageRepoActions({
+			...base,
+			follow: { kind: 'repo', viewerFollowing: true },
+		}).follow?.following,
+	).toBe(false)
 })
 
 test('owner actions stay hidden without a fresh owner projection', () => {

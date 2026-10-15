@@ -19,6 +19,7 @@ import { createAccountActivityHandler } from '#app/handlers/account-activity.ts'
 import { createAccountConnectionsHandler } from '#app/handlers/account-connected-agents.ts'
 import { createAccountCredentialsHandler } from '#app/handlers/account-credentials.ts'
 import { createAccountEmailHandler } from '#app/handlers/account-email.ts'
+import { createAccountFollowsHandler } from '#app/handlers/org-follows.ts'
 import { createAccountIntegrationsHandler } from '#app/handlers/account-integrations.ts'
 import { createAccountJobsHandler } from '#app/handlers/account-jobs.ts'
 import { createAccountMcpServersHandler } from '#app/handlers/account-mcp-servers.ts'
@@ -59,6 +60,8 @@ function sectionHandler(
 			return createAccountCredentialsHandler(env)
 		case 'email':
 			return createAccountEmailHandler(env)
+		case 'follows':
+			return createAccountFollowsHandler(env)
 		case 'integrations':
 			return createAccountIntegrationsHandler(env)
 		case 'jobs':
@@ -122,6 +125,7 @@ function sectionParams(
 			return {}
 		case 'credentials':
 			return first ? { credentialId: first } : {}
+		case 'follows':
 		case 'repositories':
 		case 'secret-providers':
 		case 'secrets':
