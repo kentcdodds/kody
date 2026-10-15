@@ -241,6 +241,7 @@ export function decodeGitRequestBody(request: Request): Request | Response {
 		method: request.method,
 		headers,
 		body: request.body.pipeThrough(new DecompressionStream('gzip')),
+		signal: request.signal,
 		duplex: 'half',
 	} as RequestInit & { duplex: 'half' })
 }

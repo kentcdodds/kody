@@ -404,6 +404,44 @@ test('proxy forwards gzip-encoded upload-pack requests to Artifacts decoded', as
 	expect(seen).toHaveLength(1)
 })
 
+test('proxy forwards a gzip-encoded receive-pack body decoded', async () => {
+	resetMocks()
+	seedPlainRepo()
+	const packResult = '000eunpack ok\n0000'
+	const received: Array<string> = []
+	using _server = createMswNodeServer([
+		http.post(`${artifactsRemote}/git-receive-pack`, async ({ request }) => {
+			expect(request.headers.get('Content-Encoding')).toBeNull()
+			received.push(await request.text())
+			return HttpResponse.text(packResult, {
+				status: 200,
+				headers: { 'Content-Type': 'application/x-git-receive-pack-result' },
+			})
+		}),
+	])
+	const gzipped = await new Response(
+		new Blob(['PACK-OK']).stream().pipeThrough(new CompressionStream('gzip')),
+	).arrayBuffer()
+	const response = await handlePlainRepoGitHttpRequest(
+		new Request(
+			`https://kody.codes/git/sources/${sourceId}.git/git-receive-pack`,
+			{
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${artifactToken}`,
+					'Content-Type': 'application/x-git-receive-pack-request',
+					'Content-Encoding': 'gzip',
+				},
+				body: gzipped,
+			},
+		),
+		{ APP_DB: {} } as Env,
+	)
+	expect(response!.status).toBe(200)
+	expect(await response!.text()).toBe(packResult)
+	expect(received).toEqual(['PACK-OK'])
+})
+
 test('proxy does not claim busy for unrelated upstream errors', async () => {
 	resetMocks()
 	seedPlainRepo()
