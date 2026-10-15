@@ -9,6 +9,7 @@ import {
 	resolveWithAgentOrder,
 	withAgentIconSrc,
 	withAgents,
+	type WithAgent,
 } from './with-agents.ts'
 
 test('every agent with a /with page has an icon, steps, and a walkthrough host', () => {
@@ -28,7 +29,9 @@ test('every agent with a /with page has an icon, steps, and a walkthrough host',
 })
 
 test('agents without an official path get the setup prompt and MCP URL', () => {
-	const generic = withAgents.filter((agent) => !agent.official)
+	const generic: ReadonlyArray<WithAgent> = withAgents.filter(
+		(agent) => !agent.official,
+	)
 	expect(generic.map((agent) => agent.slug).sort()).toEqual(
 		[
 			'amp',
