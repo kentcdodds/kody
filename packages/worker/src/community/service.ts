@@ -1301,12 +1301,22 @@ export type PrepareCommunityForkInput = {
 	 * can separate what a user chose from what their agent did on its own.
 	 */
 	actor?: CommunityForkActor | null
+	/**
+	 * Org that owns the follow. Web install passes the personal org. An
+	 * org-scoped `communityFork` passes the active org. Omit to use `userId`
+	 * (person-keyed fixtures and legacy equal-id rows).
+	 */
+	followerOrgId?: OwnerId
+	/** Acting person. Omit to use `userId` when that value is already the person. */
+	creatorUserId?: string
 }
 
 export type PreparedCommunityFork = {
 	env: Env
 	baseUrl: string
 	userId: OwnerId
+	followerOrgId: OwnerId
+	creatorUserId: string
 	listingId: string
 	listingName: string
 	listingKodyId: string
@@ -1561,6 +1571,8 @@ export async function prepareCommunityFork(
 		env: input.env,
 		baseUrl: input.baseUrl,
 		userId: input.userId,
+		followerOrgId: input.followerOrgId ?? input.userId,
+		creatorUserId: input.creatorUserId ?? input.userId,
 		listingId: input.listingId,
 		listingName: listing.name,
 		listingKodyId: listing.kodyId,
@@ -1760,8 +1772,8 @@ export async function persistPreparedCommunityFork(
 			await ensureFollowForCommunityFork({
 				env: prepared.env,
 				listingId: prepared.listingId,
-				followerOrgId: prepared.userId,
-				creatorUserId: prepared.userId,
+				followerOrgId: prepared.followerOrgId,
+				creatorUserId: prepared.creatorUserId,
 			})
 			await enqueueRecordedCommunityActivity({
 				env: prepared.env,

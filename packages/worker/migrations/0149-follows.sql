@@ -58,7 +58,10 @@ INSERT INTO follows (
 )
 SELECT
 	'fork-' || community_forks.id,
-	community_forks.forker_user_id,
+	COALESCE(
+		NULLIF(TRIM(users.personal_org_id), ''),
+		community_forks.forker_user_id
+	),
 	community_forks.forker_user_id,
 	'package',
 	community_listings.owner_user_id,
@@ -70,6 +73,8 @@ SELECT
 FROM community_forks
 INNER JOIN community_listings
 	ON community_listings.id = community_forks.listing_id
+LEFT JOIN users
+	ON users.stable_user_id = community_forks.forker_user_id
 WHERE community_listings.deleted_at IS NULL
 	AND community_listings.package_id <> ''
 	AND community_listings.name <> ''

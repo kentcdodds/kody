@@ -1042,6 +1042,21 @@ test('rateCommunityListing requires a prior non-owner fork and persists valid ra
 	})
 })
 
+test('forkCommunityListing follows the upstream package on the forker org', async () => {
+	mockForkable()
+	mockModule.ensureFollowForCommunityFork.mockClear()
+	await fork({
+		followerOrgId: ownerIdFromStored('org-personal-2'),
+		creatorUserId: 'person-2',
+	})
+	expect(mockModule.ensureFollowForCommunityFork).toHaveBeenCalledWith({
+		env: expect.anything(),
+		listingId: 'listing-1',
+		followerOrgId: ownerIdFromStored('org-personal-2'),
+		creatorUserId: 'person-2',
+	})
+})
+
 test('forkCommunityListing creates inert source without saved package row', async () => {
 	mockForkable(
 		forkSnapshotFiles(

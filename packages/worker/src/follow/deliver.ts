@@ -30,7 +30,6 @@ import {
 	followZeroCreditsSkipReason,
 	type FollowPushPending,
 	type FollowRecord,
-	type FollowTargetSnapshot,
 } from './types.ts'
 
 const followSubscriptionActorTokenId = 'internal:follow-subscriptions'
@@ -39,11 +38,6 @@ export type FollowPublishedDelivery = {
 	previousCommit: string | null
 	publishedCommit: string
 	publishedAt: string
-	listing?: {
-		listingId: string
-		previous: CommunityListingRelease
-		current: CommunityListingRelease
-	} | null
 }
 
 export type FollowDeliveryHooks = {
@@ -129,7 +123,7 @@ async function deliverOneFollow(input: {
 	}
 	if (input.pushed) {
 		if (!access.canPush) return
-		const eventId = followPushedEventId(input.pushed)
+		const eventId = followPushedEventId()
 		const payload = buildFollowPushedEvent({
 			eventId,
 			target,
@@ -148,10 +142,7 @@ async function deliverOneFollow(input: {
 		return
 	}
 	if (!input.published) return
-	const eventId = followPublishedEventId({
-		packageId: input.follow.targetId,
-		publishedCommit: input.published.publishedCommit,
-	})
+	const eventId = followPublishedEventId()
 	const payload = buildFollowPublishedEvent({
 		eventId,
 		targetName: target.name,
@@ -169,14 +160,7 @@ async function deliverOneFollow(input: {
 		idempotencyKey: (packageId) =>
 			`follow-published:${input.follow.id}:${input.published?.publishedCommit}:${packageId}`,
 	})
-	const aliasResult = await deliverForkAlias({
-		env: input.env,
-		follow: input.follow,
-		target,
-		published: input.published,
-		eventId,
-	})
-	if (publishedResult === 'zero_credits' || aliasResult === 'zero_credits') {
+	if (publishedResult === 'zero_credits') {
 		await markFollowDeliverySkip(input.env.APP_DB, {
 			id: input.follow.id,
 			reason: followZeroCreditsSkipReason,
@@ -185,58 +169,50 @@ async function deliverOneFollow(input: {
 	}
 }
 
-async function deliverForkAlias(input: {
+/**
+ * Compatibility alias for every fork still behind a moved listing pin.
+ * Walks all forks of the listing, once each, including when the forker's
+ * follow is paused or missing. Payload shape matches the historical fork
+ * dispatcher. A 429 stays inside the alias helper and does not throw.
+ */
+export async function deliverListingForkAliases(input: {
 	env: Env
-	follow: FollowRecord
-	target: FollowTargetSnapshot
-	published: FollowPublishedDelivery
-	eventId: string
-}): Promise<'delivered' | 'zero_credits' | 'none' | 'failed'> {
-	const listing = input.published.listing
-	if (!listing) return 'none'
-	if (listing.previous.pinnedCommit === listing.current.pinnedCommit) {
-		return 'none'
-	}
-	if (input.target.kind !== 'package') return 'none'
-	const projection = await loadListingProjection(input.env, listing.listingId)
-	if (!projection) return 'none'
-	const forks = await listCommunityForksByListingId(input.env.APP_DB, {
-		listingId: listing.listingId,
-	})
-	let zeroCredits = false
-	let delivered = false
-	for (const fork of forks) {
-		if (fork.forkerUserId !== input.follow.followerOrgId) continue
-		if (fork.originCommit === listing.current.pinnedCommit) continue
-		const result = await deliverCommunityForkUpstreamUpdatedAlias({
-			env: input.env,
-			alias: {
-				eventId: input.eventId,
-				listing: projection,
-				fork,
-				previous: listing.previous,
-				current: listing.current,
-				publishedAt: input.published.publishedAt,
-			},
+	listingId: string
+	previous: CommunityListingRelease
+	current: CommunityListingRelease
+	publishedAt: string
+}): Promise<void> {
+	if (input.previous.pinnedCommit === input.current.pinnedCommit) return
+	try {
+		const projection = await loadListingProjection(input.env, input.listingId)
+		if (!projection) return
+		const forks = await listCommunityForksByListingId(input.env.APP_DB, {
+			listingId: input.listingId,
 		})
-		switch (result) {
-			case 'zero_credits':
-				zeroCredits = true
-				break
-			case 'delivered':
-				delivered = true
-				break
-			case 'none':
-			case 'failed':
-				break
-			default: {
-				const exhaustive: never = result
-				throw new Error(`Unhandled alias result: ${String(exhaustive)}`)
+		for (const fork of forks) {
+			if (fork.originCommit === input.current.pinnedCommit) continue
+			try {
+				await deliverCommunityForkUpstreamUpdatedAlias({
+					env: input.env,
+					alias: {
+						eventId: crypto.randomUUID(),
+						listing: projection,
+						fork,
+						previous: input.previous,
+						current: input.current,
+						publishedAt: input.publishedAt,
+					},
+				})
+			} catch (error) {
+				console.error('follow-fork-alias-failed', {
+					forkId: fork.id,
+					error,
+				})
 			}
 		}
+	} catch (error) {
+		console.error('follow-fork-alias-failed', input.listingId, error)
 	}
-	if (zeroCredits) return 'zero_credits'
-	return delivered ? 'delivered' : 'none'
 }
 
 async function loadListingProjection(env: Env, listingId: string) {

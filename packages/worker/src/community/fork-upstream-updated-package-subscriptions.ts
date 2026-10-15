@@ -87,7 +87,7 @@ export async function deliverCommunityForkUpstreamUpdatedAlias(input: {
 				savedPackage,
 				topic: communityForkUpstreamUpdatedTopic,
 				params: params as unknown as Record<string, unknown>,
-				idempotencyKey: `community-fork-upstream-updated:${input.alias.eventId}:${input.alias.fork.id}:${savedPackage.id}`,
+				idempotencyKey: `community-fork-upstream-updated:${input.alias.listing.id}:${input.alias.current.pinnedCommit}:${input.alias.fork.id}:${savedPackage.id}`,
 				source: 'community-fork-upstream-updated',
 				request: {
 					kind: 'platform-event',

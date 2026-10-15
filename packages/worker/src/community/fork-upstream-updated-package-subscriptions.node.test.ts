@@ -103,7 +103,7 @@ test('follow alias emits the historical community.fork.upstream_updated payload'
 	}
 	expect(call.topic).toBe('community.fork.upstream_updated')
 	expect(call.idempotencyKey).toBe(
-		'community-fork-upstream-updated:event-1:fork-1:auto-rebase',
+		'community-fork-upstream-updated:listing-1:commit-2:fork-1:auto-rebase',
 	)
 	expect(call.params).toEqual(buildCommunityForkUpstreamUpdatedEvent(alias))
 })

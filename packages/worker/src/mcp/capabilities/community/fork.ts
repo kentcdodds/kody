@@ -7,6 +7,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { normalizePackageNameInput } from '#worker/package-registry/package-name.ts'
 import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
 	communityContentWarning,
 	communityForkNextSteps,
@@ -85,8 +86,12 @@ export const communityForkCapability = defineDomainCapability(
 			const result = await forkCommunityListing({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
-				// person-keyed (not personal org)
+				// Fork rows stay person-keyed. The follow is owned by the
+				// connection's org (personal org, or the team org this
+				// connection is bound to) so it matches followAdd.
 				userId: personalOrgId(user.userId),
+				followerOrgId: ownerIdFromCaller(ctx.callerContext),
+				creatorUserId: user.userId,
 				expectedPackageScope,
 				listingId: args.listing_id,
 				kodyId,

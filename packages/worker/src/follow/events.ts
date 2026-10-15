@@ -30,15 +30,14 @@ export type FollowPushedEvent = {
 	window_started_at: string
 }
 
-export function followPublishedEventId(input: {
-	packageId: string
-	publishedCommit: string
-}) {
-	return `follow-published:${input.packageId}:${input.publishedCommit}`
+/** Opaque id for the payload. Internal ids stay in delivery idempotency keys. */
+export function followPublishedEventId() {
+	return crypto.randomUUID()
 }
 
-export function followPushedEventId(pending: FollowPushPending) {
-	return `follow-pushed:${pending.targetKind}:${pending.targetId}:${pending.windowStartedAt}:${pending.afterCommit ?? ''}`
+/** Opaque id for the payload. Internal ids stay in delivery idempotency keys. */
+export function followPushedEventId() {
+	return crypto.randomUUID()
 }
 
 export function buildFollowPublishedEvent(input: {

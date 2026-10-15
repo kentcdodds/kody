@@ -100,6 +100,8 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 					env,
 					baseUrl: getAppBaseUrl({ env, requestUrl: request.url }),
 					userId: installOwnerId,
+					followerOrgId: installOwnerId,
+					creatorUserId: user.mcpUser.userId,
 					userEmail: entitlementEmailForOwner(
 						{ user: { userId: user.mcpUser.userId, email: user.email } },
 						installOwnerId,

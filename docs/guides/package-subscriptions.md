@@ -720,24 +720,26 @@ type FollowPushedEvent = {
 ## `community.fork.upstream_updated`
 
 When a public package you forked is republished and the listing pin moves, Kody
-still delivers `community.fork.upstream_updated` to packages saved by **your**
+delivers `community.fork.upstream_updated` to packages saved by the forking
 account that declare the topic. The event is a compatibility alias emitted from
-the follow pipeline, with the same payload as before. There is one event per
-fork of that listing (forking the same listing twice produces two events).
-Republishes that keep the same pinned commit do not emit, and forks already at
-the new pinned commit are skipped. Forking the listing also follows the upstream
-package. Watching a public package without forking it is supported: `followAdd`
-on `@handle/name` delivers `follow.published` (and `follow.pushed` when you can
-read the target). The alias itself still requires a fork, because its payload
-names that fork.
+the follow pipeline in the same turn as `follow.published`, with the same
+payload as before. Emission walks every fork of the listing that is still behind
+the new pin (forking the same listing twice produces two events). A paused
+follow still leaves those fork subscribers receiving the alias. Republishes that
+keep the same pinned commit do not emit, and forks already at the new pinned
+commit are skipped. Forking the listing also follows the upstream package for
+the org the fork landed in (the forker's personal org, or the active org when
+the fork is made into a team org). Watching a public package without forking it
+is supported: `followAdd` on `@handle/name` delivers `follow.published` (and
+`follow.pushed` when you can read the target). The alias itself still requires a
+fork, because its payload names that fork.
 
-Delivery is durable: `communityPublish` enqueues the republish on the
-`kody-community-listing-published-dispatch` Queue (with DLQ). Enqueue failures
-are logged and never fail the publish. The consumer reads the forks and your
-subscribed packages when it runs. Subscriber discovery and pre-handler
-infrastructure failures retry. Idempotency keys include the event id, fork id,
-and subscriber package id, so Queue redelivery replays stored results instead of
-re-running handlers.
+The alias runs on the follow publish path. In-flight `fork_upstream_updated`
+queue messages are acknowledged without fan-out. Subscriber discovery and
+invocation failures are logged and do not fail the publish. Idempotency keys
+include the listing id, the new pinned commit, the fork id, and the subscriber
+package id, so a repeated notify replays stored results instead of re-running
+handlers.
 
 Handlers receive a metadata-only payload:
 
