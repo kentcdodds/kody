@@ -15,6 +15,15 @@ const mockModule = vi.hoisted(() => ({
 	approvePackageCapabilitySet: vi.fn(),
 	enqueueWentPublicApproval: vi.fn(),
 	loadCurrentPackageSecurityAudit: vi.fn(),
+	evaluateSelfPublish: vi.fn(),
+	selfPublishPackage: vi.fn(),
+}))
+
+vi.mock('#worker/package-capabilities/self-publish.ts', () => ({
+	evaluateSelfPublish: (...args: Array<unknown>) =>
+		mockModule.evaluateSelfPublish(...args),
+	selfPublishPackage: (...args: Array<unknown>) =>
+		mockModule.selfPublishPackage(...args),
 }))
 
 vi.mock('#worker/package-capabilities/security-audit-state.ts', () => ({
@@ -237,14 +246,20 @@ test('packageUpdate internet_visible without an approved capability set records 
 		recordedBy: null,
 		recordedAt: '2026-10-15T00:00:00.000Z',
 	})
+	mockModule.evaluateSelfPublish.mockResolvedValue({
+		eligible: false,
+		blocker: 'declares_credentials',
+	})
 
 	const result = await update({ internet_visible: true })
 	expect(result).toMatchObject({
 		ok: true,
 		approval_url: 'https://heykody.dev/@user/notes/approve-capabilities',
 		internet_visible_pending: true,
+		self_publish_blocker: 'declares_credentials',
 	})
 	expect(result).not.toHaveProperty('security_audit')
+	expect(mockModule.selfPublishPackage).not.toHaveBeenCalled()
 	expect(mockModule.enqueueWentPublicApproval).toHaveBeenCalledWith(
 		expect.objectContaining({
 			ownerUserId: 'user-1',
@@ -257,12 +272,51 @@ test('packageUpdate internet_visible without an approved capability set records 
 	expect(mockModule.updateSavedPackage).not.toHaveBeenCalled()
 })
 
+test('packageUpdate internet_visible self-publishes a package that declares nothing', async () => {
+	mockModule.approvePackageCapabilitySet.mockReset()
+	mockModule.enqueueWentPublicApproval.mockReset()
+	mockModule.updateSavedPackage.mockReset()
+	const summary = {
+		capabilitySet: { entries: [], fingerprint: 'fp-1' },
+		publishedCommit: 'commit-1',
+		fingerprintMatchesApproval: false,
+	}
+	mockModule.getSavedPackageById
+		.mockResolvedValueOnce(createSavedPackage())
+		.mockResolvedValueOnce({
+			...createSavedPackage(),
+			isInternetVisible: true,
+		})
+	mockModule.loadCapabilityApprovalSummary.mockResolvedValue(summary)
+	mockModule.evaluateSelfPublish.mockResolvedValue({ eligible: true })
+	mockModule.selfPublishPackage.mockResolvedValue({ ok: true })
+
+	const result = await update({ internet_visible: true })
+	expect(result).toMatchObject({ ok: true, self_published: true })
+	expect(result).not.toHaveProperty('approval_url')
+	expect(result).not.toHaveProperty('internet_visible_pending')
+	expect(mockModule.selfPublishPackage).toHaveBeenCalledWith(
+		expect.objectContaining({
+			ownerUserId: 'user-1',
+			actorUserId: 'user-1',
+			requestUrl: 'https://heykody.dev',
+			summary,
+		}),
+	)
+	expect(mockModule.enqueueWentPublicApproval).not.toHaveBeenCalled()
+	expect(mockModule.approvePackageCapabilitySet).not.toHaveBeenCalled()
+})
+
 test('packageUpdate internet_visible on an unaudited version tells the agent to audit and record it before the handoff', async () => {
 	mockModule.getSavedPackageById.mockResolvedValue(createSavedPackage())
 	mockModule.loadCapabilityApprovalSummary.mockResolvedValue({
 		capabilitySet: { entries: [], fingerprint: 'fp-1' },
 		publishedCommit: 'commit-1',
 		fingerprintMatchesApproval: false,
+	})
+	mockModule.evaluateSelfPublish.mockResolvedValue({
+		eligible: false,
+		blocker: 'declares_credentials',
 	})
 	mockModule.enqueueWentPublicApproval.mockResolvedValue({ id: 'request-1' })
 	mockModule.loadCurrentPackageSecurityAudit.mockResolvedValue(null)
@@ -301,4 +355,22 @@ test('packageUpdate internet_visible on an unaudited version tells the agent to 
 		(result as { security_audit: { audit_prompt: string } }).security_audit
 			.audit_prompt,
 	).toContain('published_commit: "commit-1"')
+})
+
+test('packageUpdate internet_visible sends the owner to approve when self-publish fails', async () => {
+	mockModule.getSavedPackageById.mockResolvedValue(createSavedPackage())
+	mockModule.loadCapabilityApprovalSummary.mockResolvedValue({
+		capabilitySet: { entries: [], fingerprint: 'fp-1' },
+		publishedCommit: 'commit-1',
+		fingerprintMatchesApproval: false,
+	})
+	mockModule.evaluateSelfPublish.mockResolvedValue({ eligible: true })
+	mockModule.selfPublishPackage.mockResolvedValue({
+		ok: false,
+		error: 'The published version changed.',
+	})
+
+	await expect(update({ internet_visible: true })).rejects.toThrow(
+		'The published version changed. Send the owner to approve making it internet-visible: https://heykody.dev/@user/notes/approve-capabilities',
+	)
 })

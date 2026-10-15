@@ -917,6 +917,20 @@ responses also return the next step for the agent. `packageUpdate` returns
 `published_commit`, and `fingerprint` to record. The agent runs the audit,
 records it, and then hands you the approval link.
 
+An agent can make a package internet-visible on its own (self-publish) when the
+package and every package it depends on declare nothing: no `kody.credentials`
+slots and no `secretMounts`, `secretProvider`, `subscriptions`, `emits`, `jobs`,
+`retrievers`, or `webhooks`. `packageUpdate` then turns serving on right away
+and returns `self_published: true`. The org activity log records it as
+`package.went_public.self_publish`. A self-published package cannot use any
+credential while it stays public this way, even one it declares later. To give
+it credentials, declare them, publish, turn internet-visible off, and approve
+turning it on again. Self-publish needs credential-need enforcement to be on.
+Otherwise, or when anything is declared, `packageUpdate` returns the
+`approval_url` and a `self_publish_blocker` that says why (`enforcement_off`,
+`unpublished`, `declares_credentials`, `declares_capabilities`, or
+`not_permitted` when the caller cannot publish the package).
+
 ## Approve many changes at once
 
 When several approvals wait on you, an agent can put them on one page.
@@ -994,7 +1008,8 @@ items on an approval bundle page show the same state and link to the package's
 approval page for the prompt or summary.
 
 The audit is informational. It never approves capabilities or makes a package
-internet-visible; Approve stays the owner's own click.
+internet-visible; Approve stays the owner's own click, except for self-publish
+of a package that declares nothing.
 
 ## Community fork provenance
 

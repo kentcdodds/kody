@@ -680,3 +680,10 @@ author runs.
   published packages already use. The flag turns on only after a rescan with
   `scope: 'credential-need-enforcement'` is clean. A package the codemod cannot
   convert is reported instead of being enforced.
+- **Self-publish.** With the flag on, an agent's `packageUpdate`
+  (`internet_visible: true`) goes public without the owner's click when the
+  package and its whole resolved dependency tree declare no credential and no
+  other capability. It is recorded as the `package.went_public.self_publish` org
+  audit event. The credential door then refuses every credential to that
+  package, by any helper, until the owner approves going public again. See
+  [internet-visible packages](../internet-visible-packages.md#self-publish).

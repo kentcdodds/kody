@@ -19,6 +19,8 @@ export async function enqueueWentPublicApproval(input: {
 	publishedCommit: string
 	fingerprint: string
 	requestedByUserId: string | null
+	/** Set only by self-publish, which approves the request itself. */
+	selfPublish?: boolean
 }): Promise<PackageApprovalRequest> {
 	return enqueuePackageApprovalRequest(input.env.APP_DB, {
 		packageId: input.savedPackage.id,
@@ -29,9 +31,17 @@ export async function enqueueWentPublicApproval(input: {
 		details: {
 			fingerprint: input.fingerprint,
 			summary: 'Serve this package on the public internet.',
+			...(input.selfPublish ? { [selfPublishDetailKey]: true } : {}),
 		},
 		requestedByUserId: input.requestedByUserId,
 	})
+}
+
+/** `went_public` details key marking a request self-publish approved. */
+export const selfPublishDetailKey = 'selfPublish'
+
+export function isSelfPublishRequest(request: PackageApprovalRequest | null) {
+	return request?.details[selfPublishDetailKey] === true
 }
 
 export async function getPendingWentPublicApproval(input: {

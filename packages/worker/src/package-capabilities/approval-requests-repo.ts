@@ -177,6 +177,28 @@ export async function getPendingPackageApprovalRequest(
 	return row ? mapRow(row) : null
 }
 
+/** The most recently approved request for one package and reason. */
+export async function getLatestApprovedPackageApprovalRequest(
+	db: D1Database,
+	input: {
+		packageId: string
+		ownerUserId: string
+		reason: PackageApprovalReason
+	},
+): Promise<PackageApprovalRequest | null> {
+	const row = await db
+		.prepare(
+			`SELECT ${columns} FROM package_approval_requests
+			WHERE package_id = ? AND owner_user_id = ? AND reason = ?
+				AND status = 'approved'
+			ORDER BY resolved_at DESC, created_at DESC
+			LIMIT 1`,
+		)
+		.bind(input.packageId, input.ownerUserId, input.reason)
+		.first<Record<string, unknown>>()
+	return row ? mapRow(row) : null
+}
+
 export async function listPendingPackageApprovalRequests(
 	db: D1Database,
 	input: { packageId: string; ownerUserId: string },

@@ -52,6 +52,36 @@ step (`security-audit-next-step.ts`): audit, record with
 `published_commit`, and `fingerprint`, then hand the owner the approval link.
 The audit is informational and approves nothing.
 
+## Self-publish
+
+`packageUpdate` (`internet_visible: true`) approves going public itself when
+`evaluateSelfPublish`
+(`packages/worker/src/package-capabilities/self-publish.ts`) finds all of these:
+
+- the global `credential-need-enforcement` flag is on, so declaring nothing
+  means the fetch gateway and `credential()` fill nothing for the package;
+- the package and every package in its resolved dependency snapshot are
+  published;
+- none of them declares `kody.credentials` (or has a fresh needs closure that
+  does), `secretMounts`, `secretProvider`, `subscriptions`, `emits`, `jobs`,
+  `retrievers`, or `webhooks`;
+- the caller has `package:publish` on the package.
+
+`selfPublishPackage` then records the capability pin, supersedes an owner-path
+`went_public` request for the same package, enqueues one whose details carry
+`selfPublish: true`, approves it through `approveWentPublicRequest` (the same
+checks as the owner's click), and writes one org audit event,
+`package.went_public.self_publish`.
+
+The credential door (`resolveCredential`) refuses every credential to a package
+that is internet-visible and whose latest approved `went_public` request is a
+self-publish one, with `credential_need_undeclared`
+(`self-published-package-guard.ts`). That covers by-name helpers that
+credential-need enforcement does not limit (`secretJwtSign`,
+`integrationTokenRefresh`, `kody.mcp`). It holds whatever the package declares
+later, and whether or not the flag stays on, until the owner approves going
+public again (turn internet-visible off, then on).
+
 ## ADR 0001 exception
 
 Public-site pinning of an approved dependency snapshot is the accepted exception
