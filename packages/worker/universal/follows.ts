@@ -108,7 +108,7 @@ export function isFollowTargetKindName(
 	return value === 'package' || value === 'repo'
 }
 
-export type FollowStatusName = 'active' | 'paused'
+type FollowStatusName = 'active' | 'paused'
 
 /** One org's follow of one target, as the web UI shows it. */
 export type FollowSummary = {
@@ -168,7 +168,7 @@ export type OrgFollowsPostBody =
 	| { intent: 'unfollow'; id: string }
 	| { intent: 'unfollow'; name: string; kind: FollowTargetKindName }
 
-export type OrgFollowsPostErrorCode =
+type OrgFollowsPostErrorCode =
 	| 'invalid'
 	| 'not_found'
 	| 'rate_limited'

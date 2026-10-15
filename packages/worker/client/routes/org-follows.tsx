@@ -70,7 +70,7 @@ async function fetchFollows(
 	return payload
 }
 
-export function orgFollowsSlugFromHref(href: string) {
+function orgFollowsSlugFromHref(href: string) {
 	const match = /^\/@([^/]+)\/-\/follows\/?$/.exec(
 		new URL(href, 'http://localhost').pathname,
 	)
