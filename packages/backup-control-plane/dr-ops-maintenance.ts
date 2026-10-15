@@ -115,14 +115,15 @@ async function handleDrSealStatusGet(
 	try {
 		instance = await env.SEAL_WORKFLOW.get(id)
 	} catch (error) {
+		console.error(
+			'dr_ops_seal_status_lookup_failed',
+			JSON.stringify({
+				id,
+				error: error instanceof Error ? error.message : String(error),
+			}),
+		)
 		return Response.json(
-			{
-				ok: false,
-				error:
-					error instanceof Error
-						? error.message
-						: 'Unable to look up seal workflow',
-			},
+			{ ok: false, error: 'Seal workflow not found.' },
 			{ status: 404 },
 		)
 	}
@@ -138,14 +139,15 @@ async function handleDrSealStatusGet(
 			{ status: sealStatusResponseStatus(view) },
 		)
 	} catch (error) {
+		console.error(
+			'dr_ops_seal_status_read_failed',
+			JSON.stringify({
+				id,
+				error: error instanceof Error ? error.message : String(error),
+			}),
+		)
 		return Response.json(
-			{
-				ok: false,
-				error:
-					error instanceof Error
-						? error.message
-						: 'Unable to read workflow status',
-			},
+			{ ok: false, error: 'Unable to read seal workflow status.' },
 			{ status: 503 },
 		)
 	}

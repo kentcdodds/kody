@@ -127,6 +127,7 @@ test('DR ops seal enqueues workflow without Access JWT', async () => {
 })
 
 test('DR ops seal-status returns 404 for missing instance and 503 for status read failures', async () => {
+	vi.spyOn(console, 'error').mockImplementation(() => undefined)
 	const env = environment()
 	const instanceId = sealDayWorkflowInstanceId('2026-09-22')
 
@@ -142,6 +143,10 @@ test('DR ops seal-status returns 404 for missing instance and 503 for status rea
 		env,
 	)
 	assert.equal(missing.status, 404)
+	assert.equal(
+		((await missing.json()) as { error: string }).error,
+		'Seal workflow not found.',
+	)
 
 	env.SEAL_WORKFLOW = {
 		async get() {
@@ -159,8 +164,8 @@ test('DR ops seal-status returns 404 for missing instance and 503 for status rea
 		env,
 	)
 	assert.equal(unavailable.status, 503)
-	assert.match(
+	assert.equal(
 		((await unavailable.json()) as { error: string }).error,
-		/workflow status unavailable/,
+		'Unable to read seal workflow status.',
 	)
 })
