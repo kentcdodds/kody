@@ -878,6 +878,14 @@ app root), and builds URLs itself (see [Asset URLs](#asset-urls)). Everything
 below about `packageContext`, `client`, `assets`, and `/_assets` applies to
 every package app.
 
+The entry runs with `nodejs_compat`: `node:*` and bare builtins (`stream`,
+`fs/promises`, …) stay external in both publish and `kody dev`. CommonJS code
+that calls `require()` on a builtin still fails at request time ("Dynamic
+require of … is not supported"), because the entry is an ES module. When a
+dependency resolves to its Node build, import its Workers/edge entry instead —
+for example `react-dom/server.edge`, not `react-dom/server`, for
+`renderToReadableStream`.
+
 ## Asset URLs
 
 Build every in-app asset URL, link, redirect, share/email URL, and OAuth
