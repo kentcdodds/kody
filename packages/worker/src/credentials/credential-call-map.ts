@@ -36,8 +36,15 @@ const credentialPickSchema = z.union([
 	text,
 	z
 		.object({
-			name: text,
-			scope: z.enum(['org', 'personal']).optional(),
+			name: text.describe(
+				'Credential name to pick for this need key (must match a credential the actor can Use).',
+			),
+			scope: z
+				.enum(['org', 'personal'])
+				.optional()
+				.describe(
+					'When an org credential and a personal credential share the name, choose which one ("org" or "personal"). Omit when the name alone is unique.',
+				),
 		})
 		.strict(),
 ])

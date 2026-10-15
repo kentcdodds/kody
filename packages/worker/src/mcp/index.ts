@@ -13,6 +13,7 @@ import {
 	asMcpToolServer,
 	type McpRegistrationAgent,
 } from './mcp-registration-agent.ts'
+import { buildKodyMcpServerInfo } from './kody-mcp-server-info.ts'
 import { createKodyMcpServer } from './sentry-mcp-server.ts'
 import { type RawFetchHostNudgeState } from '#mcp/raw-fetch-host-nudge.ts'
 import {
@@ -85,10 +86,13 @@ class MCPBase extends McpAgent<Env, State, Props> {
 				}),
 			)
 		}
-		this.server = createKodyMcpServer({
-			instructions,
-			jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
-		})
+		this.server = createKodyMcpServer(
+			{
+				instructions,
+				jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
+			},
+			buildKodyMcpServerInfo(caller.baseUrl),
+		)
 		await registerTools(this.getRegistrationAgent())
 	}
 	/**
