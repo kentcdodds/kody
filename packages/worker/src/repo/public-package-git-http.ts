@@ -5,6 +5,7 @@ import {
 import { checkRateLimit } from '#app/rate-limit.ts'
 import { getRequestIp } from '#worker/audit-log.ts'
 import { getCommunityPackageGitHref } from '#universal/community-links.ts'
+import { routes } from '#universal/routes.ts'
 import {
 	authenticateApiToken,
 	getApiTokenIssuedAtMs,
@@ -130,6 +131,60 @@ export function parsePublicPackageGitHttpPath(
 
 export function isPublicPackageGitHttpRequest(pathname: string) {
 	return parsePublicPackageGitHttpPath(pathname) !== null
+}
+
+/**
+ * Browser GET/HEAD to the bare `/@owner/pkg.git` clone URL should land on the
+ * package page. Smart HTTP (`info/refs`, upload/receive-pack) and non-browser
+ * probes keep the existing git responses.
+ *
+ * Narrow on purpose: Accept must include `text/html`, there must be no git
+ * `service` query, and User-Agent must not look like a git client.
+ */
+export function shouldRedirectBrowserFromPackageGitRoot(
+	request: Request,
+): boolean {
+	if (request.method !== 'GET' && request.method !== 'HEAD') return false
+	const accept = request.headers.get('Accept') ?? ''
+	if (!accept.toLowerCase().includes('text/html')) return false
+	let url: URL
+	try {
+		url = new URL(request.url)
+	} catch {
+		return false
+	}
+	const service = url.searchParams.get('service')
+	if (service === gitUploadPackService || service === gitReceivePackService) {
+		return false
+	}
+	const userAgent = request.headers.get('User-Agent') ?? ''
+	if (/\bgit\//i.test(userAgent)) return false
+	return true
+}
+
+function browserPackagePageRedirectResponse(input: {
+	url: URL
+	username: string
+	kodyId: string
+}) {
+	const location = new URL(
+		routes.communityPackage.href({
+			username: input.username,
+			kodyId: input.kodyId,
+		}),
+		input.url.origin,
+	)
+	location.search = input.url.search
+	return new Response(null, {
+		status: 301,
+		headers: {
+			Location: location.toString(),
+			// Same no-store posture as other public-git responses so a shared
+			// cache never serves this HTML redirect to a git client.
+			'Cache-Control': 'no-store',
+			Vary: 'Accept, User-Agent',
+		},
+	})
 }
 
 function notFoundResponse() {
@@ -1072,6 +1127,13 @@ export async function handlePublicPackageGitHttpRequest(
 	if (parsed.kind === 'repo-root') {
 		if (request.method !== 'GET' && request.method !== 'HEAD') {
 			return methodNotAllowedResponse('GET, HEAD')
+		}
+		if (shouldRedirectBrowserFromPackageGitRoot(request)) {
+			return browserPackagePageRedirectResponse({
+				url,
+				username: parsed.username,
+				kodyId: parsed.kodyId,
+			})
 		}
 		const resolved = await resolveGitHttpProxyTarget({
 			env,

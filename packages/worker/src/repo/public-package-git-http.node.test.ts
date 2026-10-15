@@ -57,6 +57,7 @@ const {
 	parsePublicPackageGitHttpPath,
 	readGitHttpCredential,
 	resolveImmutableSnapshotCommit,
+	shouldRedirectBrowserFromPackageGitRoot,
 } = await import('./public-package-git-http.ts')
 
 const publishedCommit = '0123456789abcdef0123456789abcdef01234567'
@@ -183,6 +184,135 @@ test('parsePublicPackageGitHttpPath recognizes smart HTTP suffixes under /@owner
 	expect(
 		parsePublicPackageGitHttpPath('/@kody/cloudflare/tree/main'),
 	).toBeNull()
+})
+
+test('shouldRedirectBrowserFromPackageGitRoot matches browser HTML GET/HEAD only', () => {
+	expect(
+		shouldRedirectBrowserFromPackageGitRoot(
+			new Request('https://kody.codes/@kody/cloudflare.git', {
+				headers: {
+					Accept: 'text/html,application/xhtml+xml',
+					'User-Agent': 'Mozilla/5.0',
+				},
+			}),
+		),
+	).toBe(true)
+	expect(
+		shouldRedirectBrowserFromPackageGitRoot(
+			new Request('https://kody.codes/@kody/cloudflare.git', {
+				method: 'HEAD',
+				headers: { Accept: 'text/html', 'User-Agent': 'Mozilla/5.0' },
+			}),
+		),
+	).toBe(true)
+	expect(
+		shouldRedirectBrowserFromPackageGitRoot(
+			new Request('https://kody.codes/@kody/cloudflare.git', {
+				headers: { Accept: '*/*', 'User-Agent': 'Mozilla/5.0' },
+			}),
+		),
+	).toBe(false)
+	expect(
+		shouldRedirectBrowserFromPackageGitRoot(
+			new Request('https://kody.codes/@kody/cloudflare.git', {
+				headers: {
+					Accept: 'text/html',
+					'User-Agent': 'git/2.46.0',
+				},
+			}),
+		),
+	).toBe(false)
+	expect(
+		shouldRedirectBrowserFromPackageGitRoot(
+			new Request(
+				'https://kody.codes/@kody/cloudflare.git?service=git-upload-pack',
+				{
+					headers: {
+						Accept: 'text/html',
+						'User-Agent': 'Mozilla/5.0',
+					},
+				},
+			),
+		),
+	).toBe(false)
+	expect(
+		shouldRedirectBrowserFromPackageGitRoot(
+			new Request('https://kody.codes/@kody/cloudflare.git', {
+				method: 'POST',
+				headers: { Accept: 'text/html', 'User-Agent': 'Mozilla/5.0' },
+			}),
+		),
+	).toBe(false)
+})
+
+test('browser GET to bare .git redirects to the package page; git info/refs is unchanged', async () => {
+	resetMocks()
+	seedPublicListing({
+		username: 'kentcdodds',
+		kodyId: 'cloudflare-demo-slideshow',
+	})
+
+	const browser = await handlePublicPackageGitHttpRequest(
+		new Request(
+			'https://kody.codes/@kentcdodds/cloudflare-demo-slideshow.git?utm=docs',
+			{
+				headers: {
+					Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
+					'User-Agent':
+						'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+				},
+			},
+		),
+		envStub(),
+	)
+	expect(browser).not.toBeNull()
+	expect(browser!.status).toBe(301)
+	expect(browser!.headers.get('Location')).toBe(
+		'https://kody.codes/@kentcdodds/cloudflare-demo-slideshow?utm=docs',
+	)
+	expect(browser!.headers.get('Cache-Control')).toBe('no-store')
+	expect(resolveCommunityPackageUrl).not.toHaveBeenCalled()
+
+	const artifactsRemote =
+		'https://artifacts.example.test/git/default/package-pkg-1.git'
+	const upstreamAdvertisement =
+		encodeGitPktLine('# service=git-upload-pack\n') +
+		encodeGitFlushPkt() +
+		encodeGitPktLine(
+			`${publishedCommit} HEAD\0multi_ack thin-pack side-band-64k ofs-delta symref=HEAD:refs/heads/main agent=git/artifacts\n`,
+		) +
+		encodeGitPktLine(`${publishedCommit} refs/heads/main\n`) +
+		encodeGitFlushPkt()
+	using _server = createMswNodeServer([
+		http.get(`${artifactsRemote}/info/refs`, () => {
+			return new HttpResponse(upstreamAdvertisement, {
+				status: 200,
+				headers: {
+					'Content-Type': 'application/x-git-upload-pack-advertisement',
+				},
+			})
+		}),
+	])
+
+	const infoRefs = await handlePublicPackageGitHttpRequest(
+		new Request(
+			'https://kody.codes/@kentcdodds/cloudflare-demo-slideshow.git/info/refs?service=git-upload-pack',
+			{
+				headers: {
+					'User-Agent': 'git/2.46.0',
+				},
+			},
+		),
+		envStub(),
+	)
+	expect(infoRefs).not.toBeNull()
+	expect(infoRefs!.status).toBe(200)
+	expect(infoRefs!.headers.get('Content-Type')).toBe(
+		'application/x-git-upload-pack-advertisement',
+	)
+	expect(infoRefs!.headers.get('Location')).toBeNull()
+	const advertisement = await infoRefs!.text()
+	expect(advertisement).toContain(`${publishedCommit} HEAD\0`)
 })
 
 test('resolveImmutableSnapshotCommit prefers published_commit then pinned_commit', () => {

@@ -28,6 +28,9 @@ Append `.git` to a public listing URL for a **read-only** Git smart HTTP remote:
 git clone https://kody.codes/@kody/cloudflare.git
 ```
 
+Browsers that open the same URL are redirected to the package page (the path
+without `.git`). Git clients keep smart HTTP as before.
+
 That route proxies to the package's Artifacts repo with a short-lived
 server-side read token. Clients never see Artifacts host URLs or credentials.
 The advertised refs pin the **published snapshot** (`published_commit`, else the
