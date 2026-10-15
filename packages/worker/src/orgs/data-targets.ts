@@ -115,18 +115,8 @@ const orgStructuralHardPurgeTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'org_id', table: 'access_cache' },
 	{ kind: 'org_id', table: 'handles' },
 	{ kind: 'org_id', table: 'org_audit_outbox' },
-	// Follows are org-owned (`follower_org_id`), not `org_id` / `user_id`.
-	// Person deletion also clears rows by `creator_user_id` in account targets.
-	{
-		kind: 'user_columns',
-		table: 'follows',
-		columns: ['follower_org_id'],
-		includeInExport: false,
-		surface: 'follows_owned_by_org',
-		reason:
-			'Org hard purge deletes follows owned by the org. Account export uses creator_user_id so the creating person receives the row.',
-	},
 ]
+
 const orgOwnedUserIdSoftDeleteTableSet = new Set<string>(
 	orgOwnedUserIdSoftDeleteTables,
 )
@@ -171,8 +161,13 @@ function appliesToOrgHardPurge(target: UserScopedDataTarget): boolean {
 		case 'community_listing_child':
 			return true
 		case 'user_columns':
-			// Owner id columns (community listings, package approvals, …).
-			return target.columns.includes('owner_user_id')
+			// Owner id columns (community listings, package approvals, …)
+			// plus org-owned follows (`follower_org_id`).
+			return (
+				target.columns.includes('owner_user_id') ||
+				(target.table === 'follows' &&
+					target.columns.includes('follower_org_id'))
+			)
 		case 'db_user_id':
 		case 'db_user_target':
 		case 'null_user_column':

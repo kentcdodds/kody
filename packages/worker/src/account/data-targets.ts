@@ -580,6 +580,15 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		columns: ['creator_user_id'],
 	},
 	{
+		kind: 'user_columns',
+		table: 'follows',
+		columns: ['follower_org_id'],
+		includeInExport: false,
+		surface: 'follows_owned_by_org',
+		reason:
+			'Org hard purge deletes follows owned by the org. Account export uses creator_user_id so the creating person receives the row.',
+	},
+	{
 		kind: 'community_listing_child',
 		table: 'community_reports',
 		listingColumn: 'listing_id',
@@ -739,7 +748,12 @@ export function getAccountD1UserColumnCoverage() {
 			}
 			case 'user_columns': {
 				for (const column of target.columns) {
-					covered.add(`${target.table}.${column}`)
+					// Inventory guards scan `user_id` / `*_user_id` only. Org
+					// owner columns such as `follower_org_id` stay on the target
+					// for purge but are not part of that coverage set.
+					if (column === 'user_id' || column.endsWith('_user_id')) {
+						covered.add(`${target.table}.${column}`)
+					}
 				}
 				break
 			}
