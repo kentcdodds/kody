@@ -1,5 +1,6 @@
 import { env, exports } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
+import { ensureAuditEventsTestSchema } from '#worker/test-support/audit-events-test-schema.ts'
 import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
 import { packageAppHandoffQueryParam } from '#app/package-app-handoff.ts'
 import { buildPackageAppNotFoundMessage } from '#worker/package-runtime/package-app-synthetic.ts'
@@ -40,6 +41,7 @@ async function workerFetch(url: string | URL, init: RequestInit = {}) {
 }
 
 async function seedOwnerSessionCookie() {
+	await ensureAuditEventsTestSchema(env.AUDIT_DB)
 	await ensureRbacTestSchema(env.APP_DB)
 	await ensurePackageSubscriptionTestSchema(env.APP_DB)
 	try {

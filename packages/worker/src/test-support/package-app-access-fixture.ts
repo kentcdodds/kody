@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers'
 import { createPackageAppSessionCookie } from '#app/package-app-session.ts'
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
+import { ensureAuditEventsTestSchema } from '#worker/test-support/audit-events-test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import {
 	ensurePackageSubscriptionTestSchema,
@@ -59,21 +60,7 @@ export async function seedPackageAppAccessFixture() {
 	} catch {
 		// Column already present from an earlier seed.
 	}
-	// Workers-unit AUDIT_DB starts empty; production applies audit migration 0001.
-	await env.AUDIT_DB.prepare(
-		`CREATE TABLE IF NOT EXISTS audit_events (
-			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-			category TEXT NOT NULL,
-			action TEXT NOT NULL,
-			result TEXT NOT NULL,
-			email_hash TEXT,
-			ip_hash TEXT,
-			client_id TEXT,
-			path TEXT,
-			reason TEXT,
-			timestamp TEXT NOT NULL
-		)`,
-	).run()
+	await ensureAuditEventsTestSchema(env.AUDIT_DB)
 	for (const person of Object.values(accessFixture.people)) {
 		await seedAccount({
 			db: env.APP_DB,

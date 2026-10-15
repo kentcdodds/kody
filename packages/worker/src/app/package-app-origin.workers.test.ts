@@ -1,5 +1,6 @@
 import { env, exports } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
+import { ensureAuditEventsTestSchema } from '#worker/test-support/audit-events-test-schema.ts'
 import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
 import {
 	createPackageCodeRequest,
@@ -67,6 +68,7 @@ async function workerFetch(
 }
 
 async function seedOwnerSessionCookie() {
+	await ensureAuditEventsTestSchema(env.AUDIT_DB)
 	await ensureRbacTestSchema(env.APP_DB)
 	await ensurePackageSubscriptionTestSchema(env.APP_DB)
 	// Session resolution joins the permission tables; without them every request
@@ -133,6 +135,7 @@ async function sessionCookieFor(email: string) {
 }
 
 async function seedTeamOrgPackageAppFixture() {
+	await ensureAuditEventsTestSchema(env.AUDIT_DB)
 	await ensureRbacTestSchema(env.APP_DB)
 	await ensurePackageSubscriptionTestSchema(env.APP_DB)
 	await ensureOrgsTestSchema(env.APP_DB)
