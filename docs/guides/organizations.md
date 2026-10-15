@@ -35,6 +35,26 @@ Switch orgs from the workspace name at the top of the workspace rail (it keeps
 the section you are on), from the avatar menu's Manage group, or pick the org at
 MCP consent. One connection binds one org.
 
+## Invites
+
+An invite waits on the person it is for and shows on the page that sent it:
+
+- **Waiting on you.** Every pending invite you can answer is a card on your
+  Waiting page (`/@<org>/-/waiting`) and a row in the Invites panel on your
+  Organizations page (`/account/organizations`), each with **Accept** and
+  **Decline**. That covers invites addressed to your email or username and
+  invite links you opened. An invite sent to your email needs a verified email
+  before you can answer it on the web. Declining ends the invite (recorded as
+  `invite.declined`).
+- **Sent by you.** The page you sent it from lists it until it is answered or
+  lapses: **Members** shows invites addressed to people as Pending, with
+  **Revoke** on membership invites, plus active Members links; **Teams** lists
+  each team's links; a package's **Collaborators** tab lists its links. Every
+  link has **Revoke**.
+
+Agents use `inviteAccept` with the token and `inviteRevoke` for addressed
+invites.
+
 ## Invite links
 
 An invite link lets someone in without knowing their email or username. You make
@@ -50,8 +70,8 @@ you made it:
 Opening a link signs the person in or lets them create an account, then shows an
 accept page with what the link gives and who sent it. Nothing happens until they
 choose **Accept**; they can also **Decline**. A signed-in person who opened a
-link sees it in the Invites panel on their Organizations page
-(`/account/organizations`) until they accept or decline it, or it stops working.
+link sees it on their Waiting page and in the Invites panel on their
+Organizations page until they accept or decline it, or it stops working.
 
 Links last 7 days by default (up to 365) and can be limited by number of uses;
 Members links can also require a verified email domain. Kody stores only a hash,

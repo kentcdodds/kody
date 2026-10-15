@@ -117,8 +117,10 @@ username. The token is shown once, with a prompt for the invitee's agent:
 }
 ```
 
-The invitee calls `inviteAccept` with the token. Nothing attaches before they
-accept. Invites expire after 7 days; `inviteRevoke` cancels a pending one.
+The invitee calls `inviteAccept` with the token, or chooses **Accept** on the
+invite card on their Waiting page (an email invite needs a verified email
+there). Nothing attaches before they accept. Invites expire after 7 days;
+`inviteRevoke` cancels a pending one.
 
 Use `kind: "membership"` to add someone to the whole **team** org instead (with
 a role and optional teams). Members hold the org-level basics plus what they are
@@ -204,9 +206,9 @@ The link is copied once; Kody keeps only its hash.
 Whoever opens the link sees what it gives: the package, the preset, and who
 shared it. They can create an account first if they do not have one. Opening the
 link changes nothing; they choose **Accept** or **Decline**. A signed-in person
-who opened it also finds it in the Invites panel on their Organizations page
-(`/account/organizations`) until they accept, decline, or the link stops
-working.
+who opened it also finds it on their Waiting page and in the Invites panel on
+their Organizations page (`/account/organizations`) until they accept, decline,
+or the link stops working.
 
 Accepting grants the preset on that one package. Someone who is not a member of
 the owning org becomes an **outside collaborator**; the link never adds anyone
