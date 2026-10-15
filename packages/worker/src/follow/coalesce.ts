@@ -32,10 +32,12 @@ function followPushWindowOpen(windowStartedAt: string, now: Date) {
 
 /**
  * One pending row per target. Pushes inside the open five-minute window
- * collapse: `before` stays the first parent, `after` moves to the latest
- * tip, and at most {@link followPushMaxCommits} commits are kept (newest).
- * A push after the window expires starts a new row; the caller flushes the
- * expired snapshot first.
+ * collapse: `before` stays the first parent, `after` moves to the newest
+ * tip by ingress time, and at most {@link followPushMaxCommits} commits are
+ * kept (newest). A stale webhook still appends its commits and bumps
+ * `total_commits_count`, but it does not move `after` backward. A push
+ * after the window expires starts a new row; the caller flushes the expired
+ * snapshot first.
  */
 export function mergeFollowPushWindow(input: {
 	targetKind: FollowTargetKind
@@ -60,16 +62,21 @@ export function mergeFollowPushWindow(input: {
 		...input.existing.commits,
 		...input.incoming.commits,
 	])
+	const incomingIsCurrent = input.incoming.at >= input.existing.updatedAt
 	return {
 		action: 'merge',
 		pending: {
 			...input.existing,
-			afterCommit: input.incoming.after,
-			ref: input.incoming.ref,
+			afterCommit: incomingIsCurrent
+				? input.incoming.after
+				: input.existing.afterCommit,
+			ref: incomingIsCurrent ? input.incoming.ref : input.existing.ref,
 			commits,
 			totalCommitsCount:
 				input.existing.totalCommitsCount + input.incoming.totalCommitsCount,
-			updatedAt: input.incoming.at,
+			updatedAt: incomingIsCurrent
+				? input.incoming.at
+				: input.existing.updatedAt,
 		},
 	}
 }

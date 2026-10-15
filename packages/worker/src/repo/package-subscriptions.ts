@@ -10,6 +10,7 @@ import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
 	applyArtifactSourcePushToHeadCache,
 	isDeletedArtifactRefCommit,
+	readCachedArtifactSourceBranch,
 } from './artifact-head-cache.ts'
 import { refreshIdentityIconForSource } from './identity-icon.ts'
 import {
@@ -392,36 +393,75 @@ export async function processCloudflareArtifactsRepoEvent(input: {
 	}
 
 	if (providerEvent.type === 'cf.artifacts.repo.pushed') {
+		const after = providerEvent.payload.after
+		const deleted = isDeletedArtifactRefCommit(after)
+		let defaultBranch: string | null = null
+		let headCommit: string | null = null
+		let headResolved = false
 		try {
 			// Live HEAD, not the KV cache: applyArtifactSourcePushToHeadCache
 			// already wrote payload.after into that entry for viewed repos.
 			const head = await resolveArtifactSourceHead(input.env, source.repo_id)
-			const defaultBranchRef = `refs/heads/${head.branch}`
-			const onDefaultBranch =
-				providerEvent.payload.ref === defaultBranchRef &&
-				!isDeletedArtifactRefCommit(providerEvent.payload.after) &&
-				head.commit === providerEvent.payload.after
-			if (onDefaultBranch && source.entity_kind === 'repo') {
+			headResolved = true
+			const branch = head.branch.trim()
+			defaultBranch = branch.length > 0 ? branch : null
+			headCommit = head.commit
+		} catch (error) {
+			console.error('identity-icon-push-refresh-failed', source.repo_id, error)
+			try {
+				defaultBranch = await readCachedArtifactSourceBranch(
+					input.env,
+					source.repo_id,
+				)
+			} catch (fallbackError) {
+				console.error(
+					'follow-default-branch-lookup-failed',
+					source.repo_id,
+					fallbackError,
+				)
+			}
+			if (!defaultBranch) {
+				console.error(
+					'follow-push-skipped-unknown-default-branch',
+					source.repo_id,
+				)
+			}
+		}
+		const onDefaultBranch =
+			defaultBranch !== null &&
+			providerEvent.payload.ref === `refs/heads/${defaultBranch}` &&
+			!deleted
+		const onDefaultBranchTip =
+			onDefaultBranch && headResolved && headCommit === after
+		if (onDefaultBranchTip && source.entity_kind === 'repo') {
+			try {
 				await refreshIdentityIconForSource({
 					env: input.env,
 					source,
-					iconCommit: providerEvent.payload.after,
+					iconCommit: after,
 					indexLiveHead: true,
 				})
+			} catch (error) {
+				console.error(
+					'identity-icon-push-refresh-failed',
+					source.repo_id,
+					error,
+				)
 			}
-			if (onDefaultBranch) {
-				try {
-					await recordFollowDefaultBranchPush({
-						env: input.env,
-						source,
-						event: providerEvent,
-					})
-				} catch (error) {
-					console.error('follow-push-ingress-failed', source.repo_id, error)
-				}
+		}
+		// Every non-delete push of the default branch is recorded, including
+		// a force-push or raced webhook whose `after` is no longer live HEAD.
+		// Icon refresh stays tip-only and its failure does not skip recording.
+		if (onDefaultBranch) {
+			try {
+				await recordFollowDefaultBranchPush({
+					env: input.env,
+					source,
+					event: providerEvent,
+				})
+			} catch (error) {
+				console.error('follow-push-ingress-failed', source.repo_id, error)
 			}
-		} catch (error) {
-			console.error('identity-icon-push-refresh-failed', source.repo_id, error)
 		}
 	}
 

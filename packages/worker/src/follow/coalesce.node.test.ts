@@ -89,6 +89,41 @@ test('twenty or more commits in a window are truncated to the newest 20', () => 
 	expect(merged.pending.totalCommitsCount).toBe(25)
 })
 
+test('a stale webhook appends commits without moving after backward', () => {
+	const first = mergeFollowPushWindow({
+		...base,
+		existing: null,
+		now: new Date('2026-10-15T00:04:00.000Z'),
+		incoming: {
+			before: 'after-1',
+			after: 'after-2',
+			ref: 'refs/heads/main',
+			commits: [commit('c2')],
+			totalCommitsCount: 1,
+			at: '2026-10-15T00:04:00.000Z',
+		},
+	})
+	const stale = mergeFollowPushWindow({
+		...base,
+		existing: first.pending,
+		now: new Date('2026-10-15T00:04:00.000Z'),
+		incoming: {
+			before: 'before-1',
+			after: 'after-1',
+			ref: 'refs/heads/main',
+			commits: [commit('c1')],
+			totalCommitsCount: 1,
+			at: '2026-10-15T00:00:00.000Z',
+		},
+	})
+	expect(stale.action).toBe('merge')
+	expect(stale.pending.beforeCommit).toBe('after-1')
+	expect(stale.pending.afterCommit).toBe('after-2')
+	expect(stale.pending.updatedAt).toBe('2026-10-15T00:04:00.000Z')
+	expect(stale.pending.commits.map((entry) => entry.id)).toEqual(['c2', 'c1'])
+	expect(stale.pending.totalCommitsCount).toBe(2)
+})
+
 test('a push after the window replaces the pending row', async () => {
 	const sqlite = new DatabaseSync(':memory:')
 	const db = createD1FromSqlite(sqlite)
