@@ -113,7 +113,28 @@ async function markMemoryVectorDeleted(input: {
 	await input.db
 		.prepare(
 			`UPDATE mcp_memories
-			 SET vector_deleted_at = ?
+			 SET vector_deleted_at = ?,
+			     vector_cleanup_attempted_at = ?
+			 WHERE user_id = ?
+			   AND id = ?
+			   AND status = 'deleted'
+			   AND deleted_at IS NOT NULL
+			   AND vector_deleted_at IS NULL`,
+		)
+		.bind(input.at, input.at, input.orgId, input.memoryId)
+		.run()
+}
+
+async function markMemoryVectorCleanupAttempted(input: {
+	db: D1Database
+	orgId: string
+	memoryId: string
+	at: string
+}): Promise<void> {
+	await input.db
+		.prepare(
+			`UPDATE mcp_memories
+			 SET vector_cleanup_attempted_at = ?
 			 WHERE user_id = ?
 			   AND id = ?
 			   AND status = 'deleted'
@@ -193,8 +214,9 @@ async function isLiveOrgMemory(input: {
 
 /**
  * Soft-deleted memories whose Vectorize cleanup has not been recorded yet.
- * Oldest first so stranded rows are not starved by newer deletes; already-clean
- * rows (vector_deleted_at set) are excluded so they do not consume the budget.
+ * Prefer never-attempted rows, then least-recently attempted, so a persistent
+ * Vectorize failure on the oldest deleted_at rows cannot monopolize the
+ * memoryLimit budget. Already-clean rows (vector_deleted_at set) are excluded.
  */
 async function listSoftDeletedMemoriesPendingVectorPage(input: {
 	db: D1Database
@@ -208,7 +230,7 @@ async function listSoftDeletedMemoriesPendingVectorPage(input: {
 			   AND status = 'deleted'
 			   AND deleted_at IS NOT NULL
 			   AND vector_deleted_at IS NULL
-			 ORDER BY deleted_at ASC, id ASC
+			 ORDER BY vector_cleanup_attempted_at ASC, deleted_at ASC, id ASC
 			 LIMIT ?`,
 		)
 		.bind(input.orgId, input.limit)
@@ -222,15 +244,19 @@ async function reconcileOrgVectorCleanup(input: {
 	orgSlug: string | null
 	memoryLimit: number
 	pendingVectorMemoryIds: Set<string>
+	/** When false, only retry this invocation's pending IDs (mid-org pages). */
+	includePendingSoftDeletedPage: boolean
 	warnings: Array<string>
 }): Promise<number> {
 	const retryIds = new Set(input.pendingVectorMemoryIds)
-	for (const id of await listSoftDeletedMemoriesPendingVectorPage({
-		db: input.env.APP_DB,
-		orgId: input.orgId,
-		limit: input.memoryLimit,
-	})) {
-		retryIds.add(id)
+	if (input.includePendingSoftDeletedPage) {
+		for (const id of await listSoftDeletedMemoriesPendingVectorPage({
+			db: input.env.APP_DB,
+			orgId: input.orgId,
+			limit: input.memoryLimit,
+		})) {
+			retryIds.add(id)
+		}
 	}
 	let vectorCleanupFailed = 0
 	const cleanedAt = new Date().toISOString()
@@ -246,6 +272,12 @@ async function reconcileOrgVectorCleanup(input: {
 			input.pendingVectorMemoryIds.delete(memoryId)
 			continue
 		}
+		await markMemoryVectorCleanupAttempted({
+			db: input.env.APP_DB,
+			orgId: input.orgId,
+			memoryId,
+			at: cleanedAt,
+		})
 		vectorCleanupFailed += 1
 		input.warnings.push(
 			`Vector cleanup still failing for memory ${memoryId} on org ${input.orgSlug ?? input.orgId}`,
@@ -562,8 +594,9 @@ export async function runMemoryPersonalizePurge(input: {
 				statuses: ['active', 'archived'],
 			})
 			if (peek.length > 0) {
-				// Retry and count pending Vectorize deletes before leaving a
-				// partial org page so failures are not dropped from this run.
+				// Retry this invocation's pending Vectorize deletes before
+				// leaving a partial org page. Bounded stranded-row scan waits
+				// until the org is exhausted so mid-page resumes do not redo it.
 				if (!dryRun) {
 					vectorCleanupFailed += await reconcileOrgVectorCleanup({
 						env: input.env,
@@ -571,6 +604,7 @@ export async function runMemoryPersonalizePurge(input: {
 						orgSlug: org.slug,
 						memoryLimit,
 						pendingVectorMemoryIds,
+						includePendingSoftDeletedPage: false,
 						warnings,
 					})
 				}
@@ -594,6 +628,7 @@ export async function runMemoryPersonalizePurge(input: {
 				orgSlug: org.slug,
 				memoryLimit,
 				pendingVectorMemoryIds,
+				includePendingSoftDeletedPage: true,
 				warnings,
 			})
 		}
