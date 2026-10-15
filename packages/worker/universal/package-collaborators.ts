@@ -88,6 +88,7 @@ export type PackageCollaboratorsView = {
 
 /** Shown once, right after an invite is created. */
 export type PackageCollaboratorInviteCreated = {
+	id: string
 	expiresAt: string
 	inviteeLabel: string
 	preset: PackageCollaboratorPreset

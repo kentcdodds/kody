@@ -283,6 +283,7 @@ test('a personal org owner invites by username, sees it pending, and revokes it'
 			preset: 'contribute',
 		}),
 	])
+	expect(invited.invite?.id).toBe(invited.invites[0]!.id)
 	const stored = await seed.db
 		.prepare(
 			`SELECT kind, resource_type, resource_id, preset FROM invites WHERE id = ?`,

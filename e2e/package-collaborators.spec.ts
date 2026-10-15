@@ -181,14 +181,29 @@ INSERT INTO saved_packages (
 	const invites = page.getByTestId('package-collaborator-invite')
 	const pending = invites.filter({ hasText: `@${friend.username}` })
 	await expect(pending).toContainText('Contribute')
-	await page.reload()
-	await waitForClientHydration(page)
-	await expect(pending).toBeVisible()
-	await expect(ready).toHaveCount(0)
+
+	await form
+		.getByRole('textbox', { name: 'Email or username' })
+		.fill('not a username!')
+	await form.getByRole('button', { name: 'Create invite' }).click()
+	await expect(page.getByRole('alert').filter({ hasText: /\S/ })).toBeVisible()
+	await expect(ready).toContainText(`Invite ready for @${friend.username}`)
+	await expect(invites).toHaveCount(1)
 
 	await pending.getByRole('button', { name: 'Revoke' }).click()
 	await pending.getByRole('button', { name: 'Confirm revoke' }).click()
 	await expect(invites).toHaveCount(0)
+	await expect(ready).toHaveCount(0)
+
+	await form
+		.getByRole('textbox', { name: 'Email or username' })
+		.fill(`@${friend.username}`)
+	await form.getByRole('button', { name: 'Create invite' }).click()
+	await expect(ready).toBeVisible()
+	await page.reload()
+	await waitForClientHydration(page)
+	await expect(pending).toContainText('Use')
+	await expect(ready).toHaveCount(0)
 
 	executeE2eD1Command(`
 INSERT INTO grants (

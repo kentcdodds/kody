@@ -73,25 +73,43 @@ export function createPackageCollaboratorInvites(
 	let invitee = ''
 	let preset: PackageCollaboratorPreset = 'use'
 	let created: PackageCollaboratorInviteCreated | null = null
+	/** Bumped per package so a request that outlives its page is dropped. */
+	let generation = 0
 
 	function reset() {
 		invitee = ''
 		preset = 'use'
 		created = null
+		generation += 1
 	}
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault()
-		created = null
+		const startedIn = generation
+		// The current handoff stays until a new one replaces it: its token
+		// cannot be fetched again if this request fails.
 		const result = await input.postChange(
 			'invite',
 			{ intent: 'invite', invitee: invitee.trim(), preset },
 			'Invite created.',
 		)
-		if (result?.invite) {
+		if (result?.invite && startedIn === generation) {
 			invitee = ''
 			preset = 'use'
 			created = result.invite
+			handle.update()
+		}
+	}
+
+	async function revoke(invite: PackageCollaboratorInviteView, name: string) {
+		const startedIn = generation
+		const result = await input.postChange(
+			`revoke-invite:${invite.id}`,
+			{ intent: 'revoke-invite', inviteId: invite.id },
+			`Revoked the invite for ${name}.`,
+		)
+		if (result && startedIn === generation && created?.id === invite.id) {
+			created = null
 			handle.update()
 		}
 	}
@@ -244,14 +262,7 @@ export function createPackageCollaboratorInvites(
 						mix={[
 							css(getDangerPillCss({ size: 'sm' })),
 							...check.getButtonMix({
-								on: {
-									click: () =>
-										void input.postChange(
-											`revoke-invite:${invite.id}`,
-											{ intent: 'revoke-invite', inviteId: invite.id },
-											`Revoked the invite for ${name}.`,
-										),
-								},
+								on: { click: () => void revoke(invite, name) },
 							}),
 						]}
 					>

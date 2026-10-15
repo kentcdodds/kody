@@ -212,6 +212,7 @@ async function applyChange(
 				ctx,
 			)
 			return {
+				id: created.invite.id,
 				expiresAt: created.invite.expires_at,
 				inviteeLabel: packageCollaboratorInviteeLabel({
 					inviteeEmail: created.invite.invitee_email,
