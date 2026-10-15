@@ -1,18 +1,13 @@
-import {
-	type OwnerId,
-	personIdFromStored,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { listSecrets } from '#mcp/secrets/service.ts'
 import {
-	findCredentialById,
-	listOrgCredentials,
+	listOrgReachableCredentials,
 	resolveNeedCandidates,
 	type UsableCredential,
 } from '#worker/credentials/credential-candidates.ts'
 import { loadAllCredentialMappingsForPackage } from '#worker/credentials/credential-mappings.ts'
 import { ownCredentialNeeds } from '#worker/credentials/credential-needs.ts'
-import { loadPersonalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { listKodyPackageDependencyNames } from '#worker/package-registry/types.ts'
 import { resolveSavedPackageImport } from '#worker/package-runtime/package-import-resolution.ts'
@@ -70,9 +65,9 @@ export async function computePackageCapabilitySet(input: {
 	})
 	const entries: Array<CapabilitySetEntry> = []
 	const viaRoot = [input.packageKodyId]
-	let orgCredentials: Promise<Array<UsableCredential>> | null = null
-	const loadOrgCredentials = () =>
-		(orgCredentials ??= listOrgCredentials({
+	let reachableCredentials: Promise<Array<UsableCredential>> | null = null
+	const loadReachableCredentials = () =>
+		(reachableCredentials ??= listOrgReachableCredentials({
 			db: input.env.APP_DB,
 			orgId: input.ownerUserId,
 		}))
@@ -86,7 +81,7 @@ export async function computePackageCapabilitySet(input: {
 		baseUrl,
 		via: viaRoot,
 		entries,
-		loadOrgCredentials,
+		loadReachableCredentials,
 	})
 
 	const dependencySnapshot = await resolveDependencySnapshot({
@@ -119,7 +114,7 @@ export async function computePackageCapabilitySet(input: {
 			baseUrl,
 			via,
 			entries,
-			loadOrgCredentials,
+			loadReachableCredentials,
 		})
 	}
 
@@ -310,7 +305,7 @@ async function appendPackageCapabilityEntries(input: {
 	baseUrl: string
 	via: Array<string>
 	entries: Array<CapabilitySetEntry>
-	loadOrgCredentials: () => Promise<Array<UsableCredential>>
+	loadReachableCredentials: () => Promise<Array<UsableCredential>>
 }): Promise<void> {
 	const [loaded, usesStorage] = await Promise.all([
 		loadPackageManifestBySourceId({
@@ -397,36 +392,30 @@ async function appendPackageCapabilityEntries(input: {
 
 	const needs = ownCredentialNeeds(loaded.manifest.kody.credentials)
 	if (needs.length === 0) return
-	const [orgCredentials, mappings] = await Promise.all([
-		input.loadOrgCredentials(),
+	const [reachableCredentials, mappings] = await Promise.all([
+		input.loadReachableCredentials(),
 		loadAllCredentialMappingsForPackage({
 			db: input.env.APP_DB,
 			orgId: input.ownerUserId,
 			packageId: input.packageId,
 		}),
 	])
-	const orgCredentialsById = new Map(
-		orgCredentials.map((credential) => [credential.id, credential]),
+	const reachableById = new Map(
+		reachableCredentials.map((credential) => [credential.id, credential]),
 	)
 	for (const need of needs) {
 		// A stored mapping (any layer) can point the need at a credential the
 		// provider match would not pick, so list those too.
-		const mapped: Array<UsableCredential> = []
-		for (const row of mappings) {
-			if (row.needKey !== need.key) continue
-			for (const id of row.credentialIds) {
-				const credential = await resolveMappedCredential({
-					db: input.env.APP_DB,
-					id,
-					orgCredentialsById,
-					personId: row.target.target === 'org' ? null : row.target.personId,
-				})
-				if (credential) mapped.push(credential)
-			}
-		}
+		const mapped = mappings
+			.filter((row) => row.needKey === need.key)
+			.flatMap((row) => row.credentialIds)
+			.flatMap((id) => {
+				const credential = reachableById.get(id)
+				return credential ? [credential] : []
+			})
 		for (const candidate of [
 			...mapped,
-			...resolveNeedCandidates(need, orgCredentials).candidates,
+			...resolveNeedCandidates(need, reachableCredentials).candidates,
 		]) {
 			if (seenCredentialIds.has(candidate.id)) continue
 			seenCredentialIds.add(candidate.id)
@@ -443,24 +432,4 @@ async function appendPackageCapabilityEntries(input: {
 			})
 		}
 	}
-}
-
-async function resolveMappedCredential(input: {
-	db: D1Database
-	id: string
-	orgCredentialsById: ReadonlyMap<string, UsableCredential>
-	personId: string | null
-}): Promise<UsableCredential | null> {
-	const orgCredential = input.orgCredentialsById.get(input.id)
-	if (orgCredential) return orgCredential
-	if (!input.personId) return null
-	return findCredentialById({
-		db: input.db,
-		ownerId: await loadPersonalOrgIdForPerson(
-			input.db,
-			personIdFromStored(input.personId),
-		),
-		id: input.id,
-		scope: 'personal',
-	})
 }

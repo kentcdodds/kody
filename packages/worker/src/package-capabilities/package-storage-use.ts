@@ -8,10 +8,11 @@ const typeDeclarationFilePattern = /\.d\.[cm]?ts$/
 /**
  * `packageStorage()` from `kody:runtime`, or the storage capabilities a
  * package can call on its own bucket. Matching text (not imports) keeps this
- * conservative: a comment or string naming them still lists storage.
+ * conservative: a comment or string naming them still lists storage, and so
+ * does computed `kody[...]` access, which text cannot resolve.
  */
 const packageStorageUsePattern =
-	/\bpackageStorage\b|\bstorage(?:Query|Export)\b/
+	/\bpackageStorage\b|\bstorage(?:Query|Export)\b|\bkody\s*(?:\?\.)?\s*\[/
 
 export function sourceFilesUsePackageStorage(
 	files: Record<string, string>,

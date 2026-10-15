@@ -232,4 +232,9 @@ test('storage detection reads module files, not browser storage or type declarat
 			'src/index.ts': 'await kody.storageQuery({ storage_id: id, sql })',
 		}),
 	).toBe(true)
+	expect(
+		sourceFilesUsePackageStorage({
+			'src/index.ts': "const op = 'storage' + 'Query'\nawait kody?.[op]({})",
+		}),
+	).toBe(true)
 })
