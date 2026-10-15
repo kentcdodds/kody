@@ -193,16 +193,34 @@ function agentMarqueeMotion() {
 			},
 			{ signal },
 		)
+		const endDrag = () => {
+			if (!drag) return
+			if (drag.moved) {
+				suppressClick = true
+				node.classList.remove('is-dragging')
+				markUsed()
+			}
+			drag = null
+			pressed = false
+		}
 		node.addEventListener(
 			'pointermove',
 			(event) => {
 				if (!(event instanceof PointerEvent) || !drag) return
 				if (event.pointerId !== drag.id) return
+				if ((event.buttons & 1) === 0) {
+					endDrag()
+					return
+				}
 				const dx = event.clientX - drag.startX
 				if (!drag.moved) {
 					if (Math.abs(dx) < dragThreshold) return
 					drag.moved = true
-					node.setPointerCapture(drag.id)
+					try {
+						node.setPointerCapture(drag.id)
+					} catch {
+						// The pointer is already gone; moves still drag the row.
+					}
 					node.classList.add('is-dragging')
 				}
 				pos = drag.startPos - dx
@@ -212,17 +230,9 @@ function agentMarqueeMotion() {
 			},
 			{ signal },
 		)
-		const endDrag = () => {
-			if (drag?.moved) {
-				suppressClick = true
-				node.classList.remove('is-dragging')
-				markUsed()
-			}
-			drag = null
-			pressed = false
-		}
-		node.addEventListener('pointerup', endDrag, { signal })
-		node.addEventListener('pointercancel', endDrag, { signal })
+		// A press can end anywhere, including outside the row.
+		window.addEventListener('pointerup', endDrag, { signal })
+		window.addEventListener('pointercancel', endDrag, { signal })
 		node.addEventListener(
 			'click',
 			(event) => {
@@ -234,20 +244,28 @@ function agentMarqueeMotion() {
 			{ signal, capture: true },
 		)
 
-		const reveal = (link: HTMLElement, jump: boolean) => {
-			const item = link.closest<HTMLElement>('.landing-agents-item')
+		const trackStart = () => items[0]?.offsetLeft ?? 0
+		const centeredLeft = (item: HTMLElement) =>
+			item.offsetLeft - trackStart() - (node.clientWidth - item.offsetWidth) / 2
+		// Shift the view by whole list widths (invisible, since the copies
+		// match) so the real mark sits next to what is on screen, then glide.
+		const reveal = (index: number) => {
+			const item = items[count + index]
 			if (!item) return
-			const left =
-				item.offsetLeft -
-				(items[0]?.offsetLeft ?? 0) -
-				(node.clientWidth - item.offsetWidth) / 2
-			const smooth = !jump && motionOk.matches
-			node.scrollTo({ left, behavior: smooth ? 'smooth' : 'auto' })
-			if (!smooth) pos = node.scrollLeft
+			if (setWidth > 0) {
+				pos += Math.round((centeredLeft(item) - pos) / setWidth) * setWidth
+				apply()
+			}
+			const left = centeredLeft(item)
+			if (motionOk.matches) {
+				node.scrollTo({ left, behavior: 'smooth' })
+			} else {
+				pos = left
+				apply()
+			}
 		}
-		const centeredIndex = () => {
-			const center =
-				node.scrollLeft + node.clientWidth / 2 + (items[0]?.offsetLeft ?? 0)
+		const centeredIndex = (left: number) => {
+			const center = left + node.clientWidth / 2 + trackStart()
 			const hit = items.findIndex(
 				(item) =>
 					item.offsetLeft <= center &&
@@ -269,13 +287,13 @@ function agentMarqueeMotion() {
 					return
 				}
 				// Tabbing in lands on the mark in the middle of the view, not
-				// wherever the drift has carried the last active one.
-				const target = centeredIndex()
+				// wherever the drift has carried the last active one. `pos` is
+				// the view before the browser scrolls the focused link into view.
+				const target = centeredIndex(pos)
 				setActive(target)
-				const link = links[target]
-				if (!link) return
-				if (target !== index) link.focus({ preventScroll: true })
-				reveal(link, true)
+				if (target !== index) links[target]?.focus({ preventScroll: true })
+				apply()
+				reveal(target)
 			},
 			{ signal },
 		)
@@ -303,13 +321,9 @@ function agentMarqueeMotion() {
 						return
 				}
 				event.preventDefault()
-				const link = links[next]
-				if (!link) return
 				setActive(next)
-				link.focus({ preventScroll: true })
-				// Wrapping past either end jumps instantly. The copies on each
-				// side make the jump look like one more step.
-				reveal(link, Math.abs(next - index) > 1)
+				links[next]?.focus({ preventScroll: true })
+				reveal(next)
 			},
 			{ signal },
 		)

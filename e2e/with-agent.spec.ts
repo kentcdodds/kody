@@ -90,6 +90,27 @@ test('agent marquee is one tab stop with arrow keys between agents', async ({
 	).toBeFocused()
 })
 
+test('agent marquee drift resumes after a press released outside the row', async ({
+	page,
+}) => {
+	await page.emulateMedia({ reducedMotion: 'no-preference' })
+	await page.goto('/')
+	await waitForClientHydration(page)
+	const marquee = page.locator('nav.landing-agents')
+	await expect(marquee).toHaveClass(/is-looping/)
+	const box = await marquee.boundingBox()
+	if (!box) throw new Error('marquee has no box')
+	await page.mouse.move(box.x + box.width / 2, box.y + 40)
+	await page.mouse.down()
+	await page.mouse.move(box.x + box.width / 2 + 2, box.y + box.height + 200)
+	await page.mouse.up()
+	await page.waitForTimeout(3_000)
+	const before = await marquee.evaluate((nav) => nav.scrollLeft)
+	await expect
+		.poll(() => marquee.evaluate((nav) => nav.scrollLeft), { timeout: 5_000 })
+		.not.toBe(before)
+})
+
 test('agent marquee scrolls endlessly in both directions', async ({ page }) => {
 	await page.emulateMedia({ reducedMotion: 'reduce' })
 	await page.goto('/')
