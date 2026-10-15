@@ -215,7 +215,7 @@ test('expired links show a clear error on the join page', async () => {
 	})
 })
 
-async function createPackageLink() {
+async function createPackageLink(options: { maxUses?: number } = {}) {
 	sqlite.exec(
 		`CREATE TABLE IF NOT EXISTS saved_packages (
 			id TEXT PRIMARY KEY NOT NULL,
@@ -243,6 +243,7 @@ async function createPackageLink() {
 		},
 		createdByUserId: owner.personId,
 		tokenHash: await hashInviteLinkToken(packageToken),
+		maxUses: options.maxUses ?? null,
 		audit: createTestOrgAuditWriter({ db: auditDb }),
 	})
 	return { token: packageToken, id: created.id }
@@ -384,5 +385,42 @@ test('a spent package link says so instead of offering it again', async () => {
 	expect(response.status).toBe(400)
 	expect(await response.json()).toMatchObject({
 		orgInviteJoin: { ok: false, reason: 'already_used' },
+	})
+})
+
+test('reopening a used-up package link you accepted shows your access', async () => {
+	const link = await createPackageLink({ maxUses: 1 })
+	signInJoiner(true)
+	await createOrgInviteJoinPostHandler(createEnv()).handler({
+		request: new Request(`https://kody.test/join/${link.token}`, {
+			method: 'POST',
+		}),
+		params: { token: link.token },
+	} as never)
+	const reopen = () =>
+		createOrgInviteJoinHandler(createEnv()).handler({
+			request: new Request(`https://kody.test/join/${link.token}`),
+			params: { token: link.token },
+		} as never)
+	const accepted = await reopen()
+	expect(accepted.status).toBe(200)
+	expect(await accepted.json()).toMatchObject({
+		orgInviteJoin: { ok: true, alreadyMember: true },
+	})
+	expect(await pendingRows()).toEqual([])
+
+	sqlite
+		.prepare(`UPDATE grants SET deleted_at = ? WHERE subject_id = ?`)
+		.run('2026-02-01T00:00:00.000Z', joiner.personId)
+	const removed = await reopen()
+	expect(removed.status).toBe(400)
+	expect(await removed.json()).toMatchObject({
+		orgInviteJoin: { ok: false, reason: 'already_used' },
+	})
+
+	mocks.readAuthenticatedAppUser.mockResolvedValue(null)
+	const stranger = await reopen()
+	expect(await stranger.json()).toMatchObject({
+		orgInviteJoin: { ok: false, reason: 'exhausted' },
 	})
 })

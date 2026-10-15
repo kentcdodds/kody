@@ -21,6 +21,7 @@ import {
 	hasRedeemedInviteLink,
 	inviteLinkAlreadySatisfied,
 	inviteLinkTargetBlock,
+	type InviteLinkTargetBlockReason,
 	redeemOrgInviteLink,
 } from '#worker/orgs/invite-link-redeem.ts'
 import {
@@ -156,6 +157,27 @@ function failure(
 }
 
 /**
+ * A team or package link that stopped working can still be settled for the
+ * viewer: they already hold what it gives (show that), or they spent it
+ * themselves (say so instead of a generic "used up"). Membership links keep
+ * reporting the block itself.
+ */
+async function settledBlockedLinkForViewer(
+	db: D1Database,
+	link: StoredInviteLink,
+	block: InviteLinkTargetBlockReason,
+	viewerId: string,
+): Promise<'satisfied' | 'already_used' | null> {
+	if (link.target.kind === 'membership') return null
+	if (block !== 'exhausted' && block !== 'expired' && block !== 'revoked') {
+		return null
+	}
+	if (await inviteLinkAlreadySatisfied(db, link, viewerId)) return 'satisfied'
+	if (await hasRedeemedInviteLink(db, link.id, viewerId)) return 'already_used'
+	return null
+}
+
+/**
  * The accept page for one link. Viewing it never applies the link; a
  * signed-in viewer who still needs what it gives gets a pending row so the
  * invite also waits on their Organizations page.
@@ -171,12 +193,17 @@ async function loadJoinPageData(input: {
 	const tokenHash = await hashInviteLinkToken(token)
 	const link = await getInviteLinkByTokenHash(db, tokenHash)
 	if (!link) return failure('invalid')
-	const block = await inviteLinkTargetBlock(db, link)
-	if (block) return failure(block)
-	const org = await getOrgById(db, link.orgId)
-	if (!org) return failure('invalid')
 	const user = await readAuthenticatedAppUser(input.request, input.env)
 	const viewerId = user?.mcpUser.userId ?? null
+	const block = await inviteLinkTargetBlock(db, link)
+	if (block) {
+		const settled = viewerId
+			? await settledBlockedLinkForViewer(db, link, block, viewerId)
+			: null
+		if (settled !== 'satisfied') return failure(settled ?? block)
+	}
+	const org = await getOrgById(db, link.orgId)
+	if (!org) return failure('invalid')
 	const isMember = viewerId
 		? Boolean(await getLiveOrgMembership(db, link.orgId, viewerId))
 		: false
