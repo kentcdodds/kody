@@ -15,6 +15,7 @@ import { PackageNoAccessPage } from '#client/package-no-access-page.tsx'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { createCommunityInstallController } from '#client/routes/community-install-controller.ts'
+import { createPackageFollowController } from '#client/routes/package-follow-controller.tsx'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 import {
 	type CommunityDetailApiPayload,
@@ -90,6 +91,20 @@ export function CommunityDetailRoute(handle: Handle) {
 		packageName: string
 		viewerUsername: string
 	} | null = null
+
+	const follow = createPackageFollowController(handle, {
+		getPackageRef: () => {
+			const pathname = readRouterPathname(handle)
+			if (shellLoadedForPathname !== pathname || !username || !kodyId) {
+				return null
+			}
+			return { pathname, username, kodyId }
+		},
+		onChanged: async () => {
+			const frame = handle.frames.get(COMMUNITY_DETAIL_TARGET)
+			if (frame) await frame.reload()
+		},
+	})
 
 	// Re-lexing markdown on every handle.update() would be wasted work; cache
 	// the rendered README per markdown string (same policy as MarkdownView).
@@ -346,6 +361,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		const ref = getListingPageRef(readRouterPathname(handle))
 		// Navigation reloads the frame, so the rebuilt Fork is idle.
 		install.navigated(ref?.listingId ?? null)
+		follow.navigated(ref?.pathname ?? null)
 		if (!ref) return
 
 		const frame = handle.frames.get(COMMUNITY_DETAIL_TARGET)
@@ -476,6 +492,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		}
 
 		const frameSrc = buildCommunityDetailFrameSrc(currentHref)
+		follow.maybeAutoOpen(pathname)
 
 		// Never show another listing's shell data: even if an in-flight fetch
 		// for the previous listing resolves late, mismatched pages render the
@@ -498,8 +515,12 @@ export function CommunityDetailRoute(handle: Handle) {
 					})
 				: null
 		return (
-			<article mix={[css(detailArticleCss), ...install.mixins]}>
+			<article
+				mix={[css(detailArticleCss), ...install.mixins, ...follow.mixins]}
+			>
 				<Frame name={COMMUNITY_DETAIL_TARGET} src={frameSrc} />
+
+				{follow.render()}
 
 				{renderShellStatus(shellStatusMessage)}
 

@@ -109,7 +109,15 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 		groups.map((group) => [group.label, group.items.map((item) => item.href)]),
 	).toEqual([
 		[null, ['/@jane/-/overview']],
-		['Build', ['/@jane/-/repositories', '/@jane/-/jobs', '/@jane/-/webhooks']],
+		[
+			'Build',
+			[
+				'/@jane/-/repositories',
+				'/@jane/-/jobs',
+				'/@jane/-/webhooks',
+				'/@jane/-/follows',
+			],
+		],
 		['Credentials', ['/@jane/-/credentials', '/@jane/-/secret-providers']],
 		[
 			'Agents & data',
@@ -198,6 +206,7 @@ test('team organization rail shares the sections and keeps members, settings, an
 		'Repositories',
 		'Jobs',
 		'Webhooks',
+		'Follows',
 		'Credentials',
 		'Secret providers',
 		'Agents',
@@ -269,14 +278,14 @@ test('personal rail includes Memories; team rail hides it (ADR 0072)', () => {
 			.map((group) => [group.label, group.items.map((item) => item.label)])
 	expect(sections(true)).toEqual([
 		[null, ['Overview']],
-		['Build', ['Repositories', 'Jobs', 'Webhooks']],
+		['Build', ['Repositories', 'Jobs', 'Webhooks', 'Follows']],
 		['Credentials', ['Credentials', 'Secret providers']],
 		['Agents & data', ['Agents', 'Memories', 'Email']],
 		['Activity', ['Activity']],
 	])
 	expect(sections(false)).toEqual([
 		[null, ['Overview']],
-		['Build', ['Repositories', 'Jobs', 'Webhooks']],
+		['Build', ['Repositories', 'Jobs', 'Webhooks', 'Follows']],
 		['Credentials', ['Credentials', 'Secret providers']],
 		['Agents & data', ['Agents', 'Email']],
 		['Activity', ['Activity']],

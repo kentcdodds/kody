@@ -461,6 +461,13 @@ function workspaceResourceGroups(
 					icon: 'cloud',
 					description: 'Every inbound webhook your packages declare.',
 				},
+				{
+					href: orgSectionHref(orgSlug, 'follows'),
+					label: 'Follows',
+					icon: 'eye',
+					description:
+						'Packages and repositories this workspace gets new versions and pushes from.',
+				},
 			],
 		},
 		{
