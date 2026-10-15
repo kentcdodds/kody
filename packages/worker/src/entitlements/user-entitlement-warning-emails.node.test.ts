@@ -86,6 +86,7 @@ function createKv() {
 
 type TestUser = {
 	stable_user_id: string
+	org_id: string
 	email: string
 	plan: string
 	stripe_plan: string | null
@@ -93,8 +94,14 @@ type TestUser = {
 	stripe_credits_eligible?: number
 }
 
-function freeUser(email: string, id = stableUserId): TestUser {
-	return { stable_user_id: id, email, plan: 'free', stripe_plan: null }
+function freeUser(email: string, id = stableUserId, orgId = id): TestUser {
+	return {
+		stable_user_id: id,
+		org_id: orgId,
+		email,
+		plan: 'free',
+		stripe_plan: null,
+	}
 }
 
 function createDb(
@@ -124,10 +131,13 @@ function createDb(
 					}
 					if (
 						normalized.includes('from users') &&
-						normalized.includes('stable_user_id = ?')
+						(normalized.includes('stable_user_id = ?') ||
+							normalized.includes('personal_org_id = ?'))
 					) {
 						const id = String(boundParams[0] ?? '')
-						const user = users.find((row) => row.stable_user_id === id)
+						const user = users.find(
+							(row) => row.stable_user_id === id || row.org_id === id,
+						)
 						return user ? ({ stable_user_id: user.stable_user_id } as T) : null
 					}
 					return null
@@ -482,6 +492,7 @@ test('user entitlement warning infra edges: missing bindings, TTL refresh, KV fa
 
 const emptyWalletProUser = {
 	stable_user_id: stableUserId,
+	org_id: stableUserId,
 	email: 'compute@example.com',
 	plan: 'free',
 	stripe_plan: 'pro',
@@ -553,6 +564,7 @@ test('Free, funded, and wallet-less plans never get Worker compute or Rows read 
 		[
 			{
 				stable_user_id: stableUserId,
+				org_id: stableUserId,
 				email: 'retired@example.com',
 				plan: 'standard',
 				stripe_plan: 'standard',
@@ -591,14 +603,38 @@ test('Free, funded, and wallet-less plans never get Worker compute or Rows read 
 	expect(payload.text).not.toContain('Worker compute')
 })
 
-test('compute warning sweep ranks Worker compute and Rows read separately and reserves compute candidates before the global cap', async () => {
-	const sweepUser = (id: string, email: string) => ({
-		stable_user_id: `${id}:${'x'.repeat(64)}`.slice(0, 64),
-		email,
-		plan: 'free',
-		stripe_plan: null,
-		entitlement_ladder: 'public',
+test('warning sweep consumption uses personal org id when distinct from person id', async () => {
+	const personId = ownerIdFromStored('person-distinct').repeat(4).slice(0, 64)
+	const orgId = ownerIdFromStored('org-distinct').repeat(4).slice(0, 64)
+	expect(personId).not.toBe(orgId)
+	setConsumption(row('saved_packages', 9, 10))
+	const { kv } = createKv()
+	const result = await sendUserEntitlementWarningEmails({
+		env: createEnv({
+			users: [freeUser('distinct@example.com', personId, orgId)],
+			kv,
+			rollups: [{ metric: 'execute', event_count: 10 }],
+		}),
+		now: new Date('2026-07-25T12:00:00.000Z'),
 	})
+	expect(result).toMatchObject({ status: 'notified' })
+	expect(readAdminEntitlementConsumption.mock.calls[0]?.[0]).toMatchObject({
+		usageUserId: orgId,
+	})
+})
+
+test('compute warning sweep ranks Worker compute and Rows read separately and reserves compute candidates before the global cap', async () => {
+	const sweepUser = (id: string, email: string) => {
+		const stable = `${id}:${'x'.repeat(64)}`.slice(0, 64)
+		return {
+			stable_user_id: stable,
+			org_id: stable,
+			email,
+			plan: 'free',
+			stripe_plan: null,
+			entitlement_ladder: 'public',
+		}
+	}
 	const now = new Date('2026-08-02T12:00:00.000Z')
 
 	const separate = await listUsersForEntitlementWarningSweep(

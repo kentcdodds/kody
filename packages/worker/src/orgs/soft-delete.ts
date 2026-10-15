@@ -37,6 +37,7 @@ import {
 	countLiveFreeOwnedOrgs,
 	isPaidOrg,
 } from '#worker/orgs/billing.ts'
+import { isPersonalOrg } from '#worker/orgs/is-personal-org.ts'
 import { onMemberSoftRemoved } from '#worker/orgs/member-offboarding.ts'
 import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
 import { type OAuthGrantHelpers } from '#worker/oauth-grants.ts'
@@ -48,6 +49,18 @@ export class OrgRestoreWindowExpiredError extends Error {
 	constructor() {
 		super('restore_window_expired')
 		this.name = 'OrgRestoreWindowExpiredError'
+	}
+}
+
+/**
+ * Personal orgs are the account identity. Delete them only via account
+ * deletion ({@link softDeleteUserAccount}), which tombstones the person first
+ * so hard purge can defer owner inventory to the following user purge.
+ */
+export class PersonalOrgDeleteRequiresAccountDeletionError extends Error {
+	constructor() {
+		super('personal_org_delete_requires_account_deletion')
+		this.name = 'PersonalOrgDeleteRequiresAccountDeletionError'
 	}
 }
 
@@ -256,6 +269,14 @@ export async function softDeleteOrg(input: {
 		.bind(input.orgId)
 		.first<{ deleted_at: string | null }>()
 	if (!already) throw new Error('org_not_found_or_already_deleted')
+
+	// Refuse a new soft-delete while a live person still owns this as their
+	// personal org. Account deletion stamps the person first, so
+	// isPersonalOrg is false when softDeleteUserAccount calls us. Resume of an
+	// already-tombstoned org skips this check.
+	if (!already.deleted_at && (await isPersonalOrg(appDb, input.orgId))) {
+		throw new PersonalOrgDeleteRequiresAccountDeletionError()
+	}
 
 	// Fence live orgs before the tombstone so a concurrent packageSave cannot
 	// insert after its table was swept. A generation that is already stamped

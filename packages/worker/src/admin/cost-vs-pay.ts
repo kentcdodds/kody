@@ -40,6 +40,12 @@ export function estimatePaidListMrrUsdCents(input: {
 	stripePlan: string | null | undefined
 	stripePriceId: string | null | undefined
 	catalog: Map<string, StripePriceCatalogEntry>
+	/**
+	 * Live owner/member seat count. Applied only when the catalog entry has
+	 * `seatQuantityTracksMembers` (purchasable Pro). Retired prices keep unit
+	 * list MRR because seat sync does not update their Stripe quantity.
+	 */
+	quantity?: number
 }): { cents: number; source: AdminPaidSource } {
 	const plan = input.stripePlan?.trim() ?? ''
 	if (plan !== 'standard' && plan !== 'pro') {
@@ -49,8 +55,15 @@ export function estimatePaidListMrrUsdCents(input: {
 	if (!priceId) return { cents: 0, source: 'none' }
 	const entry = input.catalog.get(priceId)
 	if (!entry) return { cents: 0, source: 'none' }
+	const quantity =
+		entry.seatQuantityTracksMembers &&
+		typeof input.quantity === 'number' &&
+		Number.isSafeInteger(input.quantity) &&
+		input.quantity >= 1
+			? input.quantity
+			: 1
 	return {
-		cents: monthlyRecurringRevenueUsdCents(entry),
+		cents: monthlyRecurringRevenueUsdCents(entry) * quantity,
 		source: 'stripe_catalog',
 	}
 }
@@ -112,6 +125,10 @@ export function toAdminCostVsPay(input: {
 	isOperator?: boolean
 	/** Plan include; omit for fleet estimates (Cloudflare account-wide 1,000). */
 	includedPerAccountMonth?: number
+	/**
+	 * Live seats for purchasable-Pro list MRR. Ignored for retired prices.
+	 */
+	quantity?: number
 }): AdminCostVsPay {
 	const cost = toAdminDynamicWorkerCost(
 		input.uniqueWorkerDays,

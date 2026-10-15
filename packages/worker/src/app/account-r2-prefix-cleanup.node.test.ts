@@ -24,6 +24,9 @@ test('community asset prefix cleanup paginates and preserves other users', async
 		'user-avatars/user-aaa/current.png',
 		'user-avatars/user-aaa/historical.png',
 		'user-avatars/user-bbb/other.png',
+		'org-avatars/user-aaa/hash.png',
+		'org-avatars/user-aaa/older.jpg',
+		'org-avatars/user-bbb/other.png',
 		'community-icon:v1/listing-a/current/asset',
 		'community-icon:v1/listing-a/historical/asset',
 		'community-icon:v2/listing-a/current/asset',
@@ -65,8 +68,8 @@ test('community asset prefix cleanup paginates and preserves other users', async
 		listingIds: ['listing-a'],
 		repoIds: ['repo-a'],
 	})
-	expect(count).toBe(8)
-	expect(list).toHaveBeenCalledTimes(9)
+	expect(count).toBe(10)
+	expect(list).toHaveBeenCalledTimes(11)
 	expect(deleted.sort()).toEqual([
 		'community-icon:v1/listing-a/current/asset',
 		'community-icon:v1/listing-a/historical/asset',
@@ -74,6 +77,8 @@ test('community asset prefix cleanup paginates and preserves other users', async
 		'community-icon:v2/listing-a/historical/asset',
 		'identity-icon:v1/repo-a/current/asset',
 		'identity-icon:v1/repo-a/historical/asset',
+		'org-avatars/user-aaa/hash.png',
+		'org-avatars/user-aaa/older.jpg',
 		'user-avatars/user-aaa/current.png',
 		'user-avatars/user-aaa/historical.png',
 	])
@@ -81,6 +86,7 @@ test('community asset prefix cleanup paginates and preserves other users', async
 		new Set([
 			'community-icon:v1/listing-b/other/asset',
 			'identity-icon:v1/repo-b/other/asset',
+			'org-avatars/user-bbb/other.png',
 			'user-avatars/user-bbb/other.png',
 		]),
 	)

@@ -19,6 +19,7 @@ import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.t
 import {
 	AccountDeletionWritersActiveError,
 	OrgRestoreWindowExpiredError,
+	PersonalOrgDeleteRequiresAccountDeletionError,
 	UserDeleteBlockedSoleOwnerError,
 	assertActorCanRestoreSoftDeletedOrg,
 	assertUserDeleteNotBlockedAsSoleOwner,
@@ -472,26 +473,53 @@ test('user delete blocked when sole owner of multi-member org', async () => {
 	).rejects.toBeInstanceOf(UserDeleteBlockedSoleOwnerError)
 })
 
-test('personal org provision path supports soft delete audit', async () => {
+test('softDeleteOrg refuses a live personal org; account deletion soft-deletes it', async () => {
 	const { env, appDb, auditDb } = await createHarness()
 	const stableUserId = testStableUserIdFromEmail('solo@example.com')
+	const ts = '2026-01-01T00:00:00.000Z'
+	await appDb
+		.prepare(
+			`INSERT INTO users (
+				id, email, username, password_hash, created_at, updated_at, stable_user_id
+			) VALUES (90001, 'solo@example.com', 'solo', 'x', ?, ?, ?)`,
+		)
+		.bind(ts, ts, stableUserId)
+		.run()
 	await provisionPersonalOrg(appDb, {
 		stableUserId,
 		username: 'solo',
-		createdAt: '2026-01-01T00:00:00.000Z',
+		createdAt: ts,
 		plan: 'free',
 	})
-	await softDeleteOrg({
+	await expect(
+		softDeleteOrg({
+			env,
+			orgId: ownerIdFromStored(stableUserId),
+			actorUserId: stableUserId,
+			now,
+		}),
+	).rejects.toBeInstanceOf(PersonalOrgDeleteRequiresAccountDeletionError)
+
+	const deleted = await softDeleteUserAccount({
 		env,
-		orgId: ownerIdFromStored(stableUserId),
-		actorUserId: stableUserId,
+		userId: ownerIdFromStored(stableUserId),
 		now,
 	})
-	const audit = await auditDb
-		.prepare(`SELECT action FROM org_audit_events WHERE org_id = ?`)
+	expect(deleted.deletedOrgIds).toEqual([stableUserId])
+	const orgAudit = await auditDb
+		.prepare(
+			`SELECT action FROM org_audit_events WHERE org_id = ? AND action = 'org.deleted'`,
+		)
 		.bind(stableUserId)
 		.first<{ action: string }>()
-	expect(audit?.action).toBe('org.deleted')
+	expect(orgAudit?.action).toBe('org.deleted')
+	const userAudit = await auditDb
+		.prepare(
+			`SELECT action FROM org_audit_events WHERE org_id = ? AND action = 'user.deleted'`,
+		)
+		.bind(stableUserId)
+		.first<{ action: string }>()
+	expect(userAudit?.action).toBe('user.deleted')
 })
 
 test('softDeleteUserAccount resumes after a sole-member org lease refusal', async () => {
