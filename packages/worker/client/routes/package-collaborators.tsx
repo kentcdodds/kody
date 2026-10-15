@@ -141,6 +141,7 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 		success: string,
 	): Promise<PackageCollaboratorsWriteResult | null> {
 		if (busy) return null
+		const startedPathname = readRouterPathname(handle)
 		busy = key
 		message = null
 		handle.update()
@@ -173,6 +174,9 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 						'Kody could not save that change.',
 				)
 			}
+			// Drop success state if the user left this package while the write
+			// was in flight — otherwise B shows A's "Invite created." toast.
+			if (readRouterPathname(handle) !== startedPathname) return null
 			const { invite: _invite, ...view } = payload
 			writes += 1
 			written = { view, writes }
@@ -181,6 +185,7 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 			pageData.reload(handle, readCurrentRouterHref(handle))
 			return payload
 		} catch (error) {
+			if (readRouterPathname(handle) !== startedPathname) return null
 			message =
 				error instanceof Error ? error.message : 'Kody could not save that.'
 			messageTone = 'error'
