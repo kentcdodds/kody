@@ -113,16 +113,23 @@ export function OrgTeamsRoute(handle: Handle) {
 	const teamInviteLinks = createOrgTeamInviteLinks(handle, {
 		async createLink(teamId) {
 			message = null
-			const payload = await postTeams('invite-link', { teamId })
+			const payload = await postTeams(
+				'invite-link',
+				{ teamId },
+				{ reload: false },
+			)
 			return payload?.inviteLink ?? null
 		},
 		async revokeLink(linkId) {
 			message = null
-			await postTeams('invite-link-revoke', { linkId })
+			await postTeams('invite-link-revoke', { linkId }, { reload: false })
 		},
 		onMessage(next, tone) {
 			message = next
 			messageTone = tone
+		},
+		onChanged() {
+			teamsData.reload(handle, readCurrentRouterHref(handle))
 		},
 	})
 
@@ -134,7 +141,11 @@ export function OrgTeamsRoute(handle: Handle) {
 		return created
 	}
 
-	async function postTeams(path: TeamsPostPath, body: Record<string, unknown>) {
+	async function postTeams(
+		path: TeamsPostPath,
+		body: Record<string, unknown>,
+		options: { reload?: boolean } = {},
+	) {
 		const snapshot = teamsData.read(handle, readCurrentRouterHref(handle))
 		const data = snapshot.data
 		if (!data?.ok) return
@@ -160,7 +171,9 @@ export function OrgTeamsRoute(handle: Handle) {
 		if (!response.ok || !payload?.ok) {
 			throw new Error(payload?.error || 'Unable to update teams.')
 		}
-		teamsData.reload(handle, readCurrentRouterHref(handle))
+		if (options.reload !== false) {
+			teamsData.reload(handle, readCurrentRouterHref(handle))
+		}
 		return payload
 	}
 

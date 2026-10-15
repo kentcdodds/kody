@@ -42,6 +42,11 @@ export function createOrgTeamInviteLinks(
 		createLink: (teamId: string) => Promise<{ url: string } | null>
 		revokeLink: (linkId: string) => Promise<void>
 		onMessage: (message: string, tone: 'info' | 'error') => void
+		/**
+		 * Runs after this section's last render for an action. A route-data
+		 * reload started earlier would be aborted by that render.
+		 */
+		onChanged: () => void
 	},
 ) {
 	let busy: string | null = null
@@ -52,9 +57,11 @@ export function createOrgTeamInviteLinks(
 		busy = `create:${teamId}`
 		created = null
 		handle.update()
+		let changed = false
 		try {
 			const link = await options.createLink(teamId)
 			if (link) {
+				changed = true
 				created = { teamId, url: link.url }
 				const copied = await copyText(link.url)
 				options.onMessage(
@@ -74,6 +81,7 @@ export function createOrgTeamInviteLinks(
 		} finally {
 			busy = null
 			handle.update()
+			if (changed) options.onChanged()
 		}
 	}
 
@@ -82,8 +90,10 @@ export function createOrgTeamInviteLinks(
 		busy = `revoke:${linkId}`
 		created = null
 		handle.update()
+		let changed = false
 		try {
 			await options.revokeLink(linkId)
+			changed = true
 			options.onMessage('Team invite link revoked.', 'info')
 		} catch (error) {
 			options.onMessage(
@@ -95,6 +105,7 @@ export function createOrgTeamInviteLinks(
 		} finally {
 			busy = null
 			handle.update()
+			if (changed) options.onChanged()
 		}
 	}
 
