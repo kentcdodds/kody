@@ -5,6 +5,7 @@
  * come back `unavailable` without saying why, so a bundle never leaks which
  * packages exist.
  */
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import {
@@ -352,13 +353,22 @@ async function wentPublicCapabilitiesApproved(
 	viewer: ApprovalViewer,
 	savedPackage: SavedPackageRecord,
 ) {
-	const summary = await loadCapabilityApprovalSummary({
-		env: viewer.env,
-		ownerUserId: viewer.request.org.id as OwnerId,
-		savedPackage,
-		requestUrl: viewer.baseUrl,
-	})
-	return summary.fingerprintMatchesApproval
+	try {
+		const summary = await loadCapabilityApprovalSummary({
+			env: viewer.env,
+			ownerUserId: viewer.request.org.id as OwnerId,
+			savedPackage,
+			requestUrl: viewer.baseUrl,
+		})
+		return summary.fingerprintMatchesApproval
+	} catch (error) {
+		// One unreadable package must not break the bundle; it can still be denied.
+		console.error('Failed to load capability summary for went_public item:', {
+			packageId: savedPackage.id,
+			error: getErrorMessage(error),
+		})
+		return false
+	}
 }
 
 function publishItemState(

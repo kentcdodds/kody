@@ -19,7 +19,10 @@ import {
 	loadCapabilityApprovalSummary,
 } from '#worker/package-capabilities/capability-approval-service.ts'
 import { buildPackageCapabilityApprovalUrl } from '#worker/package-capabilities/capability-approval-url.ts'
-import { enqueueWentPublicApproval } from '#worker/package-capabilities/went-public-approval.ts'
+import {
+	enqueueWentPublicApproval,
+	getPendingWentPublicApproval,
+} from '#worker/package-capabilities/went-public-approval.ts'
 import { loadPackageSecurityAuditState } from '#worker/package-capabilities/security-audit-state.ts'
 import { type AccountPackageApproveCapabilitiesLoaderData } from '#universal/loader-data.ts'
 import { logOrgAuditEvent } from '#worker/orgs/org-audit.ts'
@@ -315,6 +318,24 @@ export async function handleAccountPackageInternetVisibleAction(input: {
 			)
 		}
 		if (action === 'approve-capabilities-and-go-public') {
+			// Check first: pinning re-enqueues went_public, which would revive a
+			// request turned off in another tab.
+			const pending = await getPendingWentPublicApproval({
+				env: input.env,
+				ownerUserId,
+				packageId: savedPackage.id,
+			})
+			if (pending?.id !== requestId) {
+				return jsonResponse(
+					{
+						ok: false,
+						error:
+							'The request to make this package internet-visible changed. Reload the page.',
+						approvalUrl,
+					},
+					409,
+				)
+			}
 			// One click, two decisions: the capability pin, then the went_public
 			// request. Each keeps its own checks and audit event.
 			const capabilities = await approveCapabilities(

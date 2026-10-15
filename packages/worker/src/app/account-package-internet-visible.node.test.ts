@@ -16,12 +16,15 @@ const mockModule = vi.hoisted(() => ({
 	approveCredentialNeedsRequest: vi.fn(),
 	approveWentPublicRequest: vi.fn(),
 	enqueueWentPublicApproval: vi.fn(),
+	getPendingWentPublicApproval: vi.fn(),
 	logOrgAuditEvent: vi.fn(),
 }))
 
 vi.mock('#worker/package-capabilities/went-public-approval.ts', () => ({
 	enqueueWentPublicApproval: (...args: Array<unknown>) =>
 		mockModule.enqueueWentPublicApproval(...args),
+	getPendingWentPublicApproval: (...args: Array<unknown>) =>
+		mockModule.getPendingWentPublicApproval(...args),
 }))
 
 vi.mock('#worker/orgs/org-audit.ts', () => ({
@@ -104,6 +107,10 @@ beforeEach(() => {
 	mockModule.approveCredentialNeedsRequest.mockReset()
 	mockModule.approveWentPublicRequest.mockReset()
 	mockModule.enqueueWentPublicApproval.mockReset()
+	mockModule.getPendingWentPublicApproval.mockReset()
+	mockModule.getPendingWentPublicApproval.mockResolvedValue({
+		id: 'request-went-public',
+	})
 	mockModule.logOrgAuditEvent.mockReset()
 	mockModule.logOrgAuditEvent.mockResolvedValue(undefined)
 })
@@ -610,4 +617,32 @@ test('a failing audit write does not block the approval', async () => {
 	expect(response?.status).toBe(200)
 	expect(consoleError).toHaveBeenCalled()
 	consoleError.mockRestore()
+})
+
+test('approve-capabilities-and-go-public pins nothing when the went_public request is gone', async () => {
+	const env = { APP_DB: {} } as Env
+	const user = createUser()
+	const request = new Request('https://example.com/account/packages.json', {
+		method: 'POST',
+	})
+	mockModule.writablePackage = createSavedPackage(false)
+	mockModule.loadOrgBindingForOrg.mockResolvedValue(null)
+	mockModule.getPendingWentPublicApproval.mockResolvedValue(null)
+
+	const response = await handleAccountPackageInternetVisibleAction({
+		env,
+		request,
+		user,
+		body: {
+			action: 'approve-capabilities-and-go-public',
+			packageId: 'pkg-1',
+			fingerprint: 'reviewed-fp',
+			requestId: 'request-went-public',
+		},
+	})
+
+	expect(response?.status).toBe(409)
+	expect(mockModule.approvePackageCapabilitySet).not.toHaveBeenCalled()
+	expect(mockModule.approveWentPublicRequest).not.toHaveBeenCalled()
+	expect(mockModule.logOrgAuditEvent).not.toHaveBeenCalled()
 })

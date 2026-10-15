@@ -9,6 +9,11 @@ import {
 const mocks = vi.hoisted(() => ({
 	loadPackageManifestBySourceId: vi.fn(),
 	reloadAccountPackagesAfterWrite: vi.fn(),
+	readAuthenticatedAppUser: vi.fn(),
+}))
+
+vi.mock('#app/authenticated-user.ts', () => ({
+	readAuthenticatedAppUser: mocks.readAuthenticatedAppUser,
 }))
 
 vi.mock('#worker/package-registry/source.ts', () => ({
@@ -23,6 +28,8 @@ const {
 	handleAccountPackageInternetVisibleAction,
 	loadAccountPackageApproveCapabilitiesData,
 } = await import('./account-package-capability-approval.ts')
+const { createAccountPackageApproveCapabilitiesApiHandler } =
+	await import('./handlers/account-package-approve-capabilities.ts')
 
 async function setup() {
 	const t = await setupPackageCredentialMappingFixture({
@@ -52,7 +59,8 @@ async function setup() {
 		mcpUser: { userId: t.people.bea.personId, username: 'bea' },
 		request: t.requestAs('bea', 'owner'),
 	} as unknown as AuthenticatedAppUser
-	const post = (body: Record<string, unknown>) =>
+	mocks.readAuthenticatedAppUser.mockResolvedValue(user)
+	const toggle = (body: Record<string, unknown>) =>
 		handleAccountPackageInternetVisibleAction({
 			env: t.env,
 			request: new Request(`${mappingFixtureBaseUrl}/account/packages.json`, {
@@ -61,6 +69,20 @@ async function setup() {
 			user,
 			body: { packageId: t.savedPackage.id, ...body },
 		})
+	const approvalApi = createAccountPackageApproveCapabilitiesApiHandler(t.env)
+	// The approval page posts here, not to /account/packages.json.
+	const approve = (body: Record<string, unknown>) =>
+		approvalApi.handler({
+			request: new Request(
+				`${mappingFixtureBaseUrl}/account/packages/${t.savedPackage.id}/approve-capabilities.json`,
+				{
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(body),
+				},
+			),
+			params: { packageId: t.savedPackage.id },
+		} as never) as Promise<Response>
 	const loadPage = async () => {
 		const data = await loadAccountPackageApproveCapabilitiesData({
 			env: t.env,
@@ -101,13 +123,13 @@ async function setup() {
 			details: row.details_json ? JSON.parse(row.details_json) : null,
 		}))
 	}
-	return { ...t, post, loadPage, packageAudits }
+	return { ...t, toggle, approve, loadPage, packageAudits }
 }
 
 test('asking to go public, then one Approve, records both decisions and serves the package', async () => {
 	const t = await setup()
 
-	const asked = await t.post({
+	const asked = await t.toggle({
 		action: 'set-internet-visible',
 		internetVisible: true,
 		confirmName: 'digest',
@@ -124,12 +146,12 @@ test('asking to go public, then one Approve, records both decisions and serves t
 		page.goPublicRequestId,
 	])
 
-	const approved = await t.post({
+	const approved = await t.approve({
 		action: 'approve-capabilities-and-go-public',
 		fingerprint: page.fingerprint,
 		requestId: page.goPublicRequestId,
 	})
-	expect(approved?.status).toBe(200)
+	expect(approved.status).toBe(200)
 
 	const live = await getSavedPackageById(t.db, {
 		userId: t.acmeId,
@@ -200,11 +222,11 @@ test('approving the capability set alone does not offer the combined Approve', a
 	const page = await t.loadPage()
 	expect(page.goPublicRequestId).toBeNull()
 
-	const approved = await t.post({
+	const approved = await t.approve({
 		action: 'approve-capabilities',
 		fingerprint: page.fingerprint,
 	})
-	expect(approved?.status).toBe(200)
+	expect(approved.status).toBe(200)
 	const after = await t.loadPage()
 	expect(after.fingerprintMatchesApproval).toBe(true)
 	expect(after.goPublicRequestId).toBeNull()
@@ -219,4 +241,30 @@ test('approving the capability set alone does not offer the combined Approve', a
 			})
 		)?.isInternetVisible,
 	).toBe(false)
+})
+
+test('a stale combined click after going public was turned off changes nothing', async () => {
+	const t = await setup()
+	await t.toggle({
+		action: 'set-internet-visible',
+		internetVisible: true,
+		confirmName: 'digest',
+	})
+	const page = await t.loadPage()
+	await t.toggle({
+		action: 'set-internet-visible',
+		internetVisible: false,
+		confirmName: 'digest',
+	})
+
+	const stale = await t.approve({
+		action: 'approve-capabilities-and-go-public',
+		fingerprint: page.fingerprint,
+		requestId: page.goPublicRequestId,
+	})
+	expect(stale.status).toBe(409)
+	const after = await t.loadPage()
+	expect(after.pendingApprovals).toEqual([])
+	expect(after.fingerprintMatchesApproval).toBe(false)
+	expect(await t.packageAudits()).toEqual([])
 })
