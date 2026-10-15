@@ -98,14 +98,20 @@ test('package invite link: create on Collaborators, accept from Invites', async 
 		'open',
 	)
 
+	await page.goto(`/@${recipient.username}/-/waiting`)
+	await waitForClientHydration(page)
+	await expect(page.getByTestId('waiting-invite')).toContainText(
+		`Contribute access to ${packageName}`,
+	)
+
 	await page.goto('/account/organizations#invites')
 	await waitForClientHydration(page)
-	const row = page.getByTestId('invite-link')
+	const row = page.getByTestId('pending-invite')
 	await expect(row).toHaveCount(1)
 	await expect(row).toContainText(packageName)
 	await Promise.all([
 		page.waitForURL(new RegExp(`/@${orgSlug}/${packageName}$`)),
-		row.getByTestId('invite-link-accept').click(),
+		row.getByTestId('pending-invite-accept').click(),
 	])
 
 	await page.goto(new URL(linkUrl).pathname)
@@ -162,4 +168,66 @@ test('team invite link: create on Teams, accept on the join page', async ({
 		page.getByTestId('org-invite-join-confirm').click(),
 	])
 	await expect(page.getByText('Writers').first()).toBeVisible()
+})
+
+test('addressed invite: listed and revocable on Members, accepted from Waiting', async ({
+	page,
+	seedE2eUser,
+	login,
+}) => {
+	test.setTimeout(process.env.CI ? 120_000 : 90_000)
+	const runId = Date.now()
+	const owner = await seedE2eUser({
+		email: `addressed-owner-${runId}@example.com`,
+		username: `addressed-owner-${runId}`,
+		password: 'addressed-owner-password',
+	})
+	const recipient = await seedE2eUser({
+		email: `addressed-guest-${runId}@example.com`,
+		username: `addressed-guest-${runId}`,
+		password: 'addressed-guest-password',
+	})
+	const { orgSlug } = seedTeamOrg({
+		runId,
+		ownerId: seedStableUserIdFromEmail(owner.email),
+		packageName: `addressed-pkg-${runId}`,
+	})
+
+	await login({ email: owner.email, password: owner.password, mode: 'login' })
+	await page.goto(`/@${orgSlug}/-/members`)
+	await waitForClientHydration(page)
+	const form = page.getByTestId('org-invite-form')
+	for (const invitee of [recipient.email, `nobody-${runId}@example.com`]) {
+		await form.getByLabel('Email or username').fill(invitee)
+		await form.getByRole('button', { name: 'Send invite' }).click()
+		await expect(
+			page.getByTestId('org-invite').filter({ hasText: invitee }),
+		).toContainText('Pending')
+	}
+	const mistaken = page
+		.getByTestId('org-invite')
+		.filter({ hasText: `nobody-${runId}@example.com` })
+	await mistaken.getByTestId('org-invite-revoke').click()
+	await expect(mistaken).toHaveCount(0)
+	await expect(page.getByTestId('org-invite')).toHaveCount(1)
+
+	await page.context().clearCookies()
+	await login({
+		email: recipient.email,
+		password: recipient.password,
+		mode: 'login',
+	})
+	await page.goto(`/@${recipient.username}/-/waiting`)
+	await waitForClientHydration(page)
+	const card = page.getByTestId('waiting-invite')
+	await expect(card).toHaveCount(1)
+	await expect(card).toContainText('Join as Member')
+	await expect(card).toContainText('Links Org')
+	await Promise.all([
+		page.waitForURL(new RegExp(`/@${orgSlug}$`)),
+		card.getByTestId('pending-invite-accept').click(),
+	])
+	await page.goto(`/@${recipient.username}/-/waiting`)
+	await waitForClientHydration(page)
+	await expect(page.getByTestId('waiting-invite')).toHaveCount(0)
 })
