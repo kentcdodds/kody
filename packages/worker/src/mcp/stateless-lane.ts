@@ -64,13 +64,10 @@ export async function handleStatelessMcpRequest(input: {
 							callerContext,
 						})
 					: undefined
-			const server = new McpServer(
-				buildKodyMcpServerInfo(callerContext.baseUrl),
-				{
-					...(instructions ? { instructions } : {}),
-					jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
-				},
-			)
+			const server = new McpServer(buildKodyMcpServerInfo(), {
+				...(instructions ? { instructions } : {}),
+				jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
+			})
 			await registerTools(
 				createStatelessRegistrationAgent({ server, env, ctx, callerContext }),
 			)

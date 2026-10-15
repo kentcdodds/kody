@@ -82,7 +82,8 @@ test('agent discovery documents describe the MCP server and public pages', async
 
 	const card = buildMcpServerCard(origin)
 	expect(card.serverInfo).toEqual({
-		name: 'Kody',
+		name: 'kody-mcp',
+		title: 'Kody',
 		version: kodyMcpServerCardVersion,
 	})
 	expect(card.description).toContain('individuals and teams')

@@ -91,7 +91,7 @@ class MCPBase extends McpAgent<Env, State, Props> {
 				instructions,
 				jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
 			},
-			buildKodyMcpServerInfo(caller.baseUrl),
+			buildKodyMcpServerInfo(),
 		)
 		await registerTools(this.getRegistrationAgent())
 	}

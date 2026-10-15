@@ -2,7 +2,11 @@ import {
 	listPublicWebsitePages,
 	listPublicBlogPages,
 } from '#app/public-content.ts'
-import { kodyMcpServerVersion } from '#mcp/kody-mcp-server-info.ts'
+import {
+	kodyMcpServerName,
+	kodyMcpServerTitle,
+	kodyMcpServerVersion,
+} from '#mcp/kody-mcp-server-info.ts'
 import { listGuides } from '#worker/guides/catalog.ts'
 import { mcpOauthScopes } from '#worker/mcp-oauth-scopes.ts'
 import { docHref, docsIntroSlug } from '#universal/docs-nav.ts'
@@ -215,7 +219,10 @@ export function buildMcpServerCard(origin: string) {
 	const endpoint = `${origin}${mcpResourcePath}`
 	return {
 		serverInfo: {
-			name: 'Kody',
+			// Match handshake Implementation.name / title so discovery clients
+			// that compare card identity to initialize serverInfo agree.
+			name: kodyMcpServerName,
+			title: kodyMcpServerTitle,
 			version: kodyMcpServerCardVersion,
 		},
 		description:

@@ -3,16 +3,17 @@ import {
 	buildKodyMcpServerInfo,
 	kodyMcpServerDescription,
 	kodyMcpServerName,
+	kodyMcpServerTitle,
 	kodyMcpServerVersion,
 	kodyMcpServerWebsiteUrl,
 } from './kody-mcp-server-info.ts'
 
 test('serverInfo keeps stable name/version and adds display metadata', () => {
-	const info = buildKodyMcpServerInfo('https://preview.example')
+	const info = buildKodyMcpServerInfo()
 	expect(info).toMatchObject({
 		name: kodyMcpServerName,
 		version: kodyMcpServerVersion,
-		title: 'Kody',
+		title: kodyMcpServerTitle,
 		description: kodyMcpServerDescription,
 		websiteUrl: kodyMcpServerWebsiteUrl,
 	})
@@ -21,21 +22,22 @@ test('serverInfo keeps stable name/version and adds display metadata', () => {
 	expect(info.websiteUrl).toBe('https://kody.codes')
 	expect(info.icons).toEqual([
 		{
-			src: 'https://preview.example/android-chrome-192x192.png',
+			src: 'https://kody.codes/android-chrome-192x192.png',
 			mimeType: 'image/png',
 			sizes: ['192x192'],
 		},
 		{
-			src: 'https://preview.example/android-chrome-512x512.png',
+			src: 'https://kody.codes/android-chrome-512x512.png',
 			mimeType: 'image/png',
 			sizes: ['512x512'],
 		},
 	])
 })
 
-test('serverInfo omits icons when base URL is unknown', () => {
-	const info = buildKodyMcpServerInfo(null)
-	expect(info.icons).toBeUndefined()
-	expect(info.name).toBe(kodyMcpServerName)
-	expect(info.title).toBe('Kody')
+test('serverInfo icons always use production absolute URLs', () => {
+	const info = buildKodyMcpServerInfo()
+	expect(
+		info.icons?.every((icon) => icon.src.startsWith('https://kody.codes/')),
+	).toBe(true)
+	expect(info.icons?.some((icon) => icon.src.includes('localhost'))).toBe(false)
 })
