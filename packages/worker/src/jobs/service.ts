@@ -1452,7 +1452,8 @@ async function deferClaimedJobWithoutEnablement(input: {
 		userId: input.userId,
 		jobId: row.id,
 		claimToken: input.claimToken,
-		nowMs: input.now.valueOf(),
+		// Use wall clock: input.now is from runDueJobsForUser start and can lag.
+		nowMs: Date.now(),
 	})
 	if (!stillHeld) {
 		logJobSchedulerEvent({
