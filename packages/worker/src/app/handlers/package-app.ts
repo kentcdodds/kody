@@ -15,6 +15,7 @@ import {
 } from '#worker/package-runtime/package-app-diagnostics.ts'
 import { buildPackageAppNotFoundMessage } from '#worker/package-runtime/package-app-synthetic.ts'
 import { applyPackageAppCacheHeaders } from '#worker/package-runtime/package-app-cache-headers.ts'
+import { resolveInternetVisibleApprovedCommit } from '#app/package-app-internet-visible.ts'
 import { runWithRequestContext } from '#worker/request-context.ts'
 import {
 	createPackageCodeRequest,
@@ -92,10 +93,12 @@ async function handleTaggedPackageAppRequest(
 				slug: packagePath.kodyId,
 			})
 		: null
+	const approvedPublishedCommit = await resolveInternetVisibleApprovedCommit({
+		env,
+		lookup: slugLookup,
+	})
 	const serveAnonymously =
-		org &&
-		slugLookup?.savedPackage.hasApp &&
-		slugLookup.savedPackage.isInternetVisible
+		org && approvedPublishedCommit
 			? async () =>
 					applyPackageAppCacheHeaders(
 						await servePackageAppRequest({
@@ -109,6 +112,7 @@ async function handleTaggedPackageAppRequest(
 								displayName: org.displayName,
 							},
 							visitor: null,
+							approvedPublishedCommit,
 						}),
 						'anonymous',
 					)

@@ -695,6 +695,29 @@ test('internet-visible apps serve signed-out visitors anonymously; private apps 
 	expect(privateAnonymous.status).toBe(403)
 	expect(privateAnonymous.headers.get('X-Kody-Handoff')).toBe('required')
 
+	// Internet-visible without an approved capability set stays gated.
+	const unapprovedEntry = await workerFetch(
+		`${appOrigin}/@${orgSlug}/packages/${accessFixture.unapprovedPublicApp.slug}`,
+	)
+	expect(new URL(unapprovedEntry.headers.get('Location') ?? '').pathname).toBe(
+		'/login',
+	)
+	const unapprovedAnonymous = await workerFetch(
+		`${accessFixtureOrigin}/packages/${accessFixture.unapprovedPublicApp.slug}`,
+	)
+	expect(unapprovedAnonymous.status).toBe(403)
+	expect(unapprovedAnonymous.headers.get('X-Kody-Handoff')).toBe('required')
+
+	// Realtime hooks run as the owner, so anonymous visitors never reach them.
+	const anonymousRealtime = await workerFetch(
+		`${accessFixtureOrigin}/packages/${publicApp.slug}/ws`,
+		{ headers: { Upgrade: 'websocket' } },
+	)
+	expect(anonymousRealtime.status).toBe(403)
+	await expect(anonymousRealtime.text()).resolves.toBe(
+		'Sign in to use realtime features of this app.',
+	)
+
 	// A session that cannot run the public app is served anonymously instead
 	// of being bounced to the package page.
 	const outsider = await sessionCookieForFixtureOutsider()

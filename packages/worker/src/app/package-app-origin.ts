@@ -65,6 +65,7 @@ import {
 } from '#app/handlers/package-app.ts'
 import { type PackageAppServeOwner } from '#worker/package-runtime/package-app-serve.ts'
 import { applyPackageAppCacheHeaders } from '#worker/package-runtime/package-app-cache-headers.ts'
+import { resolveInternetVisibleApprovedCommit } from '#app/package-app-internet-visible.ts'
 import { buildUnmatchedPackageAppOriginPathMessage } from '#worker/package-runtime/package-app-synthetic.ts'
 import {
 	pushServerTiming,
@@ -477,7 +478,11 @@ async function buildCustomHostnameHandoffTarget(input: {
 	env: Env
 	packagePath: PackageAppPath
 	url: URL
-}): Promise<{ target: URL; kodyId: string } | null> {
+}): Promise<{
+	target: URL
+	kodyId: string
+	bindingKind: 'app' | 'org'
+} | null> {
 	if (!(await isPackageAppCustomDomainsEnabled(input.env.APP_DB))) return null
 	const appMapping = await lookupVerifiedAppCustomHostnameForPackage({
 		db: input.env.APP_DB,
@@ -516,7 +521,7 @@ async function buildCustomHostnameHandoffTarget(input: {
 	target.search = withoutHandoffToken(input.url).search
 	const handoffKodyId =
 		mapping.bindingKind === 'app' ? mapping.kodyId : input.packagePath.kodyId
-	return { target, kodyId: handoffKodyId }
+	return { target, kodyId: handoffKodyId, bindingKind: mapping.bindingKind }
 }
 
 /**
@@ -548,27 +553,6 @@ async function redirectAppOriginToPackageAppOrigin(input: {
 	})
 	if (retiredRedirect) return retiredRedirect
 
-	const customHandoff = await buildCustomHostnameHandoffTarget({
-		env,
-		packagePath,
-		url,
-	})
-	const target =
-		customHandoff?.target ??
-		buildSubdomainTarget({ packageAppOrigin, packagePath, url })
-	// Custom-host consume binds to the mapping leaf/slug (lowercased). Mint
-	// with that id so a mixed-case app-origin URL cannot fail the path check.
-	const handoffKodyId = customHandoff?.kodyId ?? packagePath.kodyId
-
-	// A non-safe method reaching the app origin is not part of the normal flow
-	// (package pages are loaded from, and post back to, the package-app
-	// subdomain). Preserve the method and let the subdomain authorize it with
-	// its own session rather than minting a token for a request we cannot
-	// replay.
-	if (request.method !== 'GET' && request.method !== 'HEAD') {
-		return redirectResponse({ location: target.toString(), status: 307 })
-	}
-
 	const org = await resolvePackageAppOrgOwnerByHandle({
 		env,
 		handle: packagePath.username,
@@ -583,7 +567,37 @@ async function redirectAppOriginToPackageAppOrigin(input: {
 	// Internet-visible apps serve anyone on the package-app origin, so a
 	// visitor who cannot run the app as themselves goes there without a
 	// handoff and is served anonymously.
-	const internetVisible = isInternetVisibleApp(slugLookup)
+	const internetVisible = Boolean(
+		await resolveInternetVisibleApprovedCommit({ env, lookup: slugLookup }),
+	)
+
+	const customHandoff = await buildCustomHostnameHandoffTarget({
+		env,
+		packagePath,
+		url,
+	})
+	// Org-level custom hostnames serve only session-gated apps, so an
+	// internet-visible app keeps its app-level hostname or the subdomain.
+	const usableCustomHandoff =
+		customHandoff && !(internetVisible && customHandoff.bindingKind === 'org')
+			? customHandoff
+			: null
+	const target =
+		usableCustomHandoff?.target ??
+		buildSubdomainTarget({ packageAppOrigin, packagePath, url })
+	// Custom-host consume binds to the mapping leaf/slug (lowercased). Mint
+	// with that id so a mixed-case app-origin URL cannot fail the path check.
+	const handoffKodyId = usableCustomHandoff?.kodyId ?? packagePath.kodyId
+
+	// A non-safe method reaching the app origin is not part of the normal flow
+	// (package pages are loaded from, and post back to, the package-app
+	// subdomain). Preserve the method and let the subdomain authorize it with
+	// its own session rather than minting a token for a request we cannot
+	// replay.
+	if (request.method !== 'GET' && request.method !== 'HEAD') {
+		return redirectResponse({ location: target.toString(), status: 307 })
+	}
+
 	const user = await readAuthenticatedAppUser(request, env)
 	if (!user) {
 		if (internetVisible) {
@@ -664,20 +678,12 @@ function handleApexRequest(input: {
 	return createUnmatchedPackageAppPathResponse()
 }
 
-function isInternetVisibleApp(
-	lookup: Awaited<ReturnType<typeof resolveSavedPackageForPackageAppSlug>>,
-) {
-	return Boolean(
-		lookup?.savedPackage.hasApp && lookup.savedPackage.isInternetVisible,
-	)
-}
-
 /**
  * Serve an internet-visible app to a visitor who is not acting as themselves
  * (no session, or a session that cannot run the app). Returns null when the
- * app is not internet-visible. The handle and slug lookups are the same
- * per-isolate freshness caches serving already uses, so a warm anonymous
- * request reads nothing from storage.
+ * app is not internet-visible or has no approved commit. The handle, slug,
+ * and approved-commit lookups are per-isolate freshness caches, so a warm
+ * anonymous request reads nothing from storage.
  */
 async function serveInternetVisiblePackageApp(input: {
 	request: Request
@@ -696,7 +702,11 @@ async function serveInternetVisiblePackageApp(input: {
 		userId: org.userId,
 		slug: input.packagePath.kodyId,
 	})
-	if (!isInternetVisibleApp(lookup)) return null
+	const approvedPublishedCommit = await resolveInternetVisibleApprovedCommit({
+		env: input.env,
+		lookup,
+	})
+	if (!approvedPublishedCommit) return null
 	const response = await servePackageAppRequest({
 		request: input.request,
 		env: input.env,
@@ -707,6 +717,7 @@ async function serveInternetVisiblePackageApp(input: {
 			displayName: org.displayName,
 		},
 		visitor: null,
+		approvedPublishedCommit,
 		packagePath: input.packagePath,
 		serverTiming: input.serverTiming,
 	})

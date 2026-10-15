@@ -9,7 +9,8 @@ import {
 } from '#worker/test-support/workers-seed.ts'
 
 /**
- * One team org with a private app and an internet-visible app, plus one
+ * One team org with a private app, an approved internet-visible app, and an
+ * internet-visible app with no capability approval, plus one
  * person per package-app actor: the org owner, a member holding an org-level
  * `app:execute` grant, and an outside collaborator holding `app:execute` on
  * the private app only. Anonymous visitors need no row.
@@ -18,7 +19,13 @@ export const accessFixture = {
 	orgSlug: 'cost-apps',
 	orgId: testStableUserIdFromEmail('cost-apps-org@example.com'),
 	privateApp: { id: 'pkg-cost-private', slug: 'demo' },
-	publicApp: { id: 'pkg-cost-public', slug: 'site' },
+	publicApp: {
+		id: 'pkg-cost-public',
+		slug: 'site',
+		approvedCommit: 'commit-cost-public',
+	},
+	/** Internet-visible, but its owner never approved a capability set. */
+	unapprovedPublicApp: { id: 'pkg-cost-unapproved', slug: 'draft' },
 	people: {
 		owner: { email: 'cost-owner@example.com', username: 'cost-owner' },
 		member: { email: 'cost-member@example.com', username: 'cost-member' },
@@ -59,7 +66,8 @@ export async function seedPackageAppAccessFixture() {
 			username: person.username,
 		})
 	}
-	const { orgId, orgSlug, privateApp, publicApp } = accessFixture
+	const { orgId, orgSlug, privateApp, publicApp, unapprovedPublicApp } =
+		accessFixture
 	const ownerId = testStableUserIdFromEmail(accessFixture.people.owner.email)
 	const memberId = testStableUserIdFromEmail(accessFixture.people.member.email)
 	const collaboratorId = testStableUserIdFromEmail(
@@ -129,6 +137,7 @@ export async function seedPackageAppAccessFixture() {
 	for (const app of [
 		{ ...privateApp, internetVisible: 0 },
 		{ ...publicApp, internetVisible: 1 },
+		{ ...unapprovedPublicApp, internetVisible: 1 },
 	]) {
 		await run(
 			`INSERT OR IGNORE INTO saved_packages (
@@ -146,6 +155,33 @@ export async function seedPackageAppAccessFixture() {
 			now,
 		)
 	}
+	// Workers-unit D1 starts empty; production applies migration 0124.
+	await run(
+		`CREATE TABLE IF NOT EXISTS package_capability_approvals (
+			id TEXT PRIMARY KEY NOT NULL,
+			package_id TEXT NOT NULL,
+			owner_user_id TEXT NOT NULL,
+			published_commit TEXT NOT NULL,
+			fingerprint TEXT NOT NULL,
+			capability_set_json TEXT NOT NULL,
+			dependency_snapshot_json TEXT NOT NULL DEFAULT '{}',
+			approved_by_user_id TEXT NOT NULL,
+			approved_at TEXT NOT NULL,
+			created_at TEXT NOT NULL
+		)`,
+	)
+	await run(
+		`INSERT OR IGNORE INTO package_capability_approvals (
+			id, package_id, owner_user_id, published_commit, fingerprint,
+			capability_set_json, approved_by_user_id, approved_at, created_at
+		) VALUES ('approval-cost-public', ?, ?, ?, 'fingerprint-cost', '[]', ?, ?, ?)`,
+		publicApp.id,
+		orgId,
+		publicApp.approvedCommit,
+		ownerId,
+		now,
+		now,
+	)
 }
 
 /** A `kody_pkg_session` cookie pair for `person` on the fixture org host. */

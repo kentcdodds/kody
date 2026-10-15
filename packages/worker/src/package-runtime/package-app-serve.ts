@@ -50,6 +50,10 @@ import {
 } from '#worker/package-runtime/package-app-synthetic.ts'
 import { packageRealtimeSessionRpc } from '#worker/package-runtime/realtime-session.ts'
 import { isWebSocketUpgradeRequest } from '#worker/package-runtime/websocket-upgrade.ts'
+import {
+	anonymousRefusalResponse,
+	refuseUnapprovedAnonymousServe,
+} from '#worker/package-runtime/package-app-anonymous-serve.ts'
 import { wantsJson } from '#worker/utils.ts'
 import {
 	applyServerTimingHeader,
@@ -520,6 +524,8 @@ export async function servePackageAppRequest(input: {
 	owner: PackageAppServeOwner
 	/** Null for an anonymous visitor of an internet-visible app. */
 	visitor: RuntimePackageAppVisitor | null
+	/** See `RuntimePackageAppServeInput.approvedPublishedCommit`. */
+	approvedPublishedCommit?: string | null
 	packagePath: PackageAppPath
 	dispatch?: PackageAppTrustedDispatch
 	/**
@@ -550,6 +556,7 @@ export async function servePackageAppRequest(input: {
 			request: input.request,
 			owner: input.owner,
 			visitor: input.visitor,
+			approvedPublishedCommit: input.approvedPublishedCommit,
 			packagePath: input.packagePath,
 			dispatch: input.dispatch,
 		})
@@ -636,6 +643,14 @@ export async function servePackageAppRequest(input: {
 			? getCanonicalAppBaseUrl({ env })
 			: getAppBaseUrl({ env, requestUrl: request.url })
 	const packageRealtimePath = parsePackageRealtimePath(packageRealtimeRestPath)
+	// Realtime hooks run with the owner's caller context, so an anonymous
+	// visitor never reaches them.
+	if (packageRealtimePath && !visitor) {
+		return attachPackageAppServerTiming(
+			anonymousRefusalResponse('Sign in to use realtime features of this app.'),
+			serverTiming,
+		)
+	}
 	if (packageRealtimePath && isWebSocketUpgradeRequest(request)) {
 		try {
 			const connected = await packageRealtimeSessionRpc({
@@ -718,6 +733,12 @@ export async function servePackageAppRequest(input: {
 						sourceId: savedPackage.sourceId,
 					}),
 			)
+			const refusal = refuseUnapprovedAnonymousServe({
+				visitor,
+				approvedPublishedCommit: input.approvedPublishedCommit,
+				publishedCommit: packageManifest.source.published_commit,
+			})
+			if (refusal) return attachPackageAppServerTiming(refusal, serverTiming)
 			return attachPackageAppServerTiming(
 				await servePackageAppAssetRequest({
 					request,
@@ -785,6 +806,12 @@ export async function servePackageAppRequest(input: {
 				packageId: savedPackage.id,
 			}),
 		])
+		const refusal = refuseUnapprovedAnonymousServe({
+			visitor,
+			approvedPublishedCommit: input.approvedPublishedCommit,
+			publishedCommit: packageManifest.source.published_commit,
+		})
+		if (refusal) return attachPackageAppServerTiming(refusal, serverTiming)
 		const appWorker = await buildPackageAppWorker({
 			env,
 			baseUrl,
