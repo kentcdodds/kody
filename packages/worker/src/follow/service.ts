@@ -17,6 +17,7 @@ import {
 	insertFollow,
 	listFollowsByFollower,
 	resumeFollow,
+	retargetFollowCreator,
 } from './repo.ts'
 import {
 	followCreateMaxPerHour,
@@ -113,6 +114,22 @@ export async function addFollow(input: {
 				...existing,
 				status: 'active',
 				pausedAt: null,
+				creatorUserId: input.creatorUserId,
+				updatedAt: now,
+			})
+		}
+		// Member deletion anonymizes creator_user_id to deleted-user while the
+		// org follow stays active. Retarget so a teammate who re-adds can gate
+		// delivery before the next publish pauses a private target.
+		if (existing.creatorUserId !== input.creatorUserId) {
+			await retargetFollowCreator(input.env.APP_DB, {
+				id: existing.id,
+				updatedAt: now,
+				creatorUserId: input.creatorUserId,
+			})
+			return followView({
+				...existing,
+				creatorUserId: input.creatorUserId,
 				updatedAt: now,
 			})
 		}

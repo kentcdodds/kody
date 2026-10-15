@@ -148,6 +148,55 @@ test('the 31st new followAdd in an hour is rejected', async () => {
 	).rejects.toBeInstanceOf(FollowRateLimitError)
 })
 
+test('followAdd retargets an active follow whose creator was anonymized', async () => {
+	const db = followDb()
+	await ensureFollowTables(db)
+	await insertFollow(db, {
+		id: 'follow-active',
+		followerOrgId: 'org-team',
+		creatorUserId: 'deleted-user',
+		targetKind: 'package',
+		targetOwnerId: ownerId,
+		targetId: 'pkg-private',
+		targetName: '@ada/notes',
+		createdAt: '2026-10-15T00:00:00.000Z',
+	})
+	for (let index = 0; index < followCreateMaxPerHour; index += 1) {
+		await consumeFollowCreateSlot(db, 'org-team')
+	}
+	serviceMocks.getOrgBySlug.mockResolvedValue({ id: ownerId, slug: 'ada' })
+	serviceMocks.getSavedPackageByName.mockResolvedValue(
+		savedPackage({ id: 'pkg-private', name: '@ada/notes', isPrivate: true }),
+	)
+	serviceMocks.loadFollowTargetPermissions.mockResolvedValue({
+		orgId: ownerId,
+		permissions: new Set(),
+		isOwner: false,
+		resourcePermissions: new Map([
+			[
+				resourceGrantKey('package', 'pkg-private'),
+				new Set<OrgPermission>(['package:read', 'package:execute']),
+			],
+		]),
+		credentialScopes: null,
+		profileGrants: null,
+	})
+	const viewed = await addFollow({
+		env: { APP_DB: db } as Env,
+		followerOrgId: 'org-team',
+		creatorUserId: 'person-2',
+		name: '@ada/notes',
+	})
+	expect(viewed.status).toBe('active')
+	const row = await getFollowByTarget(db, {
+		followerOrgId: 'org-team',
+		targetKind: 'package',
+		targetId: 'pkg-private',
+	})
+	expect(row?.creatorUserId).toBe('person-2')
+	expect(row?.status).toBe('active')
+})
+
 test('followAdd resumes a paused follow without consuming a create slot', async () => {
 	const db = followDb()
 	await ensureFollowTables(db)

@@ -169,6 +169,21 @@ export async function resumeFollow(
 		.run()
 }
 
+/** Active followAdd retargets delivery access to the caller who just passed create checks. */
+export async function retargetFollowCreator(
+	db: D1Database,
+	input: { id: string; updatedAt: string; creatorUserId: string },
+): Promise<void> {
+	await db
+		.prepare(
+			`UPDATE follows
+			SET creator_user_id = ?, updated_at = ?
+			WHERE id = ? AND status = 'active'`,
+		)
+		.bind(input.creatorUserId, input.updatedAt, input.id)
+		.run()
+}
+
 export async function markFollowDeliverySkip(
 	db: D1Database,
 	input: { id: string; reason: string; skippedAt: string },
