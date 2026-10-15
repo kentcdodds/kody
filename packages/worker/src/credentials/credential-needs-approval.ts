@@ -1,9 +1,13 @@
 /**
  * The publish pause for changed credential needs (ADR 0068 amendment
- * 2026-10-13). A publish whose needs closure gains a key, or changes a key's
- * kind, provider, or `multiple`, waits for the owner in the shared approval
- * queue while the previously published commit keeps serving. Dropping a need
- * or editing its description never pauses, and neither does a first publish.
+ * 2026-10-13, scoped 2026-10-15). For an **internet-visible** package, a
+ * publish whose needs closure gains a key, or changes a key's kind, provider,
+ * or `multiple`, waits for the owner in the shared approval queue while the
+ * previously published commit keeps serving. Private packages skip this pause
+ * (owner publish proceeds); going internet-visible still uses the
+ * `went_public` / capability approval path, which lists declared credentials.
+ * Dropping a need or editing its description never pauses, and neither does a
+ * first publish.
  */
 import * as Sentry from '@sentry/cloudflare'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
@@ -181,9 +185,10 @@ async function computeNeeds(input: {
 
 /**
  * Queues an approval and returns it when publishing `pendingCommit` would
- * change the package's credential needs; null when the publish may proceed.
- * Fails open: a closure that cannot be computed is reported and never blocks
- * a publish.
+ * change an **internet-visible** package's credential needs; null when the
+ * publish may proceed (including private packages, first publishes, and
+ * unchanged/removed needs). Fails open: a closure that cannot be computed is
+ * reported and never blocks a publish.
  */
 export async function requireCredentialNeedsApproval(input: {
 	env: Env
@@ -197,6 +202,16 @@ export async function requireCredentialNeedsApproval(input: {
 	if (input.source.entity_kind !== 'package') return null
 	if (!input.source.published_commit) return null
 	if (input.source.published_commit === input.pendingCommit) return null
+	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
+		userId: input.source.user_id as OwnerId,
+		packageId: input.source.entity_id,
+	})
+	if (!savedPackage) return null
+	// Private packages: owner publish proceeds without this pause. Credential
+	// needs still surface when the package becomes internet-visible
+	// (`went_public` / capability approval). Runtime credential checks and
+	// host/secret approval are unchanged.
+	if (!savedPackage.isInternetVisible) return null
 	let needs: Awaited<ReturnType<typeof computeNeeds>>
 	try {
 		needs = await computeNeeds(input)
@@ -210,11 +225,6 @@ export async function requireCredentialNeedsApproval(input: {
 	if (!needs) return null
 	const changes = diffCredentialNeeds(needs.before, needs.after)
 	if (changes.length === 0) return null
-	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
-		userId: input.source.user_id as OwnerId,
-		packageId: input.source.entity_id,
-	})
-	if (!savedPackage) return null
 	const request = await enqueuePackageApprovalRequest(input.env.APP_DB, {
 		packageId: savedPackage.id,
 		ownerUserId: input.source.user_id,

@@ -612,11 +612,14 @@ are the long-term design, not an interim step.
 
 Cole and Kent decided how decision 2's pause works.
 
-- **Scope.** Every published package, public or not. A publish whose credential
-  needs closure (transitive included) adds a need or changes one pauses before
-  the new commit becomes published. The previous published version keeps
-  running. A first publish, a same-commit publish, and a publish that only
-  removes needs do not pause.
+- **Scope (amended 2026-10-15).** Internet-visible packages only. A publish
+  whose credential needs closure (transitive included) adds a need or changes
+  one pauses before the new commit becomes published. The previous published
+  version keeps running. Private packages publish without this pause; their
+  declared credentials still appear when the owner turns internet-visible on
+  (`went_public` / capability approval). A first publish, a same-commit publish,
+  and a publish that only removes needs do not pause. Host and secret package
+  grants (`/connect/secrets`) are unchanged.
 - **Approval.** The owner approves on the package's approval page
   (`/@<owner>/<package>/approve-capabilities`), which publishes the paused
   commit. Nothing republishes on its own; a newer push replaces the pending

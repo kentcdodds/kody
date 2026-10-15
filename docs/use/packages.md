@@ -857,11 +857,15 @@ package instead:
 
 ## Approval when credential needs change
 
-Every published package pauses a publish whose credential needs change, even
-when it is not locked. A change is a need key the new needs closure adds, or a
-key whose `kind`, `provider`, or `multiple` changes. A dependency can cause it:
-the closure includes the needs of the packages it statically imports. Dropping a
-need, editing a description, and a package's first publish never pause.
+An **internet-visible** package pauses a publish whose credential needs change,
+even when it is not locked. Private packages publish without that pause; turning
+internet-visible on still goes through
+[Approval when a package goes internet-visible](#approval-when-a-package-goes-internet-visible),
+which lists declared credentials. A change is a need key the new needs closure
+adds, or a key whose `kind`, `provider`, or `multiple` changes. A dependency can
+cause it: the closure includes the needs of the packages it statically imports.
+Dropping a need, editing a description, and a package's first publish never
+pause.
 
 A paused publish keeps the previously published commit serving and is never
 published again automatically. A paused `repoPublishSession` or `packageSave`
@@ -1114,8 +1118,8 @@ publish checks run.
    projections. If the pushed HEAD is already current, the tool returns
    `already_published`. If the package is locked, it returns `locked` with a
    `pending_commit` and `approval_url` after checks pass and leaves
-   `published_commit` unchanged. If its credential needs changed, it returns
-   `approval_required` the same way (see
+   `published_commit` unchanged. If it is internet-visible and its credential
+   needs changed, it returns `approval_required` the same way (see
    [Approval when credential needs change](#approval-when-credential-needs-change)).
    If checks fail before promotion, it returns `checks_failed` with the failed
    check entries and leaves the underlying storage state unchanged. Full

@@ -75,13 +75,14 @@ function need(key: string, overrides: Partial<CredentialNeed> = {}) {
 	}
 }
 
-async function setup() {
+async function setup(options?: { internetVisible?: boolean }) {
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
 	const db = createD1FromSqlite(sqlite)
 	const env = { APP_DB: db } as unknown as Env
 	const packageId = 'package-mailer'
 	const now = '2026-10-13T00:00:00.000Z'
+	const internetVisible = options?.internetVisible !== false
 	await insertSavedPackage(
 		db,
 		{
@@ -97,6 +98,7 @@ async function setup() {
 			has_skills: 0,
 			hidden: 0,
 			is_private: 1,
+			is_internet_visible: internetVisible ? 1 : 0,
 			created_at: now,
 			updated_at: now,
 		},
@@ -228,8 +230,46 @@ test('only added or reshaped needs count as a change', () => {
 	)
 })
 
+test('a private package publishes credential-need changes without approval; internet-visible still pauses', async () => {
+	mocks.before = [need('MAIL')]
+	mocks.after = [need('MAIL'), need('NEW')]
+
+	const privatePkg = await setup({ internetVisible: false })
+	await expect(privatePkg.gate()).resolves.toBeNull()
+	await expect(
+		loadPendingPackageApprovals({
+			env: privatePkg.env,
+			ownerUserId: ownerId,
+			packageId: privatePkg.packageId,
+			publishedCommit: 'commit-old',
+		}),
+	).resolves.toEqual([])
+
+	const visible = await setup({ internetVisible: true })
+	const paused = await visible.gate()
+	expect(paused).toMatchObject({
+		packageId: visible.packageId,
+		pendingCommit: 'commit-new',
+		changes: [{ key: 'NEW', change: 'added' }],
+	})
+	await expect(
+		loadPendingPackageApprovals({
+			env: visible.env,
+			ownerUserId: ownerId,
+			packageId: visible.packageId,
+			publishedCommit: 'commit-old',
+		}),
+	).resolves.toEqual([
+		expect.objectContaining({
+			id: paused?.requestId,
+			reason: 'credential_needs_changed',
+			approveAction: 'approve-credential-needs',
+		}),
+	])
+})
+
 test('a needs change queues one pending approval per package; unchanged, removed, first, and failed computes publish', async () => {
-	const t = await setup()
+	const t = await setup({ internetVisible: true })
 	mocks.before = [need('MAIL'), need('OLD')]
 	mocks.after = [need('MAIL')]
 	await expect(t.gate()).resolves.toBeNull()
@@ -295,7 +335,7 @@ test('a needs change queues one pending approval per package; unchanged, removed
 })
 
 test('approving publishes the paused commit past the pause; a moved base supersedes it', async () => {
-	const t = await setup()
+	const t = await setup({ internetVisible: true })
 	const savedPackage = {
 		id: t.packageId,
 		userId: ownerId,
@@ -423,7 +463,7 @@ test('approving publishes the paused commit past the pause; a moved base superse
 })
 
 test('approving a paused session publish re-runs that session at the paused commit', async () => {
-	const t = await setup()
+	const t = await setup({ internetVisible: true })
 	const savedPackage = {
 		id: t.packageId,
 		userId: ownerId,
