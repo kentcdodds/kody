@@ -132,12 +132,13 @@ import main from 'kody:@scope/id'
 ## Smoke tests
 
 Before publish (`guide:package_lifecycle`): session lane — `repoRunChecks` then
-`repoPublishSession`; git lane — local checks then `packagePublishExternalPush`
-(sessions refuse unpublished HEAD). After publish, when Node ≥22 and the CLI are
-available, prefer local CLI execute (`guide:local_execute`). MCP-only hosts
-smoke with the matching post-publish surface (`packageAppFetch`,
-`packageSubscriptionDispatch`, webhook synthetic dispatch) or a static `kody:@…`
-import from `execute` when that tool is on the session.
+`repoPublishSession`; git lane — local checks, push, then
+`packagePublishExternalPush` (sessions refuse unpublished HEAD). After publish,
+when Node ≥22 and the CLI are available, prefer local CLI execute
+(`guide:local_execute`). MCP-only hosts smoke with the matching post-publish
+surface (`packageAppFetch`, `packageSubscriptionDispatch`, webhook synthetic
+dispatch) or a static `kody:@…` import from `execute` when that tool is on the
+session.
 
 ## Edge cases
 
