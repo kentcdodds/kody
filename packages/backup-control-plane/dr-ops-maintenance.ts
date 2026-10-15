@@ -111,8 +111,22 @@ async function handleDrSealStatusGet(
 			{ status: 400 },
 		)
 	}
+	let instance: Awaited<ReturnType<BackupEnvironment['SEAL_WORKFLOW']['get']>>
 	try {
-		const instance = await env.SEAL_WORKFLOW.get(id)
+		instance = await env.SEAL_WORKFLOW.get(id)
+	} catch (error) {
+		return Response.json(
+			{
+				ok: false,
+				error:
+					error instanceof Error
+						? error.message
+						: 'Unable to look up seal workflow',
+			},
+			{ status: 404 },
+		)
+	}
+	try {
 		const status = await instance.status()
 		const view = describeSealStatus({
 			status: status.status,
@@ -132,7 +146,7 @@ async function handleDrSealStatusGet(
 						? error.message
 						: 'Unable to read workflow status',
 			},
-			{ status: 404 },
+			{ status: 503 },
 		)
 	}
 }

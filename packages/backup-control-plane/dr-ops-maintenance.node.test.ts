@@ -125,3 +125,42 @@ test('DR ops seal enqueues workflow without Access JWT', async () => {
 	assert.equal(body.day, day)
 	assert.deepEqual(body.view, { kind: 'pending', status: 'queued' })
 })
+
+test('DR ops seal-status returns 404 for missing instance and 503 for status read failures', async () => {
+	const env = environment()
+	const instanceId = sealDayWorkflowInstanceId('2026-09-22')
+
+	env.SEAL_WORKFLOW = {
+		async get() {
+			throw new Error('instance not found')
+		},
+	} as unknown as Workflow
+	const missing = await handleControlPlaneFetch(
+		drOpsRequest(`/__maintenance/seal-status?id=${instanceId}`, {
+			method: 'GET',
+		}),
+		env,
+	)
+	assert.equal(missing.status, 404)
+
+	env.SEAL_WORKFLOW = {
+		async get() {
+			return {
+				async status() {
+					throw new Error('workflow status unavailable')
+				},
+			}
+		},
+	} as unknown as Workflow
+	const unavailable = await handleControlPlaneFetch(
+		drOpsRequest(`/__maintenance/seal-status?id=${instanceId}`, {
+			method: 'GET',
+		}),
+		env,
+	)
+	assert.equal(unavailable.status, 503)
+	assert.match(
+		((await unavailable.json()) as { error: string }).error,
+		/workflow status unavailable/,
+	)
+})
