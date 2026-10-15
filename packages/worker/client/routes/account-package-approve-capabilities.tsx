@@ -24,9 +24,11 @@ import {
 	getAccentCalloutCss,
 	getGhostButtonCss,
 	getPrimaryButtonCss,
+	mergeCss,
 } from '#universal/styles/style-primitives.ts'
 import {
 	colors,
+	mq,
 	radius,
 	spacing,
 	typography,
@@ -393,6 +395,14 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 					description: `Review what this package asks for. ${credentialValuesNote}`,
 					mentionInternet: false,
 				}
+		const approveActionLabel =
+			status === 'approving'
+				? 'Approving…'
+				: goPublicRequestId
+					? 'Approve and make internet-visible'
+					: payload?.package.isInternetVisible
+						? 'Re-approve capability set'
+						: 'Approve capability set'
 		const hasWentPublicPending = pendingApprovals.some(
 			(approval) => approval.reason === 'went_public',
 		)
@@ -642,39 +652,34 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 								serving.
 							</p>
 						) : null}
-						<div
-							mix={css({
-								display: 'flex',
-								flexWrap: 'wrap',
-								gap: spacing.sm,
-								alignItems: 'center',
-							})}
-						>
+						<div mix={css(approveActionRowCss)}>
 							{pageCopy.mentionInternet ? (
 								<button
 									type="button"
 									disabled={status === 'approving' || !payload.publishedCommit}
 									data-testid="package-approve-capabilities"
 									mix={[
-										css(getPrimaryButtonCss()),
+										css(
+											mergeCss(getPrimaryButtonCss(), approveActionControlCss),
+										),
 										on('click', () => void approveCapabilities()),
 									]}
 								>
-									{status === 'approving'
-										? 'Approving…'
-										: goPublicRequestId
-											? 'Approve and make internet-visible'
-											: payload.package.isInternetVisible
-												? 'Re-approve capability set'
-												: 'Approve capability set'}
+									{equalActionLabel(approveActionLabel, backToSettingsLabel)}
 								</button>
 							) : null}
 							<a
 								href={payload.settingsHref}
-								mix={css(getGhostButtonCss())}
+								mix={css(
+									pageCopy.mentionInternet
+										? mergeCss(getGhostButtonCss(), approveActionControlCss)
+										: getGhostButtonCss(),
+								)}
 								data-testid="package-approve-capabilities-back"
 							>
-								Back to package settings
+								{pageCopy.mentionInternet
+									? equalActionLabel(backToSettingsLabel, approveActionLabel)
+									: backToSettingsLabel}
 							</a>
 						</div>
 						<details
@@ -735,4 +740,65 @@ const capabilityRowCss = {
 	border: `1px solid ${colors.border}`,
 	backgroundColor: colors.surface,
 	minWidth: 0,
+}
+
+const backToSettingsLabel = 'Back to package settings'
+
+/**
+ * The approve control and the settings link are different elements (button vs
+ * anchor) with different built-in fonts. Stacking both labels in one grid
+ * cell makes each box as wide as the longer label; the shared metrics make
+ * the heights match too.
+ */
+function equalActionLabel(visible: string, match: string) {
+	return (
+		<>
+			<span mix={css(approveActionFaceCss)}>{visible}</span>
+			<span aria-hidden="true" mix={css(approveActionSizerCss)}>
+				{match}
+			</span>
+		</>
+	)
+}
+
+const approveActionRowCss = {
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	alignItems: 'stretch',
+	gap: spacing.sm,
+	maxWidth: '100%',
+	[mq.mobile]: {
+		flexDirection: 'column' as const,
+	},
+}
+
+const approveActionControlCss = {
+	display: 'inline-grid',
+	alignItems: 'center',
+	justifyItems: 'center',
+	boxSizing: 'border-box' as const,
+	maxWidth: '100%',
+	margin: 0,
+	padding: `${spacing.sm} ${spacing.md}`,
+	border: 'none',
+	appearance: 'none' as const,
+	fontFamily: typography.fontFamily,
+	fontSize: typography.fontSize.base,
+	fontWeight: typography.fontWeight.semibold,
+	lineHeight: 1.25,
+	textAlign: 'center' as const,
+	textDecoration: 'none',
+	whiteSpace: 'normal' as const,
+	[mq.mobile]: {
+		width: '100%',
+	},
+}
+
+const approveActionFaceCss = {
+	gridArea: '1 / 1',
+}
+
+const approveActionSizerCss = {
+	gridArea: '1 / 1',
+	visibility: 'hidden' as const,
 }
