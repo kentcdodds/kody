@@ -1697,6 +1697,11 @@ function emailRoutingRuleForwardsExactlyTo(input: {
  * when missing; updates when the matcher exists but the forward target or
  * enabled state differs. Fails when the destination is missing or unverified
  * (Kent must complete Cloudflare's destination verification email).
+ *
+ * Zone rules are listed first. When an existing rule already forwards exactly
+ * to `forwardTo`, destination listing is skipped — that account API needs
+ * broader Email Routing permissions than zone rule read, and a correct rule
+ * already proves the forward path works.
  */
 export async function ensureDmarcEmailRoutingRule(input: {
 	accountId: string
@@ -1718,54 +1723,41 @@ export async function ensureDmarcEmailRoutingRule(input: {
 		return { mailbox, forwardTo: input.forwardTo, created: false as const }
 	}
 
-	const destinations: Array<CloudflareEmailRoutingDestination> = []
-	{
-		let page = 1
-		let totalPages = 1
-		do {
-			const payload = await cloudflareApiRequest<
-				Array<CloudflareEmailRoutingDestination>
-			>({
-				accountId: input.accountId,
-				apiToken: input.apiToken,
-				apiBaseUrl: input.apiBaseUrl,
-				fetcher: input.fetcher,
-				sleep: input.sleep,
-				pathname: `/email/routing/addresses?page=${page}&per_page=50`,
-			})
-			destinations.push(...(payload.result ?? []))
-			totalPages = Math.max(1, payload.result_info?.total_pages ?? 1)
-			page += 1
-		} while (page <= totalPages)
-	}
-	const destination = destinations.find(
-		(entry) => entry.email.toLowerCase() === input.forwardTo.toLowerCase(),
-	)
-	if (!destination) {
-		return fail(
-			`Email Routing destination "${input.forwardTo}" is not registered on account ${input.accountId}. Add and verify it under Email → Email Routing → Destination addresses (or set DMARC_REPORT_FORWARD_TO to a verified address), then re-run deploy.`,
-		)
-	}
-	if (!destination.verified) {
-		return fail(
-			`Email Routing destination "${input.forwardTo}" exists but is not verified yet. Complete the Cloudflare verification email, then re-run deploy.`,
-		)
-	}
-
 	const rules: Array<CloudflareEmailRoutingRule> = []
 	{
 		let page = 1
 		let totalPages = 1
 		do {
-			const payload = await cloudflareRootApiRequest<
-				Array<CloudflareEmailRoutingRule>
-			>({
-				apiToken: input.apiToken,
-				apiBaseUrl: input.apiBaseUrl,
-				fetcher: input.fetcher,
-				sleep: input.sleep,
-				pathname: `/zones/${encodeURIComponent(input.zoneId)}/email/routing/rules?page=${page}&per_page=50`,
-			})
+			let payload: Awaited<
+				ReturnType<
+					typeof cloudflareRootApiRequest<Array<CloudflareEmailRoutingRule>>
+				>
+			>
+			try {
+				payload = await cloudflareRootApiRequest<
+					Array<CloudflareEmailRoutingRule>
+				>({
+					apiToken: input.apiToken,
+					apiBaseUrl: input.apiBaseUrl,
+					fetcher: input.fetcher,
+					sleep: input.sleep,
+					pathname: `/zones/${encodeURIComponent(input.zoneId)}/email/routing/rules?page=${page}&per_page=50`,
+				})
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error)
+				if (/Cloudflare API request failed \(403\)/.test(message)) {
+					console.error(
+						`WARNING: skipping DMARC Email Routing ensure — token cannot list zone routing rules (403). Add Zone Email Routing edit to Actions CLOUDFLARE_API_TOKEN, then re-run deploy. Wanted rule: ${mailbox} → ${input.forwardTo}.`,
+					)
+					return {
+						mailbox,
+						forwardTo: input.forwardTo,
+						created: false as const,
+						skipped: true as const,
+					}
+				}
+				throw error
+			}
 			rules.push(...(payload.result ?? []))
 			totalPages = Math.max(1, payload.result_info?.total_pages ?? 1)
 			page += 1
@@ -1798,6 +1790,67 @@ export async function ensureDmarcEmailRoutingRule(input: {
 				id: existing.id,
 			}
 		}
+	}
+
+	const destinations: Array<CloudflareEmailRoutingDestination> = []
+	{
+		let page = 1
+		let totalPages = 1
+		do {
+			let payload: Awaited<
+				ReturnType<
+					typeof cloudflareApiRequest<Array<CloudflareEmailRoutingDestination>>
+				>
+			>
+			try {
+				payload = await cloudflareApiRequest<
+					Array<CloudflareEmailRoutingDestination>
+				>({
+					accountId: input.accountId,
+					apiToken: input.apiToken,
+					apiBaseUrl: input.apiBaseUrl,
+					fetcher: input.fetcher,
+					sleep: input.sleep,
+					pathname: `/email/routing/addresses?page=${page}&per_page=50`,
+				})
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error)
+				if (/Cloudflare API request failed \(403\)/.test(message)) {
+					// Soft-skip: missing Email Routing destination scope must not block
+					// Worker deploys (stamp-scan and other tip fixes). Loud warning so
+					// ops can grant Account Email Routing destination read + Zone edit.
+					console.error(
+						`WARNING: skipping DMARC Email Routing ensure — token cannot list Email Routing destinations (403). Add Account Email Routing destination read (and Zone Email Routing edit) to Actions CLOUDFLARE_API_TOKEN, then re-run deploy. Needed to ${existing ? 'update' : 'create'} the ${mailbox} → ${input.forwardTo} rule.`,
+					)
+					return {
+						mailbox,
+						forwardTo: input.forwardTo,
+						created: false as const,
+						skipped: true as const,
+					}
+				}
+				throw error
+			}
+			destinations.push(...(payload.result ?? []))
+			totalPages = Math.max(1, payload.result_info?.total_pages ?? 1)
+			page += 1
+		} while (page <= totalPages)
+	}
+	const destination = destinations.find(
+		(entry) => entry.email.toLowerCase() === input.forwardTo.toLowerCase(),
+	)
+	if (!destination) {
+		return fail(
+			`Email Routing destination "${input.forwardTo}" is not registered on account ${input.accountId}. Add and verify it under Email → Email Routing → Destination addresses (or set DMARC_REPORT_FORWARD_TO to a verified address), then re-run deploy.`,
+		)
+	}
+	if (!destination.verified) {
+		return fail(
+			`Email Routing destination "${input.forwardTo}" exists but is not verified yet. Complete the Cloudflare verification email, then re-run deploy.`,
+		)
+	}
+
+	if (existing) {
 		const updated = await cloudflareRootApiRequest<CloudflareEmailRoutingRule>({
 			apiToken: input.apiToken,
 			apiBaseUrl: input.apiBaseUrl,
