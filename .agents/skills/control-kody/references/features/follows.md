@@ -35,6 +35,8 @@ node tools/control-kody.ts request POST /@<slug>/-/follows.json \
 - `GET /@:orgSlug/-/follows.json` — `{ ok, orgSlug, follows[] }`; `org:read`.
 - `POST /@:orgSlug/-/follows.json` — `{ intent: 'follow', name, kind, events? }`
   creates, resumes, or changes events (omit `events` to keep the stored choice);
+  `{ intent: 'follow', id }` resumes a listed follow under its target's current
+  name (the Follows page uses this, since stored names go stale on rename);
   `{ intent: 'unfollow', id }` or `{ intent: 'unfollow', name, kind }` deletes.
   Errors carry `code`: `invalid` 400, `unauthorized` 401, `not_found` 404,
   `rate_limited` 429.
