@@ -53,7 +53,7 @@ async function setup(input: {
 		kody: { id: 'digest', description: 'digest', ...input.kody },
 	}
 	mocks.loadPackageManifestBySourceId.mockResolvedValue({ manifest })
-	vi.mocked(needsClosure.loadPublishedCredentialNeeds).mockResolvedValue(
+	vi.spyOn(needsClosure, 'loadPublishedCredentialNeeds').mockResolvedValue(
 		input.closure ??
 			ownCredentialNeeds(
 				input.kody?.credentials as Parameters<typeof ownCredentialNeeds>[0],
