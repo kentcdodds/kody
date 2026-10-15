@@ -176,6 +176,14 @@ export const featureFlagDefinitions = [
 		// Intentionally no successMetric: git pushes are not a metered usage
 		// event, so exposures would not join any readout.
 	},
+	{
+		key: 'credential-need-enforcement',
+		defaultEnabled: false,
+		description:
+			'Global switch (audience and rollout are ignored): when on, a package run by anyone but its author (a team-org package, a Use collaborator, an unadopted community fork, or any internet-visible package) may fill {{secret:…}}, {{integration-token:…}}, and vault placeholders and call credential(key) only for credentials its kody.credentials closure declares; anything else fails with credential_need_undeclared. Turn on only after a codemod 0013 rescan with scope credential-need-enforcement is clean (issue #3822). Self-publish auto-approval also waits for this flag. Delete the flag and keep enforcement on once it has soaked.',
+		// Intentionally no successMetric: a security boundary, not a product
+		// metric; the readout is the codemod rescan and credential_need_undeclared errors.
+	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
 export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']
@@ -198,6 +206,9 @@ export const packageAppCustomDomainsFlagKey =
 	'package-app-custom-domains' satisfies FeatureFlagKey
 
 export const repoPushQueueFlagKey = 'repo-push-queue' satisfies FeatureFlagKey
+
+export const credentialNeedEnforcementFlagKey =
+	'credential-need-enforcement' satisfies FeatureFlagKey
 
 export const featureFlagKeys: ReadonlyArray<FeatureFlagKey> =
 	featureFlagDefinitions.map((definition) => definition.key)

@@ -31,6 +31,11 @@ import {
 } from '#universal/credential-contracts.ts'
 import { buildNeedCreateUrl } from './need-create-url.ts'
 import {
+	assertCredentialUsesDeclared,
+	CredentialNeedUndeclaredError,
+	type credentialNeedUndeclaredCode,
+} from './credential-need-enforcement.ts'
+import {
 	CredentialClientHandleError,
 	signCredentialClientHandle,
 	verifyCredentialClientHandle,
@@ -76,6 +81,7 @@ export type CredentialClientErrorCode =
 	| 'credential_not_found'
 	| 'credential_denied'
 	| 'credential_need_unknown'
+	| typeof credentialNeedUndeclaredCode
 	| 'host_not_allowed'
 	| 'insecure_transport'
 	| 'invalid_request'
@@ -145,6 +151,9 @@ export function toCredentialClientError(
 	options: { baseUrl?: string; orgSlug?: string | null } = {},
 ) {
 	if (error instanceof CredentialClientError) return error
+	if (error instanceof CredentialNeedUndeclaredError) {
+		return refusal(error.code, error.detail)
+	}
 	if (error instanceof CredentialRequestRefusedError) {
 		return refusal(error.code, error.message)
 	}
@@ -516,6 +525,18 @@ async function resolveKey(
 	mode: 'one' | 'many',
 ): Promise<Array<Picked>> {
 	const need = await loadNeed(ctx, key)
+	if (!need && ctx.packageId) {
+		const request = requireActorRequest(ctx)
+		await assertCredentialUsesDeclared({
+			env: ctx.env,
+			request,
+			orgId: request.org.id,
+			packageId: ctx.packageId,
+			references: [{ use: 'key', key }],
+		}).catch((error: unknown) => {
+			throw toCredentialClientError(error) ?? error
+		})
+	}
 	const target = needTarget(key, need)
 	const picks = ctx.callMap?.get(key)
 	if (!picks) {

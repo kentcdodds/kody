@@ -269,6 +269,7 @@ test('authenticated account SSR batches user/role and flag reads into two round 
 		'mcp-events-extension': false,
 		'package-app-custom-domains': false,
 		'repo-push-queue': false,
+		'credential-need-enforcement': false,
 	})
 	expect(Object.keys(body.loaderData).sort()).toEqual([
 		'accountConnections',

@@ -97,6 +97,7 @@ function createContext(db: D1Database): ApiInvocationContext {
 			'mcp-events-extension': false,
 			'package-app-custom-domains': false,
 			'repo-push-queue': false,
+			'credential-need-enforcement': false,
 		}),
 	}
 }

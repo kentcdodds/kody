@@ -384,15 +384,16 @@ or its **Credentials** tab.
 Every credential error is structured: it has a `code`, a message, and
 `retryWith`, a list of ready-to-retry picks.
 
-| Code                      | Meaning                                                    |
-| ------------------------- | ---------------------------------------------------------- |
-| `credential_unbound`      | No credential you can use matches the need                 |
-| `credential_ambiguous`    | More than one matches; `options` lists them by name/scope  |
-| `credential_not_found`    | The named credential is missing or not usable by you       |
-| `credential_need_unknown` | The map names a key no package in the invoked run declares |
-| `credential_denied`       | Authorization failed                                       |
-| `host_not_allowed`        | The request's host is not one of the credential's hosts    |
-| `insecure_transport`      | The request is not HTTPS                                   |
+| Code                         | Meaning                                                                                 |
+| ---------------------------- | --------------------------------------------------------------------------------------- |
+| `credential_unbound`         | No credential you can use matches the need                                              |
+| `credential_ambiguous`       | More than one matches; `options` lists them by name/scope                               |
+| `credential_not_found`       | The named credential is missing or not usable by you                                    |
+| `credential_need_unknown`    | The map names a key no package in the invoked run declares                              |
+| `credential_need_undeclared` | A package someone else runs uses a credential it does not declare in `kody.credentials` |
+| `credential_denied`          | Authorization failed                                                                    |
+| `host_not_allowed`           | The request's host is not one of the credential's hosts                                 |
+| `insecure_transport`         | The request is not HTTPS                                                                |
 
 When a need has no usable credential, or more than one, the error carries
 `createUrl`: a link to the creation page prefilled for that need, so an agent

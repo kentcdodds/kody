@@ -128,6 +128,7 @@ test('authenticated home SSR prefetches flags while loading page data', async ()
 		'mcp-events-extension': false,
 		'package-app-custom-domains': false,
 		'repo-push-queue': false,
+		'credential-need-enforcement': false,
 	})
 	expect(counts.batchSizes).toEqual([2, 3])
 	expect(loadOnboardingData).not.toHaveBeenCalled()

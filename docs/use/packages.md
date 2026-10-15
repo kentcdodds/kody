@@ -200,6 +200,21 @@ credentials; opt-in types that a package can declare are described in
   package without slots. See
   [Placeholders in `fetch`](./secrets-and-values.md#placeholders-in-fetch).
 
+#### Declare what someone else's run may use
+
+Your own package needs no declarations. That means a package in your personal
+org that is not an unadopted Community fork and is not internet-visible. A
+package anyone else runs may use only the credentials it declares in
+`kody.credentials`: a team-org package, one a Use collaborator runs, an
+unadopted fork, or any internet-visible package. That covers `{{secret:NAME}}`,
+`{{integration-token:NAME}}`, vault refs (declare the provider), and
+`credential(key)` / `credentials(key)`. An undeclared use fails with
+`credential_need_undeclared`, naming the package and the key to add. A slot with
+no `kind` covers any of them; slots its imports declare count too. This is
+turned on by the `credential-need-enforcement` flag once every published package
+declares what it uses (see
+[ADR 0068](../contributing/decisions/0068-credentials-own-placement-scoped-clients.md#amendment-2026-10-15-credential-need-enforcement)).
+
 #### Opt-in: credential clients
 
 A package (or ad hoc execute) can ask for a client instead of writing a
@@ -214,11 +229,11 @@ await resend.fetch('/emails', { method: 'POST', body: JSON.stringify(email) })
 ```
 
 - `credential(key)` picks the one credential you can Use with the need's kind
-  and provider (an undeclared key is read as a provider). It rejects with an
-  Error carrying `code` (`credential_unbound`, `credential_ambiguous`,
-  `credential_not_found`, `credential_denied`, `invalid_request`,
-  `host_not_allowed`, `insecure_transport`) and `retryWith`, a list of picks to
-  retry with.
+  and provider (an undeclared key is read as a provider in ad hoc code and your
+  own packages). It rejects with an Error carrying `code` (`credential_unbound`,
+  `credential_ambiguous`, `credential_not_found`, `credential_need_undeclared`,
+  `credential_denied`, `invalid_request`, `host_not_allowed`,
+  `insecure_transport`) and `retryWith`, a list of picks to retry with.
 - The client has `name`, `scope`, `kind`, and `hosts`, plus `fetch` (secret,
   oauth, url, and login credentials), `sign` (signing), or `callTool` (an org
   MCP server). A relative URL resolves against the first host. A header the
