@@ -1099,6 +1099,11 @@ type CloudflareApiRequestInput = {
 	apiToken: string
 	pathname: string
 	method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+	/**
+	 * Some Cloudflare DELETE endpoints document `result` as optional. Opt in
+	 * only for those callers so other requests still require a result.
+	 */
+	allowMissingResult?: boolean
 	body?: Record<string, unknown>
 	apiBaseUrl?: string
 	fetcher?: typeof fetch
@@ -1147,7 +1152,7 @@ async function cloudflareApiRequestOnce<T>(input: CloudflareApiRequestInput) {
 		if (
 			!response.ok ||
 			payload.success !== true ||
-			payload.result === undefined
+			(payload.result === undefined && !input.allowMissingResult)
 		) {
 			const error = payload.errors?.[0]
 			throw new Error(
@@ -1868,6 +1873,7 @@ export async function ensureEmailSendingEventSubscription(input: {
 			...input,
 			pathname,
 			method: 'DELETE',
+			allowMissingResult: true,
 		})
 		console.error(
 			`Deleted Email event subscription with stale source: ${existing.name}`,
@@ -1932,6 +1938,7 @@ export async function deleteEmailSendingEventSubscriptionIfPresent(input: {
 		...input,
 		pathname: `/event_subscriptions/subscriptions/${encodeURIComponent(existing.id)}`,
 		method: 'DELETE',
+		allowMissingResult: true,
 	})
 	console.error(`Deleted Email event subscription: ${existing.name}`)
 	return { deleted: true as const, id: existing.id, name: existing.name }

@@ -680,10 +680,8 @@ test('deleteEmailSendingEventSubscriptionIfPresent deletes by name when present'
 				destination: { type: 'queues.queue', queue_id: 'queue-1' },
 			},
 		]),
-		ok({
-			id: 'subscription-system',
-			name: 'kody-system-email-delivery-events',
-		}),
+		// Cloudflare DELETE may omit `result`; allowMissingResult must accept that.
+		Response.json({ success: true }),
 	)
 	await expect(
 		deleteEmailSendingEventSubscriptionIfPresent({
