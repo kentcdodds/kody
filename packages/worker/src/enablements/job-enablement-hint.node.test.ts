@@ -1,6 +1,7 @@
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { buildPackageJobId } from '#worker/jobs/package-job-id.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const mockModule = vi.hoisted(() => ({
 	listEnablementsForInstance: vi.fn(),
@@ -69,5 +70,25 @@ test('resolveCronJobEnablementHint asks the user with the exact enablementEnable
 		}),
 	).toBe(
 		'Ask the user to fix the paused enablement for cron "inbox-refresh", or re-enable with enablementEnable({ packageId: "pkg-1", triggerKind: "cron", triggerName: "inbox-refresh" }).',
+	)
+})
+
+test('resolveCronJobEnablementHint returns null when the lookup fails', async () => {
+	consoleWarn.mockImplementation(() => {})
+	mockModule.listEnablementsForInstance.mockRejectedValueOnce(
+		new Error('D1 unavailable'),
+	)
+	expect(
+		await resolveCronJobEnablementHint({
+			env,
+			orgId,
+			jobId,
+			jobName: 'inbox-refresh',
+			enabled: true,
+		}),
+	).toBeNull()
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'cron-job-enablement-hint-failed',
+		expect.any(Error),
 	)
 })
