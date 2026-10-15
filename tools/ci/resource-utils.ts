@@ -1520,11 +1520,11 @@ export async function ensurePackageAppDnsRecords(input: {
 }
 
 /** Local-part for DMARC aggregate reports (rua) on the system email domain. */
-export const dmarcReportMailboxLocal = 'dmarc'
+const dmarcReportMailboxLocal = 'dmarc'
 
 export const defaultDmarcReportForwardTo = 'me@kentcdodds.com'
 
-export function dmarcReportMailboxAddress(systemEmailDomain: string) {
+function dmarcReportMailboxAddress(systemEmailDomain: string) {
 	return `${dmarcReportMailboxLocal}@${systemEmailDomain}`
 }
 
