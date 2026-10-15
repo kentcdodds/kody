@@ -2,6 +2,10 @@
  * Soft-delete verified legacy team-org memories and memory grants (ADR 0072
  * cleanup). Never deletes a team-org memory until every effective reader has a
  * personal copy (provenance URI or identical subject+summary+details).
+ *
+ * soft-delete-read-filter: opt-out — grant sweep and vector retry read
+ * soft-deleted mcp_memories rows to decide revoke vs keep and to repair
+ * stranded Vectorize entries after a successful D1 soft-delete.
  */
 import {
 	parseOwnerId,
@@ -31,6 +35,13 @@ export type MemoryPersonalizePurgeOutcome =
 	| 'orphan_purged'
 	| 'orphan_would_purge'
 	| 'already_gone'
+
+const purgeOutcomesThisRun = new Set<MemoryPersonalizePurgeOutcome>([
+	'purged',
+	'orphan_purged',
+	'would_purge',
+	'orphan_would_purge',
+])
 
 export type MemoryPersonalizePurgeRow = {
 	sourceMemoryId: string
@@ -64,6 +75,7 @@ export type MemoryPersonalizePurgeResult = {
 	orphanPurged: number
 	grantsWouldRevoke: number
 	grantsRevoked: number
+	vectorCleanupFailed: number
 	rows: Array<MemoryPersonalizePurgeRow>
 	grantRows: Array<MemoryPersonalizePurgeGrantRow>
 	nextOrgCursor: string | null
@@ -71,11 +83,31 @@ export type MemoryPersonalizePurgeResult = {
 	warnings: Array<string>
 }
 
+type SoftDeleteTeamMemoryResult =
+	| { status: 'not_updated' }
+	| { status: 'soft_deleted'; vectorDeleted: boolean }
+
+async function tryDeleteMemoryVector(
+	env: Env,
+	memoryId: string,
+	retries: number,
+): Promise<boolean> {
+	for (let attempt = 0; attempt <= retries; attempt++) {
+		try {
+			await deleteMemoryVector(env, memoryId)
+			return true
+		} catch {
+			// Retry below; caller surfaces a warning if all attempts fail.
+		}
+	}
+	return false
+}
+
 async function softDeleteTeamMemory(input: {
 	env: Env
 	orgId: string
 	memory: McpMemoryRow
-}): Promise<boolean> {
+}): Promise<SoftDeleteTeamMemoryResult> {
 	const ownerId = parseOwnerId(input.orgId)
 	if (!ownerId) {
 		throw new Error(`Team org id is not a valid OwnerId: ${input.orgId}`)
@@ -103,15 +135,50 @@ async function softDeleteTeamMemory(input: {
 					deleted_at: now,
 				},
 			)
-			if (!updated) return false
-			try {
-				await deleteMemoryVector(input.env, input.memory.id)
-			} catch {
-				// Soft-delete in D1 still stands; vector cleanup can retry later.
-			}
-			return true
+			if (!updated) return { status: 'not_updated' }
+			// One immediate retry: D1 soft-delete stands even if Vectorize fails.
+			const vectorDeleted = await tryDeleteMemoryVector(
+				input.env,
+				input.memory.id,
+				1,
+			)
+			return { status: 'soft_deleted', vectorDeleted }
 		},
 	})
+}
+
+async function isLiveOrgMemory(input: {
+	db: D1Database
+	orgId: string
+	memoryId: string
+}): Promise<boolean> {
+	const live = await input.db
+		.prepare(
+			`SELECT 1 AS x FROM mcp_memories
+			 WHERE user_id = ? AND id = ? AND deleted_at IS NULL`,
+		)
+		.bind(input.orgId, input.memoryId)
+		.first<{ x: number }>()
+	return live != null
+}
+
+async function listSoftDeletedMemoryIdsPage(input: {
+	db: D1Database
+	orgId: string
+	limit: number
+}): Promise<Array<string>> {
+	const { results } = await input.db
+		.prepare(
+			`SELECT id FROM mcp_memories
+			 WHERE user_id = ?
+			   AND status = 'deleted'
+			   AND deleted_at IS NOT NULL
+			 ORDER BY deleted_at DESC, id DESC
+			 LIMIT ?`,
+		)
+		.bind(input.orgId, input.limit)
+		.all<{ id: string }>()
+	return (results ?? []).map((row) => row.id)
 }
 
 async function verifyReadersHaveCopies(input: {
@@ -145,6 +212,19 @@ async function verifyReadersHaveCopies(input: {
 		missingReaderPersonIds,
 		provenanceUrisChecked: [provenanceUri],
 	}
+}
+
+function memoryPurgedThisRun(
+	rows: Array<MemoryPersonalizePurgeRow>,
+	orgId: string,
+	memoryId: string,
+): boolean {
+	return rows.some(
+		(row) =>
+			row.fromOrgId === orgId &&
+			row.sourceMemoryId === memoryId &&
+			purgeOutcomesThisRun.has(row.outcome),
+	)
 }
 
 /**
@@ -185,6 +265,7 @@ export async function runMemoryPersonalizePurge(input: {
 	let orphanPurged = 0
 	let grantsWouldRevoke = 0
 	let grantsRevoked = 0
+	let vectorCleanupFailed = 0
 
 	const orgs = await listTeamOrgsPage({
 		db: input.env.APP_DB,
@@ -201,6 +282,8 @@ export async function runMemoryPersonalizePurge(input: {
 	for (let orgIndex = 0; orgIndex < orgs.length; orgIndex++) {
 		const org = orgs[orgIndex]!
 		scannedOrgs += 1
+		/** Soft-deleted this org page but Vectorize cleanup still failing. */
+		const pendingVectorMemoryIds = new Set<string>()
 		let afterMemoryId: string | null =
 			orgIndex === 0 ? (input.memoryCursor ?? null) : null
 		let orgMemoryCount = 0
@@ -262,12 +345,12 @@ export async function runMemoryPersonalizePurge(input: {
 						})
 						continue
 					}
-					const ok = await softDeleteTeamMemory({
+					const deleted = await softDeleteTeamMemory({
 						env: input.env,
 						orgId: org.id,
 						memory,
 					})
-					if (ok) {
+					if (deleted.status === 'soft_deleted') {
 						orphanPurged += 1
 						rows.push({
 							sourceMemoryId: memory.id,
@@ -281,7 +364,14 @@ export async function runMemoryPersonalizePurge(input: {
 							],
 							outcome: 'orphan_purged',
 						})
+						if (!deleted.vectorDeleted) {
+							pendingVectorMemoryIds.add(memory.id)
+							warnings.push(
+								`Soft-deleted orphan memory ${memory.id} on org ${org.slug ?? org.id} but vector cleanup failed; will retry`,
+							)
+						}
 					} else {
+						// Live row left in place — grant sweep must not revoke.
 						warnings.push(
 							`Failed soft-deleting orphan memory ${memory.id} on org ${org.slug ?? org.id}`,
 						)
@@ -325,12 +415,14 @@ export async function runMemoryPersonalizePurge(input: {
 					continue
 				}
 
-				const ok = await softDeleteTeamMemory({
+				const deleted = await softDeleteTeamMemory({
 					env: input.env,
 					orgId: org.id,
 					memory,
 				})
-				if (!ok) {
+				if (deleted.status !== 'soft_deleted') {
+					// Soft-delete failed while the row may still be live — do not
+					// treat as purged; grant sweep keeps grants for live rows.
 					warnings.push(
 						`Failed soft-deleting memory ${memory.id} on org ${org.slug ?? org.id}`,
 					)
@@ -357,6 +449,12 @@ export async function runMemoryPersonalizePurge(input: {
 					provenanceUrisChecked: verified.provenanceUrisChecked,
 					outcome: 'purged',
 				})
+				if (!deleted.vectorDeleted) {
+					pendingVectorMemoryIds.add(memory.id)
+					warnings.push(
+						`Soft-deleted memory ${memory.id} on org ${org.slug ?? org.id} but vector cleanup failed; will retry`,
+					)
+				}
 			}
 			if (memories.length < pageLimit) {
 				orgExhausted = true
@@ -384,23 +482,49 @@ export async function runMemoryPersonalizePurge(input: {
 			orgExhausted = true
 		}
 
-		// Soft-delete obsolete memory grants for this org, except grants whose
-		// live memory was blocked (copy not proven — leave grant with the row).
-		const blockedMemoryIds = new Set(
-			rows
-				.filter(
-					(row) =>
-						row.fromOrgId === org.id && row.outcome === 'blocked_missing_copy',
-				)
-				.map((row) => row.sourceMemoryId),
-		)
+		// Retry Vectorize deletes for this-run failures and a bounded page of
+		// soft-deleted rows (prior stranded cleanups), before grant sweep.
+		if (!dryRun) {
+			const retryIds = new Set(pendingVectorMemoryIds)
+			for (const id of await listSoftDeletedMemoryIdsPage({
+				db: input.env.APP_DB,
+				orgId: org.id,
+				limit: memoryLimit,
+			})) {
+				retryIds.add(id)
+			}
+			for (const memoryId of retryIds) {
+				const ok = await tryDeleteMemoryVector(input.env, memoryId, 0)
+				if (ok) {
+					pendingVectorMemoryIds.delete(memoryId)
+				} else if (pendingVectorMemoryIds.has(memoryId)) {
+					vectorCleanupFailed += 1
+					warnings.push(
+						`Vector cleanup still failing for memory ${memoryId} on org ${org.slug ?? org.id}`,
+					)
+				}
+			}
+		}
+
+		// Revoke obsolete memory grants only when this run purged the memory
+		// (or would, in dry-run) or the row is no longer live. Live rows that
+		// failed soft-delete, stayed blocked, or were blocked on an earlier
+		// page keep their grants so readers remain visible on retry.
 		const memoryGrants = await listGrants({
 			db: input.env.APP_DB,
 			orgId: org.id,
 			resourceType: 'memory',
 		})
 		for (const grant of memoryGrants) {
-			if (blockedMemoryIds.has(grant.resourceId)) continue
+			const purgedNow = memoryPurgedThisRun(rows, org.id, grant.resourceId)
+			if (!purgedNow) {
+				const live = await isLiveOrgMemory({
+					db: input.env.APP_DB,
+					orgId: org.id,
+					memoryId: grant.resourceId,
+				})
+				if (live) continue
+			}
 			if (dryRun) {
 				grantsWouldRevoke += 1
 				grantRows.push({
@@ -462,6 +586,7 @@ export async function runMemoryPersonalizePurge(input: {
 		orphanPurged,
 		grantsWouldRevoke,
 		grantsRevoked,
+		vectorCleanupFailed,
 		rows,
 		grantRows,
 		nextOrgCursor,

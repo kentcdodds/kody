@@ -101,6 +101,7 @@ const outputSchema = z.object({
 	orphanPurged: count,
 	grantsWouldRevoke: count,
 	grantsRevoked: count,
+	vectorCleanupFailed: count,
 	rows: z.array(rowSchema),
 	grantRows: z.array(grantRowSchema),
 	nextOrgCursor: z.string().nullable(),
@@ -148,7 +149,7 @@ export const adminMemoryPersonalizePurgeCapability = defineDomainCapability(
 					}),
 				{
 					successReason: (result) =>
-						`dry_run=${result.dryRun};orgs=${result.scannedOrgs};memories=${result.scannedMemories};would=${result.wouldPurge};purged=${result.purged};blocked=${result.blockedMissingCopy};orphanWould=${result.orphanWouldPurge};orphanPurged=${result.orphanPurged};grantsWould=${result.grantsWouldRevoke};grantsRevoked=${result.grantsRevoked};nextOrg=${result.nextOrgCursor ?? 'done'};nextMemory=${result.nextMemoryCursor ?? 'done'}`,
+						`dry_run=${result.dryRun};orgs=${result.scannedOrgs};memories=${result.scannedMemories};would=${result.wouldPurge};purged=${result.purged};blocked=${result.blockedMissingCopy};orphanWould=${result.orphanWouldPurge};orphanPurged=${result.orphanPurged};grantsWould=${result.grantsWouldRevoke};grantsRevoked=${result.grantsRevoked};vectorFailed=${result.vectorCleanupFailed};nextOrg=${result.nextOrgCursor ?? 'done'};nextMemory=${result.nextMemoryCursor ?? 'done'}`,
 				},
 			)
 		},
