@@ -248,6 +248,7 @@ export function PackageInviteLinksPanel(
 			createdUrl = null
 			createdLinkId = null
 			message = null
+			loadError = null
 			void load(key)
 		}
 		return (
