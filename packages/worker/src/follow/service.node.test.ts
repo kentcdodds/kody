@@ -16,6 +16,7 @@ import {
 	getFollowByTarget,
 	insertFollow,
 	pauseFollow,
+	retargetFollowCreator,
 } from './repo.ts'
 
 const serviceMocks = vi.hoisted(() => ({
@@ -195,6 +196,32 @@ test('followAdd retargets an active follow whose creator was anonymized', async 
 	})
 	expect(row?.creatorUserId).toBe('person-2')
 	expect(row?.status).toBe('active')
+})
+
+test('retargetFollowCreator returns false after a concurrent pause', async () => {
+	const db = followDb()
+	await ensureFollowTables(db)
+	await insertFollow(db, {
+		id: 'follow-race',
+		followerOrgId: 'org-race',
+		creatorUserId: 'deleted-user',
+		targetKind: 'package',
+		targetOwnerId: ownerId,
+		targetId: 'pkg-race',
+		targetName: '@ada/notes',
+		createdAt: '2026-10-15T00:00:00.000Z',
+	})
+	await pauseFollow(db, {
+		id: 'follow-race',
+		pausedAt: '2026-10-15T02:00:00.000Z',
+	})
+	expect(
+		await retargetFollowCreator(db, {
+			id: 'follow-race',
+			updatedAt: '2026-10-15T02:01:00.000Z',
+			creatorUserId: 'person-2',
+		}),
+	).toBe(false)
 })
 
 test('followAdd resumes a paused follow without consuming a create slot', async () => {

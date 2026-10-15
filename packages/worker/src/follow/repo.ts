@@ -169,12 +169,16 @@ export async function resumeFollow(
 		.run()
 }
 
-/** Active followAdd retargets delivery access to the caller who just passed create checks. */
+/**
+ * Active followAdd retargets delivery access to the caller who just passed
+ * create checks. Returns false when the row is no longer active (for example
+ * delivery paused it between the read and this write).
+ */
 export async function retargetFollowCreator(
 	db: D1Database,
 	input: { id: string; updatedAt: string; creatorUserId: string },
-): Promise<void> {
-	await db
+): Promise<boolean> {
+	const result = await db
 		.prepare(
 			`UPDATE follows
 			SET creator_user_id = ?, updated_at = ?
@@ -182,6 +186,7 @@ export async function retargetFollowCreator(
 		)
 		.bind(input.creatorUserId, input.updatedAt, input.id)
 		.run()
+	return (result.meta.changes ?? 0) > 0
 }
 
 export async function markFollowDeliverySkip(

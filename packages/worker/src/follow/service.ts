@@ -122,11 +122,34 @@ export async function addFollow(input: {
 		// org follow stays active. Retarget so a teammate who re-adds can gate
 		// delivery before the next publish pauses a private target.
 		if (existing.creatorUserId !== input.creatorUserId) {
-			await retargetFollowCreator(input.env.APP_DB, {
+			const retargeted = await retargetFollowCreator(input.env.APP_DB, {
 				id: existing.id,
 				updatedAt: now,
 				creatorUserId: input.creatorUserId,
 			})
+			if (!retargeted) {
+				const current = await getFollowByTarget(input.env.APP_DB, {
+					followerOrgId: input.followerOrgId,
+					targetKind: target.kind,
+					targetId: target.id,
+				})
+				if (current?.status === 'paused') {
+					await resumeFollow(input.env.APP_DB, {
+						id: current.id,
+						updatedAt: now,
+						creatorUserId: input.creatorUserId,
+					})
+					return followView({
+						...current,
+						status: 'active',
+						pausedAt: null,
+						creatorUserId: input.creatorUserId,
+						updatedAt: now,
+					})
+				}
+				if (current) return followView(current)
+				throw followTargetNotFound(requested)
+			}
 			return followView({
 				...existing,
 				creatorUserId: input.creatorUserId,
