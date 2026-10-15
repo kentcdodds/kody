@@ -37,10 +37,23 @@ const packageGraphImportsSchema = z.array(z.string().min(1).max(512)).max(64)
 
 const packageGraphConversationIdSchema = z.string().min(1).max(128).optional()
 
+const packageGraphCodeTextEncoder = new TextEncoder()
+
 const packageGraphCodeSchema = z
 	.string()
 	.min(1)
+	// OpenAPI maxLength (characters). UTF-8 byte refine below is authoritative
+	// so multibyte source cannot slip past the JSON body budget.
 	.max(maxLocalExecutePackageGraphCodeBytes)
+	.superRefine((value, ctx) => {
+		const byteLength = packageGraphCodeTextEncoder.encode(value).byteLength
+		if (byteLength > maxLocalExecutePackageGraphCodeBytes) {
+			ctx.addIssue({
+				code: 'custom',
+				message: `code is ${byteLength} UTF-8 bytes; the maximum is ${maxLocalExecutePackageGraphCodeBytes} (Open API JSON body limit minus wrapper headroom). Pass imports instead of inlining a large bundle.`,
+			})
+		}
+	})
 
 /**
  * `code` and/or `imports` (at least one). Union keeps OpenAPI `anyOf` branches

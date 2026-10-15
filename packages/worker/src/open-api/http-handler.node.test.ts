@@ -777,6 +777,23 @@ test('package-graph accepts code over the old 512k char cap and imports-only pre
 		code: 'x'.repeat(maxLocalExecutePackageGraphCodeBytes + 1),
 	})
 	expect(overCeiling.success).toBe(false)
+
+	// Multibyte source can stay under the character maxLength and still blow
+	// the UTF-8 byte budget (and thus the JSON body cap).
+	const multibyteNearCeiling = '€'.repeat(
+		Math.ceil(maxLocalExecutePackageGraphCodeBytes / 2),
+	)
+	expect(multibyteNearCeiling.length).toBeLessThanOrEqual(
+		maxLocalExecutePackageGraphCodeBytes,
+	)
+	expect(
+		new TextEncoder().encode(multibyteNearCeiling).byteLength,
+	).toBeGreaterThan(maxLocalExecutePackageGraphCodeBytes)
+	expect(
+		localExecutePackageGraphInputSchema.safeParse({
+			code: multibyteNearCeiling,
+		}).success,
+	).toBe(false)
 })
 
 test('MCP OAuth Bearer authenticates CapabilityProxy and package-graph', async () => {
