@@ -563,6 +563,10 @@
 		{
 			"filename": "0151-follow-events.sql",
 			"sha256": "74c82b5ea0d063b45470a531a8132eed51bca18668e76c41b967bf8ebcdd7214"
+		},
+		{
+			"filename": "0152-mcp-memories-vector-deleted-at.sql",
+			"sha256": "72cfc2ee0d41dd5e41209ee1304d073695f60ea22cd8f94bd18f46a36be08ef5"
 		}
 	]
 }

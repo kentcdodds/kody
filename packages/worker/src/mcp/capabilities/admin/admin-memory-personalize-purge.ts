@@ -26,6 +26,7 @@ const rowSchema = z.object({
 		'orphan_purged',
 		'orphan_would_purge',
 		'already_gone',
+		'soft_delete_failed',
 	]),
 })
 
