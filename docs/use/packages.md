@@ -932,9 +932,10 @@ it credentials, declare them, publish, turn internet-visible off, and approve
 turning it on again. Self-publish needs credential-need enforcement to be on.
 Otherwise, or when anything is declared, `packageUpdate` returns the
 `approval_url` and a `self_publish_blocker` that says why (`enforcement_off`,
-`unpublished`, `declares_credentials`, `declares_capabilities`, `not_audited`,
-`audit_concerns`, or `not_permitted` when the caller cannot publish the
-package).
+`unpublished`, `stale_dependencies` (a dependency republished since this package
+was published; publish it again), `declares_credentials`,
+`declares_capabilities`, `not_audited`, `audit_concerns`, or `not_permitted`
+when the caller cannot publish the package).
 
 ## Approve many changes at once
 

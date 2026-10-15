@@ -61,7 +61,8 @@ The audit is informational and approves nothing.
 - the global `credential-need-enforcement` flag is on, so declaring nothing
   means the fetch gateway and `credential()` fill nothing for the package;
 - the package and every package in its resolved dependency snapshot are
-  published;
+  published, each still at the commit the snapshot pins (otherwise
+  `stale_dependencies`), since only the current publish is read;
 - none of them declares `kody.credentials` (or has a fresh needs closure that
   does), `secretMounts`, `secretProvider`, `subscriptions`, `emits`, `jobs`,
   `retrievers`, or `webhooks`;
@@ -79,7 +80,8 @@ and `audit_concerns` for the audit).
 
 `selfPublishPackage` then records the capability pin, supersedes an owner-path
 `went_public` request for the same package, enqueues one whose details carry
-`selfPublish: true`, approves it through `approveWentPublicRequest` (the same
+`selfPublish: true` (refusing if a reused or concurrent unmarked request holds
+the pending slot), approves it through `approveWentPublicRequest` (the same
 checks as the owner's click), and writes one org audit event,
 `package.went_public.self_publish`.
 

@@ -170,6 +170,7 @@ export const packageUpdateCapability = defineDomainCapability(
 				.enum([
 					'enforcement_off',
 					'unpublished',
+					'stale_dependencies',
 					'declares_credentials',
 					'declares_capabilities',
 					'not_audited',
@@ -178,7 +179,7 @@ export const packageUpdateCapability = defineDomainCapability(
 				])
 				.optional()
 				.describe(
-					`Why internet_visible waits on owner Approve instead of self-publishing: credential-need enforcement is off, a package in the tree is unpublished, the tree declares credentials, the tree declares other capabilities, the current published commit + fingerprint has no security audit (not_audited) or one with verdict concerns (audit_concerns), or the caller may not publish this package. For not_audited: audit, record verdict pass with ${packageSecurityAuditRecordOperation}; that re-evaluates the pending request.`,
+					`Why internet_visible waits on owner Approve instead of self-publishing: credential-need enforcement is off, a package in the tree is unpublished, a dependency republished since this package's publish (stale_dependencies: publish this package again), the tree declares credentials, the tree declares other capabilities, the current published commit + fingerprint has no security audit (not_audited) or one with verdict concerns (audit_concerns), or the caller may not publish this package. For not_audited: audit, record verdict pass with ${packageSecurityAuditRecordOperation}; that re-evaluates the pending request.`,
 				),
 		}),
 		async handler(args, ctx) {

@@ -106,7 +106,7 @@ function summary(dependencySourceIds: Array<string> = []) {
 				packageId: 'pkg-1',
 				kodyId: 'landing',
 				sourceId: 'source-root',
-				publishedCommit: 'commit-root',
+				publishedCommit: 'commit-source-root',
 			},
 			dependencies: dependencySourceIds.map((sourceId) => ({
 				sourceId,
@@ -114,7 +114,7 @@ function summary(dependencySourceIds: Array<string> = []) {
 				kodyId: sourceId,
 			})),
 		},
-		publishedCommit: 'commit-root',
+		publishedCommit: 'commit-source-root',
 		latestApproval: null,
 		matchingApproval: null,
 		fingerprintMatchesApproval: false,
@@ -144,6 +144,7 @@ function publishTree(kodyBySource: Record<string, Record<string, unknown>>) {
 }
 
 const env = { APP_DB: {} } as Env
+const markedRequest = { id: 'request-1', details: { selfPublish: true } }
 
 beforeEach(() => {
 	for (const mock of Object.values(mockModule)) mock.mockReset()
@@ -258,7 +259,7 @@ test('self-publish needs a passing security audit for the current commit and fin
 		{
 			ownerUserId: ownerId,
 			packageId: 'pkg-1',
-			publishedCommit: 'commit-root',
+			publishedCommit: 'commit-source-root',
 			fingerprint: 'fp-1',
 		},
 	)
@@ -311,13 +312,13 @@ test('attemptSelfPublish writes nothing when blocked or when the caller may not 
 
 test('selfPublishPackage pins the set, approves a marked went_public request, and audits once', async () => {
 	mockModule.approvePackageCapabilitySet.mockResolvedValue({
-		approval: { id: 'approval-1', publishedCommit: 'commit-root' },
+		approval: { id: 'approval-1', publishedCommit: 'commit-source-root' },
 	})
 	mockModule.getPendingWentPublicApproval.mockResolvedValue({
 		id: 'owner-request',
 		details: { fingerprint: 'fp-1' },
 	})
-	mockModule.enqueueWentPublicApproval.mockResolvedValue({ id: 'request-1' })
+	mockModule.enqueueWentPublicApproval.mockResolvedValue(markedRequest)
 	mockModule.approveWentPublicRequest.mockResolvedValue({ ok: true })
 	const request = sessionRequestContext('person-1', 'bea')
 
@@ -345,7 +346,7 @@ test('selfPublishPackage pins the set, approves a marked went_public request, an
 	)
 	expect(mockModule.enqueueWentPublicApproval).toHaveBeenCalledWith(
 		expect.objectContaining({
-			publishedCommit: 'commit-root',
+			publishedCommit: 'commit-source-root',
 			selfPublish: true,
 		}),
 	)
@@ -370,10 +371,10 @@ test('selfPublishPackage pins the set, approves a marked went_public request, an
 
 test('selfPublishPackage audits a failed approve and returns its error', async () => {
 	mockModule.approvePackageCapabilitySet.mockResolvedValue({
-		approval: { id: 'approval-1', publishedCommit: 'commit-root' },
+		approval: { id: 'approval-1', publishedCommit: 'commit-source-root' },
 	})
 	mockModule.getPendingWentPublicApproval.mockResolvedValue(null)
-	mockModule.enqueueWentPublicApproval.mockResolvedValue({ id: 'request-1' })
+	mockModule.enqueueWentPublicApproval.mockResolvedValue(markedRequest)
 	mockModule.approveWentPublicRequest.mockResolvedValue({
 		ok: false,
 		status: 409,
@@ -400,5 +401,40 @@ test('selfPublishPackage audits a failed approve and returns its error', async (
 				error: 'The published version changed.',
 			}),
 		}),
+	)
+})
+
+test('self-publish is blocked when a package in the tree republished since the pinned snapshot', async () => {
+	publishTree({ 'source-root': {}, 'source-dep': {} })
+	const stale = summary(['source-dep'])
+	stale.dependencySnapshot.dependencies[0]!.publishedCommit = 'commit-older'
+	await expect(
+		evaluateSelfPublish({ env, savedPackage, summary: stale }),
+	).resolves.toEqual({ eligible: false, blocker: 'stale_dependencies' })
+})
+
+test('selfPublishPackage never approves a reused unmarked went_public request', async () => {
+	mockModule.approvePackageCapabilitySet.mockResolvedValue({
+		approval: { id: 'approval-1', publishedCommit: 'commit-source-root' },
+	})
+	mockModule.getPendingWentPublicApproval.mockResolvedValue(null)
+	mockModule.enqueueWentPublicApproval.mockResolvedValue({
+		id: 'owner-request',
+		details: {},
+	})
+
+	const result = await selfPublishPackage({
+		env,
+		request: sessionRequestContext('person-1', 'bea'),
+		requestUrl: 'https://heykody.dev',
+		ownerUserId: ownerId,
+		actorUserId: 'person-1',
+		savedPackage,
+		summary: summary(),
+	})
+	expect(result).toMatchObject({ ok: false })
+	expect(mockModule.approveWentPublicRequest).not.toHaveBeenCalled()
+	expect(mockModule.logOrgAuditEvent).toHaveBeenCalledWith(
+		expect.objectContaining({ result: 'failure' }),
 	)
 })

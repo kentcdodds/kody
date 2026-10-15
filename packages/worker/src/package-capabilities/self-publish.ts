@@ -47,6 +47,7 @@ export const selfPublishAuditAction = 'package.went_public.self_publish'
 export type SelfPublishBlocker =
 	| 'enforcement_off'
 	| 'unpublished'
+	| 'stale_dependencies'
 	| 'declares_credentials'
 	| 'declares_capabilities'
 	| 'not_audited'
@@ -77,9 +78,12 @@ function declaresAny(value: unknown) {
 async function evaluateTreePackage(
 	env: Env,
 	sourceId: string,
+	pinnedCommit: string,
 ): Promise<SelfPublishBlocker | null> {
 	const source = await getEntitySourceById(env.APP_DB, sourceId)
 	if (!source?.published_commit) return 'unpublished'
+	// Only the published version is read, so it has to be the one serving pins.
+	if (source.published_commit !== pinnedCommit) return 'stale_dependencies'
 	const { manifest } = await loadPublishedEntityManifest({
 		env,
 		userId: source.user_id,
@@ -127,14 +131,15 @@ export async function evaluateSelfPublish(input: {
 	if (!input.summary.publishedCommit) {
 		return { eligible: false, blocker: 'unpublished' }
 	}
-	const sourceIds = new Set([
-		input.savedPackage.sourceId,
+	const pinned = new Map([
+		[input.savedPackage.sourceId, input.summary.publishedCommit],
 		...(input.summary.dependencySnapshot?.dependencies ?? []).map(
-			(dependency) => dependency.sourceId,
+			(dependency) =>
+				[dependency.sourceId, dependency.publishedCommit] as const,
 		),
 	])
-	for (const sourceId of sourceIds) {
-		const blocker = await evaluateTreePackage(input.env, sourceId)
+	for (const [sourceId, commit] of pinned) {
+		const blocker = await evaluateTreePackage(input.env, sourceId, commit)
 		if (blocker) return { eligible: false, blocker }
 	}
 	const audit = await loadCurrentPackageSecurityAudit(input.env.APP_DB, {
@@ -229,6 +234,14 @@ export async function selfPublishPackage(input: {
 		requestedByUserId: input.actorUserId,
 		selfPublish: true,
 	})
+	// Enqueue reuses a pending request, and a concurrent owner-path ask can
+	// take the one pending slot; only a marked request may be approved here.
+	if (!isSelfPublishRequest(wentPublic)) {
+		const error =
+			'Another request to make this package internet-visible is pending, so it was left for the owner.'
+		await audit('failure', { requestId: wentPublic.id, error })
+		return { ok: false, error }
+	}
 	const result = await approveWentPublicRequest({
 		env,
 		request: new Request(input.requestUrl),
