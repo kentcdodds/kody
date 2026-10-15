@@ -1565,21 +1565,52 @@ export async function runDrExportWatchdogTick(input: {
 		return { day, skipped: false, summaryPresent: true }
 	}
 	if (!summary && strandedPreviousDays.length > 0) {
-		console.info(
-			'dr_export_watchdog',
-			JSON.stringify({
+		const nowMs = now.getTime()
+		let olderCatchUpActive = false
+		for (const strandedDay of strandedPreviousDays) {
+			const progressText = await s3.getText(stagingProgressKey(strandedDay))
+			if (!progressText) continue
+			let parsed: unknown
+			try {
+				parsed = JSON.parse(progressText.text) as unknown
+			} catch {
+				continue
+			}
+			const progress = parseProgress(parsed)
+			if (!progress) continue
+			const leaseExpiresAtMs = Date.parse(progress.leaseExpiresAt ?? '')
+			const activityAtMs = Number.isFinite(leaseExpiresAtMs)
+				? leaseExpiresAtMs - progressLeaseDurationMs
+				: NaN
+			if (
+				Number.isFinite(activityAtMs) &&
+				nowMs - activityAtMs < progressLeaseDurationMs * 60
+			) {
+				// ~2h: same order as catch-up "stuck" judgment (~24 missed 5-min ticks).
+				olderCatchUpActive = true
+				break
+			}
+		}
+		if (olderCatchUpActive) {
+			console.info(
+				'dr_export_watchdog',
+				JSON.stringify({
+					day,
+					summaryPresent: false,
+					reason: 'deferred-for-older-stranded',
+					strandedPreviousDays,
+				}),
+			)
+			return {
 				day,
+				skipped: false,
 				summaryPresent: false,
 				reason: 'deferred-for-older-stranded',
-				strandedPreviousDays,
-			}),
-		)
-		return {
-			day,
-			skipped: false,
-			summaryPresent: false,
-			reason: 'deferred-for-older-stranded',
+			}
 		}
+		throw new Error(
+			`DR staging catch-up is stuck. Earlier staging days are still stranded despite catch-up and have not advanced recently: ${strandedPreviousDays.join(', ')}. Resume the oldest via POST /__maintenance/dr-export.`,
+		)
 	}
 	const strandedDetail =
 		strandedPreviousDays.length > 0

@@ -1203,9 +1203,17 @@ test('watchdog passes on a written summary and fails loudly on incomplete or str
 		/summary missing for 2026-07-23.*phase=artifacts/,
 	)
 
-	// Backlog drain: tonight has no summary yet but an older day is stranded.
+	// Backlog drain: tonight has no summary yet but an older day is still
+	// advancing (fresh lease) — defer the "tonight failed" page.
 	const deferred = createMemoryS3()
-	await deferred.client.put('staging/2026-07-22/exporter/progress.json', '{}')
+	const activeOlder = {
+		...__testOnlyCreateInitialProgress('2026-07-22', at('00:30')),
+		leaseExpiresAt: new Date(now.getTime() + 60_000).toISOString(),
+	}
+	await deferred.client.put(
+		'staging/2026-07-22/exporter/progress.json',
+		JSON.stringify(activeOlder),
+	)
 	expect(await watchdog(deferred.client)).toMatchObject({
 		day,
 		skipped: false,
@@ -1213,12 +1221,35 @@ test('watchdog passes on a written summary and fails loudly on incomplete or str
 		reason: 'deferred-for-older-stranded',
 	})
 
+	// Older stranded day with a long-expired lease: page as catch-up stuck.
+	const staleOlder = createMemoryS3()
+	const staleProgress = {
+		...__testOnlyCreateInitialProgress('2026-07-22', at('00:30')),
+		leaseExpiresAt: new Date(now.getTime() - 3 * 60 * 60_000).toISOString(),
+	}
+	await staleOlder.client.put(
+		'staging/2026-07-22/exporter/progress.json',
+		JSON.stringify(staleProgress),
+	)
+	await expect(watchdog(staleOlder.client)).rejects.toThrow(
+		/catch-up is stuck.*2026-07-22/,
+	)
+
 	// Tonight finished, but earlier days are still progress-without-summary.
 	// The page lists oldest first — the same order catch-up resumes.
 	const stranded = createMemoryS3()
 	await stranded.client.put(stagingSummaryKey(day), '{}')
-	await stranded.client.put('staging/2026-07-22/exporter/progress.json', '{}')
-	await stranded.client.put('staging/2026-07-21/exporter/progress.json', '{}')
+	await stranded.client.put(
+		'staging/2026-07-22/exporter/progress.json',
+		JSON.stringify(staleProgress),
+	)
+	await stranded.client.put(
+		'staging/2026-07-21/exporter/progress.json',
+		JSON.stringify({
+			...staleProgress,
+			day: '2026-07-21',
+		}),
+	)
 	await expect(watchdog(stranded.client)).rejects.toThrow(
 		/catch-up is stuck.*2026-07-21, 2026-07-22/,
 	)
