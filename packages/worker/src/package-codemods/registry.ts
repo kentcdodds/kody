@@ -11,6 +11,7 @@ import { detectLegacyCredentialPatternsCodemod } from './codemods/0010-detect-le
 import { ownerScopeFollowsRegistryCodemod } from './codemods/0011-owner-scope-follows-registry.ts'
 import { explicitWebhookUrlSecretVerificationCodemod } from './codemods/0012-explicit-webhook-url-secret-verification.ts'
 import { declareCredentialNeedsCodemod } from './codemods/0013-declare-credential-needs.ts'
+import { sealCredentialStampsCodemod } from './codemods/0014-seal-credential-stamps.ts'
 import { type PackageCodemod } from './types.ts'
 
 const packageCodemods: Array<PackageCodemod> = [
@@ -27,6 +28,7 @@ const packageCodemods: Array<PackageCodemod> = [
 	ownerScopeFollowsRegistryCodemod,
 	explicitWebhookUrlSecretVerificationCodemod,
 	declareCredentialNeedsCodemod,
+	sealCredentialStampsCodemod,
 ]
 
 const packageCodemodsById = new Map(

@@ -398,10 +398,11 @@ export default async function digest(input: { account: string; key: string }) {
 Publish error (credentials check `ok: false`): declare every credential this
 package can use as a `kody.credentials` slot with a real description, branch
 with literal `credential("KEY")` / `createAuthenticatedFetch("account")` only,
-and remove `|scope=` / computed names. The `kody.mcp.linear…` call is still a
-0010 finding for migration tracking; it does not fail the stamp gate until
-phase 2. `credential.named()` stays limited to ad hoc runs and unshared
-personal-org packages (not stamped).
+and remove `|scope=` / computed names. Literal `kody.mcp.SERVER` names are
+stamped as `kind: "mcp"` slots (phase 2); dynamic `kody.mcp[variable]` fails the
+stamp gate. The `kody.mcp` 0010 label remains for migration tracking.
+`credential.named()` stays limited to ad hoc runs and unshared personal-org
+packages (not stamped).
 
 Save each scan step result as its own JSON file, then print the report over all
 of them:
@@ -506,6 +507,28 @@ the approval pause skipped, as for every codemod.
 Run it with `filters.scope: 'credential-need-enforcement'`. A rescan with the
 same filter must come back clean before the enforcement flag is turned on.
 
+### `0014-seal-credential-stamps`
+
+Fleet seal for [issue #3836](https://github.com/kentcdodds/kody/issues/3836)
+phase 2. Declares missing `kody.credentials` slots for every stampable literal
+use (`credential("KEY")`, placeholders, `createAuthenticatedFetch`, JWT signing
+names, and literal `kody.mcp.SERVER` names) and fills an inferred description
+when the slot has none. Existing descriptions are never overwritten. Literal MCP
+servers get `kind: "mcp"`; OAuth / integration names get `kind: "oauth"`;
+signing names get `kind: "signing"`.
+
+Packages with unstampable patterns (non-literal names, `|scope=`,
+`secretMounts`, `packageSecrets.get`, `credential.named`, server eval, dynamic
+`kody.mcp`) stay `needs_manual`: an agent tries converting them first, then
+stop-and-notify Kent on #3836 if they still fail. It uses
+`applyMode: 'published-only'`.
+
+After apply (or for packages that were already seal-ready), run
+`adminCredentialStampBackfill` to restamp seal-ready packages that still lack a
+KV stamp at the current `published_commit`. Phase 3 must not start until that
+fleet report shows zero `missing_stamp` / `needs_manifest` / `unconvertible`
+packages among published packages that need stamps.
+
 ## Engine
 
 The engine entry point is `runPackageCodemodStep` in
@@ -583,8 +606,8 @@ Artifacts default-branch HEAD to equal `published_commit`, then writes through
 `syncArtifactSourceSnapshot` so HEAD and published stay aligned. Drifted
 packages are `skipped_drift`.
 
-Codemods that set `applyMode: 'published-only'` (today: `0012`, `0013`) change
-only the **drifted** lane:
+Codemods that set `applyMode: 'published-only'` (today: `0012`, `0013`, `0014`)
+change only the **drifted** lane:
 
 1. Load the published tree (same as today).
 2. Run the same transform + check gates.

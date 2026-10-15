@@ -67,6 +67,7 @@ import { adminPublishedImportableArtifactBackfillCapability } from './admin-publ
 import { adminPublishedSourceSnapshotBackfillCapability } from './admin-published-source-snapshot-backfill.ts'
 import { adminCredentialInventoryScanCapability } from './admin-credential-inventory-scan.ts'
 import { adminCredentialBackfillCapability } from './admin-credential-backfill.ts'
+import { adminCredentialStampBackfillCapability } from './admin-credential-stamp-backfill.ts'
 import { adminMemoryPersonalizeCopyCapability } from './admin-memory-personalize-copy.ts'
 import { adminMemoryPersonalizePurgeCapability } from './admin-memory-personalize-purge.ts'
 
@@ -167,6 +168,7 @@ export const adminDomain = defineDomain({
 		adminPublishedSourceSnapshotBackfillCapability,
 		adminCredentialInventoryScanCapability,
 		adminCredentialBackfillCapability,
+		adminCredentialStampBackfillCapability,
 		adminMemoryPersonalizeCopyCapability,
 		adminMemoryPersonalizePurgeCapability,
 		adminAuditLogQueryCapability,

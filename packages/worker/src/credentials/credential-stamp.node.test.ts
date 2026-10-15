@@ -3,7 +3,9 @@ import {
 	buildCredentialStamp,
 	collectServerRuntimeModulePaths,
 	mergeCredentialStampIntoManifestFiles,
+	planCredentialStampSeal,
 	scanCredentialStamp,
+	scanLiteralMcpServerKeys,
 } from './credential-stamp.ts'
 
 function manifest(kody: Record<string, unknown> = {}) {
@@ -130,6 +132,65 @@ test('scanCredentialStamp fails credential.named() in stamped packages', () => {
 	expect(bound.failures.some((f) => f.code === 'non_literal')).toBe(true)
 	expect(bound.failures[0]?.message).toMatch(/passes credential/)
 	expect(bound.keys).toEqual([])
+})
+
+test('scanLiteralMcpServerKeys stamps literal servers and fails dynamic access', () => {
+	const literal = scanLiteralMcpServerKeys({
+		'package.json': manifest(),
+		'src/index.ts': [
+			"import { kody } from 'kody:runtime'",
+			'export default async function run() {',
+			'\tawait kody.mcp.linear.list_issues({})',
+			'\tawait kody.mcp["home"].set_pin({ pin: "1" })',
+			'}',
+		].join('\n'),
+	})
+	expect(literal.keys).toEqual(['home', 'linear'])
+	expect(literal.failures).toEqual([])
+
+	const dynamic = scanLiteralMcpServerKeys({
+		'package.json': manifest(),
+		'src/index.ts': [
+			"import { kody } from 'kody:runtime'",
+			'export default async function run(server: string) {',
+			'\treturn kody.mcp[server]',
+			'}',
+		].join('\n'),
+	})
+	expect(dynamic.keys).toEqual([])
+	expect(dynamic.failures.some((f) => f.code === 'non_literal')).toBe(true)
+})
+
+test('planCredentialStampSeal infers MCP and OAuth descriptions without overwriting', () => {
+	const plan = planCredentialStampSeal({
+		'package.json': manifest({
+			credentials: {
+				EXISTING: { description: 'Keep me.' },
+			},
+		}),
+		'src/index.ts': [
+			"import { createAuthenticatedFetch, kody } from 'kody:runtime'",
+			'export default async function run() {',
+			"\tawait createAuthenticatedFetch('google')",
+			'\tawait kody.mcp.linear.list_issues({})',
+			'\treturn 1',
+			'}',
+		].join('\n'),
+	})
+	expect(plan.blockingFailures).toEqual([])
+	expect(plan.updates.map((slot) => slot.key).sort()).toEqual([
+		'google',
+		'linear',
+	])
+	expect(plan.updates.find((slot) => slot.key === 'linear')).toMatchObject({
+		kind: 'mcp',
+		description: 'Calls tools on the attached MCP server "linear".',
+	})
+	expect(plan.updates.find((slot) => slot.key === 'google')).toMatchObject({
+		kind: 'oauth',
+		description: 'OAuth access for google.',
+	})
+	expect(plan.sealReady).toBe(true)
 })
 
 test('scanCredentialStamp fails missing descriptions without inventing placeholders', () => {
