@@ -271,7 +271,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					.max(runRecordMaxIdempotencyKeyLength)
 					.optional()
 					.describe(
-						'Optional idempotency key. Reusing a key returns the retained or in-progress run without re-executing; use its runId with runGet after a transport timeout. Omit for ordinary calls.',
+						'Optional idempotency key. Set it on the first attempt when a transport timeout retry may be needed; reusing the key returns the retained or in-progress run without re-executing (use its runId with runGet). Omit for ordinary calls.',
 					),
 				credentials: credentialCallMapSchema.optional(),
 			},
