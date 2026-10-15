@@ -355,14 +355,75 @@ test('credential(key) in a team package needs the key declared', async () => {
 	).resolves.toMatchObject({ key: 'resend' })
 })
 
-test('a declared slot counts only when its kind can fill the use', () => {
-	const declarations = (
-		needs: Array<CredentialNeed>,
-		mounts: Array<string> = [],
-	) => ({
-		needs,
-		mountNames: new Set(mounts),
+test('credential(key) checks the calling package even when a sibling entry declares the key', async () => {
+	const t = await setup()
+	await t.storeSecret(t.acmeId, 'resend')
+	const packageId = await t.savePackage({
+		ownerId: t.acmeId,
+		name: '@acme/mailer',
 	})
+	enforcement(true)
+	declare([])
+	await expect(
+		openCredentialClient(
+			{
+				...t.clientContext(t.acmeId, packageId),
+				runNeeds: async () => new Map([['resend', need('resend')]]),
+			},
+			{ key: 'resend' },
+		),
+	).rejects.toMatchObject({ body: { code: 'credential_need_undeclared' } })
+})
+
+test('credential(key) resolves a key only the fresh closure declares as declared', async () => {
+	const t = await setup()
+	await t.storeSecret(t.acmeId, 'resend')
+	const packageId = await t.savePackage({
+		ownerId: t.acmeId,
+		name: '@acme/mailer',
+	})
+	enforcement(true)
+	declare([], [need('MAIL', { kind: 'secret', provider: 'resend' })])
+	await expect(
+		openCredentialClient(
+			{
+				...t.clientContext(t.acmeId, packageId),
+				runNeeds: async () => new Map(),
+			},
+			{ key: 'MAIL' },
+		),
+	).resolves.toMatchObject({ key: 'MAIL', name: 'resend' })
+})
+
+test('credential.named is refused in a personal package limited to its declarations', async () => {
+	const t = await setup()
+	await t.storeSecret(t.personalId, 'RESEND')
+	declare([])
+	const visible = await t.savePackage({
+		ownerId: t.personalId,
+		name: '@bea/public-mailer',
+		internetVisible: true,
+	})
+	const own = await t.savePackage({
+		ownerId: t.personalId,
+		name: '@bea/mailer',
+	})
+	const openNamed = (packageId: string) =>
+		openCredentialClient(t.clientContext(t.personalId, packageId), {
+			name: 'RESEND',
+		})
+
+	enforcement(false)
+	await expect(openNamed(visible)).resolves.toMatchObject({ name: 'RESEND' })
+
+	enforcement(true)
+	await expect(openNamed(visible)).rejects.toMatchObject({
+		body: { code: 'credential_denied' },
+	})
+	await expect(openNamed(own)).resolves.toMatchObject({ name: 'RESEND' })
+})
+
+test('a declared slot counts only when its kind can fill the use', () => {
 	const cases: Array<
 		[CredentialNeedReference, Array<CredentialNeed>, boolean]
 	> = [
@@ -378,6 +439,7 @@ test('a declared slot counts only when its kind can fill the use', () => {
 			false,
 		],
 		[{ use: 'secret', name: 'A', scope: 'package' }, [], true],
+		[{ use: 'secret', name: 'A', scope: 'user' }, [], false],
 		[{ use: 'integration', name: 'gh' }, [need('gh', { kind: 'oauth' })], true],
 		[
 			{ use: 'integration', name: 'gh' },
@@ -390,14 +452,8 @@ test('a declared slot counts only when its kind can fill the use', () => {
 	]
 	for (const [reference, needs, declared] of cases) {
 		expect(
-			isCredentialReferenceDeclared(reference, declarations(needs)),
+			isCredentialReferenceDeclared(reference, needs),
 			JSON.stringify(reference),
 		).toBe(declared)
 	}
-	expect(
-		isCredentialReferenceDeclared(
-			{ use: 'secret', name: 'REAL', scope: 'user' },
-			declarations([], ['REAL']),
-		),
-	).toBe(true)
 })

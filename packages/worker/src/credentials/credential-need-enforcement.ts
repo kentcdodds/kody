@@ -19,7 +19,6 @@ import {
 import { loadPersonalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
-import { loadPublishedEntityManifest } from '#worker/repo/published-source.ts'
 import { loadPublishedCredentialNeeds } from './credential-needs-closure.ts'
 import { type CredentialNeed } from './credential-needs.ts'
 
@@ -48,10 +47,7 @@ export class CredentialNeedUndeclaredError extends McpCallerError {
 	}
 }
 
-type Declarations = {
-	needs: ReadonlyArray<CredentialNeed>
-	mountNames: ReadonlySet<string>
-}
+type Declarations = ReadonlyArray<CredentialNeed>
 
 type EnforcedPackage =
 	| { kind: 'exempt' }
@@ -111,21 +107,30 @@ function fillingKind(reference: CredentialNeedReference) {
 	}
 }
 
+/** The declared need that fills `reference`, or null. */
+export function findDeclaredNeed(
+	reference: CredentialNeedReference,
+	declarations: Declarations,
+) {
+	const key = referenceKey(reference)
+	const kind = fillingKind(reference)
+	return (
+		declarations.find(
+			(need) =>
+				need.key === key &&
+				(kind === null || need.kind == null || need.kind === kind),
+		) ?? null
+	)
+}
+
 export function isCredentialReferenceDeclared(
 	reference: CredentialNeedReference,
 	declarations: Declarations,
 ) {
-	if (reference.use === 'secret') {
-		if (isPackageBoundScope(reference.scope)) return true
-		if (declarations.mountNames.has(reference.name)) return true
+	if (reference.use === 'secret' && isPackageBoundScope(reference.scope)) {
+		return true
 	}
-	const key = referenceKey(reference)
-	const kind = fillingKind(reference)
-	return declarations.needs.some(
-		(need) =>
-			need.key === key &&
-			(kind === null || need.kind == null || need.kind === kind),
-	)
+	return findDeclaredNeed(reference, declarations) !== null
 }
 
 function describeUse(reference: CredentialNeedReference) {
@@ -179,27 +184,6 @@ async function isAuthorsOwnPackage(input: {
 	return !unadoptedFork
 }
 
-async function loadMountNames(env: Env, saved: SavedPackageRecord) {
-	const names = new Set<string>()
-	const manifest = await loadPublishedEntityManifest({
-		env,
-		userId: saved.userId,
-		sourceId: saved.sourceId,
-	}).then(
-		(published) => published.manifest,
-		// An unpublished package declares nothing.
-		() => null,
-	)
-	if (!manifest) return names
-	for (const [alias, mount] of Object.entries(
-		manifest.kody.secretMounts ?? {},
-	)) {
-		names.add(alias)
-		names.add(mount.name)
-	}
-	return names
-}
-
 async function loadEnforcedPackage(input: {
 	env: Env
 	request: RequestContext | null
@@ -210,24 +194,19 @@ async function loadEnforcedPackage(input: {
 		userId: input.orgId,
 		packageId: input.packageId,
 	})
-	const empty = async (): Promise<Declarations> => ({
-		needs: [],
-		mountNames: new Set(),
-	})
+	const empty = async (): Promise<Declarations> => []
 	if (!saved)
 		return { kind: 'enforced', saved: null, stored: empty, fresh: empty }
 	if (await isAuthorsOwnPackage({ ...input, saved })) return { kind: 'exempt' }
-	const mountNames = memo(() => loadMountNames(input.env, saved))
 	const declarations = (fresh: boolean) =>
-		memo(async () => ({
-			needs: await loadPublishedCredentialNeeds({
+		memo(() =>
+			loadPublishedCredentialNeeds({
 				env: input.env,
 				userId: saved.userId,
 				sourceId: saved.sourceId,
 				fresh,
 			}),
-			mountNames: await mountNames(),
-		}))
+		)
 	return {
 		kind: 'enforced',
 		saved,
@@ -280,10 +259,32 @@ function isEnforcementOn(env: Env, request: RequestContext | null) {
 }
 
 /**
+ * Whether the stamped package is limited to its declared credentials: the
+ * flag is on and the package is not its author's own. Ad hoc code never is.
+ */
+export async function isPackageCredentialUseLimited(input: {
+	env: Env
+	request: RequestContext | null
+	orgId: string
+	packageId: string | null
+}) {
+	if (!input.packageId) return false
+	if (!(await isEnforcementOn(input.env, input.request))) return false
+	const enforced = await enforcedPackageFor({
+		...input,
+		packageId: input.packageId,
+	})
+	return enforced.kind === 'enforced'
+}
+
+/**
  * Throws {@link CredentialNeedUndeclaredError} for the first use the stamped
- * package does not declare. A use the stored closure misses is checked again
- * against a closure recomputed from the package's imports, so a dependency
- * that declared a need after this package published still counts.
+ * package does not declare, and returns the declared need that fills each
+ * checked use, by key (empty when the package is not limited). A use the
+ * stored closure misses is checked again against a closure recomputed from the
+ * package's imports, so a dependency that declared a need after this package
+ * published still counts. Imports resolve only within the package's org, and
+ * a dependency gains a need only through its owner's approval pause.
  */
 export async function assertCredentialUsesDeclared(input: {
 	env: Env
@@ -291,24 +292,32 @@ export async function assertCredentialUsesDeclared(input: {
 	orgId: string
 	packageId: string | null
 	references: ReadonlyArray<CredentialNeedReference>
-}) {
-	if (!input.packageId || input.references.length === 0) return
-	if (!(await isEnforcementOn(input.env, input.request))) return
+}): Promise<ReadonlyMap<string, CredentialNeed>> {
+	const declared = new Map<string, CredentialNeed>()
+	if (!input.packageId || input.references.length === 0) return declared
+	if (!(await isEnforcementOn(input.env, input.request))) return declared
 	const enforced = await enforcedPackageFor({
 		env: input.env,
 		request: input.request,
 		orgId: input.orgId,
 		packageId: input.packageId,
 	})
-	if (enforced.kind === 'exempt') return
+	if (enforced.kind === 'exempt') return declared
+	const record = (
+		reference: CredentialNeedReference,
+		declarations: Declarations,
+	) => {
+		const need = findDeclaredNeed(reference, declarations)
+		if (need) declared.set(referenceKey(reference), need)
+		return isCredentialReferenceDeclared(reference, declarations)
+	}
 	const stored = await enforced.stored()
 	const missing = input.references.filter(
-		(reference) => !isCredentialReferenceDeclared(reference, stored),
+		(reference) => !record(reference, stored),
 	)
-	if (missing.length === 0) return
+	if (missing.length === 0) return declared
 	const fresh = await enforced.fresh()
-	const undeclared = missing.find(
-		(reference) => !isCredentialReferenceDeclared(reference, fresh),
-	)
+	const undeclared = missing.find((reference) => !record(reference, fresh))
 	if (undeclared) throw undeclaredError(undeclared, enforced.saved)
+	return declared
 }

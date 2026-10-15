@@ -651,20 +651,25 @@ author runs.
   internet-visible. Team-org packages, runs by Use collaborators, unadopted
   forks, and every internet-visible package are limited. Ad hoc code (no stamp)
   is never limited. A stamped run with no acting person is limited.
-- **What counts as declared.** The stamped package's needs closure, plus its own
-  `kody.secretMounts` aliases and names. `{{secret:NAME}}` and
-  `{{secret-basic:…}}` need a slot keyed `NAME` with no kind or kind `secret`.
-  `{{integration-token:NAME}}` needs a slot keyed `NAME` with no kind or kind
-  `oauth`. A vault ref `{{secret/<provider>:<ref>}}` needs a slot keyed
-  `<provider>` with no kind or kind `secret`. Package- and session-scoped
-  placeholders are bound to the package already and always count.
-  `credential(key)` / `credentials(key)` need `key` in the run's pinned needs or
-  in the calling package's own closure. When the stored closure misses, a
-  closure recomputed from the package's imports is checked too, so a dependency
-  that declared a need after its dependent published still counts.
+- **What counts as declared.** The stamped package's needs closure. A
+  `kody.secretMounts` entry does not count; codemod 0013 declares mounted names
+  that placeholders fill. `{{secret:NAME}}` and `{{secret-basic:…}}` need a slot
+  keyed `NAME` with no kind or kind `secret`. `{{integration-token:NAME}}` needs
+  a slot keyed `NAME` with no kind or kind `oauth`. A vault ref
+  `{{secret/<provider>:<ref>}}` needs a slot keyed `<provider>` with no kind or
+  kind `secret`. Package- and session-scoped placeholders are bound to the
+  package already and always count. `credential(key)` / `credentials(key)` need
+  `key` in the calling package's own closure; another entry package in the same
+  run declaring it does not count. When the stored closure misses, a closure
+  recomputed from the package's imports is checked too, so a dependency that
+  declared a need after its dependent published still counts (imports resolve
+  only within the package's org, and the dependency's new need passed its own
+  owner's approval pause). `credential.named` is refused in a limited package.
 - **Failure.** An undeclared use fails that fetch or call with
   `credential_need_undeclared`, naming the package by its registry name and the
-  key to add. Nothing is resolved or sent.
+  key to add. The undeclared credential is never resolved. As with a missing
+  secret, a placeholder found in a later chunk of a streamed body fails the
+  fetch after earlier chunks were sent.
 - **Unchanged.** Placement stays fill-anywhere (a header, the URL, or the body,
   on HTTPS, to a host the credential allows). Use grants, host rules, and the
   publish pause are unchanged. Helpers that resolve a name outside the fetch
