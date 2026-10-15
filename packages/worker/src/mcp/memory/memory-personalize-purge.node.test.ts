@@ -1328,3 +1328,87 @@ test('multi-page dry-run grant revoke counts match a real paged run', async () =
 		realPage1.purged + realPage2.purged,
 	)
 })
+
+test('applied purge ignores plannedPurgeMemoryIds so live grants stay', async () => {
+	const { db, sqlite } = await createDb()
+	const ada = testStableUserIdFromEmail('ada-purge-planned-ignore@example.com')
+	const guest = testStableUserIdFromEmail(
+		'guest-purge-planned-ignore@example.com',
+	)
+	insertUser(sqlite, {
+		id: 1,
+		username: 'ada-purge-planned-ignore',
+		email: 'ada-purge-planned-ignore@example.com',
+		personId: ada,
+	})
+	insertUser(sqlite, {
+		id: 2,
+		username: 'guest-purge-planned-ignore',
+		email: 'guest-purge-planned-ignore@example.com',
+		personId: guest,
+	})
+	await provisionPersonalOrg(db, {
+		stableUserId: ada,
+		username: 'ada-purge-planned-ignore',
+	})
+	await provisionPersonalOrg(db, {
+		stableUserId: guest,
+		username: 'guest-purge-planned-ignore',
+	})
+	const created = await createOrganization(db, {} as Env, {
+		personId: ada,
+		audit: createTestOrgAuditWriter(),
+		slug: 'purge-planned-ignore-co',
+		displayName: 'Purge Planned Ignore',
+	})
+	if (!created.ok) throw new Error(created.error)
+	const org = await db
+		.prepare(`SELECT id FROM orgs WHERE slug = 'purge-planned-ignore-co'`)
+		.first<{ id: string }>()
+	const liveId = 'mem-planned-live'
+	sqlite
+		.prepare(
+			`INSERT INTO mcp_memories (
+				id, user_id, status, subject, summary, details, created_at, updated_at
+			) VALUES (?, ?, 'active', 'Still live', 'summary', '', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+		)
+		.run(liveId, org!.id)
+	sqlite
+		.prepare(
+			`INSERT INTO grants (
+				id, org_id, resource_type, resource_id, subject_type, subject_id,
+				created_by_user_id, created_at, updated_at
+			) VALUES ('g-planned-live', ?, 'memory', ?, 'user', ?, ?, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+		)
+		.run(org!.id, liveId, guest, ada)
+	sqlite
+		.prepare(
+			`INSERT INTO grant_permissions (grant_id, permission) VALUES ('g-planned-live', 'memory:read')`,
+		)
+		.run()
+
+	const meter = createInMemoryUserMeterEnv()
+	const env = {
+		APP_DB: db,
+		USER_METER: meter.env.USER_METER,
+	} as unknown as Env
+	const result = await runMemoryPersonalizePurge({
+		env,
+		audit: createTestOrgAuditWriter(),
+		dryRun: false,
+		orgIds: [org!.id],
+		plannedPurgeMemoryIds: [liveId],
+		purgeOrphans: false,
+	})
+	expect(result.purged).toBe(0)
+	expect(result.grantsRevoked).toBe(0)
+	const grant = await db
+		.prepare(`SELECT deleted_at FROM grants WHERE id = 'g-planned-live'`)
+		.first<{ deleted_at: string | null }>()
+	expect(grant?.deleted_at).toBeNull()
+	const stillLive = await db
+		.prepare(`SELECT deleted_at FROM mcp_memories WHERE id = ? AND user_id = ?`)
+		.bind(liveId, org!.id)
+		.first<{ deleted_at: string | null }>()
+	expect(stillLive?.deleted_at).toBeNull()
+})

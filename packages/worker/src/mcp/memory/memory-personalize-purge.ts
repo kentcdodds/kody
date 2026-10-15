@@ -394,11 +394,12 @@ export async function runMemoryPersonalizePurge(input: {
 		/** Soft-deleted this org page but Vectorize cleanup still failing. */
 		const pendingVectorMemoryIds = new Set<string>()
 		/**
-		 * Memories this org will purge (or would, in dry-run), including ids
-		 * carried from earlier pages via `plannedPurgeMemoryIds`.
+		 * Memories this org will purge (or would, in dry-run). Client-supplied
+		 * resume ids are trusted only in dry-run so a real run cannot revoke
+		 * grants for still-live memories from forged or leftover tokens.
 		 */
 		const plannedPurgeMemoryIds = new Set<string>(
-			orgIndex === 0 ? (input.plannedPurgeMemoryIds ?? []) : [],
+			orgIndex === 0 && dryRun ? (input.plannedPurgeMemoryIds ?? []) : [],
 		)
 		let afterMemoryId: string | null =
 			orgIndex === 0 ? (input.memoryCursor ?? null) : null
