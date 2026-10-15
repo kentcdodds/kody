@@ -502,6 +502,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		viewer: { displayName: 'account-user', avatarUrl: null },
 		organizations: [],
 		invites: [],
+		inviteLinks: [],
 	}
 	expect(organizations.loaderData?.accountOrganizations).toEqual(
 		organizationsPayload,
