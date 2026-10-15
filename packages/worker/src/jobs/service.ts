@@ -29,6 +29,7 @@ import {
 	abandonRunRecord,
 	claimRunRecord,
 	finishRunRecord,
+	getJobRunObservability,
 	getRunRecord,
 	upsertJobRunObservability,
 } from '#worker/run-records/service.ts'
@@ -1415,11 +1416,12 @@ async function executeClaimedScheduledJob(input: {
 /**
  * Nothing is on for this slot, so no package run is started. Surface the skip
  * on job observability (last_run_error / error_count) so jobGet does not look
- * armed and healthy. Write RunLog before settling the claim: when RunLog is
- * configured and the upsert fails, retry shortly instead of advancing a
- * recurring slot with a status-only D1 row and no last_run_error. A recurring
- * job that recorded the skip advances to its next slot; a once job keeps its
- * slot and retries with backoff until an enablement is on.
+ * armed and healthy.
+ *
+ * Order: renew the claim (fence superseded leases), record observability keyed
+ * by the claimed slot, then settle. When RunLog is configured and the upsert
+ * fails, retry shortly instead of advancing a recurring slot with a status-only
+ * D1 row. Re-entry for the same slot does not increment counters again.
  */
 async function deferClaimedJobWithoutEnablement(input: {
 	env: Env
@@ -1437,21 +1439,53 @@ async function deferClaimedJobWithoutEnablement(input: {
 	const store = jobsData(input.env)
 	const scheduledFor = row.claimed_scheduled_for
 	const nowIso = input.now.toISOString()
+	const slotAt = scheduledFor ?? nowIso
 	const error = noEnablementSkipError({
 		jobName: row.record.name,
 		skipped: input.skipped,
 	})
-	const recorded = await upsertJobRunObservability({
+	const stillHeld = await store.renewClaimedJob({
+		userId: input.userId,
+		jobId: row.id,
+		claimToken: input.claimToken,
+		nowMs: input.now.valueOf(),
+	})
+	if (!stillHeld) {
+		logJobSchedulerEvent({
+			event: 'claim_lost_before_skip_transition',
+			userId: input.userId,
+			jobId: row.id,
+			scheduleType: row.record.schedule.type,
+			reason: 'fenced_claim_superseded',
+		})
+		return {
+			settled: false,
+			nextRunAt: row.record.nextRunAt,
+			error,
+		}
+	}
+	const existing = await getJobRunObservability({
 		env: input.env,
 		userId: input.userId,
-		outcome: {
-			jobId: row.id,
-			status: 'error',
-			ranAt: nowIso,
-			error,
-			durationMs: 0,
-		},
+		jobId: row.id,
 	})
+	const alreadyRecordedForSlot =
+		existing?.lastRunAt === slotAt &&
+		existing.lastRunStatus === 'error' &&
+		existing.lastRunError === error
+	const recorded = alreadyRecordedForSlot
+		? existing
+		: await upsertJobRunObservability({
+				env: input.env,
+				userId: input.userId,
+				outcome: {
+					jobId: row.id,
+					status: 'error',
+					ranAt: slotAt,
+					error,
+					durationMs: 0,
+				},
+			})
 	const runLogConfigured = Boolean((input.env as Partial<Env>).RUN_LOG)
 	if (runLogConfigured && !recorded) {
 		const nextRunAt = computeJobRetryAt({
@@ -1502,7 +1536,7 @@ async function deferClaimedJobWithoutEnablement(input: {
 					job: {
 						...row.record,
 						updatedAt: nowIso,
-						lastRunAt: nowIso,
+						lastRunAt: slotAt,
 						lastRunStatus: 'error',
 						lastRunError: error,
 						nextRunAt,
