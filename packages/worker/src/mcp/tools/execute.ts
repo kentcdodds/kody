@@ -261,7 +261,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					.min(1)
 					.optional()
 					.describe(
-						`Soft cap on the default export's JSON/text result. Defaults to ~100 KB (${defaultExecutionResponseLimitBytes.toLocaleString()} bytes); oversized results are truncated. Project large API payloads before returning. Protocol __mcpContent media uses a separate limit and fails explicitly when oversized; oversized text-only protocol content is truncated.`,
+						"Soft cap on the default export's JSON/text result. Oversized results are truncated. Project large API payloads before returning. Protocol __mcpContent media uses a separate limit and fails explicitly when oversized; oversized text-only protocol content is truncated.",
 					),
 				conversationId: conversationIdInputField,
 				memoryContext: memoryContextInputField,
@@ -271,7 +271,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					.max(runRecordMaxIdempotencyKeyLength)
 					.optional()
 					.describe(
-						`Optional idempotency key (max ${runRecordMaxIdempotencyKeyLength} chars). Reusing a key returns the retained or in-progress run without re-executing; use its runId with runGet after a transport timeout. Omit for ordinary calls.`,
+						'Optional idempotency key. Reusing a key returns the retained or in-progress run without re-executing; use its runId with runGet after a transport timeout. Omit for ordinary calls.',
 					),
 				credentials: credentialCallMapSchema.optional(),
 			},

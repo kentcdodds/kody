@@ -24,6 +24,8 @@ test('search and execute titles stay action + subject; guidance lives in descrip
 	expect(executeTool.description).toContain(
 		'Discover the capability with search',
 	)
+	expect(executeTool.description).toContain('cannot be undone')
+	expect(executeTool.description).toContain('idempotencyKey')
 })
 
 test('prefer-local one-liner matches on server instructions, execute, and api', () => {

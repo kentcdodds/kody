@@ -50,7 +50,7 @@ export const searchToolInputSchema = {
 		])
 		.optional()
 		.describe(
-			'Optional exact entity reference "{type}:{id}" (capability, guide, integration, mcp-server, package, or secret), or an array of 1–10 refs to batch related detail lookups. Guide refs accept "#{heading}" or a line anchor "#L165" / "#L165-L180". Package refs accept "#{subpath}" to open one export contract (leading "./" is optional), or "#{path}" / "#{path}#L165" / "#{path}#heading" to open one file. A fragment that matches an export subpath still opens that export. Use "mcp-server:{name}" to list tools on a connected MCP server.',
+			'Optional exact entity reference "{type}:{id}" (capability, guide, integration, mcp-server, package, or secret), or an array of refs to batch related detail lookups. Guide refs accept "#{heading}" or a line anchor "#L165" / "#L165-L180". Package refs accept "#{subpath}" to open one export contract (leading "./" is optional), or "#{path}" / "#{path}#L165" / "#{path}#heading" to open one file. A fragment that matches an export subpath still opens that export. Use "mcp-server:{name}" to list tools on a connected MCP server.',
 		),
 	domain: z
 		.string()
@@ -65,14 +65,14 @@ export const searchToolInputSchema = {
 		.min(1)
 		.max(100)
 		.optional()
-		.describe('Max number of ranked results to return. Defaults to 15.'),
+		.describe('Number of ranked results to return. Defaults to 15.'),
 	maxResponseSize: z
 		.number()
 		.int()
 		.min(1)
 		.optional()
 		.describe(
-			'Max response size in characters before trimming low-ranked results. Defaults to 4000.',
+			'Response size budget before trimming low-ranked results. Defaults to 4000.',
 		),
 	conversationId: conversationIdInputField,
 	memoryContext: memoryContextInputField,

@@ -43,7 +43,7 @@ const credentialPickSchema = z.union([
 				.enum(['org', 'personal'])
 				.optional()
 				.describe(
-					'When an org credential and a personal credential share the name, choose which one ("org" or "personal"). Omit when the name alone is unique.',
+					'When an org credential and a personal credential share the name, choose which one. Omit when the name alone is unique.',
 				),
 		})
 		.strict(),
@@ -62,7 +62,7 @@ export const credentialCallMapSchema = z
 		`A credentials map takes at most ${credentialCallMapLimits.maxKeys} keys.`,
 	)
 	.describe(
-		'Optional credential picks by need key, for `credential(key)` / `credentials(key)` in this run: `{ github: "work", google: ["work", "personal"], x: { name: "work", scope: "org" } }`. A string is a credential name; add `scope` ("org" or "personal") when an org and a personal credential share the name; an array picks several for `credentials(key)`, and `[]` picks none. Picks choose only among credentials you can Use.',
+		'Optional credential picks by need key, for `credential(key)` / `credentials(key)` in this run: `{ github: "work", google: ["work", "personal"], x: { name: "work", scope: "org" } }`. A string is a credential name; add `scope` when an org and a personal credential share the name; an array picks several for `credentials(key)`, and `[]` picks none. Picks choose only among credentials you can Use.',
 	)
 
 export type CredentialCallMapInput = z.infer<typeof credentialCallMapSchema>
