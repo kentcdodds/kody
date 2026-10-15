@@ -1,6 +1,7 @@
 import {
 	isFeatureEnabled,
 	isFeatureGloballyEnabled,
+	isMissingFeatureFlagsTable,
 } from '#worker/feature-flags/service.ts'
 import { packageAppCustomDomainsFlagKey } from '#universal/feature-flags/registry.ts'
 
@@ -39,18 +40,4 @@ export async function isPackageAppCustomDomainsEnabledForUser(
 		if (isMissingFeatureFlagsTable(error)) return false
 		throw error
 	}
-}
-
-function isMissingFeatureFlagsTable(error: unknown) {
-	const message = error instanceof Error ? error.message : ''
-	const cause =
-		error instanceof Error && error.cause instanceof Error
-			? error.cause.message
-			: ''
-	const combined = `${message} ${cause}`
-	// Incomplete workers-unit / handler test DBs often omit flag tables.
-	return (
-		combined.includes('no such table: feature_flags') ||
-		combined.includes('no such table: feature_flag_user_overrides')
-	)
 }

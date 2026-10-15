@@ -644,3 +644,17 @@ export async function deleteStaleFeatureFlag(
 
 	return results.some((result) => (result?.meta.changes ?? 0) > 0)
 }
+
+export function isMissingFeatureFlagsTable(error: unknown) {
+	const message = error instanceof Error ? error.message : ''
+	const cause =
+		error instanceof Error && error.cause instanceof Error
+			? error.cause.message
+			: ''
+	const combined = `${message} ${cause}`
+	// Incomplete workers-unit / handler test DBs often omit flag tables.
+	return (
+		combined.includes('no such table: feature_flags') ||
+		combined.includes('no such table: feature_flag_user_overrides')
+	)
+}

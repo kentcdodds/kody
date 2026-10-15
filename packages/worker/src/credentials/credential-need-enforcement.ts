@@ -12,7 +12,10 @@ import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import { credentialNeedEnforcementFlagKey } from '#universal/feature-flags/registry.ts'
-import { isFeatureGloballyEnabled } from '#worker/feature-flags/service.ts'
+import {
+	isFeatureGloballyEnabled,
+	isMissingFeatureFlagsTable,
+} from '#worker/feature-flags/service.ts'
 import { loadPersonalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
@@ -256,8 +259,16 @@ function enforcedPackageFor(input: {
 }
 
 function isEnforcementOn(env: Env, request: RequestContext | null) {
+	// Workers-unit D1 does not apply migrations, so a missing flag table is the
+	// registry default (off).
 	const load = () =>
-		isFeatureGloballyEnabled(env.APP_DB, credentialNeedEnforcementFlagKey)
+		isFeatureGloballyEnabled(
+			env.APP_DB,
+			credentialNeedEnforcementFlagKey,
+		).catch((error: unknown) => {
+			if (isMissingFeatureFlagsTable(error)) return false
+			throw error
+		})
 	if (!request) return load()
 	let enabled = flagByRequest.get(request)
 	if (!enabled) {
