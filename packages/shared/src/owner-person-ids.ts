@@ -5,13 +5,17 @@
  *   `user_id` columns, Durable Object names, Vectorize metadata, R2/KV key
  *   prefixes, and secret AAD.
  * - `PersonId` identifies the acting person: sessions, passkeys,
- *   OAuth/CLI/API-token principals, audit actors, and RBAC.
+ *   OAuth/CLI/API-token principals, audit actors, and RBAC
+ *   (`users.stable_user_id`).
  *
- * Every owner today is a person's personal org, whose id is that person's
- * `users.stable_user_id`. New accounts get a random id; legacy accounts may
- * hold SHA-256(email), so neither may ever be exposed publicly.
- * `personalOrgId` is the only conversion between the two, and mixing them is
- * a compile error. See docs/contributing/decisions/0060-owner-and-person-ids.md.
+ * Owners are orgs. Legacy personal orgs reuse `orgs.id === stable_user_id`;
+ * new signups mint a distinct `orgs.id` recorded on `users.personal_org_id`
+ * (ADR 0063 / #3053). Resolve that id with `personalOrgIdForPerson` (and
+ * related helpers), not by assuming it equals the person id.
+ * `personalOrgId(person)` only brands a person id into `OwnerId` for
+ * **person-keyed** storage. Mixing the brands is a compile error. Ids are
+ * opaque (random hex or legacy SHA-256(email)) and never public. See
+ * docs/contributing/decisions/0060-owner-and-person-ids.md.
  */
 import { toHex } from './hex.ts'
 
@@ -89,10 +93,15 @@ export function ownerIdFromStored<T extends string | null | undefined>(
 }
 
 /**
- * The person's personal org: the owner their own actions read and write. A
- * personal org reuses the person's stable id, so this is the identity. Acting
- * in any other org must go through an explicit membership or grant check, never
- * through this function.
+ * Brand a person id into the `OwnerId` type for **person-keyed** storage
+ * (sessions, passkeys, OAuth principals, connected-agent grants, audit).
+ *
+ * This is **not** the personal org resolver. After #3053 phase 3, personal org
+ * ids come from `users.personal_org_id` via `personalOrgIdForPerson` /
+ * `personalOrgIdFromUserRow` / `loadPersonalOrgIdForPerson`. Legacy personal
+ * orgs still have `orgs.id === person id`; new signups mint a distinct org id.
+ * Acting in any org other than the caller's personal org must go through an
+ * explicit membership or grant check.
  */
 export function personalOrgId(person: PersonId): OwnerId {
 	return person as string as OwnerId

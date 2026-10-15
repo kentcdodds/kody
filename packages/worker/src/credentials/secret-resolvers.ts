@@ -4,10 +4,8 @@
  * value is decrypted. A vault item's hosts come back with its value, so the
  * vault checks Use on the binding first and the host after the read.
  */
-import {
-	personalOrgId,
-	type OwnerId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { loadPersonalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import {
 	assertPackageCanAccessResolvedSecret,
 	loadPackageSecretMounts,
@@ -88,7 +86,10 @@ async function findSecretByName(
 			readValue: orgLookup.readValue,
 		}
 	}
-	const personalOwner = personalOrgId(person)
+	const personalOwner = await loadPersonalOrgIdForPerson(
+		call.input.env.APP_DB,
+		person,
+	)
 	const personalLookup = await findSecretForUse({
 		env: call.input.env,
 		userId: personalOwner,

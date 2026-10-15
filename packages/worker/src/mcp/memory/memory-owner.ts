@@ -27,10 +27,10 @@ export function legacyOrgMemoryProvenanceUri(
 	return `https://kody.codes/legacy-org-memory/${fromOrgId}/${sourceMemoryId}`
 }
 
-export function personalMemoryOwnerId(
-	user: PersonId | { userId: PersonId; personalOrgId?: OwnerId | null },
-): OwnerId {
-	if (typeof user === 'string') return personalOrgIdForPerson({ userId: user })
+export function personalMemoryOwnerId(user: {
+	userId: PersonId
+	personalOrgId?: OwnerId | null
+}): OwnerId {
 	return personalOrgIdForPerson(user)
 }
 

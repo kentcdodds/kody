@@ -1,9 +1,7 @@
-import {
-	ownerIdFromStored,
-	personalOrgId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { getOwnerUsernameFromListingName } from '#worker/community/public-urls.ts'
 import { getCommunityListingById } from '#worker/community/repo.ts'
@@ -162,10 +160,14 @@ async function toLoaderData(input: {
 	}
 }
 
-async function readOptionalViewerUserId(input: { env: Env; request: Request }) {
+async function readOptionalViewerPersonalOrgId(input: {
+	env: Env
+	request: Request
+}) {
 	try {
 		const user = await readAuthenticatedAppUser(input.request, input.env)
-		return user?.mcpUser.userId ?? null
+		if (!user) return null
+		return personalOrgIdForPerson(user.mcpUser)
 	} catch (error) {
 		console.error(
 			'Failed to resolve authenticated viewer for package files:',
@@ -191,14 +193,17 @@ export async function loadCommunityPackageFilesData(input: {
 
 	const ownerUsername = getOwnerUsernameFromListingName(listing.name)
 	const treeRef = input.ref?.trim() ?? ''
-	const [tree, viewerUserId, ownerRow] = await Promise.all([
+	const [tree, viewerPersonalOrgId, ownerRow] = await Promise.all([
 		loadCommunityListingPublicTree({
 			env: input.env,
 			request: input.request,
 			listing,
 			treeRef,
 		}),
-		readOptionalViewerUserId({ env: input.env, request: input.request }),
+		readOptionalViewerPersonalOrgId({
+			env: input.env,
+			request: input.request,
+		}),
 		ownerUsername
 			? getUserSocialRowByUsername(input.env.APP_DB, ownerUsername)
 			: Promise.resolve(null),
@@ -218,7 +223,7 @@ export async function loadCommunityPackageFilesData(input: {
 	})
 	if (!view) return null
 	const viewerOwnsListing =
-		viewerUserId != null && personalOrgId(viewerUserId) === listing.ownerUserId
+		viewerPersonalOrgId != null && viewerPersonalOrgId === listing.ownerUserId
 
 	return toLoaderData({
 		env: input.env,

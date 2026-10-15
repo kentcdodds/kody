@@ -1,8 +1,10 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
+import {
+	emailOwnerOrgId,
+	requireVerifiedEmailAccountUser,
+} from './require-verified-user.ts'
 import { sendOutboundEmail } from '#worker/email/outbound.ts'
 import {
 	emailMessageSummarySchema,
@@ -49,7 +51,8 @@ export const emailSendCapability = defineDomainCapability(
 			const user = await requireVerifiedEmailAccountUser(ctx)
 			const result = await sendOutboundEmail({
 				env: ctx.env,
-				userId: personalOrgId(user.userId),
+				userId: emailOwnerOrgId(ctx, user),
+				actorPersonId: user.userId,
 				request: ctx.callerContext.request,
 				accountEmail: user.email,
 				recipientPolicy: 'self',

@@ -141,6 +141,9 @@ test('stamped personalOrgId drives request org, owner key, and write fence', asy
 	).toBe(personalOrgId)
 	await expect(assertAccountWritableDb(db, stamped)).resolves.toBeUndefined()
 	await expect(
-		assertAccountWritableDb(db, personalOrgIdForPerson({ userId: personId })),
+		assertAccountWritableDb(
+			db,
+			personalOrgIdForPerson({ userId: personId, personalOrgId: stamped }),
+		),
 	).resolves.toBeUndefined()
 })

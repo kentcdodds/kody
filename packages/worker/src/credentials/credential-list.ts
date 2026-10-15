@@ -9,10 +9,8 @@ import {
 	chunkArray,
 	maxD1BoundParameters,
 } from '@kody-internal/shared/chunk.ts'
-import {
-	personalOrgId,
-	type OwnerId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { loadPersonalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { earliestSecretExpiresAt } from '@kody-internal/shared/secret-expires-at.ts'
 import {
@@ -375,7 +373,7 @@ export async function listCredentialsForViewer(input: {
 			)
 		const personalRows = await loadOwnerRows({
 			db,
-			ownerId: personalOrgId(actor),
+			ownerId: await loadPersonalOrgIdForPerson(db, actor),
 			ids: personal.map((credential) => credential.id),
 			now,
 		})

@@ -51,6 +51,7 @@ export function createAccountAvatarApiPostHandler(env: Env) {
 				await deleteUserAvatar({
 					env,
 					numericUserId: user.userId,
+					// person-keyed (not personal org)
 					stableUserId: personalOrgId(user.mcpUser.userId),
 				})
 

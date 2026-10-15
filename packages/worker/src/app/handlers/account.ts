@@ -28,6 +28,7 @@ export function createAccountHandler(
 					loadOnboardingData({
 						env,
 						requestUrl: request.url,
+						// person-keyed (not personal org)
 						stableUserId: personalOrgId(user.mcpUser.userId),
 						username: user.username,
 						emailVerified: user.emailVerified,

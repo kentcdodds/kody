@@ -4,6 +4,7 @@ import { routes } from '#universal/routes.ts'
 const focusedPageMatchers = [
 	createMatcher(routes.communityPackageApproveCapabilities.pattern),
 	createMatcher(routes.accountPackageApproveCapabilities.pattern),
+	createMatcher(routes.orgApprovalBundle.pattern),
 ]
 
 /**

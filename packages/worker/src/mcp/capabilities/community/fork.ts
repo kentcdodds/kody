@@ -85,6 +85,7 @@ export const communityForkCapability = defineDomainCapability(
 			const result = await forkCommunityListing({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
+				// person-keyed (not personal org)
 				userId: personalOrgId(user.userId),
 				expectedPackageScope,
 				listingId: args.listing_id,

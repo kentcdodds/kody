@@ -1,6 +1,9 @@
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
+import {
+	emailOwnerOrgId,
+	requireVerifiedEmailAccountUser,
+} from './require-verified-user.ts'
 import { emptyCapabilityInputSchema } from '#mcp/capabilities/types.ts'
 import {
 	listEmailInboxAddressesForUser,
@@ -23,11 +26,12 @@ export const emailInboxListCapability = defineDomainCapability(
 		outputSchema: emailInboxListSchema,
 		async handler(_args, ctx) {
 			const user = await requireVerifiedEmailAccountUser(ctx)
+			const ownerId = emailOwnerOrgId(ctx, user)
 			const [inboxes, addresses] = await Promise.all([
-				listEmailInboxesForUser({ db: ctx.env.APP_DB, userId: user.userId }),
+				listEmailInboxesForUser({ db: ctx.env.APP_DB, userId: ownerId }),
 				listEmailInboxAddressesForUser({
 					db: ctx.env.APP_DB,
-					userId: user.userId,
+					userId: ownerId,
 				}),
 			])
 			return {

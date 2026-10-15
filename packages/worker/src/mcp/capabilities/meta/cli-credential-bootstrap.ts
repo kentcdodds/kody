@@ -8,6 +8,7 @@ import {
 	cliCredentialBootstrapPolicy,
 	mintCliCredentialBootstrap,
 } from '#worker/api-tokens/cli-credential-bootstrap.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import {
 	apiTokenScopeDescriptions,
 	apiTokenScopes,
@@ -157,8 +158,10 @@ export const cliCredentialBootstrapCapability = defineDomainCapability(
 			}
 			return mintCliCredentialBootstrap({
 				db: ctx.env.APP_DB,
+				// person-keyed (not personal org): api_tokens.user_id is the person
 				userId: personalOrgId(user.userId),
-				orgId: ctx.callerContext.request?.org.id ?? personalOrgId(user.userId),
+				orgId:
+					ctx.callerContext.request?.org.id ?? personalOrgIdForPerson(user),
 				...(input.name === undefined ? {} : { name: input.name }),
 				...(input.scopes === undefined ? {} : { scopes: input.scopes }),
 				...(input.lifetime === undefined ? {} : { lifetime: input.lifetime }),

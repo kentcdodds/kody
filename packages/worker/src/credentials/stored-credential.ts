@@ -4,12 +4,12 @@
  * the actor's own personal credential granted to it. Lookup reads metadata
  * only; the handle's caller reads the value after `authorizeStoredCredential`.
  */
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	findStoredCredentialForUse,
 	type StoredCredential,
 } from '#mcp/secrets/service.ts'
 import { type StoredCredentialKind } from '#mcp/secrets/types.ts'
+import { loadPersonalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import {
 	CredentialNotFoundError,
 	CredentialRequestRefusedError,
@@ -38,7 +38,7 @@ export async function findStoredCredential(
 	if (!person) return null
 	const personal = await findStoredCredentialForUse({
 		env: input.env,
-		ownerId: personalOrgId(person),
+		ownerId: await loadPersonalOrgIdForPerson(input.env.APP_DB, person),
 		credentialId,
 	})
 	return personal ? { owner: 'personal', ...personal } : null
