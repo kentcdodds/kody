@@ -7,7 +7,11 @@ import {
 	type UsableCredential,
 } from '#worker/credentials/credential-candidates.ts'
 import { loadAllCredentialMappingsForPackage } from '#worker/credentials/credential-mappings.ts'
-import { ownCredentialNeeds } from '#worker/credentials/credential-needs.ts'
+import { loadPublishedCredentialNeeds } from '#worker/credentials/credential-needs-closure.ts'
+import {
+	ownCredentialNeeds,
+	type CredentialNeed,
+} from '#worker/credentials/credential-needs.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { listKodyPackageDependencyNames } from '#worker/package-registry/types.ts'
 import { resolveSavedPackageImport } from '#worker/package-runtime/package-import-resolution.ts'
@@ -82,6 +86,13 @@ export async function computePackageCapabilitySet(input: {
 		via: viaRoot,
 		entries,
 		loadReachableCredentials,
+		// The root runs its whole published closure, inherited needs included,
+		// and its mappings are stored against those keys on the root package.
+		needs: await loadPublishedCredentialNeeds({
+			env: input.env,
+			userId: input.ownerUserId,
+			sourceId: input.sourceId,
+		}),
 	})
 
 	const dependencySnapshot = await resolveDependencySnapshot({
@@ -306,6 +317,8 @@ async function appendPackageCapabilityEntries(input: {
 	via: Array<string>
 	entries: Array<CapabilitySetEntry>
 	loadReachableCredentials: () => Promise<Array<UsableCredential>>
+	/** Needs beyond the package's own manifest (the root's published closure). */
+	needs?: ReadonlyArray<CredentialNeed>
 }): Promise<void> {
 	const [loaded, usesStorage] = await Promise.all([
 		loadPackageManifestBySourceId({
@@ -390,7 +403,13 @@ async function appendPackageCapabilityEntries(input: {
 		})
 	}
 
-	const needs = ownCredentialNeeds(loaded.manifest.kody.credentials)
+	const ownNeeds = ownCredentialNeeds(loaded.manifest.kody.credentials)
+	const needs = [
+		...(input.needs ?? []),
+		...ownNeeds.filter(
+			(need) => !input.needs?.some((closure) => closure.key === need.key),
+		),
+	]
 	if (needs.length === 0) return
 	const [reachableCredentials, mappings] = await Promise.all([
 		input.loadReachableCredentials(),

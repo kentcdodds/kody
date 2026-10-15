@@ -1,4 +1,9 @@
 import { expect, test, vi } from 'vitest'
+import * as needsClosure from '#worker/credentials/credential-needs-closure.ts'
+import {
+	ownCredentialNeeds,
+	type CredentialNeed,
+} from '#worker/credentials/credential-needs.ts'
 import { writePublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import {
@@ -21,6 +26,7 @@ const publishedCommit = 'commit-1'
 async function setup(input: {
 	kody?: Record<string, unknown>
 	files?: Record<string, string> | null
+	closure?: Array<CredentialNeed>
 }) {
 	const t = await setupPackageCredentialMappingFixture({
 		loadPackageManifestBySourceId: mocks.loadPackageManifestBySourceId,
@@ -47,6 +53,12 @@ async function setup(input: {
 		kody: { id: 'digest', description: 'digest', ...input.kody },
 	}
 	mocks.loadPackageManifestBySourceId.mockResolvedValue({ manifest })
+	vi.mocked(needsClosure.loadPublishedCredentialNeeds).mockResolvedValue(
+		input.closure ??
+			ownCredentialNeeds(
+				input.kody?.credentials as Parameters<typeof ownCredentialNeeds>[0],
+			),
+	)
 	if (input.files !== null) {
 		const source = await getEntitySourceById(t.db, t.savedPackage.sourceId)
 		await writePublishedSourceSnapshot({
@@ -162,6 +174,39 @@ test('a credential mapped to a declared need is listed even when its provider wo
 	expect((await t.compute()).capabilitySet.fingerprint).not.toBe(
 		before.capabilitySet.fingerprint,
 	)
+})
+
+test('a need inherited from a dependency lists the credential mapped to it on this package', async () => {
+	const t = await setup({
+		closure: [
+			{
+				key: 'chat',
+				provider: 'slack',
+				description: 'Post the digest',
+				multiple: false,
+			},
+		],
+	})
+	const [mappedId] = t.unrelated
+	const now = '2026-10-13T00:00:00.000Z'
+	await t.db
+		.prepare(
+			`INSERT INTO credential_mappings (
+				id, org_id, package_id, need_key, target, credential_ids_json,
+				created_at, updated_at
+			) VALUES ('mapping-chat', ?, ?, 'chat', 'org', ?, ?, ?)`,
+		)
+		.bind(t.acmeId, t.savedPackage.id, JSON.stringify([mappedId]), now, now)
+		.run()
+
+	expect((await t.compute()).capabilitySet.entries).toEqual([
+		expect.objectContaining({
+			kind: 'credential',
+			credentialId: mappedId,
+			source: 'need',
+			needKey: 'chat',
+		}),
+	])
 })
 
 test('a secret mount and an explicit grant to this package are listed; other credentials are not', async () => {
