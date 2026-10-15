@@ -649,8 +649,8 @@ keyed by the secret `webhookUrlApply` delivered as `{{webhookSecret}}`:
 }
 ```
 
-Kody package code cannot compute that signature yet (packages never see secret
-plaintext), so package-to-webhook calls use `url-secret` for now.
+Kody package code cannot compute that signature (packages never see secret
+plaintext), so package-to-webhook calls use `url-secret`.
 
 ### Senders that cannot sign: `url-secret`
 

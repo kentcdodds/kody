@@ -2,9 +2,9 @@
 
 Contract between origin (`followAdd` / `followList` / `followRemove`) and
 `@kodycodes/cli` (`kody follow add` / `kody follow list` /
-`kody follow remove`). The CLI lives in kody-bot/cli and lands in a separate PR.
-Origin exposes the capabilities on MCP and the Open API. Product keyword:
-`follow_repo`. Domain: `follow`.
+`kody follow remove`). The CLI lives in kody-bot/cli. Origin exposes the
+capabilities on MCP and the Open API. Product keyword: `follow_repo`. Domain:
+`follow`.
 
 Related to #3810.
 
@@ -141,11 +141,10 @@ delivery. `follow.published` fires when a package `published_commit` moves.
 `follow.pushed` fires when the default branch moves, coalesced into one pending
 row per target for five minutes, at most 20 commits on the event.
 
-Forking a community listing creates a follow of the upstream package. Existing
-forks are backfilled by migration `0149-follows.sql` when the listing row still
-exists. A listing pin move still delivers `community.fork.upstream_updated` from
-this pipeline with the historical payload, one event per fork behind the new
-pin. The old fork-only queue enqueue is off.
+Forking a community listing creates a follow of the upstream package. A fork
+whose listing row still exists already has that follow. A listing pin move
+delivers `community.fork.upstream_updated` from this pipeline with that event's
+payload, one event per fork behind the new pin.
 
 ## CLI notes
 

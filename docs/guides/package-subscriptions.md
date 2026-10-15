@@ -738,12 +738,10 @@ supported: `followAdd` on `@handle/name` delivers `follow.published` (and
 `follow.pushed` when you can read the target). The alias itself still requires a
 fork, because its payload names that fork.
 
-The alias runs on the follow publish path. In-flight `fork_upstream_updated`
-queue messages are acknowledged without fan-out. Subscriber discovery and
-invocation failures are logged and do not fail the publish. Idempotency keys
-include the listing id, the new pinned commit, the fork id, and the subscriber
-package id, so a repeated notify replays stored results instead of re-running
-handlers.
+The alias runs on the follow publish path. Subscriber discovery and invocation
+failures are logged and do not fail the publish. Idempotency keys include the
+listing id, the new pinned commit, the fork id, and the subscriber package id,
+so a repeated notify replays stored results instead of re-running handlers.
 
 Handlers receive a metadata-only payload:
 

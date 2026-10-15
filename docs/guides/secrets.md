@@ -5,9 +5,9 @@ summary:
   How Kody lets your agent use your API keys, tokens, and private keys without
   ever reading them: the no-secret_get rule, `{{secret:name}}` placeholders
   resolved at the network boundary, host approval, package approval (website
-  Allow links via `secretLock`), expiry, and where each kind of credential
-  lives. Load this when someone asks how credentials work or whether the agent
-  can see a key.
+  Allow links via `secretLock`), and expiry. Keys are one credential kind; the
+  Credentials guide covers every kind. Load this when someone asks whether the
+  agent can see a key.
 category: platform
 ---
 
@@ -149,6 +149,8 @@ on connected tool servers.
 
 ## Where to go next
 
+- [Credentials](./credentials.md) — every credential kind, scoped clients, and
+  `kody.credentials` needs.
 - [Secrets and host approval](../use/secrets-and-values.md) — the MCP-level
   reference with the exact placeholder, header, and approval semantics.
 - [Custom secret providers](./secret-providers.md) — vault placeholders, account

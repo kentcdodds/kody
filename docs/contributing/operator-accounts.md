@@ -254,9 +254,9 @@ reserves `GITHUB_*`. Deploy maps them to Worker secrets `GITHUB_CLIENT_ID` /
 
 `PREVIEW_ENVIRONMENT_ADMIN_TOKEN` is a PAT (or equivalent) with repository
 administration write, used by preview cleanup to delete leftover `preview-<pr>`
-GitHub Environments on PR close. Preview deploys no longer create those
-Environments; the token remains so cleanup can remove legacy and race-recreated
-entries.
+GitHub Environments on PR close. Preview deploys do not set a GitHub Actions
+`environment:`; the token is there so cleanup can remove leftover and
+race-recreated entries.
 
 `KODY_WEBHOOK_URL_RUN` is the minted inbound webhook URL for
 `@kentcdodds/weekly-site-perf` webhook `run`. Copy of the Kody user secret

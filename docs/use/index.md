@@ -35,7 +35,7 @@ reference detail those docs link into.
   started flow for people
 - [Shared memory](../guides/memory.md),
   [Where agent guidance lives](../guides/agent-guidance.md),
-  [Secrets](../guides/secrets.md),
+  [Credentials](../guides/credentials.md), [Secrets](../guides/secrets.md),
   [Custom secret providers](../guides/secret-providers.md), and
   [Jobs, workflows, and webhooks](../guides/triggers.md) — concept docs for the
   primitives every connected agent shares
@@ -77,6 +77,8 @@ reference detail those docs link into.
 - [Packages](./packages.md)
 - [Share a package](../guides/package-sharing.md) — grant a person or team
   access to a package, or invite someone who is not in your org yet
+- [Package subscriptions](../guides/package-subscriptions.md) — jobs, webhooks,
+  email, and follows (`followAdd` / `followList` / `followRemove`)
 - [Ship Agent Skills in a package](../guides/package-skills.md) — put
   `skills/<name>/SKILL.md` in a package; MCP serving is behind
   `mcp-skills-extension`

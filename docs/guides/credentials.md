@@ -92,10 +92,8 @@ const response = await fetch('https://api.github.com/user/repos', {
 - `{{integration-token:name}}` works the same way for an OAuth connection, on
   the integration's own hosts.
 
-Keys and placeholders work this way permanently. Every other approach on this
-page is an optional, more secure path you can adopt when it fits, with no forced
-migration. Full placeholder rules (encodings, multipart, the
-`x-kody-secret-resolution` header):
+Full placeholder rules (encodings, multipart, the `x-kody-secret-resolution`
+header):
 [Secrets and host approval](../use/secrets-and-values.md#placeholders-in-fetch).
 
 ## Scoped clients: `credential(key)`
@@ -228,7 +226,7 @@ const response = await github.fetch('https://api.github.com/user')
 
 On a 401 the client refreshes the token and retries once. OAuth connections
 always use `Authorization: Bearer`. `createAuthenticatedFetch` and
-`{{integration-token:name}}` keep working beside the client.
+`{{integration-token:name}}` also resolve the same OAuth connection.
 
 ### MCP server
 

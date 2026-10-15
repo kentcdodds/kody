@@ -1,35 +1,36 @@
 # Email primitives
 
 Kody has a storage-first email surface for Cloudflare Email Service and Email
-Routing. Every user gets an automatic inbox address at
-`{username}@<platform domain>`, where the platform domain is the deployment's
-user email domain: the `USER_EMAIL_DOMAIN` env var when set, otherwise `inbox.`
-plus the hostname of `APP_BASE_URL` (for example `you@inbox.kody.codes`). Kody
-receives routed mail for that address, stores parsed messages for later
-automation, and can send notify-self mail and replies from the matching
+Routing. Each org has one inbox address at `{handle}@<platform domain>`, where
+the handle is the org's slug (a personal org's slug is the owner's username) and
+the platform domain is the deployment's user email domain: the
+`USER_EMAIL_DOMAIN` env var when set, otherwise `inbox.` plus the hostname of
+`APP_BASE_URL` (for example `you@inbox.kody.codes` or `acme@inbox.kody.codes`).
+Kody receives routed mail for that address, stores parsed messages in the org
+mailbox, and can send notify-self mail and replies from the matching
 platform-assigned sender address.
 
 ## Addressing model
 
-- Inbound mail to `{username}@<platform domain>` routes to the user who owns
-  that username. The default inbox is provisioned automatically at signup (or on
-  the first inbound message), so there is nothing to create or configure.
+- Inbound mail to `{handle}@<platform domain>` routes to the org that owns that
+  handle. The default inbox is provisioned automatically at signup (or on the
+  first inbound message), so there is nothing to create or configure.
 - Subaddressing (RFC 5233 plus addressing) is supported: mail to
-  `{username}+{tag}@<platform domain>` routes to `{username}`'s inbox (and
+  `{handle}+{tag}@<platform domain>` routes to that org's inbox (and
   `support+{tag}@<apex>` to the corresponding system inbox). The base local part
   — everything before the first `+` — is what routes, so a tag can never bypass
-  the reserved or unknown-username checks. Plus-tags on the user inbox host
-  (`inbox.kody.codes` and any `getAcceptedUserEmailDomains` host) are user-inbox
+  the reserved or unknown-handle checks. Plus-tags on the org inbox host
+  (`inbox.kody.codes` and any `getAcceptedUserEmailDomains` host) are org-inbox
   aliases, not reserved system locals: `you+kody@inbox…`, `you+support@inbox…`,
   and `you+admin@inbox…` deliver to `you` the same way `you+patch@inbox…` does.
-  `kody@inbox…` with no plus (the username itself is the reserved local) still
+  `kody@inbox…` with no plus (the handle itself is the reserved local) still
   rejects. System inboxes stay on the apex only (`kody@kody.codes` and the other
   `systemEmailLocals`). The full tagged address is preserved in the stored
   message's `to_addresses`, so a package subscribing to `email.message.received`
   can dispatch on the tag (for example, only handle mail addressed to
-  `{username}+invoices@...`).
-- Mail to unknown usernames is rejected, and the app's apex domain is never a
-  user inbox: user mail lives exclusively on the configured platform domain (the
+  `{handle}+invoices@...`).
+- Mail to unknown handles is rejected, and the app's apex domain is never an org
+  inbox: org mail lives exclusively on the configured platform domain (the
   `inbox.` subdomain by default), while the apex hosts only system mail — the
   transactional sender (`kody@<apex>`, used for verification, password-reset,
   billing, entitlement warnings, usage-campaign nudges (Kody tips, with an
@@ -40,9 +41,9 @@ platform-assigned sender address.
   `Reply-To: support@<apex>` unless the caller supplies a different Reply-To, so
   human replies land at support rather than at the transactional sender. All
   other apex mail is rejected.
-- Reserved local parts never route to a user inbox and can never be registered
-  as usernames.
-- User outbound mail always sends from `{username}@<platform domain>`. The from
+- Reserved local parts never route to an org inbox and can never be registered
+  as usernames or slugs.
+- Org outbound mail always sends from `{handle}@<platform domain>`. The from
   address is platform-assigned: a verified sender identity for it is provisioned
   automatically alongside the default inbox. There is no self-service sender
   registration or verification step.
@@ -52,7 +53,7 @@ platform-assigned sender address.
 Use the MCP `email` domain:
 
 - `emailInboxList` lists inboxes and automatic platform addresses for the
-  signed-in user.
+  current org.
 - `emailDestinationList` lists email destinations `emailSend` may use. The
   account identity email is always included. Extra addresses must be verified
   before `emailSend` can use them. Cap is 5 extras besides the account email.
@@ -231,7 +232,7 @@ Inbound mail is classified at receive time. Each stored message carries
    results first. DMARC `fail`, or SPF `fail`/`softfail` without a DKIM `pass`,
    marks the message suspect. A missing Authentication-Results header fails open
    (not authenticated, not suspect).
-2. **Per-user sender rules** — at classification time, rules match the RFC5322
+2. **Per-org sender rules** — at classification time, rules match the RFC5322
    From address (exact address or domain, including subdomains; address beats
    domain). Early SMTP `block` still uses the envelope sender. Effects:
    - `block` rejects at SMTP before any receive quota is charged (envelope
@@ -243,7 +244,7 @@ Inbound mail is classified at receive time. Each stored message carries
 3. **Default** — when no sender rule decides the outcome, suspect mail is
    quarantined and everything else is accepted.
 
-Each user may store at most 200 sender rules. Manage them with
+Each org may store at most 200 sender rules. Manage them with
 `emailSenderRuleList`, `emailSenderRuleSet` (kind / value / effect / note), and
 `emailSenderRuleDelete`. Reclassify a stored inbound message with
 `emailMessageClassify`, or filter `emailMessageList` by `classification`.
@@ -298,10 +299,9 @@ does not authenticate From.
   missing Authentication-Results) still stay visible on `/@<slug>/-/email`, and
   the worker logs `inbound-email-sender-unverified` with the reason.
 
-Personal orgs' existing live `email.message.received` and
-`email.message.quarantined` enablements were migrated to `any_authenticated` so
-they keep firing. Narrow those rows when you want a specific sender. Team orgs
-were not migrated.
+Personal orgs' live `email.message.received` and `email.message.quarantined`
+enablements use `any_authenticated` (any authenticated sender). Narrow those
+rows when you want a specific sender. Team orgs start with no email enablements.
 
 Email runs are still billed to the enabler, in the org that owns the inbox.
 

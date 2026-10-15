@@ -212,8 +212,7 @@ unadopted fork, or any internet-visible package. That covers `{{secret:NAME}}`,
 `credential_need_undeclared`, naming the package and the key to add. A slot with
 no `kind` covers any of them; slots its imports declare count too. A name
 mounted in `kody.secretMounts` still needs a slot when a placeholder fills it.
-This is turned on by the `credential-need-enforcement` flag once every published
-package declares what it uses (see
+The check is behind the `credential-need-enforcement` flag (see
 [ADR 0068](../contributing/decisions/0068-credentials-own-placement-scoped-clients.md#amendment-2026-10-15-credential-need-enforcement)).
 
 #### Opt-in: credential clients
