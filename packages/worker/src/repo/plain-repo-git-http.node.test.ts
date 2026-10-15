@@ -338,6 +338,72 @@ test('proxy streams successful receive-pack unchanged', async () => {
 	)
 })
 
+test('proxy forwards gzip-encoded upload-pack requests to Artifacts decoded', async () => {
+	resetMocks()
+	seedPlainRepo()
+	const fetchRequest =
+		'0014command=fetch\n0001' +
+		Array.from(
+			{ length: 21 },
+			(_, index) => `0032want ${index.toString(16).padStart(40, '0')}\n`,
+		).join('') +
+		'0009done\n0000'
+	const seen: Array<{ encoding: string | null; body: string }> = []
+	using _server = createMswNodeServer([
+		http.post(`${artifactsRemote}/git-upload-pack`, async ({ request }) => {
+			seen.push({
+				encoding: request.headers.get('Content-Encoding'),
+				body: await request.text(),
+			})
+			return HttpResponse.text('000dpackfile\n0000', {
+				status: 200,
+				headers: { 'Content-Type': 'application/x-git-upload-pack-result' },
+			})
+		}),
+	])
+	const gzipped = await new Response(
+		new Blob([fetchRequest])
+			.stream()
+			.pipeThrough(new CompressionStream('gzip')),
+	).arrayBuffer()
+	const response = await handlePlainRepoGitHttpRequest(
+		new Request(
+			`https://kody.codes/git/sources/${sourceId}.git/git-upload-pack`,
+			{
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${artifactToken}`,
+					'Content-Type': 'application/x-git-upload-pack-request',
+					'Content-Encoding': 'gzip',
+					'Git-Protocol': 'version=2',
+				},
+				body: gzipped,
+			},
+		),
+		{ APP_DB: {} } as Env,
+	)
+	expect(response!.status).toBe(200)
+	expect(await response!.text()).toBe('000dpackfile\n0000')
+	expect(seen).toEqual([{ encoding: null, body: fetchRequest }])
+
+	const rejected = await handlePlainRepoGitHttpRequest(
+		new Request(
+			`https://kody.codes/git/sources/${sourceId}.git/git-upload-pack`,
+			{
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${artifactToken}`,
+					'Content-Encoding': 'br',
+				},
+				body: 'x',
+			},
+		),
+		{ APP_DB: {} } as Env,
+	)
+	expect(rejected!.status).toBe(415)
+	expect(seen).toHaveLength(1)
+})
+
 test('proxy does not claim busy for unrelated upstream errors', async () => {
 	resetMocks()
 	seedPlainRepo()
