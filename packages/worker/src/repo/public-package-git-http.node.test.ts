@@ -237,6 +237,16 @@ test('shouldRedirectBrowserFromPackageGitRoot matches browser HTML GET/HEAD only
 	).toBe(false)
 	expect(
 		shouldRedirectBrowserFromPackageGitRoot(
+			new Request('https://kody.codes/@kody/cloudflare.git?service=unknown', {
+				headers: {
+					Accept: 'text/html',
+					'User-Agent': 'Mozilla/5.0',
+				},
+			}),
+		),
+	).toBe(false)
+	expect(
+		shouldRedirectBrowserFromPackageGitRoot(
 			new Request('https://kody.codes/@kody/cloudflare.git', {
 				method: 'POST',
 				headers: { Accept: 'text/html', 'User-Agent': 'Mozilla/5.0' },

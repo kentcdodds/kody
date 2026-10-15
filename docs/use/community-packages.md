@@ -29,7 +29,7 @@ git clone https://kody.codes/@kody/cloudflare.git
 ```
 
 Browsers that open the same URL are redirected to the package page (the path
-without `.git`). Git clients keep smart HTTP as before.
+without `.git`). Git clients keep using smart HTTP on that URL.
 
 That route proxies to the package's Artifacts repo with a short-lived
 server-side read token. Clients never see Artifacts host URLs or credentials.

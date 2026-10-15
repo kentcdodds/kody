@@ -138,8 +138,9 @@ export function isPublicPackageGitHttpRequest(pathname: string) {
  * package page. Smart HTTP (`info/refs`, upload/receive-pack) and non-browser
  * probes keep the existing git responses.
  *
- * Narrow on purpose: Accept must include `text/html`, there must be no git
- * `service` query, and User-Agent must not look like a git client.
+ * Narrow on purpose: Accept must include `text/html`, there must be no
+ * `service` query (git smart HTTP or unknown probes), and User-Agent must not
+ * look like a git client.
  */
 export function shouldRedirectBrowserFromPackageGitRoot(
 	request: Request,
@@ -153,10 +154,9 @@ export function shouldRedirectBrowserFromPackageGitRoot(
 	} catch {
 		return false
 	}
-	const service = url.searchParams.get('service')
-	if (service === gitUploadPackService || service === gitReceivePackService) {
-		return false
-	}
+	// Any `service` query stays on the git endpoint (known smart HTTP or
+	// unknown probes that previously got the plain-text repo-root response).
+	if (url.searchParams.has('service')) return false
 	const userAgent = request.headers.get('User-Agent') ?? ''
 	if (/\bgit\//i.test(userAgent)) return false
 	return true
