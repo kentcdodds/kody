@@ -722,15 +722,15 @@ type FollowPushedEvent = {
 When a public package you forked is republished and the listing pin moves, Kody
 delivers `community.fork.upstream_updated` to packages saved by the forking
 account that declare the topic. The event is a compatibility alias emitted from
-the follow pipeline in the same turn as `follow.published`, with the same
-payload as before. Emission walks every fork of the listing that is still behind
-the new pin (forking the same listing twice produces two events). A paused
-follow still leaves those fork subscribers receiving the alias. Republishes that
-keep the same pinned commit do not emit, and forks already at the new pinned
-commit are skipped. Forking the listing also follows the upstream package for
-the org the fork landed in (the forker's personal org, or the active org when
-the fork is made into a team org). Watching a public package without forking it
-is supported: `followAdd` on `@handle/name` delivers `follow.published` (and
+the follow pipeline in the same turn as `follow.published`, with the payload
+shape below. Emission walks every fork of the listing that is still behind the
+new pin (forking the same listing twice produces two events). A paused follow
+still leaves those fork subscribers receiving the alias. Republishes that keep
+the same pinned commit do not emit, and forks already at the new pinned commit
+are skipped. Forking the listing also follows the upstream package for the org
+the fork landed in (the forker's personal org, or the active org when the fork
+is made into a team org). Watching a public package without forking it is
+supported: `followAdd` on `@handle/name` delivers `follow.published` (and
 `follow.pushed` when you can read the target). The alias itself still requires a
 fork, because its payload names that fork.
 
