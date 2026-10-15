@@ -243,7 +243,10 @@ export async function handleAccountPackageInternetVisibleAction(input: {
 			details,
 		})
 
-	const approveCapabilities = async (expectedFingerprint: string) => {
+	const approveCapabilities = async (
+		expectedFingerprint: string,
+		options: { enqueueWentPublic?: boolean } = {},
+	) => {
 		try {
 			const approved = await approvePackageCapabilitySet({
 				env: input.env,
@@ -252,6 +255,7 @@ export async function handleAccountPackageInternetVisibleAction(input: {
 				savedPackage,
 				requestUrl: input.request.url,
 				expectedFingerprint,
+				...options,
 			})
 			await audit('package.capabilities.approve', 'success', {
 				fingerprint: approved.capabilitySet.fingerprint,
@@ -318,8 +322,7 @@ export async function handleAccountPackageInternetVisibleAction(input: {
 			)
 		}
 		if (action === 'approve-capabilities-and-go-public') {
-			// Check first: pinning re-enqueues went_public, which would revive a
-			// request turned off in another tab.
+			// A request turned off in another tab gets no pin either.
 			const pending = await getPendingWentPublicApproval({
 				env: input.env,
 				ownerUserId,
@@ -336,23 +339,15 @@ export async function handleAccountPackageInternetVisibleAction(input: {
 					409,
 				)
 			}
-			// One click, two decisions: the capability pin, then the went_public
-			// request. Each keeps its own checks and audit event.
+			// One click, two decisions: the capability pin, then this exact
+			// went_public request. Each keeps its own checks and audit event.
+			// The pin does not enqueue, so a request turned off meanwhile stays
+			// off and approving it below fails.
 			const capabilities = await approveCapabilities(
 				readBodyString(input.body, 'fingerprint'),
+				{ enqueueWentPublic: false },
 			)
 			if (!capabilities.ok) return capabilities.response
-			if (capabilities.approved.wentPublicRequest?.id !== requestId) {
-				return jsonResponse(
-					{
-						ok: false,
-						error:
-							'The capability set is approved, but the request to make this package internet-visible changed. Reload the page.',
-						approvalUrl,
-					},
-					409,
-				)
-			}
 		}
 		const approved =
 			action === 'approve-credential-needs'

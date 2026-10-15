@@ -497,7 +497,7 @@ test('approve-capabilities-and-go-public records both decisions with one audit e
 	])
 })
 
-test('approve-capabilities-and-go-public stops when the went_public request changed', async () => {
+test('approve-capabilities-and-go-public pins without enqueuing, so a request turned off meanwhile stays off', async () => {
 	const env = { APP_DB: {} } as Env
 	const user = createUser()
 	const request = new Request('https://example.com/account/packages.json', {
@@ -506,9 +506,14 @@ test('approve-capabilities-and-go-public stops when the went_public request chan
 	mockModule.writablePackage = createSavedPackage(false)
 	mockModule.loadOrgBindingForOrg.mockResolvedValue(null)
 	mockModule.approvePackageCapabilitySet.mockResolvedValue({
-		approval: { id: 'approval-1', publishedCommit: 'newer' },
+		approval: { id: 'approval-1', publishedCommit: 'deadbeef' },
 		capabilitySet: { entries: [], fingerprint: 'reviewed-fp' },
-		wentPublicRequest: { id: 'request-newer' },
+		wentPublicRequest: null,
+	})
+	mockModule.approveWentPublicRequest.mockResolvedValue({
+		ok: false,
+		status: 409,
+		error: 'This request was already resolved. Reload the page.',
 	})
 
 	const response = await handleAccountPackageInternetVisibleAction({
@@ -528,10 +533,19 @@ test('approve-capabilities-and-go-public stops when the went_public request chan
 		ok: false,
 		error: expect.stringContaining('Reload'),
 	})
-	expect(mockModule.approveWentPublicRequest).not.toHaveBeenCalled()
+	expect(mockModule.approvePackageCapabilitySet).toHaveBeenCalledWith(
+		expect.objectContaining({ enqueueWentPublic: false }),
+	)
+	expect(mockModule.enqueueWentPublicApproval).not.toHaveBeenCalled()
 	expect(
-		mockModule.logOrgAuditEvent.mock.calls.map(([event]) => event.action),
-	).toEqual(['package.capabilities.approve'])
+		mockModule.logOrgAuditEvent.mock.calls.map(([event]) => [
+			event.action,
+			event.result,
+		]),
+	).toEqual([
+		['package.capabilities.approve', 'success'],
+		['package.went_public.approve', 'failure'],
+	])
 })
 
 test('approve-capabilities-and-go-public does not go public when the capability approval fails', async () => {

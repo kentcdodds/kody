@@ -26,9 +26,11 @@ the approval page shows one **Approve and make internet-visible** button
 (`approve-capabilities-and-go-public`). It runs both decisions in order, each
 with its own checks and its own org audit event: the capability pin
 (`package.capabilities.approve`), then the `went_public` request
-(`package.went_public.approve`). If the second step fails, the pin stays
-recorded and the page falls back to the separate went-public card. The two steps
-were never split for a security reason; they share one queue
+(`package.went_public.approve`). The pin does not enqueue a new `went_public`
+request, so a request turned off meanwhile stays off. If the second step fails,
+the pin stays recorded and the page falls back to the separate went-public card
+when the request is still pending. The two steps were never split for a security
+reason; they share one queue
 ([ADR 0068 amendment](./decisions/0068-credentials-own-placement-scoped-clients.md)).
 An approval bundle's went-public item cannot be approved until the capability
 set is, so it points at the package's approval page instead.
