@@ -1,3 +1,7 @@
+import {
+	chunkArray,
+	maxD1BoundParameters,
+} from '@kody-internal/shared/chunk.ts'
 import { isPersonalOrg } from '#worker/orgs/is-personal-org.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 
@@ -57,10 +61,14 @@ async function selectIds(
 	sqlPrefix: string,
 	values: ReadonlyArray<string>,
 ) {
-	const placeholders = values.map(() => '?').join(', ')
-	const { results } = await db
-		.prepare(`${sqlPrefix} (${placeholders})`)
-		.bind(...values)
-		.all<{ id: string }>()
-	return new Set(results.map((row) => String(row.id)))
+	const ids = new Set<string>()
+	for (const chunk of chunkArray(values, maxD1BoundParameters)) {
+		const placeholders = chunk.map(() => '?').join(', ')
+		const { results } = await db
+			.prepare(`${sqlPrefix} (${placeholders})`)
+			.bind(...chunk)
+			.all<{ id: string }>()
+		for (const row of results) ids.add(String(row.id))
+	}
+	return ids
 }

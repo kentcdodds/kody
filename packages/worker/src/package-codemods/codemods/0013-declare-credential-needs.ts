@@ -13,6 +13,7 @@ import {
 import { packageCredentialSlotNamePattern } from '#worker/package-registry/types.ts'
 import {
 	type PackageCodemod,
+	type PackageCodemodContext,
 	type PackageCodemodFinding,
 	type PackageCodemodTransformResult,
 } from '../types.ts'
@@ -44,8 +45,8 @@ export const declareCredentialNeedsMessages = {
 		'Uses a credential name that is not a valid kody.credentials slot key (a letter, then letters, numbers, dots, underscores, or hyphens; max 64). Rename it or declare it by hand.',
 	kindMismatch:
 		'Uses a credential that kody.credentials declares with a kind that cannot fill it. Fix the slot kind by hand.',
-	nonFetchCredential:
-		'Calls credential() with an undeclared key in a module that signs or calls MCP tools. Declare the slot with its kind by hand.',
+	undeclaredCredentialKey:
+		'Calls credential() with a key that kody.credentials does not declare. Declare the slot with the kind it takes (a slot with no kind takes only secret, oauth, or login credentials) by hand.',
 	indirectCredential:
 		'Passes credential or credentials around instead of calling it. Declare each key it reads as a kody.credentials slot by hand.',
 	invalidManifest:
@@ -70,11 +71,10 @@ const fillingSlotKinds: Record<NameKind, ReadonlySet<string>> = {
 	integration: new Set(['oauth']),
 }
 
-type Use = 'secret' | 'integration' | 'credential'
-
 type Plan = {
 	add: Array<string>
 	manual: Array<PackageCodemodFinding>
+	manifestPath: string
 	manifest: Record<string, unknown> | null
 	source: string | null
 }
@@ -93,17 +93,45 @@ function parseManifest(source: string | undefined) {
 	}
 }
 
-/** Mount aliases and the secret names they read are already declared. */
-function secretMountNames(kody: Record<string, unknown>) {
-	const names = new Set<string>()
-	if (!isPlainObject(kody.secretMounts)) return names
-	for (const [alias, mount] of Object.entries(kody.secretMounts)) {
-		names.add(alias)
-		if (isPlainObject(mount) && typeof mount.name === 'string') {
-			names.add(mount.name)
+function normalizeSnapshotPath(path: string) {
+	return path.trim().replace(/^\/+/, '')
+}
+
+/**
+ * The package's manifest key and its own files, keyed as in the snapshot. A
+ * nested package (`sourceRoot` below the repo root) may arrive keyed from
+ * the repo root or from its source root.
+ */
+function locatePackage(
+	files: Record<string, string>,
+	context: PackageCodemodContext,
+) {
+	const root = normalizeSnapshotPath(context.sourceRoot ?? '').replace(
+		/\/+$/,
+		'',
+	)
+	const manifestPath = normalizeSnapshotPath(
+		context.manifestPath ?? packageManifestPath,
+	)
+	const prefix = `${root}/`
+	const keyFor = (path: string) =>
+		Object.keys(files).find((key) => normalizeSnapshotPath(key) === path)
+	const nestedManifestKey = root ? keyFor(manifestPath) : undefined
+	if (root && nestedManifestKey !== undefined) {
+		return {
+			manifestKey: nestedManifestKey,
+			files: Object.fromEntries(
+				Object.entries(files).filter(([key]) =>
+					normalizeSnapshotPath(key).startsWith(prefix),
+				),
+			),
 		}
 	}
-	return names
+	const relativeManifest =
+		root && manifestPath.startsWith(prefix)
+			? manifestPath.slice(prefix.length)
+			: manifestPath
+	return { manifestKey: keyFor(relativeManifest) ?? relativeManifest, files }
 }
 
 const credentialFunctionNames = new Set(['credential', 'credentials'])
@@ -158,6 +186,29 @@ function isCredentialCallee(
 	return false
 }
 
+/** A property or member name spelled like a binding, not a use of it. */
+function isNonReferenceName(node: AstNode, parent: AstNode) {
+	if (parent.computed === true) return false
+	if (
+		parent.type === 'MemberExpression' ||
+		parent.type === 'OptionalMemberExpression'
+	) {
+		return parent.property === node
+	}
+	if (
+		parent.type === 'Property' ||
+		parent.type === 'ObjectProperty' ||
+		parent.type === 'MethodDefinition' ||
+		parent.type === 'PropertyDefinition'
+	) {
+		return (
+			parent.key === node &&
+			(parent as { shorthand?: boolean }).shorthand !== true
+		)
+	}
+	return false
+}
+
 type KeyScan = {
 	key: (key: string) => void
 	computed: () => void
@@ -188,6 +239,7 @@ function scanParsedCredentialKeys(
 		if (!bindings.functions.has(getNodeName(node) ?? '')) return
 		const parent = ancestors.at(-1)
 		if (!parent || parent.type.startsWith('Import')) return
+		if (isNonReferenceName(node, parent)) return
 		const isCallee =
 			(parent.type === 'CallExpression' ||
 				parent.type === 'OptionalCallExpression') &&
@@ -214,9 +266,13 @@ function scanUnparsedCredentialKeys(source: string, scan: KeyScan) {
 	}
 }
 
-function planDeclarations(files: Record<string, string>): Plan {
-	const source = Object.hasOwn(files, packageManifestPath)
-		? files[packageManifestPath]
+function planDeclarations(
+	allFiles: Record<string, string>,
+	context: PackageCodemodContext,
+): Plan {
+	const { manifestKey, files } = locatePackage(allFiles, context)
+	const source = Object.hasOwn(allFiles, manifestKey)
+		? allFiles[manifestKey]
 		: undefined
 	const manifest = parseManifest(source)
 	const kody = manifest?.kody
@@ -231,17 +287,17 @@ function planDeclarations(files: Record<string, string>): Plan {
 			add: [],
 			manual: [
 				{
-					path: packageManifestPath,
+					path: manifestKey,
 					message: declareCredentialNeedsMessages.invalidManifest,
 				},
 			],
+			manifestPath: manifestKey,
 			manifest: null,
 			source: source ?? null,
 		}
 	}
 	const declaredSlots = (slots ?? {}) as Record<string, unknown>
-	const mounted = isPlainObject(kody) ? secretMountNames(kody) : new Set()
-	const uses = new Map<string, Set<Use>>()
+	const uses = new Map<string, Set<NameKind>>()
 	const manual = new Map<
 		string,
 		Set<keyof typeof declareCredentialNeedsMessages>
@@ -255,7 +311,7 @@ function planDeclarations(files: Record<string, string>): Plan {
 		manual.set(path, messages)
 	}
 	const pathsByName = new Map<string, Set<string>>()
-	const use = (path: string, name: string, kind: Use) => {
+	const use = (path: string, name: string, kind: NameKind) => {
 		const kinds = uses.get(name) ?? new Set()
 		kinds.add(kind)
 		uses.set(name, kinds)
@@ -282,22 +338,19 @@ function planDeclarations(files: Record<string, string>): Plan {
 	const moduleConstants = createModuleConstantsReader(parsedModules)
 	for (const path of modulePaths) {
 		const parsed = parsedModules.get(path)
-		const keys = new Set<string>()
+		// A slot's kind decides what credential() can resolve (no kind means
+		// fetch-capable only), and source cannot say which kind a key takes.
 		const scan: KeyScan = {
-			key: (key) => keys.add(key),
+			key: (key) => {
+				if (!Object.hasOwn(declaredSlots, key)) {
+					flag(path, 'undeclaredCredentialKey')
+				}
+			},
 			computed: () => flag(path, 'computed'),
 			indirect: () => flag(path, 'indirectCredential'),
 		}
 		if (parsed) scanParsedCredentialKeys(parsed, moduleConstants(path), scan)
 		else scanUnparsedCredentialKeys(files[path]!, scan)
-		const usesNonFetch = /\.\s*(?:sign|callTool)\b/.test(files[path]!)
-		for (const key of keys) {
-			if (usesNonFetch && !Object.hasOwn(declaredSlots, key)) {
-				flag(path, 'nonFetchCredential')
-				continue
-			}
-			use(path, key, 'credential')
-		}
 	}
 	const add: Array<string> = []
 	for (const [name, kinds] of [...uses].sort(([left], [right]) =>
@@ -308,15 +361,12 @@ function planDeclarations(files: Record<string, string>): Plan {
 			const slot = declaredSlots[name]
 			const declaredKind = isPlainObject(slot) ? slot.kind : undefined
 			if (declaredKind == null) continue
-			const fills = [...kinds].every(
-				(kind) =>
-					kind === 'credential' ||
-					fillingSlotKinds[kind].has(String(declaredKind)),
+			const fills = [...kinds].every((kind) =>
+				fillingSlotKinds[kind].has(String(declaredKind)),
 			)
 			if (!fills) for (const path of paths) flag(path, 'kindMismatch')
 			continue
 		}
-		if (!kinds.has('credential') && mounted.has(name)) continue
 		if (!packageCredentialSlotNamePattern.test(name)) {
 			for (const path of paths) flag(path, 'invalidKey')
 			continue
@@ -333,6 +383,7 @@ function planDeclarations(files: Record<string, string>): Plan {
 					message: declareCredentialNeedsMessages[message],
 				})),
 			),
+		manifestPath: manifestKey,
 		manifest,
 		source,
 	}
@@ -345,13 +396,14 @@ function detectJsonIndent(source: string) {
 
 function detectDeclareCredentialNeeds(
 	files: Record<string, string>,
+	context: PackageCodemodContext,
 ): Array<PackageCodemodFinding> {
-	const plan = planDeclarations(files)
+	const plan = planDeclarations(files, context)
 	return [
 		...(plan.add.length > 0
 			? [
 					{
-						path: packageManifestPath,
+						path: plan.manifestPath,
 						message: declareCredentialNeedsMessages.declare,
 					},
 				]
@@ -362,8 +414,9 @@ function detectDeclareCredentialNeeds(
 
 function transformDeclareCredentialNeeds(
 	files: Record<string, string>,
+	context: PackageCodemodContext,
 ): PackageCodemodTransformResult {
-	const plan = planDeclarations(files)
+	const plan = planDeclarations(files, context)
 	if (plan.add.length === 0 || plan.manifest == null || plan.source == null) {
 		return {
 			files: { ...files },
@@ -389,9 +442,9 @@ function transformDeclareCredentialNeeds(
 		detectJsonIndent(plan.source),
 	)}\n`
 	return {
-		files: { ...files, [packageManifestPath]: nextSource },
+		files: { ...files, [plan.manifestPath]: nextSource },
 		changed: true,
-		changedPaths: [packageManifestPath],
+		changedPaths: [plan.manifestPath],
 		needsManual: plan.manual,
 	}
 }
@@ -400,15 +453,16 @@ function transformDeclareCredentialNeeds(
  * Credential-need enforcement (issue #3822) limits a package run by someone
  * other than its author to the credentials it declares. This adds a
  * kind-less `kody.credentials` slot for every literal name the package fills
- * through the fetch gateway and every literal `credential()` key it reads,
- * so enforcement changes nothing for published packages. Names it cannot
- * read are left for the owner. Kept registered until enforcement is on and
- * a scoped rescan is clean.
+ * through the fetch gateway (a kind-less slot does not change how a
+ * placeholder resolves), so enforcement changes nothing for those uses.
+ * Undeclared `credential()` keys and names it cannot read are left for the
+ * owner. Kept registered until enforcement is on and a scoped rescan is
+ * clean.
  */
 export const declareCredentialNeedsCodemod: PackageCodemod = {
 	id: declareCredentialNeedsCodemodId,
 	description:
-		'Declare a kody.credentials slot for each credential a package uses by literal name (placeholders, createAuthenticatedFetch, secretHeaders.basic, oauthClientCredentials, credential() keys); flag computed names for manual review.',
+		'Declare a kody.credentials slot for each credential a package fills through the fetch gateway by literal name (placeholders, createAuthenticatedFetch, secretHeaders.basic, oauthClientCredentials); flag undeclared credential() keys and computed names for manual review.',
 	applyMode: 'published-only',
 	detect: detectDeclareCredentialNeeds,
 	transform: transformDeclareCredentialNeeds,

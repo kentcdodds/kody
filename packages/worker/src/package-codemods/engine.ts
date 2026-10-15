@@ -572,6 +572,8 @@ async function runChecksOnFiles(input: {
 async function buildCodemodContext(input: {
 	env: Env
 	savedPackage: SavedPackageRecord
+	manifestPath: string
+	sourceRoot: string
 }): Promise<PackageCodemodContext> {
 	const ownerScope = await getPackageScopeByUserId(
 		input.env.APP_DB,
@@ -579,7 +581,11 @@ async function buildCodemodContext(input: {
 	)
 	const name = input.savedPackage.name
 	const leaf = name.slice(name.indexOf('/') + 1)
-	return { packageName: `@${ownerScope}/${leaf}` }
+	return {
+		packageName: `@${ownerScope}/${leaf}`,
+		manifestPath: input.manifestPath,
+		sourceRoot: input.sourceRoot,
+	}
 }
 
 async function processScanItem(input: {
@@ -771,6 +777,8 @@ async function processPackageForMode(input: {
 	const context = await buildCodemodContext({
 		env: input.env,
 		savedPackage: input.savedPackage,
+		manifestPath: loaded.source.manifest_path,
+		sourceRoot: loaded.source.source_root,
 	})
 	switch (input.mode) {
 		case 'scan':

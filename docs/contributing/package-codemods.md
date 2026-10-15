@@ -464,27 +464,31 @@ Findings are a recommendation for owners to declare a type, not a migration.
 Prepares for credential-need enforcement
 ([#3822](https://github.com/kentcdodds/kody/issues/3822)). That enforcement
 limits a package that someone other than its author runs to the credentials it
-declares. The codemod adds a `kody.credentials` slot for each credential the
-package uses by a literal name and does not declare yet:
+declares. The codemod adds a `kody.credentials` slot for each name the package
+fills through the fetch gateway by a literal name and does not declare yet:
+`{{secret:NAME}}`, `{{integration-token:NAME}}`,
+`createAuthenticatedFetch('NAME')`, and the secret fields of
+`secretHeaders.basic` and `oauthClientCredentials`. Names are resolved through
+module and imported constants, as in `0010`. A name that `kody.secretMounts`
+also mounts still gets a slot, because the stored needs closure reads only
+`kody.credentials`.
 
-- names filled by the fetch gateway: `{{secret:NAME}}`,
-  `{{integration-token:NAME}}`, `createAuthenticatedFetch('NAME')`,
-  `secretHeaders.basic` and `oauthClientCredentials` secret fields. Names are
-  resolved through module and imported constants, as in `0010`.
-- literal `credential('key')` / `credentials('key')` keys, including aliased
-  imports and `kody.credential(...)`.
+Each new slot has no `kind` and a fixed description the owner can reword.
+Placeholders resolve by name whatever their slot says, so this changes nothing
+at run time. Helpers that resolve outside the gateway (`packageSecrets`,
+`secretJwtSign`, `integrationTokenRefresh`) get no slot.
 
-Each new slot has no `kind` (any fetch-capable credential) and a fixed
-description the owner can reword. This keeps today's behavior: placeholders
-still resolve by name, and an undeclared `credential(key)` already looked for a
-provider named `key`. `kody.secretMounts` aliases and names, and helpers that
-resolve outside the gateway (`packageSecrets`, `secretJwtSign`,
-`integrationTokenRefresh`), add nothing.
+`credential('key')` / `credentials('key')` keys (aliased imports and
+`kody.credential(...)` included) get no slot. A slot's kind decides what
+`credential()` can resolve (a slot with no kind takes only secret, oauth, or
+login credentials), and the source cannot say which kind a key takes.
 
-It writes nothing and reports `needs_manual` for a computed name or key, a vault
-ref, a name that is not a valid slot key, a declared slot whose kind cannot fill
-the use, an undeclared `credential()` key in a module that signs or calls MCP
-tools, and `credential` passed around instead of called. It uses
+The codemod adds no slot and reports `needs_manual` for an undeclared
+`credential()` key, a computed name or key, a vault ref, a name that is not a
+valid slot key, a declared slot whose kind cannot fill the use, and `credential`
+passed around instead of called. A package whose `package.json` does not parse
+is reported too. For a nested package it reads the manifest at the entity
+source's `manifest_path` and only the files under its `source_root`. It uses
 `applyMode: 'published-only'`, so drifted and locked packages are updated
 without moving default-branch HEAD. Publishing stores the new needs closure with
 the approval pause skipped, as for every codemod.

@@ -66,29 +66,58 @@ test('0013 declares every literal name the fetch gateway fills', () => {
 	})
 })
 
-test('0013 declares literal credential() and credentials() keys, aliases included', () => {
-	const result = transform(
-		[
-			"import { credential as cred, credentials } from 'kody:runtime'",
-			"import kody from 'kody:runtime'",
-			"const KEY = 'linear'",
-			'export default async function run() {',
-			"\tawait cred('resend')",
-			'\tawait credentials(KEY)',
-			"\tawait kody.credential('slack')",
-			"\treturn cred.named('legacy')",
-			'}',
-		].join('\n'),
-	)
-	expect(result.needsManual).toEqual([])
-	expect(declaredSlots(result)).toEqual({
-		linear: slot,
-		resend: slot,
-		slack: slot,
+test('0013 leaves undeclared credential() keys for the owner and accepts declared ones', () => {
+	const source = [
+		"import { credential as cred, credentials } from 'kody:runtime'",
+		"import kody from 'kody:runtime'",
+		"const KEY = 'linear'",
+		'export default async function run() {',
+		"\tawait cred('resend')",
+		'\tawait credentials(KEY)',
+		"\tawait kody.credential('slack')",
+		"\tconst signer = await cred('docusign')",
+		'\tawait signer.sign?.({})',
+		"\treturn cred.named('legacy')",
+		'}',
+	].join('\n')
+	expect(transform(source)).toMatchObject({
+		changed: false,
+		needsManual: [
+			{
+				path: 'index.ts',
+				message: declareCredentialNeedsMessages.undeclaredCredentialKey,
+			},
+		],
 	})
+	const declared = { description: 'Owner text.' }
+	expect(
+		transform(source, {
+			credentials: {
+				docusign: { kind: 'keypair', description: 'Owner text.' },
+				linear: declared,
+				resend: declared,
+				slack: declared,
+			},
+		}),
+	).toMatchObject({ changed: false, needsManual: [] })
 })
 
-test('0013 keeps declared slots, secret mounts, and helpers that bypass the gateway', () => {
+test('0013 does not read a kody.credential member as passing credential around', () => {
+	const result = transform(
+		[
+			"import { credential } from 'kody:runtime'",
+			"import kody from 'kody:runtime'",
+			'export default async function run() {',
+			"\tawait credential('resend')",
+			"\treturn { credential: await kody.credential('resend') }",
+			'}',
+		].join('\n'),
+		{ credentials: { resend: { description: 'Owner text.' } } },
+	)
+	expect(result).toMatchObject({ changed: false, needsManual: [] })
+})
+
+test('0013 keeps declared slots and helpers that bypass the gateway, and declares mounted names', () => {
 	const result = transform(
 		[
 			"import { packageSecrets, secretJwtSign, integrationTokenRefresh } from 'kody:runtime'",
@@ -104,7 +133,11 @@ test('0013 keeps declared slots, secret mounts, and helpers that bypass the gate
 			secretMounts: { mounted: { name: 'REAL_NAME' } },
 		},
 	)
-	expect(result).toMatchObject({ changed: false, needsManual: [] })
+	expect(result.needsManual).toEqual([])
+	expect(declaredSlots(result)).toEqual({
+		DECLARED: { kind: 'secret', description: 'Owner text.' },
+		REAL_NAME: slot,
+	})
 	expect(
 		declareCredentialNeedsCodemod.detect(
 			{ 'package.json': manifest(), 'index.ts': 'export default 1' },
@@ -150,23 +183,39 @@ test('0013 flags what it cannot declare and still declares the rest', () => {
 	).toBe(true)
 })
 
-test('0013 leaves undeclared credential() keys in signing or MCP modules for the owner', () => {
-	const result = transform(
-		[
-			"import { credential } from 'kody:runtime'",
-			'export default async function run() {',
-			"\tconst signer = await credential('docusign')",
-			'\treturn signer.sign?.({})',
-			'}',
-		].join('\n'),
-	)
-	expect(result.changed).toBe(false)
-	expect(result.needsManual).toEqual([
+test('0013 reads a nested package from its source root', () => {
+	const files = {
+		'package.json': '{ "name": "repo-root", "private": true }\n',
+		'packages/demo/package.json': manifest(),
+		'packages/demo/index.ts':
+			"export default () => fetch('https://x.test?k={{secret:K}}')",
+		'packages/other/index.ts':
+			"export default () => fetch('https://x.test?k={{secret:OTHER}}')",
+	}
+	const nestedContext = {
+		...packageContext,
+		manifestPath: 'packages/demo/package.json',
+		sourceRoot: '/packages/demo/',
+	}
+	const result = declareCredentialNeedsCodemod.transform(files, nestedContext)
+	expect(result).toMatchObject({
+		changed: true,
+		changedPaths: ['packages/demo/package.json'],
+		needsManual: [],
+	})
+	expect(result.files['package.json']).toBe(files['package.json'])
+	expect(
+		JSON.parse(result.files['packages/demo/package.json']!).kody.credentials,
+	).toEqual({ K: slot })
+	const rootKeyed = declareCredentialNeedsCodemod.transform(
 		{
-			path: 'index.ts',
-			message: declareCredentialNeedsMessages.nonFetchCredential,
+			'package.json': manifest(),
+			'index.ts': files['packages/demo/index.ts'],
 		},
-	])
+		nestedContext,
+	)
+	expect(rootKeyed.changedPaths).toEqual(['package.json'])
+	expect(declaredSlots(rootKeyed)).toEqual({ K: slot })
 })
 
 test('0013 keeps manifest indentation, other kody fields, and is idempotent', () => {

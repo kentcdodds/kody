@@ -14,6 +14,12 @@ export type PackageCodemodTransformResult = {
 export type PackageCodemodContext = {
 	/** Registry name (`@org/kody-id`); its scope is the owning org. */
 	packageName: string
+	/**
+	 * Where the package lives in its repo snapshot, as stored on its entity
+	 * source. Omitted means the repo root (`package.json` at `/`).
+	 */
+	manifestPath?: string
+	sourceRoot?: string
 }
 
 /**
