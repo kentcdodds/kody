@@ -16,7 +16,7 @@ export const adminPackageCodemodScanCapability = defineDomainCapability(
 	{
 		...adminCapabilityAccess,
 		name: 'adminPackageCodemodScan',
-		description: `Fleet-scan saved packages for matches of a registered package codemod (detect only; no writes). Optional filters canary by userIds or packageIds. ${packageCodemodPagingHint}`,
+		description: `Fleet-scan saved packages for matches of a registered package codemod (detect only; no writes). Optional filters canary by userIds or packageIds, or keep the run to the credential-need enforcement scope. ${packageCodemodPagingHint}`,
 		keywords: [
 			'admin',
 			'package',
