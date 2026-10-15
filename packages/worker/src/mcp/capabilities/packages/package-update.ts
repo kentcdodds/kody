@@ -30,7 +30,40 @@ import {
 	loadCapabilityApprovalSummary,
 } from '#worker/package-capabilities/capability-approval-service.ts'
 import { enqueueWentPublicApproval } from '#worker/package-capabilities/went-public-approval.ts'
+import {
+	loadPackageSecurityAuditNextStep,
+	type PackageSecurityAuditNextStep,
+} from '#worker/package-capabilities/security-audit-next-step.ts'
+import { packageSecurityAuditRecordOperation } from '#universal/package-security-audit-prompt.ts'
 import { packageSummarySchema, toPackageSummary } from './shared.ts'
+
+const securityAuditNextStepSchema = z.object({
+	next_step: z.string(),
+	operation: z.literal(packageSecurityAuditRecordOperation),
+	http_route: z.string(),
+	args: z
+		.object({
+			package_id: z.string(),
+			published_commit: z.string(),
+			fingerprint: z.string(),
+		})
+		.describe(
+			`Exact values for ${packageSecurityAuditRecordOperation}. Add verdict ("pass" or "concerns"), summary, and optionally auditor.`,
+		),
+	audit_prompt: z
+		.string()
+		.describe('What to review and how to record it, as the owner would ask.'),
+})
+
+function toSecurityAuditNextStepOutput(step: PackageSecurityAuditNextStep) {
+	return {
+		next_step: step.nextStep,
+		operation: step.operation,
+		http_route: step.httpRoute,
+		args: step.args,
+		audit_prompt: step.auditPrompt,
+	}
+}
 
 const packageUpdateChangesSchema = z
 	.strictObject({
@@ -56,7 +89,7 @@ const packageUpdateChangesSchema = z
 			.boolean()
 			.optional()
 			.describe(
-				'Internet-visible app serving. Independent of visibility/forkable. Agents cannot approve capabilities: setting true returns an approval_url for the owner website. Setting false turns off public app serving (requires confirm_name).',
+				`Internet-visible app serving. Independent of visibility/forkable. Agents cannot approve capabilities: setting true returns an approval_url for the owner website. When the published version has no security audit, it also returns security_audit: run that audit, record it with ${packageSecurityAuditRecordOperation} using security_audit.args, then hand the owner approval_url. Setting false turns off public app serving (requires confirm_name).`,
 			),
 	})
 	.refine(
@@ -117,6 +150,11 @@ export const packageUpdateCapability = defineDomainCapability(
 				.optional()
 				.describe(
 					'True when other package changes applied but internet-visible is waiting on owner Approve.',
+				),
+			security_audit: securityAuditNextStepSchema
+				.optional()
+				.describe(
+					`Present when internet-visible is pending and the published version has no security audit. Do this before handing the owner approval_url: audit, then record with ${packageSecurityAuditRecordOperation}.`,
 				),
 		}),
 		async handler(args, ctx) {
@@ -218,6 +256,7 @@ export const packageUpdateCapability = defineDomainCapability(
 
 			let internetVisiblePending = false
 			let approvalUrl: string | undefined
+			let securityAudit: PackageSecurityAuditNextStep | null = null
 			if (
 				args.changes.internet_visible === true &&
 				!existing.isInternetVisible
@@ -262,6 +301,15 @@ export const packageUpdateCapability = defineDomainCapability(
 					})
 				}
 				internetVisiblePending = true
+				securityAudit = await loadPackageSecurityAuditNextStep({
+					db: ctx.env.APP_DB,
+					ownerUserId: owner.ownerUserId,
+					packageId: existing.id,
+					packageName: existing.name,
+					publishedCommit: summary.publishedCommit,
+					fingerprint: summary.capabilitySet.fingerprint,
+					approvalUrl,
+				})
 			}
 			if (args.changes.internet_visible === false) {
 				const expectedName = existing.kodyId
@@ -297,6 +345,9 @@ export const packageUpdateCapability = defineDomainCapability(
 							approval_url: approvalUrl,
 							internet_visible_pending: true as const,
 						}
+					: {}),
+				...(securityAudit
+					? { security_audit: toSecurityAuditNextStepOutput(securityAudit) }
 					: {}),
 			}
 		},

@@ -33,7 +33,7 @@ export const packageSecurityAuditRecordCapability = defineDomainCapability(
 		name: 'packageSecurityAuditRecord',
 		orgPermission: 'package:write',
 		description:
-			'Record an informational security audit for the exact published version of a saved package: its published commit plus capability-set fingerprint (both shown in the security audit prompt on the package capability approval page). Review that version first: declared vs used credentials, leaked secrets, unintended public exposure, risky network hosts, and package storage use. Then record verdict pass or concerns with a plain-language summary. The audit is tied to that commit and fingerprint; a new publish or changed capability set reads as not audited again. Recording an audit never approves capabilities or makes anything internet-visible; the owner still approves on the website. Requires package:read (to review the source) as well as package:write. Token-shaped strings in the summary are redacted.',
+			'Record an informational security audit for the exact published version of a saved package: its published commit plus capability-set fingerprint (both shown in the security audit prompt on the package capability approval page, and in the security_audit next step packageUpdate returns when a package moves toward internet-visible). Review that version first: declared vs used credentials, leaked credentials, unintended public exposure, risky network hosts, and package storage use. Then record verdict pass or concerns with a plain-language summary. The audit is tied to that commit and fingerprint; a new publish or changed capability set reads as not audited again. Recording an audit never approves capabilities or makes anything internet-visible; the owner still approves on the website, so hand them approval_url next. Requires package:read (to review the source) as well as package:write. Token-shaped strings in the summary are redacted.',
 		keywords: [
 			'package',
 			'security',
@@ -97,6 +97,10 @@ export const packageSecurityAuditRecordCapability = defineDomainCapability(
 			verdict: z.enum(packageSecurityAuditVerdicts),
 			recorded_at: z.string(),
 			audit_url: z.string(),
+			approval_url: z
+				.string()
+				.describe('The package approval page to hand the owner next.'),
+			next_step: z.string(),
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
@@ -185,6 +189,8 @@ export const packageSecurityAuditRecordCapability = defineDomainCapability(
 				verdict: record.verdict,
 				recorded_at: record.recordedAt,
 				audit_url: `${approvalUrl}#${packageSecurityAuditAnchor}`,
+				approval_url: approvalUrl,
+				next_step: `Audit recorded for published commit ${record.publishedCommit}. Send the owner ${approvalUrl} to read it and decide; recording an audit approves nothing.`,
 			}
 		},
 	},

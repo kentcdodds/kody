@@ -14,6 +14,12 @@ const mockModule = vi.hoisted(() => ({
 	loadCapabilityApprovalSummary: vi.fn(),
 	approvePackageCapabilitySet: vi.fn(),
 	enqueueWentPublicApproval: vi.fn(),
+	loadCurrentPackageSecurityAudit: vi.fn(),
+}))
+
+vi.mock('#worker/package-capabilities/security-audit-state.ts', () => ({
+	loadCurrentPackageSecurityAudit: (...args: Array<unknown>) =>
+		mockModule.loadCurrentPackageSecurityAudit(...args),
 }))
 
 vi.mock('#worker/package-capabilities/capability-approval-service.ts', () => ({
@@ -224,12 +230,21 @@ test('packageUpdate internet_visible without an approved capability set records 
 		fingerprintMatchesApproval: false,
 	})
 	mockModule.enqueueWentPublicApproval.mockResolvedValue({ id: 'request-1' })
+	mockModule.loadCurrentPackageSecurityAudit.mockResolvedValue({
+		verdict: 'pass',
+		summary: 'Checked',
+		auditor: 'Audit agent',
+		recordedBy: null,
+		recordedAt: '2026-10-15T00:00:00.000Z',
+	})
 
-	await expect(update({ internet_visible: true })).resolves.toMatchObject({
+	const result = await update({ internet_visible: true })
+	expect(result).toMatchObject({
 		ok: true,
 		approval_url: 'https://heykody.dev/@user/notes/approve-capabilities',
 		internet_visible_pending: true,
 	})
+	expect(result).not.toHaveProperty('security_audit')
 	expect(mockModule.enqueueWentPublicApproval).toHaveBeenCalledWith(
 		expect.objectContaining({
 			ownerUserId: 'user-1',
@@ -240,4 +255,50 @@ test('packageUpdate internet_visible without an approved capability set records 
 	)
 	expect(mockModule.approvePackageCapabilitySet).not.toHaveBeenCalled()
 	expect(mockModule.updateSavedPackage).not.toHaveBeenCalled()
+})
+
+test('packageUpdate internet_visible on an unaudited version tells the agent to audit and record it before the handoff', async () => {
+	mockModule.getSavedPackageById.mockResolvedValue(createSavedPackage())
+	mockModule.loadCapabilityApprovalSummary.mockResolvedValue({
+		capabilitySet: { entries: [], fingerprint: 'fp-1' },
+		publishedCommit: 'commit-1',
+		fingerprintMatchesApproval: false,
+	})
+	mockModule.enqueueWentPublicApproval.mockResolvedValue({ id: 'request-1' })
+	mockModule.loadCurrentPackageSecurityAudit.mockResolvedValue(null)
+
+	const result = await update({ internet_visible: true })
+
+	expect(mockModule.loadCurrentPackageSecurityAudit).toHaveBeenCalledWith(
+		{},
+		expect.objectContaining({
+			ownerUserId: 'user-1',
+			packageId: 'pkg-1',
+			publishedCommit: 'commit-1',
+			fingerprint: 'fp-1',
+		}),
+	)
+	expect(result).toMatchObject({
+		approval_url: 'https://heykody.dev/@user/notes/approve-capabilities',
+		internet_visible_pending: true,
+		security_audit: {
+			operation: 'packageSecurityAuditRecord',
+			http_route: 'POST /v1/packages/pkg-1/security-audits',
+			args: {
+				package_id: 'pkg-1',
+				published_commit: 'commit-1',
+				fingerprint: 'fp-1',
+			},
+		},
+	})
+	const step = (result as { security_audit: { next_step: string } })
+		.security_audit
+	expect(step.next_step).toContain('packageSecurityAuditRecord')
+	expect(step.next_step).toContain(
+		'https://heykody.dev/@user/notes/approve-capabilities',
+	)
+	expect(
+		(result as { security_audit: { audit_prompt: string } }).security_audit
+			.audit_prompt,
+	).toContain('published_commit: "commit-1"')
 })

@@ -18,6 +18,13 @@ const mockModule = vi.hoisted(() => ({
 	enqueueWentPublicApproval: vi.fn(),
 	getPendingWentPublicApproval: vi.fn(),
 	logOrgAuditEvent: vi.fn(),
+	loadCurrentPackageSecurityAudit: vi.fn(),
+}))
+
+vi.mock('#worker/package-capabilities/security-audit-state.ts', () => ({
+	loadCurrentPackageSecurityAudit: (...args: Array<unknown>) =>
+		mockModule.loadCurrentPackageSecurityAudit(...args),
+	loadPackageSecurityAuditState: vi.fn(),
 }))
 
 vi.mock('#worker/package-capabilities/went-public-approval.ts', () => ({
@@ -113,6 +120,8 @@ beforeEach(() => {
 	})
 	mockModule.logOrgAuditEvent.mockReset()
 	mockModule.logOrgAuditEvent.mockResolvedValue(undefined)
+	mockModule.loadCurrentPackageSecurityAudit.mockReset()
+	mockModule.loadCurrentPackageSecurityAudit.mockResolvedValue(null)
 })
 
 function createUser(): AuthenticatedAppUser {
@@ -190,8 +199,20 @@ test('turning on internet-visible without approval records the ask and returns a
 	expect(response?.status).toBe(400)
 	await expect(response?.json()).resolves.toMatchObject({
 		ok: false,
-		error: expect.stringContaining('One Approve'),
-		approvalUrl: expect.stringContaining('/approve-capabilities'),
+		error: expect.stringContaining('No security audit is recorded'),
+		approvalUrl: 'https://example.com/@user/notes/approve-capabilities',
+		securityAudit: {
+			operation: 'packageSecurityAuditRecord',
+			httpRoute: 'POST /v1/packages/pkg-1/security-audits',
+			args: {
+				package_id: 'pkg-1',
+				published_commit: 'deadbeef',
+				fingerprint: 'abc',
+			},
+			nextStep: expect.stringContaining(
+				'then send the owner https://example.com/@user/notes/approve-capabilities',
+			),
+		},
 	})
 	expect(mockModule.approvePackageCapabilitySet).not.toHaveBeenCalled()
 	expect(mockModule.enqueueWentPublicApproval).toHaveBeenCalledWith(
@@ -199,6 +220,54 @@ test('turning on internet-visible without approval records the ask and returns a
 			publishedCommit: 'deadbeef',
 			fingerprint: 'abc',
 			requestedByUserId: personIdFromStored('stable-user-1'),
+		}),
+	)
+})
+
+test('turning on internet-visible on an audited version adds no audit step', async () => {
+	const env = { APP_DB: {} } as Env
+	mockModule.writablePackage = createSavedPackage(false)
+	mockModule.loadOrgBindingForOrg.mockResolvedValue(null)
+	mockModule.loadCapabilityApprovalSummary.mockResolvedValue({
+		capabilitySet: { entries: [], fingerprint: 'abc' },
+		dependencySnapshot: null,
+		publishedCommit: 'deadbeef',
+		latestApproval: null,
+		matchingApproval: null,
+		fingerprintMatchesApproval: false,
+		isInternetVisible: false,
+	})
+	mockModule.loadCurrentPackageSecurityAudit.mockResolvedValue({
+		verdict: 'pass',
+		summary: 'Checked',
+		auditor: 'Audit agent',
+		recordedBy: null,
+		recordedAt: '2026-10-15T00:00:00.000Z',
+	})
+
+	const response = await handleAccountPackageInternetVisibleAction({
+		env,
+		request: new Request('https://example.com/account/packages.json', {
+			method: 'POST',
+		}),
+		user: createUser(),
+		body: {
+			action: 'set-internet-visible',
+			packageId: 'pkg-1',
+			internetVisible: true,
+			confirmName: 'notes',
+		},
+	})
+	const body = (await response?.json()) as Record<string, unknown>
+	expect(body).toMatchObject({ ok: false, approvalUrl: expect.any(String) })
+	expect(body).not.toHaveProperty('securityAudit')
+	expect(body.error).not.toContain('security audit')
+	expect(mockModule.loadCurrentPackageSecurityAudit).toHaveBeenCalledWith(
+		{},
+		expect.objectContaining({
+			packageId: 'pkg-1',
+			publishedCommit: 'deadbeef',
+			fingerprint: 'abc',
 		}),
 	)
 })

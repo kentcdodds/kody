@@ -131,6 +131,8 @@ test('packageSecurityAuditRecord stores the audit for the current version, audit
 		recorded_at: expect.any(String),
 		audit_url:
 			'https://heykody.dev/@user/notes/approve-capabilities#security-audit',
+		approval_url: 'https://heykody.dev/@user/notes/approve-capabilities',
+		next_step: `Audit recorded for published commit ${publishedCommit}. Send the owner https://heykody.dev/@user/notes/approve-capabilities to read it and decide; recording an audit approves nothing.`,
 	})
 	expect(mockModule.insertPackageSecurityAudit).toHaveBeenCalledWith(
 		{},
