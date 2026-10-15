@@ -58,6 +58,11 @@ import {
 	accountInputCss,
 	noticeCardCss,
 } from './account-management-components.tsx'
+import {
+	type InviteLinkActions,
+	postInviteLinkAction,
+	renderInviteLinkActions,
+} from './account-organizations-invite-links.tsx'
 
 type OrgViewer = { displayName: string; avatarUrl: string | null }
 
@@ -414,12 +419,6 @@ function renderOrganizationList(data: AccountOrganizationsLoaderData) {
 	)
 }
 
-type InviteLinkActions = {
-	busyLinkId: string | null
-	accept: (linkId: string) => void
-	decline: (linkId: string) => void
-}
-
 function renderInvites(
 	data: AccountOrganizationsLoaderData,
 	actions: InviteLinkActions,
@@ -456,9 +455,8 @@ function renderInvites(
 					testId: 'invite',
 				}),
 			)}
-			{inviteLinks.map((link) => {
-				const busy = actions.busyLinkId === link.linkId
-				return renderOrgRow({
+			{inviteLinks.map((link) =>
+				renderOrgRow({
 					key: `link:${link.linkId}`,
 					slug: link.orgSlug,
 					displayName: link.orgDisplayName,
@@ -467,65 +465,11 @@ function renderInvites(
 					detail: `${link.label} · Expires ${formatTimestampDate(link.expiresAt)}`,
 					pills: [],
 					testId: 'invite-link',
-					trailing: (
-						<span mix={css(inviteActionsCss)}>
-							<button
-								type="button"
-								disabled={actions.busyLinkId !== null}
-								data-testid="invite-link-accept"
-								mix={[
-									css(getPillButtonCss({ size: 'sm' })),
-									on('click', () => actions.accept(link.linkId)),
-								]}
-							>
-								{busy ? 'Working…' : 'Accept'}
-							</button>
-							<button
-								type="button"
-								disabled={actions.busyLinkId !== null}
-								data-testid="invite-link-decline"
-								mix={[
-									css(getGhostButtonCss({ size: 'sm' })),
-									on('click', () => actions.decline(link.linkId)),
-								]}
-							>
-								Decline
-							</button>
-						</span>
-					),
-				})
-			})}
+					trailing: renderInviteLinkActions(link.linkId, actions),
+				}),
+			)}
 		</ul>
 	)
-}
-
-async function postInviteLinkAction(
-	linkId: string,
-	action: 'accept' | 'decline',
-) {
-	const href =
-		action === 'accept'
-			? routes.accountInviteLinkAcceptPost.href({ linkId })
-			: routes.accountInviteLinkDeclinePost.href({ linkId })
-	const response = await fetch(href, {
-		method: 'POST',
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-	})
-	const payload = await readJson<{
-		ok?: boolean
-		error?: string
-		redirectTo?: string
-	}>(response)
-	if (!response.ok || !payload?.ok) {
-		throw new Error(
-			payload?.error ||
-				(action === 'accept'
-					? 'Unable to accept this invite.'
-					: 'Unable to decline this invite.'),
-		)
-	}
-	return payload
 }
 
 /**
@@ -655,13 +599,6 @@ export function AccountOrganizationsRoute(handle: Handle) {
 			</AccountManagementShell>
 		)
 	}
-}
-
-const inviteActionsCss = {
-	display: 'flex',
-	flexWrap: 'wrap' as const,
-	gap: spacing.sm,
-	flexShrink: 0,
 }
 
 const orgListCss = {
