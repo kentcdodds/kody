@@ -37,13 +37,6 @@ export type MemoryPersonalizePurgeOutcome =
 	| 'already_gone'
 	| 'soft_delete_failed'
 
-const purgeOutcomesThisRun = new Set<MemoryPersonalizePurgeOutcome>([
-	'purged',
-	'orphan_purged',
-	'would_purge',
-	'orphan_would_purge',
-])
-
 export type MemoryPersonalizePurgeRow = {
 	sourceMemoryId: string
 	fromOrgId: string
@@ -81,6 +74,12 @@ export type MemoryPersonalizePurgeResult = {
 	grantRows: Array<MemoryPersonalizePurgeGrantRow>
 	nextOrgCursor: string | null
 	nextMemoryCursor: string | null
+	/**
+	 * Dry-run resume: pass back as `plannedPurgeMemoryIds` with the memory
+	 * cursor so the final grant sweep counts earlier pages' would-purge rows.
+	 * Empty when the org is exhausted or not mid-org paging.
+	 */
+	nextPlannedPurgeMemoryIds: Array<string>
 	warnings: Array<string>
 }
 
@@ -191,6 +190,13 @@ async function softDeleteTeamMemory(input: {
 					memoryId: input.memory.id,
 					at: now,
 				})
+			} else {
+				await markMemoryVectorCleanupAttempted({
+					db: input.env.APP_DB,
+					orgId: input.orgId,
+					memoryId: input.memory.id,
+					at: now,
+				})
 			}
 			return { status: 'soft_deleted', vectorDeleted }
 		},
@@ -214,9 +220,9 @@ async function isLiveOrgMemory(input: {
 
 /**
  * Soft-deleted memories whose Vectorize cleanup has not been recorded yet.
- * Prefer never-attempted rows, then least-recently attempted, so a persistent
- * Vectorize failure on the oldest deleted_at rows cannot monopolize the
- * memoryLimit budget. Already-clean rows (vector_deleted_at set) are excluded.
+ * Prefer never-attempted, then least-recently attempted, so permanently failing
+ * oldest ids do not starve newer pending rows. Already-clean rows
+ * (vector_deleted_at set) are excluded so they do not consume the budget.
  */
 async function listSoftDeletedMemoriesPendingVectorPage(input: {
 	db: D1Database
@@ -230,7 +236,11 @@ async function listSoftDeletedMemoriesPendingVectorPage(input: {
 			   AND status = 'deleted'
 			   AND deleted_at IS NOT NULL
 			   AND vector_deleted_at IS NULL
-			 ORDER BY vector_cleanup_attempted_at ASC, deleted_at ASC, id ASC
+			 ORDER BY
+			   CASE WHEN vector_cleanup_attempted_at IS NULL THEN 0 ELSE 1 END,
+			   vector_cleanup_attempted_at ASC,
+			   deleted_at ASC,
+			   id ASC
 			 LIMIT ?`,
 		)
 		.bind(input.orgId, input.limit)
@@ -244,12 +254,12 @@ async function reconcileOrgVectorCleanup(input: {
 	orgSlug: string | null
 	memoryLimit: number
 	pendingVectorMemoryIds: Set<string>
-	/** When false, only retry this invocation's pending IDs (mid-org pages). */
-	includePendingSoftDeletedPage: boolean
 	warnings: Array<string>
+	/** When false, only retry this invocation's pending ids (mid-org pages). */
+	includeStrandedPage?: boolean
 }): Promise<number> {
 	const retryIds = new Set(input.pendingVectorMemoryIds)
-	if (input.includePendingSoftDeletedPage) {
+	if (input.includeStrandedPage !== false) {
 		for (const id of await listSoftDeletedMemoriesPendingVectorPage({
 			db: input.env.APP_DB,
 			orgId: input.orgId,
@@ -319,19 +329,6 @@ async function verifyReadersHaveCopies(input: {
 	}
 }
 
-function memoryPurgedThisRun(
-	rows: Array<MemoryPersonalizePurgeRow>,
-	orgId: string,
-	memoryId: string,
-): boolean {
-	return rows.some(
-		(row) =>
-			row.fromOrgId === orgId &&
-			row.sourceMemoryId === memoryId &&
-			purgeOutcomesThisRun.has(row.outcome),
-	)
-}
-
 /**
  * Soft-delete live team-org memories only when every reader has a personal
  * copy. Also soft-deletes `resource_type: memory` grants on scanned team orgs.
@@ -342,6 +339,12 @@ export async function runMemoryPersonalizePurge(input: {
 	dryRun?: boolean
 	orgCursor?: string | null
 	memoryCursor?: string | null
+	/**
+	 * Dry-run resume token: prior pages' would-purge / orphan-would-purge
+	 * memory ids for the org being resumed (pass
+	 * `nextPlannedPurgeMemoryIds` from the previous page).
+	 */
+	plannedPurgeMemoryIds?: Array<string> | null
 	orgLimit?: number
 	memoryLimitPerOrg?: number
 	orgIds?: Array<string> | null
@@ -381,6 +384,7 @@ export async function runMemoryPersonalizePurge(input: {
 
 	let nextOrgCursor: string | null = null
 	let nextMemoryCursor: string | null = null
+	let nextPlannedPurgeMemoryIds: Array<string> = []
 	let stopPaging = false
 	let lastCompletedOrgId: string | null = input.orgCursor ?? null
 
@@ -389,6 +393,13 @@ export async function runMemoryPersonalizePurge(input: {
 		scannedOrgs += 1
 		/** Soft-deleted this org page but Vectorize cleanup still failing. */
 		const pendingVectorMemoryIds = new Set<string>()
+		/**
+		 * Memories this org will purge (or would, in dry-run), including ids
+		 * carried from earlier pages via `plannedPurgeMemoryIds`.
+		 */
+		const plannedPurgeMemoryIds = new Set<string>(
+			orgIndex === 0 ? (input.plannedPurgeMemoryIds ?? []) : [],
+		)
 		let afterMemoryId: string | null =
 			orgIndex === 0 ? (input.memoryCursor ?? null) : null
 		let orgMemoryCount = 0
@@ -436,6 +447,7 @@ export async function runMemoryPersonalizePurge(input: {
 					}
 					if (dryRun) {
 						orphanWouldPurge += 1
+						plannedPurgeMemoryIds.add(memory.id)
 						rows.push({
 							sourceMemoryId: memory.id,
 							fromOrgId: org.id,
@@ -457,6 +469,7 @@ export async function runMemoryPersonalizePurge(input: {
 					})
 					if (deleted.status === 'soft_deleted') {
 						orphanPurged += 1
+						plannedPurgeMemoryIds.add(memory.id)
 						rows.push({
 							sourceMemoryId: memory.id,
 							fromOrgId: org.id,
@@ -507,6 +520,7 @@ export async function runMemoryPersonalizePurge(input: {
 
 				if (dryRun) {
 					wouldPurge += 1
+					plannedPurgeMemoryIds.add(memory.id)
 					rows.push({
 						sourceMemoryId: memory.id,
 						fromOrgId: org.id,
@@ -562,6 +576,7 @@ export async function runMemoryPersonalizePurge(input: {
 					continue
 				}
 				purged += 1
+				plannedPurgeMemoryIds.add(memory.id)
 				rows.push({
 					sourceMemoryId: memory.id,
 					fromOrgId: org.id,
@@ -594,24 +609,26 @@ export async function runMemoryPersonalizePurge(input: {
 				statuses: ['active', 'archived'],
 			})
 			if (peek.length > 0) {
-				// Retry this invocation's pending Vectorize deletes before
-				// leaving a partial org page. Bounded stranded-row scan waits
-				// until the org is exhausted so mid-page resumes do not redo it.
+				// Retry and count pending Vectorize deletes before leaving a
+				// partial org page so failures are not dropped from this run.
 				if (!dryRun) {
+					// Mid-org: retry only this page's pending deletes. The bounded
+					// stranded-row scan runs once the org is exhausted.
 					vectorCleanupFailed += await reconcileOrgVectorCleanup({
 						env: input.env,
 						orgId: org.id,
 						orgSlug: org.slug,
 						memoryLimit,
 						pendingVectorMemoryIds,
-						includePendingSoftDeletedPage: false,
 						warnings,
+						includeStrandedPage: false,
 					})
 				}
 				nextOrgCursor = lastCompletedOrgId
 				nextMemoryCursor = afterMemoryId
+				nextPlannedPurgeMemoryIds = [...plannedPurgeMemoryIds]
 				warnings.push(
-					`Org ${org.slug ?? org.id} has more memories after ${afterMemoryId}; resume with orgCursor=${nextOrgCursor ?? '(start)'} memoryCursor=${nextMemoryCursor}.`,
+					`Org ${org.slug ?? org.id} has more memories after ${afterMemoryId}; resume with orgCursor=${nextOrgCursor ?? '(start)'} memoryCursor=${nextMemoryCursor} plannedPurgeMemoryIds=${nextPlannedPurgeMemoryIds.length}.`,
 				)
 				stopPaging = true
 				break
@@ -628,13 +645,13 @@ export async function runMemoryPersonalizePurge(input: {
 				orgSlug: org.slug,
 				memoryLimit,
 				pendingVectorMemoryIds,
-				includePendingSoftDeletedPage: true,
 				warnings,
 			})
 		}
 
 		// Revoke obsolete memory grants only when this run purged the memory
-		// (or would, in dry-run) or the row is no longer live. Live rows that
+		// (or would, in dry-run — including earlier pages via
+		// plannedPurgeMemoryIds) or the row is no longer live. Live rows that
 		// failed soft-delete, stayed blocked, or were blocked on an earlier
 		// page keep their grants so readers remain visible on retry.
 		const memoryGrants = await listGrants({
@@ -643,7 +660,7 @@ export async function runMemoryPersonalizePurge(input: {
 			resourceType: 'memory',
 		})
 		for (const grant of memoryGrants) {
-			const purgedNow = memoryPurgedThisRun(rows, org.id, grant.resourceId)
+			const purgedNow = plannedPurgeMemoryIds.has(grant.resourceId)
 			if (!purgedNow) {
 				const live = await isLiveOrgMemory({
 					db: input.env.APP_DB,
@@ -700,6 +717,7 @@ export async function runMemoryPersonalizePurge(input: {
 	if (!stopPaging) {
 		nextOrgCursor = orgs.length === orgLimit ? (orgs.at(-1)?.id ?? null) : null
 		nextMemoryCursor = null
+		nextPlannedPurgeMemoryIds = []
 	}
 
 	return {
@@ -718,6 +736,7 @@ export async function runMemoryPersonalizePurge(input: {
 		grantRows,
 		nextOrgCursor,
 		nextMemoryCursor,
+		nextPlannedPurgeMemoryIds,
 		warnings,
 	}
 }

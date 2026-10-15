@@ -60,6 +60,13 @@ const inputSchema = z.object({
 		.describe(
 			'Resume memories after this id inside the first org after orgCursor. Pass the previous nextMemoryCursor until it is null.',
 		),
+	plannedPurgeMemoryIds: z
+		.array(z.string().min(1))
+		.max(10_000)
+		.optional()
+		.describe(
+			'Dry-run resume: pass previous nextPlannedPurgeMemoryIds so the final grant sweep counts would-purge memories from earlier pages of the same org.',
+		),
 	orgLimit: z
 		.number()
 		.int()
@@ -107,6 +114,7 @@ const outputSchema = z.object({
 	grantRows: z.array(grantRowSchema),
 	nextOrgCursor: z.string().nullable(),
 	nextMemoryCursor: z.string().nullable(),
+	nextPlannedPurgeMemoryIds: z.array(z.string()),
 	warnings: z.array(z.string()),
 })
 
@@ -117,7 +125,7 @@ export const adminMemoryPersonalizePurgeCapability = defineDomainCapability(
 		idempotent: true,
 		name: 'adminMemoryPersonalizePurge',
 		description:
-			'Soft-delete verified legacy team-org mcp_memories and obsolete memory grants after ADR 0072 copy (adminMemoryPersonalizeCopy). Never deletes a memory until every effective reader has a personal copy (provenance URI or identical content). Rows report counts and provenance URIs only — never subject/summary/details. dryRun defaults to true. Page with orgCursor and memoryCursor until both next cursors are null.',
+			'Soft-delete verified legacy team-org mcp_memories and obsolete memory grants after ADR 0072 copy (adminMemoryPersonalizeCopy). Never deletes a memory until every effective reader has a personal copy (provenance URI or identical content). Rows report counts and provenance URIs only — never subject/summary/details. dryRun defaults to true. Page with orgCursor, memoryCursor, and plannedPurgeMemoryIds until nextOrgCursor and nextMemoryCursor are null (pass nextPlannedPurgeMemoryIds back on dry-run mid-org pages).',
 		keywords: [
 			'admin',
 			'memory',
@@ -143,6 +151,7 @@ export const adminMemoryPersonalizePurgeCapability = defineDomainCapability(
 						dryRun: args.dryRun !== false,
 						orgCursor: args.orgCursor ?? null,
 						memoryCursor: args.memoryCursor ?? null,
+						plannedPurgeMemoryIds: args.plannedPurgeMemoryIds ?? null,
 						orgLimit: args.orgLimit,
 						memoryLimitPerOrg: args.memoryLimitPerOrg,
 						orgIds: args.orgIds ?? null,

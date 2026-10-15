@@ -566,7 +566,11 @@
 		},
 		{
 			"filename": "0152-mcp-memories-vector-deleted-at.sql",
-			"sha256": "80f7fd0fc771dfa602a62093efc330635cce30797f9ac102d3faef6c20976932"
+			"sha256": "72cfc2ee0d41dd5e41209ee1304d073695f60ea22cd8f94bd18f46a36be08ef5"
+		},
+		{
+			"filename": "0153-mcp-memories-vector-cleanup-attempted-at.sql",
+			"sha256": "48d2174068a5dd678f65ddf2b5fd43b6202cee0d617f5672163837f21bad0233"
 		}
 	]
 }
