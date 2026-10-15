@@ -45,8 +45,9 @@ export function mergeFollowPushWindow(input: {
 	existing: FollowPushPending | null
 	incoming: FollowPushIngress
 	/**
-	 * Wall clock for open/close. Tip ordering and stored `updatedAt` still use
-	 * webhook event time so a late older push does not move `after` backward.
+	 * Wall clock for open/close and for `windowStartedAt` on a fresh window.
+	 * Tip ordering and stored `updatedAt` still use webhook event time so a
+	 * late older push does not move `after` backward.
 	 */
 	now: Date
 }): FollowPushMerge {
@@ -89,11 +90,14 @@ function freshWindow(input: {
 	targetKind: FollowTargetKind
 	targetId: string
 	incoming: FollowPushIngress
+	now: Date
 }): FollowPushPending {
 	return {
 		targetKind: input.targetKind,
 		targetId: input.targetId,
-		windowStartedAt: input.incoming.at,
+		// Wall clock: a delayed burst must still coalesce for five minutes from
+		// first receipt, not from the webhook's older event timestamp.
+		windowStartedAt: input.now.toISOString(),
 		beforeCommit: input.incoming.before,
 		afterCommit: input.incoming.after,
 		ref: input.incoming.ref,

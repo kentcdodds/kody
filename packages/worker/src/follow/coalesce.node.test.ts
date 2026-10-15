@@ -138,6 +138,7 @@ test('a delayed old webhook does not reopen a wall-clock-expired window', () => 
 			at: '2026-10-15T00:10:00.000Z',
 		},
 	})
+	expect(first.pending.windowStartedAt).toBe('2026-10-15T00:00:00.000Z')
 	const delayed = mergeFollowPushWindow({
 		...base,
 		existing: first.pending,
@@ -154,6 +155,43 @@ test('a delayed old webhook does not reopen a wall-clock-expired window', () => 
 		},
 	})
 	expect(delayed.action).toBe('replace')
+})
+
+test('a delayed burst still coalesces from wall-clock receipt', () => {
+	const first = mergeFollowPushWindow({
+		...base,
+		existing: null,
+		now: new Date('2026-10-15T00:10:00.000Z'),
+		incoming: {
+			before: 'before-1',
+			after: 'after-1',
+			ref: 'refs/heads/main',
+			commits: [commit('c1')],
+			totalCommitsCount: 1,
+			// Event time is six minutes earlier than receipt.
+			at: '2026-10-15T00:04:00.000Z',
+		},
+	})
+	expect(first.action).toBe('merge')
+	expect(first.pending.windowStartedAt).toBe('2026-10-15T00:10:00.000Z')
+	const second = mergeFollowPushWindow({
+		...base,
+		existing: first.pending,
+		now: new Date('2026-10-15T00:12:00.000Z'),
+		incoming: {
+			before: 'after-1',
+			after: 'after-2',
+			ref: 'refs/heads/main',
+			commits: [commit('c2')],
+			totalCommitsCount: 1,
+			at: '2026-10-15T00:05:00.000Z',
+		},
+	})
+	expect(second.action).toBe('merge')
+	expect(second.pending.beforeCommit).toBe('before-1')
+	expect(second.pending.afterCommit).toBe('after-2')
+	expect(second.pending.windowStartedAt).toBe('2026-10-15T00:10:00.000Z')
+	expect(second.pending.commits.map((entry) => entry.id)).toEqual(['c1', 'c2'])
 })
 
 test('a push after the window replaces the pending row', async () => {
