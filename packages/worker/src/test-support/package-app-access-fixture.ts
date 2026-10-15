@@ -59,6 +59,21 @@ export async function seedPackageAppAccessFixture() {
 	} catch {
 		// Column already present from an earlier seed.
 	}
+	// Workers-unit AUDIT_DB starts empty; production applies audit migration 0001.
+	await env.AUDIT_DB.prepare(
+		`CREATE TABLE IF NOT EXISTS audit_events (
+			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+			category TEXT NOT NULL,
+			action TEXT NOT NULL,
+			result TEXT NOT NULL,
+			email_hash TEXT,
+			ip_hash TEXT,
+			client_id TEXT,
+			path TEXT,
+			reason TEXT,
+			timestamp TEXT NOT NULL
+		)`,
+	).run()
 	for (const person of Object.values(accessFixture.people)) {
 		await seedAccount({
 			db: env.APP_DB,
@@ -182,6 +197,17 @@ export async function seedPackageAppAccessFixture() {
 		now,
 		now,
 	)
+}
+
+/** Audit rows the package-app access gate wrote for `action`. */
+export async function packageAppAccessAuditRows(action: string) {
+	const { results } = await env.AUDIT_DB.prepare(
+		`SELECT action, result, path, reason FROM audit_events WHERE action = ?
+		 ORDER BY id`,
+	)
+		.bind(action)
+		.all<{ action: string; result: string; path: string; reason: string }>()
+	return results
 }
 
 /** A `kody_pkg_session` cookie pair for `person` on the fixture org host. */

@@ -66,6 +66,17 @@ import {
 import { type PackageAppServeOwner } from '#worker/package-runtime/package-app-serve.ts'
 import { applyPackageAppCacheHeaders } from '#worker/package-runtime/package-app-cache-headers.ts'
 import { resolveInternetVisibleApprovedCommit } from '#app/package-app-internet-visible.ts'
+import {
+	mintPackageAppTicketCookie,
+	readPackageAppTicket,
+} from '#app/package-app-ticket.ts'
+import {
+	cachePackageAppAccessDecision,
+	logPackageAppAccessEvent,
+	logSampledPackageAppTicketAllow,
+	readCachedPackageAppAccessDecision,
+	readOrgAccessEpoch,
+} from '#app/package-app-access-decision.ts'
 import { buildUnmatchedPackageAppOriginPathMessage } from '#worker/package-runtime/package-app-synthetic.ts'
 import {
 	pushServerTiming,
@@ -73,6 +84,7 @@ import {
 } from '#worker/server-timing.ts'
 import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
 import { runWithRequestContext } from '#worker/request-context.ts'
+import { runWithDeferredWork } from '#worker/deferred-work.ts'
 import { stripPackageAppRuntimeRunId } from '#worker/package-runtime/package-app-diagnostics.ts'
 import { wantsJson } from '#worker/utils.ts'
 
@@ -301,14 +313,23 @@ type AuthorizedPackageAppServe =
 			kind: 'ok'
 			owner: PackageAppServeOwner
 			visitor: RuntimePackageAppVisitor
+			/** Org `access_epoch` the decision was made at. */
+			epoch: number
+			visitorEmail: string
+			sessionIssuedAt: number
 	  }
 	| { kind: 'session-required' }
-	| { kind: 'forbidden' }
+	| { kind: 'forbidden'; visitorEmail: string }
 
 /**
  * Resolve the org named in the host/path, confirm the session person is still
  * live, and authorize `app:execute` in that org. The visitor keeps their live
  * org role; the owner is the org, not the visitor's personal account.
+ *
+ * The decision is cached in KV per org `access_epoch`
+ * (`package-app-access-decision.ts`): the epoch is read first, so a decision
+ * computed concurrently with an access write is stored under the epoch it
+ * may already be stale for, never under the new one.
  */
 async function authorizePackageAppVisitorForOrg(input: {
 	env: Env
@@ -343,20 +364,34 @@ async function authorizePackageAppVisitorForOrg(input: {
 		})
 		appId = lookup?.savedPackage.id ?? null
 	}
-	const canExecute = await viewerCanExecutePackageApp({
+	const epoch = await readOrgAccessEpoch(input.env.APP_DB, org.userId)
+	if (epoch === null) return { kind: 'session-required' }
+	const decisionScope = {
 		env: input.env,
-		viewer,
-		ownerId: org.userId,
+		orgId: org.userId,
+		epoch,
+		visitorId: viewer.userId,
 		appId,
-	})
-	if (!canExecute) return { kind: 'forbidden' }
+	}
+	let decision = await readCachedPackageAppAccessDecision(decisionScope)
+	if (!decision) {
+		const canExecute = await viewerCanExecutePackageApp({
+			env: input.env,
+			viewer,
+			ownerId: org.userId,
+			appId,
+		})
+		// Memoized per request: viewerCanExecutePackageApp loaded the same binding.
+		const binding = canExecute
+			? await loadOrgBindingForOrg(input.env.APP_DB, viewer.userId, org.userId)
+			: null
+		decision = { allowed: canExecute, role: binding?.role ?? null }
+		cachePackageAppAccessDecision({ ...decisionScope, decision })
+	}
+	if (!decision.allowed) {
+		return { kind: 'forbidden', visitorEmail: person.email }
+	}
 
-	// Memoized per request: viewerCanExecutePackageApp loaded the same binding.
-	const binding = await loadOrgBindingForOrg(
-		input.env.APP_DB,
-		viewer.userId,
-		org.userId,
-	)
 	// Team org entitlements resolve by org id alone. Pairing the visitor's
 	// email with the team org id would miss the users row and fall to Free.
 	const ownerEmail = org.userId === person.personalOrgId ? person.email : ''
@@ -371,8 +406,11 @@ async function authorizePackageAppVisitorForOrg(input: {
 		visitor: {
 			userId: viewer.userId,
 			username: person.username,
-			role: binding?.role ?? null,
+			role: decision.role,
 		},
+		epoch,
+		visitorEmail: person.email,
+		sessionIssuedAt: input.issuedAt,
 	}
 }
 
@@ -729,6 +767,17 @@ async function serveInternetVisiblePackageApp(input: {
 	return applyPackageAppCacheHeaders(response, 'anonymous')
 }
 
+function withSetCookie(response: Response, setCookie: string) {
+	if (response.webSocket || response.status === 101) return response
+	const headers = new Headers(response.headers)
+	headers.append('Set-Cookie', setCookie)
+	return new Response(response.body, {
+		status: response.status,
+		statusText: response.statusText,
+		headers,
+	})
+}
+
 /**
  * Shared tail of the per-user subdomain and app-level custom hostname:
  * exchange a handoff token for the host-only session cookie, authorize the
@@ -783,6 +832,36 @@ async function servePackageAppForSession(input: {
 		: request
 	const parsedSession = await readPackageAppSession({ request, env })
 	const serverTiming: Array<ServerTimingEntry> = []
+	const secure = isSecureRequest(request)
+	if (parsedSession) {
+		const ticket = await readPackageAppTicket({
+			request,
+			env,
+			host: url.host,
+			slug: packagePath.kodyId,
+			session: {
+				stableUserId: parsedSession.session.stableUserId,
+				issuedAt: parsedSession.issuedAt,
+			},
+			secure,
+		})
+		if (ticket) {
+			logSampledPackageAppTicketAllow({
+				orgHandle: handle,
+				appSlug: packagePath.kodyId,
+				role: ticket.visitor.role,
+			})
+			const response = await servePackageAppRequest({
+				request: servedRequest,
+				env,
+				owner: ticket.owner,
+				visitor: ticket.visitor,
+				packagePath,
+				serverTiming,
+			})
+			return applyPackageAppCacheHeaders(response, 'signed-in')
+		}
+	}
 	const authorized: AuthorizedPackageAppServe = parsedSession
 		? await pushServerTiming(serverTiming, 'owner', () =>
 				authorizePackageAppVisitorForOrg({
@@ -804,7 +883,31 @@ async function servePackageAppForSession(input: {
 			packagePath,
 			serverTiming,
 		})
-		return applyPackageAppCacheHeaders(response, 'signed-in')
+		const ticketCookie = await mintPackageAppTicketCookie({
+			env,
+			host: url.host,
+			slug: packagePath.kodyId,
+			sessionIssuedAt: authorized.sessionIssuedAt,
+			grant: {
+				owner: authorized.owner,
+				visitor: authorized.visitor,
+				epoch: authorized.epoch,
+			},
+			secure,
+		})
+		logPackageAppAccessEvent({
+			env,
+			request,
+			outcome: 'ticket-minted',
+			visitorEmail: authorized.visitorEmail,
+			orgHandle: handle,
+			appSlug: packagePath.kodyId,
+			reason: `role ${authorized.visitor.role ?? 'grant'}, epoch ${authorized.epoch}`,
+		})
+		return withSetCookie(
+			applyPackageAppCacheHeaders(response, 'signed-in'),
+			ticketCookie,
+		)
 	}
 
 	const anonymous = await serveInternetVisiblePackageApp({
@@ -824,6 +927,15 @@ async function servePackageAppForSession(input: {
 				handoffPresented: Boolean(handoffToken),
 			})
 		case 'forbidden':
+			logPackageAppAccessEvent({
+				env,
+				request,
+				outcome: 'denied',
+				visitorEmail: authorized.visitorEmail,
+				orgHandle: handle,
+				appSlug: packagePath.kodyId,
+				reason: 'no app:execute',
+			})
 			return redirectToPackagePage({ env, request, packagePath })
 		default: {
 			authorized satisfies never
@@ -1002,11 +1114,17 @@ async function handleCustomHostnameRequest(input: {
 export async function handlePackageAppOriginRequest(
 	request: Request,
 	env: Env,
+	ctx?: Pick<ExecutionContext, 'waitUntil'>,
 ) {
 	// One request context per package-app request so per-request memos (org
-	// binding, handle) dedupe across the auth gate and serve.
-	const response = await runWithRequestContext(request, () =>
-		dispatchPackageAppOriginRequest(request, env),
+	// binding, handle) dedupe across the auth gate and serve. Audit rows and
+	// access-decision writes run after the response via `ctx.waitUntil`.
+	const response = await runWithDeferredWork(
+		ctx ? (promise) => ctx.waitUntil(promise) : undefined,
+		() =>
+			runWithRequestContext(request, () =>
+				dispatchPackageAppOriginRequest(request, env),
+			),
 	)
 	if (!response) return null
 	// servePackageAppRequest logs x-kody-runtime-run-id, then this boundary
