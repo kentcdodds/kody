@@ -95,7 +95,7 @@ function agentMarqueeMotion() {
 		if (links.length !== count) return
 
 		node.classList.add('is-looping')
-		list.setAttribute('aria-describedby', hintId)
+		for (const link of links) link.setAttribute('aria-describedby', hintId)
 
 		let active = 0
 		const setActive = (index: number) => {
@@ -281,7 +281,12 @@ function agentMarqueeMotion() {
 		const endDrag = () => {
 			if (!drag) return
 			if (drag.moved) {
+				// The click a drag produces fires in the same task as its
+				// pointerup; anything later (or a drag with no click) is fresh.
 				suppressClick = true
+				setTimeout(() => {
+					suppressClick = false
+				})
 				node.classList.remove('is-dragging')
 				markUsed()
 			}
@@ -460,6 +465,7 @@ function agentMarqueeMotion() {
 			if (raf != null) cancelAnimationFrame(raf)
 			if (magnifyRaf != null) cancelAnimationFrame(magnifyRaf)
 			node.classList.remove('is-looping', 'is-dragging', 'is-magnifying')
+			for (const link of links) link.removeAttribute('aria-describedby')
 		})
 	})
 }

@@ -61,6 +61,9 @@ test('agent marquee is one tab stop with arrow keys between agents', async ({
 	const first = await page.evaluate(() => document.activeElement?.textContent)
 	expect(first).toBeTruthy()
 	await expect(marquee.locator(':focus')).toBeVisible()
+	await expect(marquee.locator(':focus')).toHaveAccessibleDescription(
+		'Use the arrow keys to move between agents.',
+	)
 
 	await page.keyboard.press('ArrowRight')
 	const second = await page.evaluate(() => document.activeElement?.textContent)
@@ -109,6 +112,31 @@ test('agent marquee drift resumes after a press released outside the row', async
 	await expect
 		.poll(() => marquee.evaluate((nav) => nav.scrollLeft), { timeout: 5_000 })
 		.not.toBe(before)
+})
+
+test('agent marquee link still opens after a drag that ended without a click', async ({
+	page,
+}) => {
+	await page.emulateMedia({ reducedMotion: 'reduce' })
+	await page.goto('/')
+	await waitForClientHydration(page)
+	const marquee = page.locator('nav.landing-agents')
+	await expect(marquee).toHaveClass(/is-looping/)
+	const link = marquee.locator('li:not([aria-hidden]) > a').first()
+	await link.evaluate((anchor) => {
+		const init = { bubbles: true, pointerId: 99, pointerType: 'mouse' }
+		anchor.dispatchEvent(
+			new PointerEvent('pointerdown', { ...init, button: 0, buttons: 1 }),
+		)
+		anchor.dispatchEvent(
+			new PointerEvent('pointermove', { ...init, buttons: 1, clientX: 40 }),
+		)
+		window.dispatchEvent(new PointerEvent('pointercancel', init))
+	})
+	await expect(marquee).not.toHaveClass(/is-dragging/)
+	const href = await link.getAttribute('href')
+	await link.click()
+	await expect(page).toHaveURL(new RegExp(`${href}$`))
 })
 
 test('agent marquee magnifies by pointer distance, gaps included', async ({
