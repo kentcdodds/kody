@@ -51,6 +51,9 @@ function follow(overrides: Partial<FollowRecord> = {}): FollowRecord {
 		targetName: '@ada/notes',
 		status: 'active',
 		pausedAt: null,
+		pausedReason: null,
+		publishedEnabled: true,
+		pushedEnabled: true,
 		lastDeliverySkipReason: null,
 		lastDeliverySkipAt: null,
 		createdAt: '2026-10-15T00:00:00.000Z',
@@ -121,6 +124,69 @@ test('delivery pauses a follow when create-level access is gone', async () => {
 	})
 	expect(row?.status).toBe('paused')
 	expect(row?.pausedAt).toBe(now.toISOString())
+	expect(row?.pausedReason).toBe('access_lost')
+})
+
+test('delivery pauses with target_missing when the target is gone', async () => {
+	const db = await seed()
+	const invoke = vi.fn()
+	await deliverFollowRecords({
+		env: { APP_DB: db } as Env,
+		follows: [follow()],
+		now,
+		pushed: pending,
+		hooks: { loadTarget: async () => null, invoke },
+	})
+	expect(invoke).not.toHaveBeenCalled()
+	const row = await getFollowByTarget(db, {
+		followerOrgId,
+		targetKind: 'package',
+		targetId: 'pkg-1',
+	})
+	expect(row?.status).toBe('paused')
+	expect(row?.pausedReason).toBe('target_missing')
+})
+
+test('a follow only delivers the events it chose', async () => {
+	const db = await seed()
+	const loadSubscriptions = vi.fn(async () => [])
+	const loadTarget = vi.fn(async () => ({ ...target, isPrivate: false }))
+	const hooks = {
+		loadTarget,
+		resolveAccess: async () => ({ canCreate: true, canPush: true }),
+		loadSubscriptions,
+	}
+	await deliverFollowRecords({
+		env: { APP_DB: db } as Env,
+		follows: [follow({ pushedEnabled: false })],
+		now,
+		pushed: pending,
+		hooks,
+	})
+	await deliverFollowRecords({
+		env: { APP_DB: db } as Env,
+		follows: [follow({ publishedEnabled: false })],
+		now,
+		published: {
+			previousCommit: 'old',
+			publishedCommit: 'new',
+			publishedAt: now.toISOString(),
+		},
+		hooks,
+	})
+	expect(loadTarget).not.toHaveBeenCalled()
+	expect(loadSubscriptions).not.toHaveBeenCalled()
+
+	await deliverFollowRecords({
+		env: { APP_DB: db } as Env,
+		follows: [follow({ publishedEnabled: false })],
+		now,
+		pushed: pending,
+		hooks,
+	})
+	expect(loadSubscriptions).toHaveBeenCalledWith(
+		expect.objectContaining({ topic: 'follow.pushed' }),
+	)
 })
 
 test('push delivery without package:read skips and does not pause', async () => {

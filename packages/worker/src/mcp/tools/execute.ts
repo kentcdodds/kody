@@ -104,7 +104,7 @@ import { type StructuredContentFromFields } from './mcp-tool-output.ts'
 
 export const executeTool = {
 	name: 'execute',
-	title: 'Execute Capabilities',
+	title: 'Execute code',
 	description: executeToolDescription,
 	annotations: {
 		readOnlyHint: false,

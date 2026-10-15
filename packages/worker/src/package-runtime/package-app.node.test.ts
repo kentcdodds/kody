@@ -563,8 +563,13 @@ function createPackageAppTestEnv() {
 	const appDb = {
 		prepare: () => ({ bind: () => ({ first: async () => null }) }),
 	}
+	const bundleArtifactsKv = { get: async () => null }
 	return {
-		env: { APP_DB: appDb, APP_LOADER: loader } as unknown as Env,
+		env: {
+			APP_DB: appDb,
+			APP_LOADER: loader,
+			BUNDLE_ARTIFACTS_KV: bundleArtifactsKv,
+		} as unknown as Env,
 		loader,
 	}
 }
@@ -797,7 +802,8 @@ test('buildPackageAppWorker claims the unique Dynamic Worker day with its surfac
 				workerId: expect.stringMatching(/^package-app-/),
 			}),
 		)
-		expect(waitUntilTasks).toHaveLength(1)
+		// The deferred usage check and the day claim.
+		expect(waitUntilTasks).toHaveLength(2)
 		resolveClaim?.()
 		await Promise.all(waitUntilTasks)
 	} finally {

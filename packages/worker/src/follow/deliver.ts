@@ -53,8 +53,8 @@ export type FollowDeliveryHooks = {
 }
 
 /**
- * Deliver `follow.published` or `follow.pushed` to active follows.
- * Lost create-level access pauses the row. Push without `package:read`
+ * Deliver `follow.published` or `follow.pushed` to active follows that chose
+ * that event. Lost create-level access pauses the row. Push without `package:read`
  * (or org-wide `package:read` for a plain repo) is skipped and the follow
  * stays active. A 429 from invocation is recorded as `zero_credits` and
  * does not throw.
@@ -101,11 +101,14 @@ async function deliverOneFollow(input: {
 	const loadTarget = input.hooks?.loadTarget ?? loadFollowTargetSnapshot
 	const resolveAccess =
 		input.hooks?.resolveAccess ?? resolveFollowDeliveryAccess
+	if (input.pushed && !input.follow.pushedEnabled) return
+	if (input.published && !input.follow.publishedEnabled) return
 	const target = await loadTarget(input.env.APP_DB, input.follow)
 	if (!target) {
 		await pauseFollow(input.env.APP_DB, {
 			id: input.follow.id,
 			pausedAt: input.nowIso,
+			reason: 'target_missing',
 		})
 		return
 	}
@@ -118,6 +121,7 @@ async function deliverOneFollow(input: {
 		await pauseFollow(input.env.APP_DB, {
 			id: input.follow.id,
 			pausedAt: input.nowIso,
+			reason: 'access_lost',
 		})
 		return
 	}

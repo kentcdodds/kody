@@ -312,6 +312,7 @@ export function environment(bucket = new MemoryBucket()): BackupEnvironment {
 		DRILL_API_TOKEN: 'drill-token',
 		RESTORE_CONFIRM_SECRET: 'restore-confirm-secret',
 		DR_RESTORE_SECRET: 'dr-restore-secret',
+		DR_OPS_SECRET: 'dr-ops-secret',
 	}
 }
 

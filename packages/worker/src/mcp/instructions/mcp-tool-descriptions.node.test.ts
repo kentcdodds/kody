@@ -4,6 +4,7 @@ import { preferLocalCliExecuteGuidance } from '#mcp/instructions/prefer-local-cl
 import { mcpServerInstructionsClientHeadLimitChars } from '#mcp/mcp-user-server-instruction-limits.ts'
 import { baseMcpServerInstructions } from '#mcp/server-instructions.ts'
 import { apiToolDescription } from '#mcp/tools/api.ts'
+import { executeTool } from '#mcp/tools/execute.ts'
 import { searchTool } from '#mcp/tools/search-tool-definition.ts'
 
 test('search and execute tool descriptions fit a 2048-character client cut', () => {
@@ -12,6 +13,17 @@ test('search and execute tool descriptions fit a 2048-character client cut', () 
 	)
 	expect(executeToolDescription.length).toBeLessThan(
 		mcpServerInstructionsClientHeadLimitChars,
+	)
+})
+
+test('search and execute titles stay action + subject; guidance lives in descriptions', () => {
+	expect(searchTool.title).toBe('Search catalog')
+	expect(executeTool.title).toBe('Execute code')
+	expect(searchTool.description).toContain('built-in capabilities')
+	expect(searchTool.description).toContain('secret references')
+	expect(executeTool.description).toContain('ephemeral ESM module')
+	expect(executeTool.description).toContain(
+		'Discover the capability with search',
 	)
 })
 

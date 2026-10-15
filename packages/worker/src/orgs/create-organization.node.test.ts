@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { MAX_FREE_ORGS_PER_USER } from './billing.ts'
 import { createOrganization } from './create-organization.ts'
 import { ensureOrgsTestSchema } from './orgs-test-schema.ts'
@@ -11,6 +12,7 @@ async function createDb() {
 	const sqlite = new DatabaseSync(':memory:')
 	const db = createD1FromSqlite(sqlite)
 	await ensureOrgsTestSchema(db)
+	await ensureUsersTestSchema({ db, columns: ['avatar_key'] })
 	return { db, sqlite }
 }
 
@@ -99,7 +101,48 @@ test('createOrganization enforces the same free-org cap as MCP orgCreate', async
 	).toEqual({ count: 0 })
 })
 
-test('createOrganization rolls back when the handle insert conflicts', async () => {
+test('createOrganization surfaces the same reserved error as username signup', async () => {
+	const { db } = await createDb()
+	const personId = testStableUserIdFromEmail('ada@example.com')
+	for (const slug of ['admin', 'me', 'ME', 'kody']) {
+		const result = await createOrganization(db, env, {
+			personId,
+			audit: createTestOrgAuditWriter(),
+			slug,
+			displayName: 'Reserved Co',
+		})
+		expect(result).toEqual({
+			ok: false,
+			error: 'This username is reserved.',
+		})
+	}
+	expect(
+		await db
+			.prepare(`SELECT COUNT(*) AS count FROM orgs`)
+			.first<{ count: number }>(),
+	).toEqual({ count: 0 })
+})
+
+test('createOrganization rejects a handle claimed only on users.username', async () => {
+	const { db } = await createDb()
+	const personId = testStableUserIdFromEmail('ada@example.com')
+	await db
+		.prepare(
+			`INSERT INTO users (id, username, email, password_hash, stable_user_id)
+			 VALUES (1, 'only-user', 'only@example.com', 'x', ?)`,
+		)
+		.bind(personId)
+		.run()
+	const result = await createOrganization(db, env, {
+		personId,
+		audit: createTestOrgAuditWriter(),
+		slug: 'only-user',
+		displayName: 'Collision Co',
+	})
+	expect(result).toEqual({ ok: false, error: 'That name is taken.' })
+})
+
+test('createOrganization rejects a handle already present in handles', async () => {
 	const { db } = await createDb()
 	const personId = testStableUserIdFromEmail('ada@example.com')
 	await db
@@ -109,24 +152,6 @@ test('createOrganization rolls back when the handle insert conflicts', async () 
 		)
 		.bind(personId)
 		.run()
-
-	// Bypass the pre-check so the shared createOrg batch hits the unique
-	// conflict on handles.
-	const originalPrepare = db.prepare.bind(db)
-	db.prepare = ((query: string) => {
-		const statement = originalPrepare(query)
-		if (query.includes('SELECT handle FROM handles WHERE handle = ?')) {
-			return {
-				bind: () => ({
-					first: async () => null,
-					run: statement.bind().run,
-					all: statement.bind().all,
-					raw: statement.bind().raw,
-				}),
-			} as ReturnType<D1Database['prepare']>
-		}
-		return statement
-	}) as D1Database['prepare']
 
 	const result = await createOrganization(db, env, {
 		personId,

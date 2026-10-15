@@ -112,7 +112,12 @@ npx @kodycodes/cli execute --local --code 'import { kody } from "kody:runtime"; 
 
 Use `--file path.ts` the same way when the module lives on disk. Keep `--local`;
 static `kody:@owner/name` imports still run locally (package-graph download +
-CapabilityProxy hops). Package-graph always returns the gateway-fetch shim, so
+CapabilityProxy hops). Inline `code` on `POST /v1/local-execute/package-graph`
+may be up to just under the Open API JSON body limit (~5 MiB); larger modules
+(or multi-megabyte `kody dev` worker bundles) pass `imports` alone so origin
+synthesizes a tiny entry. If inline `code` still exceeds that ceiling, the API
+(and CLI) name the actual UTF-8 byte length and the maximum — not a bare
+`Invalid parameters.` Package-graph always returns the gateway-fetch shim, so
 ad-hoc scripts with no `kody:@` imports still expand `{{secret:…}}` placeholders
 on origin (or fail closed naming the secret) instead of sending them raw.
 `import { credential } from 'kody:runtime'` for ad hoc and unpublished package

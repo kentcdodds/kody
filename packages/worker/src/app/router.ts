@@ -335,6 +335,11 @@ import {
 	createOrgRepositoriesApiHandler,
 	createOrgSectionHandler,
 } from '#app/handlers/org-section.ts'
+import {
+	createCommunityPackageFollowApiHandler,
+	createOrgFollowsApiHandler,
+	createOrgFollowsApiPostHandler,
+} from '#app/handlers/org-follows.ts'
 import { createOrgAvatarHandler } from '#app/handlers/org-avatar.ts'
 import {
 	createAccountInviteAcceptPostHandler,
@@ -542,6 +547,7 @@ export function createAppRouter(env: Env) {
 			communityPackageCredentialsApi: createPackageCredentialsApiHandler(env),
 			communityPackageCredentialsApiPost:
 				createPackageCredentialsApiHandler(env),
+			communityPackageFollowApi: createCommunityPackageFollowApiHandler(env),
 			communityPackageCollaboratorsApi:
 				createPackageCollaboratorsApiHandler(env),
 			communityPackageCollaboratorsApiPost:
@@ -734,6 +740,9 @@ export function createAppRouter(env: Env) {
 			orgMcpServerAuthorize: createOrgMcpServerAuthorizeHandler(env),
 			orgMcpServerAuthorizePost: createOrgMcpServerAuthorizePostHandler(env),
 			orgMemories: createOrgSectionHandler(env, 'memories'),
+			orgFollows: createOrgSectionHandler(env, 'follows'),
+			orgFollowsApi: createOrgFollowsApiHandler(env),
+			orgFollowsApiPost: createOrgFollowsApiPostHandler(env),
 			orgOverview: createOrgOverviewHandler(env),
 			orgRepositories: createOrgSectionHandler(env, 'repositories'),
 			orgRepositoriesApi: createOrgRepositoriesApiHandler(env),

@@ -12,6 +12,7 @@ const orgOwnedAccountSections = [
 	'agents',
 	'credentials',
 	'email',
+	'follows',
 	'integrations',
 	'jobs',
 	'mcp-servers',
@@ -31,6 +32,7 @@ const orgOwnedSectionSet: ReadonlySet<string> = new Set(orgOwnedAccountSections)
 
 /** Sections whose org URL is only the index. Nested paths stay on other routes. */
 const exactOrgSections: ReadonlySet<string> = new Set([
+	'follows',
 	'repositories',
 	'webhooks',
 ])

@@ -60,6 +60,7 @@ import {
 } from '#worker/server-timing.ts'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 import { packageRealtimeSessionRpc } from './realtime-session.ts'
+import { gatePackageAppUsage } from './package-app-usage-breaker.ts'
 import {
 	createDynamicCallableWorkflow,
 	type PackageWorkflowCreateInput,
@@ -2174,34 +2175,36 @@ export async function buildPackageAppWorker(input: {
 	waitUntil?: (promise: Promise<unknown>) => void
 	/**
 	 * Optional Server-Timing bag from `servePackageAppRequest`. Records
-	 * `assertWithinComputeInclude` and `appLoader` (options cache +
-	 * `APP_LOADER.get` / `load`).
+	 * `usageGate` and `appLoader` (options cache + `APP_LOADER.get` / `load`).
 	 */
 	serverTiming?: Array<ServerTimingEntry>
 }) {
 	// Apps run package code and read package storage without a daily counter,
-	// so they take the include → credits → stop gate directly.
-	await pushServerTiming(
-		input.serverTiming,
-		'assertWithinComputeInclude',
-		async () => {
-			await assertWithinComputeInclude({
-				db: input.env.APP_DB,
-				env: input.env,
-				userId: input.userId,
-				orgBudget: input.runtime.callerContext.request
-					? {
-							orgId: input.runtime.callerContext.request.org.id,
-							orgSlug: input.runtime.callerContext.request.org.slug,
-							actorUserId:
-								input.runtime.callerContext.request.actor?.userId ?? null,
-							actorUsername:
-								input.runtime.callerContext.request.actor?.username ?? null,
-						}
-					: undefined,
-			})
-		},
-	)
+	// so they take the include → credits → stop gate. The breaker runs it after
+	// the response and refuses only once a denial has opened it.
+	const request = input.runtime.callerContext.request
+	await pushServerTiming(input.serverTiming, 'usageGate', async () => {
+		await gatePackageAppUsage({
+			env: input.env,
+			ownerId: input.userId,
+			actorId: request?.actor?.userId ?? null,
+			waitUntil: input.waitUntil ?? scheduleWorkerWaitUntil,
+			check: () =>
+				assertWithinComputeInclude({
+					db: input.env.APP_DB,
+					env: input.env,
+					userId: input.userId,
+					orgBudget: request
+						? {
+								orgId: request.org.id,
+								orgSlug: request.org.slug,
+								actorUserId: request.actor?.userId ?? null,
+								actorUsername: request.actor?.username ?? null,
+							}
+						: undefined,
+				}),
+		})
+	})
 	return await pushServerTiming(input.serverTiming, 'appLoader', async () => {
 		const publicContext = buildPackageAppPublicContext(input)
 		const cacheKey = createPackageAppWorkerCacheKey({

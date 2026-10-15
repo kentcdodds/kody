@@ -70,6 +70,7 @@ import {
 	type AccountActivityViewFilter,
 } from '#universal/account-activity-filters.ts'
 import { type FleetPackageErrorRateConcentration } from '#universal/fleet-package-error-rate-concentration.ts'
+import { type OrgFollowsLoaderData } from '#universal/follows.ts'
 
 export type { ProfileVisibility }
 export type { AdminFeatureFlag }
@@ -2943,6 +2944,7 @@ export type AppLoaderData = {
 	accountUsage?: AccountUsageLoaderData
 	orgCredits?: OrgCreditsLoaderData
 	accountWaiting?: AccountWaitingLoaderData
+	orgFollows?: OrgFollowsLoaderData
 	accountExperiments?: AccountExperimentsLoaderData
 	discord?: DiscordPageLoaderData
 	walkthroughHosts?: WalkthroughHostPick

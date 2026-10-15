@@ -559,6 +559,10 @@
 		{
 			"filename": "0150-invite-link-targets.sql",
 			"sha256": "f0e98f1965a29ba31b51c505f639815d9a0033f737537f0c08eb902f4528bf4f"
+		},
+		{
+			"filename": "0151-follow-events.sql",
+			"sha256": "74c82b5ea0d063b45470a531a8132eed51bca18668e76c41b967bf8ebcdd7214"
 		}
 	]
 }

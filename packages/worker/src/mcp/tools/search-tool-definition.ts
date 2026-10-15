@@ -10,7 +10,7 @@ import {
 
 export const searchTool = {
 	name: 'search',
-	title: 'Search Capabilities, Guides, Packages, Integrations, and Secrets',
+	title: 'Search catalog',
 	description: `
 Find built-in capabilities, official guides, saved packages, integrations, connected MCP servers, and secret references (metadata only) before \`execute\`. Prefer short task phrases over keyword lists.
 

@@ -221,6 +221,10 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 									handle.update()
 									return
 								}
+								// Format only on the client (same as signup). Reserved
+								// names — including admin KV unreserves — are enforced by
+								// server createOrg; a built-in-only block would reject
+								// handles the server would accept.
 								const slugError = getHandleFormatError(draftSlug.trim(), {
 									label: 'Handle',
 								})

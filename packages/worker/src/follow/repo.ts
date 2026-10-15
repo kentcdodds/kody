@@ -1,4 +1,6 @@
+import { isFollowPauseReason } from '#universal/follows.ts'
 import {
+	type FollowPauseReason,
 	type FollowPushCommit,
 	type FollowPushPending,
 	type FollowRecord,
@@ -12,8 +14,9 @@ export function hasAppDb(db: D1Database | undefined | null): db is D1Database {
 }
 
 const followColumns = `id, follower_org_id, creator_user_id, target_kind,
-	target_owner_id, target_id, target_name, status, paused_at,
-	last_delivery_skip_reason, last_delivery_skip_at, created_at, updated_at`
+	target_owner_id, target_id, target_name, status, paused_at, paused_reason,
+	published_enabled, pushed_enabled, last_delivery_skip_reason,
+	last_delivery_skip_at, created_at, updated_at`
 
 function mapFollow(row: Record<string, unknown>): FollowRecord {
 	const kind = String(row['target_kind'])
@@ -34,6 +37,9 @@ function mapFollow(row: Record<string, unknown>): FollowRecord {
 		targetName: String(row['target_name']),
 		status,
 		pausedAt: nullableString(row['paused_at']),
+		pausedReason: pauseReason(row['paused_reason']),
+		publishedEnabled: enabledFlag(row['published_enabled']),
+		pushedEnabled: enabledFlag(row['pushed_enabled']),
 		lastDeliverySkipReason: nullableString(row['last_delivery_skip_reason']),
 		lastDeliverySkipAt: nullableString(row['last_delivery_skip_at']),
 		createdAt: String(row['created_at']),
@@ -49,6 +55,15 @@ function isFollowStatus(value: string): value is FollowStatus {
 		default:
 			return false
 	}
+}
+
+function pauseReason(value: unknown): FollowPauseReason | null {
+	return isFollowPauseReason(value) ? value : null
+}
+
+/** Rows written before the event columns existed deliver every event. */
+function enabledFlag(value: unknown) {
+	return value == null ? true : Number(value) !== 0
 }
 
 function nullableString(value: unknown) {
@@ -68,14 +83,18 @@ export async function insertFollow(
 		targetId: string
 		targetName: string
 		createdAt: string
+		/** Defaults to both events. */
+		publishedEnabled?: boolean
+		pushedEnabled?: boolean
 	},
 ): Promise<void> {
 	await db
 		.prepare(
 			`INSERT INTO follows (
 				id, follower_org_id, creator_user_id, target_kind, target_owner_id,
-				target_id, target_name, status, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+				target_id, target_name, status, published_enabled, pushed_enabled,
+				created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -85,6 +104,8 @@ export async function insertFollow(
 			row.targetOwnerId,
 			row.targetId,
 			row.targetName,
+			row.publishedEnabled === false ? 0 : 1,
+			row.pushedEnabled === false ? 0 : 1,
 			row.createdAt,
 			row.createdAt,
 		)
@@ -126,6 +147,30 @@ export async function listFollowsByFollower(
 	return (result.results ?? []).map(mapFollow)
 }
 
+/**
+ * True when any org the person is a live member of follows the target,
+ * active or paused.
+ */
+export async function viewerOrgsFollowTarget(
+	db: D1Database,
+	input: { personId: string; targetKind: FollowTargetKind; targetId: string },
+): Promise<boolean> {
+	const row = await db
+		.prepare(
+			`SELECT 1 AS ok
+			FROM follows f
+			INNER JOIN org_memberships m
+				ON m.org_id = f.follower_org_id
+				AND m.user_id = ?
+				AND m.deleted_at IS NULL
+			WHERE f.target_kind = ? AND f.target_id = ?
+			LIMIT 1`,
+		)
+		.bind(input.personId, input.targetKind, input.targetId)
+		.first<{ ok: number }>()
+	return row != null
+}
+
 export async function listActiveFollowsByTarget(
 	db: D1Database,
 	input: { targetKind: FollowTargetKind; targetId: string },
@@ -143,15 +188,15 @@ export async function listActiveFollowsByTarget(
 
 export async function pauseFollow(
 	db: D1Database,
-	input: { id: string; pausedAt: string },
+	input: { id: string; pausedAt: string; reason: FollowPauseReason },
 ): Promise<void> {
 	await db
 		.prepare(
 			`UPDATE follows
-			SET status = 'paused', paused_at = ?, updated_at = ?
+			SET status = 'paused', paused_at = ?, paused_reason = ?, updated_at = ?
 			WHERE id = ? AND status = 'active'`,
 		)
-		.bind(input.pausedAt, input.pausedAt, input.id)
+		.bind(input.pausedAt, input.reason, input.pausedAt, input.id)
 		.run()
 }
 
@@ -166,7 +211,8 @@ export async function resumeFollow(
 	const result = await db
 		.prepare(
 			`UPDATE follows
-			SET status = 'active', paused_at = NULL, creator_user_id = ?, updated_at = ?
+			SET status = 'active', paused_at = NULL, paused_reason = NULL,
+				creator_user_id = ?, updated_at = ?
 			WHERE id = ? AND status = 'paused'`,
 		)
 		.bind(input.creatorUserId, input.updatedAt, input.id)
@@ -190,6 +236,57 @@ export async function retargetFollowCreator(
 			WHERE id = ? AND status = 'active'`,
 		)
 		.bind(input.creatorUserId, input.updatedAt, input.id)
+		.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
+export async function setFollowEvents(
+	db: D1Database,
+	input: {
+		id: string
+		publishedEnabled: boolean
+		pushedEnabled: boolean
+		updatedAt: string
+	},
+): Promise<void> {
+	await db
+		.prepare(
+			`UPDATE follows
+			SET published_enabled = ?, pushed_enabled = ?, updated_at = ?
+			WHERE id = ?`,
+		)
+		.bind(
+			input.publishedEnabled ? 1 : 0,
+			input.pushedEnabled ? 1 : 0,
+			input.updatedAt,
+			input.id,
+		)
+		.run()
+}
+
+export async function getFollowForOrg(
+	db: D1Database,
+	input: { followerOrgId: string; id: string },
+): Promise<FollowRecord | null> {
+	const row = await db
+		.prepare(
+			`SELECT ${followColumns}
+			FROM follows
+			WHERE follower_org_id = ? AND id = ?`,
+		)
+		.bind(input.followerOrgId, input.id)
+		.first<Record<string, unknown>>()
+	return row ? mapFollow(row) : null
+}
+
+/** Deletes one follow owned by `followerOrgId`. False when it was not there. */
+export async function deleteFollowForOrg(
+	db: D1Database,
+	input: { followerOrgId: string; id: string },
+): Promise<boolean> {
+	const result = await db
+		.prepare(`DELETE FROM follows WHERE follower_org_id = ? AND id = ?`)
+		.bind(input.followerOrgId, input.id)
 		.run()
 	return (result.meta.changes ?? 0) > 0
 }
@@ -358,6 +455,9 @@ export async function ensureFollowTables(db: D1Database) {
 			target_name TEXT NOT NULL,
 			status TEXT NOT NULL CHECK (status IN ('active', 'paused')) DEFAULT 'active',
 			paused_at TEXT,
+			paused_reason TEXT,
+			published_enabled INTEGER NOT NULL DEFAULT 1,
+			pushed_enabled INTEGER NOT NULL DEFAULT 1,
 			last_delivery_skip_reason TEXT,
 			last_delivery_skip_at TEXT,
 			created_at TEXT NOT NULL,

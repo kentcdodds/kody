@@ -86,11 +86,15 @@ export function readQueryParams(
 export async function readJsonBody(request: Request) {
 	const declaredLength = Number(request.headers.get('Content-Length') ?? '0')
 	if (declaredLength > maxApiRequestBodyBytes) {
-		return { kind: 'too_large' as const }
+		return {
+			kind: 'too_large' as const,
+			byteLength: declaredLength,
+		}
 	}
 	const text = await request.text()
-	if (new TextEncoder().encode(text).byteLength > maxApiRequestBodyBytes) {
-		return { kind: 'too_large' as const }
+	const byteLength = new TextEncoder().encode(text).byteLength
+	if (byteLength > maxApiRequestBodyBytes) {
+		return { kind: 'too_large' as const, byteLength }
 	}
 	if (!text.trim()) return { kind: 'ok' as const, body: {} }
 	const contentType = request.headers.get('Content-Type') ?? ''

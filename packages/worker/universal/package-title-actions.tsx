@@ -37,6 +37,19 @@ type PackageRepoForkAction = {
 	viewerInstall: ViewerListingInstall | null
 }
 
+type PackageRepoFollowAction = {
+	kind: 'package' | 'repo'
+	loggedIn: boolean
+	loginHref: string
+	/** The Repo tab, which hosts the Follow panel (`#follow` opens it). */
+	repoHref: string
+	/** One of the viewer's workspaces follows this, active or paused. */
+	following: boolean
+}
+
+export const PACKAGE_FOLLOW_PANEL_ID = 'package-follow-panel'
+export const PACKAGE_FOLLOW_HASH = '#follow'
+
 /**
  * Everything the repository action group can offer on any tab (Repo, Files,
  * Settings). Built on the server from the package page so each tab renders
@@ -49,11 +62,18 @@ export type PackageRepoActions = {
 	publishHref: string | null
 	/** Owner: the package declares an app. */
 	packageAppHref: string | null
+	/** Any viewer of a followable package or plain repo. */
+	follow?: PackageRepoFollowAction | null
 }
 
 function hasPackageRepoActions(actions: PackageRepoActions | null) {
 	if (!actions) return false
-	return Boolean(actions.fork || actions.publishHref || actions.packageAppHref)
+	return Boolean(
+		actions.fork ||
+		actions.publishHref ||
+		actions.packageAppHref ||
+		actions.follow,
+	)
 }
 
 /**
@@ -95,6 +115,7 @@ export function renderPackageRepoActions(
 					</span>
 				</a>
 			) : null}
+			{actions.follow ? renderFollowControl(actions.follow) : null}
 			{actions.fork ? renderSetupPromptControl(install) : null}
 			{install?.forkAhead && install.listingDiffHref ? (
 				<a
@@ -127,6 +148,43 @@ export function renderPackageRepoActions(
 				</a>
 			) : null}
 		</>
+	)
+}
+
+/**
+ * Opens the Follow panel on the Repo tab. Other tabs follow the link there,
+ * and signed-out visitors sign in first.
+ */
+function renderFollowControl(follow: PackageRepoFollowAction) {
+	const label = follow.following ? 'Following' : 'Follow'
+	const tooltip = follow.following
+		? 'Your workspace gets events from this. Change events or unfollow.'
+		: follow.kind === 'repo'
+			? 'Get pushes from this repository in your workspace.'
+			: 'Get new versions and pushes from this in your workspace.'
+	return (
+		<a
+			href={
+				follow.loggedIn
+					? `${follow.repoHref}${PACKAGE_FOLLOW_HASH}`
+					: follow.loginHref
+			}
+			data-testid="package-follow-toggle"
+			data-package-follow={follow.loggedIn ? follow.kind : undefined}
+			data-following={follow.following ? 'true' : 'false'}
+			aria-controls={follow.loggedIn ? PACKAGE_FOLLOW_PANEL_ID : undefined}
+			aria-expanded={follow.loggedIn ? 'false' : undefined}
+			aria-describedby="package-follow-tooltip"
+			mix={css(packageActionSecondaryCss)}
+		>
+			{renderIcon(follow.following ? 'check' : 'eye', {
+				size: actionIconSize,
+			})}
+			<span>{label}</span>
+			<span id="package-follow-tooltip" role="tooltip" aria-hidden="true">
+				{tooltip}
+			</span>
+		</a>
 	)
 }
 
