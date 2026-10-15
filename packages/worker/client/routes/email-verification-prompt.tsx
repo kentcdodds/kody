@@ -20,7 +20,7 @@ import {
 export { buildPendingVerificationPath } from '#client/routes/pending-verification-path.ts'
 
 const resendVerificationApiPath = '/account/resend-verification.json'
-export const emailVerificationDeliveryApiPath =
+const emailVerificationDeliveryApiPath =
 	'/account/email-verification-delivery.json'
 
 export type ResendVerificationResult =

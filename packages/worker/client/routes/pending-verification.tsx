@@ -26,9 +26,11 @@ import { layoutMaxWidths } from '#universal/styles/style-primitives.ts'
 import { readRouterSearch } from '#client/router-location.tsx'
 import {
 	acceptedEmailVerificationDelivery,
-	shouldPollEmailVerificationDelivery,
 	type EmailVerificationDelivery,
 } from '#universal/email-verification-delivery.ts'
+
+const deliveryPollIntervalMs = 15_000
+const deliveryPollTimeoutMs = 10_000
 import { type PendingVerificationLoaderData } from '#universal/loader-data.ts'
 import { buildAuthLink } from '#client/auth-links.ts'
 
@@ -82,6 +84,9 @@ export function PendingVerificationRoute(handle: Handle) {
 	let resendMessage: string | null = null
 	let resendTone: 'error' | 'info' = 'info'
 	let deliveryPollScheduled = false
+	/** Bumped on successful resend so in-flight polls cannot overwrite accepted. */
+	let deliveryPollGeneration = 0
+	let deliveryPollAbort: AbortController | null = null
 	/** Payload last applied to the closure state above. */
 	let appliedPayload: PendingVerificationLoaderData | null = null
 	let appliedError: Error | null = null
@@ -111,10 +116,24 @@ export function PendingVerificationRoute(handle: Handle) {
 		message = null
 	}
 
+	function invalidateInFlightDeliveryPoll() {
+		deliveryPollGeneration += 1
+		deliveryPollAbort?.abort()
+		deliveryPollAbort = null
+	}
+
 	async function pollVerificationDelivery() {
 		deliveryPollScheduled = false
+		const generation = deliveryPollGeneration
+		deliveryPollAbort?.abort()
+		const abort = new AbortController()
+		deliveryPollAbort = abort
+		const timeoutId = window.setTimeout(() => {
+			abort.abort()
+		}, deliveryPollTimeoutMs)
 		try {
-			const result = await fetchEmailVerificationDelivery()
+			const result = await fetchEmailVerificationDelivery(abort.signal)
+			if (generation !== deliveryPollGeneration) return
 			if (!result.ok) {
 				if (result.unauthorized) {
 					window.location.assign(buildLoginRedirectForPending(handle))
@@ -132,7 +151,11 @@ export function PendingVerificationRoute(handle: Handle) {
 			emailVerificationDelivery = result.delivery
 			handle.update()
 		} catch {
+			if (generation !== deliveryPollGeneration) return
 			handle.update()
+		} finally {
+			window.clearTimeout(timeoutId)
+			if (deliveryPollAbort === abort) deliveryPollAbort = null
 		}
 	}
 
@@ -152,6 +175,7 @@ export function PendingVerificationRoute(handle: Handle) {
 			resendTone = result.ok ? 'info' : 'error'
 			resendMessage = result.message
 			if (result.ok) {
+				invalidateInFlightDeliveryPoll()
 				emailVerificationDelivery = acceptedEmailVerificationDelivery()
 			}
 		} catch {
@@ -200,17 +224,18 @@ export function PendingVerificationRoute(handle: Handle) {
 				: pending && appliedPayload === null
 					? 'loading'
 					: 'ready'
+		// Keep polling after terminal delivery so a verify-in-another-tab
+		// still redirects; delivery updates are just a side effect.
 		if (
 			status === 'ready' &&
 			!deliveryPollScheduled &&
-			typeof document !== 'undefined' &&
-			shouldPollEmailVerificationDelivery(emailVerificationDelivery)
+			typeof document !== 'undefined'
 		) {
 			deliveryPollScheduled = true
 			handle.queueTask(() => {
 				window.setTimeout(() => {
 					void pollVerificationDelivery()
-				}, 15_000)
+				}, deliveryPollIntervalMs)
 			})
 		}
 

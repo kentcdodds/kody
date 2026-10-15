@@ -27,9 +27,21 @@ export function SupportRoute(_handle: Handle) {
 				</p>
 			</header>
 
+			<p mix={css(pageDescriptionCss)}>
+				Site blocked by a DNS filter, or signup mail never arrives? See{' '}
+				<a href="/docs/cant-open-or-get-mail" mix={css(mutedLinkCss)}>
+					If you can't open kody.codes or get mail from us
+				</a>
+				.
+			</p>
+
 			<p mix={css({ margin: 0 })}>
 				<a href="/faq" mix={css(mutedLinkCss)}>
 					FAQ
+				</a>
+				{' · '}
+				<a href="/docs/cant-open-or-get-mail" mix={css(mutedLinkCss)}>
+					Can't open or get mail
 				</a>
 				{' · '}
 				<a href="/discord" mix={css(mutedLinkCss)}>

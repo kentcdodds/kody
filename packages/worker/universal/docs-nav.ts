@@ -168,7 +168,13 @@ export const docsNav: ReadonlyArray<DocsNavSection> = [
 		id: 'help',
 		label: 'Help',
 		description: 'When Kody gets in the way.',
-		items: [{ slug: 'platform-friction', label: 'Report friction' }],
+		items: [
+			{
+				slug: 'cant-open-or-get-mail',
+				label: "Can't open or get mail",
+			},
+			{ slug: 'platform-friction', label: 'Report friction' },
+		],
 	},
 	{
 		id: 'admin',

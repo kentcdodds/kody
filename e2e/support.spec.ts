@@ -9,6 +9,12 @@ test('public support page works logged out', async ({ page }) => {
 	await expect(
 		page.getByRole('link', { name: 'support@kody.codes', exact: true }),
 	).toHaveAttribute('href', 'mailto:support@kody.codes')
+	await expect(
+		page.getByRole('link', {
+			name: "If you can't open kody.codes or get mail from us",
+			exact: true,
+		}),
+	).toHaveAttribute('href', '/docs/cant-open-or-get-mail')
 
 	await expect(
 		page.getByRole('navigation', { name: 'Footer' }).getByRole('link', {

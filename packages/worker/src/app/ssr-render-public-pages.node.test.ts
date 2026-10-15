@@ -103,6 +103,8 @@ test('renderAppPage renders the public support page for anonymous visitors', asy
 	expect(html).toContain('mailto:support@kody.codes')
 	expect(html).toContain('support@kody.codes')
 	expect(html).toContain('href="/support">Support</a>')
+	expect(html).toContain('href="/docs/cant-open-or-get-mail"')
+	expect(html).toContain("If you can't open kody.codes or get mail from us")
 })
 
 test('renderAppPage renders the public Discord connect page', async () => {

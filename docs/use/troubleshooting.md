@@ -8,6 +8,11 @@ For help with the hosted Kody service at `kody.codes`, open
 deployments receive support mail at `support@<apex>`, where `<apex>` is the
 deployment's `APP_BASE_URL` hostname.
 
+If the site will not load (NextDNS or similar) or signup / verification mail
+never arrives, see
+[If you can't open kody.codes or get mail from us](../guides/cant-open-or-get-mail.md)
+(`/docs/cant-open-or-get-mail`).
+
 ## MCP requests fail with `email_verification_required`
 
 Kody requires a verified account email before any MCP access, including OAuth
