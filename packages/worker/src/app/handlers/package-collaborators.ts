@@ -28,7 +28,7 @@ import { type routes } from '#universal/routes.ts'
 
 type AppUser = NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
 
-type CollaboratorsScope = {
+export type CollaboratorsScope = {
 	ctx: CapabilityContext
 	org: OrgBinding['org']
 	orgSlug: string
@@ -55,7 +55,7 @@ const changeSchema = z.discriminatedUnion('intent', [
  * (members and outside collaborators alike). Not found when they cannot read
  * the package there; forbidden when they can read it but not manage access.
  */
-async function loadCollaboratorsScope(input: {
+export async function loadCollaboratorsScope(input: {
 	env: Env
 	request: Request
 	user: AppUser

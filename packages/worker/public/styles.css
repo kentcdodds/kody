@@ -768,8 +768,9 @@ html.is-settled {
 /* Hero agent marks: 64px monochrome icons (a mask filled with the text
    colour), each a link to its `/with/:agent` page. Hover, focus, or press
    zooms a mark like the video chooser thumbs, slides its neighbours aside,
-   and fades its name in. With JS and motion allowed the doubled track loops
-   (`landing-agent-marquee.tsx`); otherwise the row scrolls by hand. */
+   and fades its name in. With JS (`.is-looping`, set by
+   `landing-agent-marquee.tsx`) the loop copies show and the scroll wraps
+   endlessly; without it the row is a plain scroller. */
 .landing-agents-row {
 	width: 100%;
 }
@@ -851,21 +852,51 @@ html.is-settled {
 	opacity: 0;
 }
 
-.landing-agent:is(:hover, :focus-visible, :active) .landing-agent-icon {
-	scale: var(--agent-zoom);
+/* While a mouse is over the row (`.is-magnifying`, JS with motion allowed)
+   marks magnify like the macOS Dock: each scales by its distance to the
+   pointer (`--agent-scale`) and its neighbours make room (`--agent-x`), so
+   the gaps never shrink a mark. Otherwise hover, keyboard focus, and presses
+   zoom one mark. */
+.landing-agents.is-looping .landing-agents-item {
+	translate: var(--agent-x, 0px) 0;
 }
 
-.landing-agent:is(:hover, :focus-visible, :active) .landing-agent-name {
+.landing-agents.is-looping .landing-agent-icon {
+	scale: var(--agent-scale, 1);
+}
+
+.landing-agents.is-looping .landing-agents-item.is-nearest .landing-agent-name {
 	opacity: 1;
 }
 
-.landing-agents-item:has(
-	~ .landing-agents-item .landing-agent:is(:hover, :focus-visible, :active)
-) {
+.landing-agents:not(.is-magnifying) .landing-agent:hover .landing-agent-icon,
+.landing-agents:not(.is-magnifying)
+	.landing-agent:is(:focus-visible, :active)
+	.landing-agent-icon {
+	scale: var(--agent-zoom);
+}
+
+.landing-agents:not(.is-magnifying) .landing-agent:hover .landing-agent-name,
+.landing-agents:not(.is-magnifying)
+	.landing-agent:is(:focus-visible, :active)
+	.landing-agent-name {
+	opacity: 1;
+}
+
+.landing-agents:not(.is-magnifying)
+	.landing-agents-item:has(~ .landing-agents-item .landing-agent:hover),
+.landing-agents:not(.is-magnifying)
+	.landing-agents-item:has(
+		~ .landing-agents-item .landing-agent:is(:focus-visible, :active)
+	) {
 	translate: calc(-1 * var(--agent-shift)) 0;
 }
 
-.landing-agents-item:has(.landing-agent:is(:hover, :focus-visible, :active))
+.landing-agents:not(.is-magnifying)
+	.landing-agents-item:has(.landing-agent:hover)
+	~ .landing-agents-item,
+.landing-agents:not(.is-magnifying)
+	.landing-agents-item:has(.landing-agent:is(:focus-visible, :active))
 	~ .landing-agents-item {
 	translate: var(--agent-shift) 0;
 }
@@ -883,28 +914,34 @@ html.is-settled {
 		transition: opacity 200ms var(--ease-out);
 	}
 
-	html.js .landing-agents {
-		overflow: hidden;
-	}
-
-	html.js .landing-agents-track {
-		padding-inline: 0;
-		animation: landing-agents-loop 55s linear infinite;
-	}
-
-	html.js .landing-agents-item[aria-hidden] {
-		display: block;
-	}
-
-	html.js .landing-agents:is(:hover, :focus-within) .landing-agents-track {
-		animation-play-state: paused;
+	/* Track the pointer closely while magnifying; settle slowly after. */
+	.landing-agents.is-magnifying .landing-agents-item,
+	.landing-agents.is-magnifying .landing-agent-icon {
+		transition-duration: 70ms;
 	}
 }
 
-@keyframes landing-agents-loop {
-	to {
-		translate: -50% 0;
+.landing-agents.is-looping .landing-agents-track {
+	padding-inline: 0;
+}
+
+.landing-agents.is-looping .landing-agents-item[aria-hidden] {
+	display: block;
+}
+
+@media (hover: hover) and (pointer: fine) {
+	.landing-agents.is-looping {
+		cursor: grab;
 	}
+}
+
+.landing-agents.is-dragging {
+	cursor: grabbing;
+	user-select: none;
+}
+
+.landing-agents.is-dragging .landing-agent {
+	cursor: grabbing;
 }
 
 .landing-hero-media {

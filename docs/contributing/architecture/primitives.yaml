@@ -713,17 +713,33 @@ primitives:
     name: Community listing published dispatch queue
     summary:
       Durable event delivery from first community listing publish to admin
-      packages, and from pin-moving republishes to forkers' packages.
+      packages. Pin-moving republish fan-out to forkers now runs through the
+      follows pipeline alias (community.fork.upstream_updated).
     code:
       - packages/worker/src/community/listing-published-dispatch-queue
       - packages/worker/src/community/listing-published-package-subscriptions
       - packages/worker/src/community/listing-published-subscription-event
-      - packages/worker/src/community/fork-upstream-updated-package-subscriptions
-      - packages/worker/src/community/fork-upstream-updated-subscription-event
     docs:
       - docs/contributing/setup-manifest.md
       - docs/contributing/architecture/authorization.md
       - docs/guides/package-subscriptions.md
+
+  - id: follows
+    group: assistant
+    name: Follow any repo
+    summary:
+      Org-owned follow records for packages and plain repos, follow.published /
+      follow.pushed delivery, push coalescing, and the
+      community.fork.upstream_updated compatibility alias.
+    code:
+      - packages/worker/src/follow/
+      - packages/worker/src/mcp/capabilities/follow/
+      - packages/worker/src/community/fork-upstream-updated-package-subscriptions
+      - packages/worker/src/community/fork-upstream-updated-subscription-event
+    docs:
+      - docs/guides/package-subscriptions.md
+      - docs/contributing/contracts/follow-cli.md
+      - docs/contributing/architecture/authorization.md
 
   - id: package-events-dispatch-queue
     group: storage

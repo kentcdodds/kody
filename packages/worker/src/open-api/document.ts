@@ -93,6 +93,7 @@ const tagDescriptions: Record<ApiOperation['tag'], string> = {
 	secrets:
 		'Secret metadata and writes. Secret values can be written but are never returned.',
 	packages: 'Saved packages, sharing, and subscriptions.',
+	follows: 'Follow a package or plain repo by @handle/name.',
 	repos: 'Repos and repo sessions (edit, check, commit, publish).',
 	jobs: 'Package jobs and workflow runs.',
 	webhooks: 'Package webhook URLs and deliveries.',

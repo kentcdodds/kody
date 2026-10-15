@@ -87,6 +87,7 @@ export class RuntimeWorkerService
 					env: this.env,
 					owner: input.owner,
 					visitor: input.visitor,
+					approvedPublishedCommit: input.approvedPublishedCommit,
 					packagePath: input.packagePath,
 					dispatch: input.dispatch,
 				}),

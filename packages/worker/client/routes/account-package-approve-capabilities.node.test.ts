@@ -576,11 +576,27 @@ test('a go-public request folds into the capability Approve as one decision', as
 	)
 	const approve = html.slice(
 		html.indexOf('data-testid="package-approve-capabilities"'),
+		html.indexOf(
+			'</button>',
+			html.indexOf('data-testid="package-approve-capabilities"'),
+		),
 	)
-	expect(approve.slice(0, approve.indexOf('</button>'))).toContain(
-		'Approve and make internet-visible',
+	expect(approve).toContain('Approve and make internet-visible')
+	expect(approve).toContain('aria-hidden="true"')
+	expect(approve).toContain('Back to package settings')
+	const back = html.slice(
+		html.indexOf('data-testid="package-approve-capabilities-back"'),
+		html.indexOf(
+			'</a>',
+			html.indexOf('data-testid="package-approve-capabilities-back"'),
+		),
 	)
-	expect(html.match(/<button[^>]*>[^<]*Approve/g)).toHaveLength(1)
+	expect(back).toContain('Back to package settings')
+	expect(back).toContain('aria-hidden="true"')
+	expect(back).toContain('Approve and make internet-visible')
+	expect(
+		html.match(/data-testid="package-approve-capabilities"/g),
+	).toHaveLength(1)
 
 	const separate = await render(loaderData({ pendingApprovals: [wentPublic] }))
 	expect(separate).toContain('data-testid="package-pending-approval-approve"')

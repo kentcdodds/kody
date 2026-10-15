@@ -7,6 +7,7 @@ export const capabilityDomainNames = {
 	community: 'community',
 	coding: 'coding',
 	email: 'email',
+	follow: 'follow',
 	integrations: 'integrations',
 	jobs: 'jobs',
 	mcpServers: 'mcpServers',

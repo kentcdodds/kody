@@ -54,6 +54,9 @@ export const orgTransferTables: Record<string, OrgTransferTableDisposition> = {
 	community_forks: move(
 		'forker_user_id re-pointed for forks that produced a moved package.',
 	),
+	follows: keep(
+		'Follow rows stay with the follower org (follower_org_id is not re-pointed). The transfer batch rewrites denormalized target_owner_id and target_name so followers keep watching the same target ids under the destination owner.',
+	),
 	mcp_memories: move('user_id re-pointed; vectors reindexed under the target.'),
 	mcp_memory_conversation_suppressions: move(
 		'user_id re-pointed for moved memories.',
@@ -161,6 +164,7 @@ export const orgTransferTables: Record<string, OrgTransferTableDisposition> = {
 		'Client callback subscriptions belong to the OAuth client connection.',
 	),
 	oauth_connections: keep(personOwned),
+	org_invite_link_pending: keep(orgMembershipShape),
 	org_invite_link_redemptions: keep(orgMembershipShape),
 	org_invite_links: keep(orgMembershipShape),
 	org_limit_overrides: keep(orgMembershipShape),

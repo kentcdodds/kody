@@ -126,7 +126,7 @@ async function loadAccountOrganizationsData(
 		username: profile.username,
 		viewer: { displayName: profile.displayName, avatarUrl: profile.avatarUrl },
 		organizations: snapshot.organizations,
-		invites: snapshot.invites,
+		pendingInvites: snapshot.pendingInvites,
 	}
 }
 

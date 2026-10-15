@@ -352,10 +352,28 @@ export async function compileAccessForRequest(input: {
 	request: RequestContext
 }): Promise<CompiledAccess> {
 	const { request } = input
-	const orgId = request.org.id
-	const role = request.membership?.role ?? null
+	if (!request.actor) return noCompiledAccess(request.org.id)
+	return await compileAccessForActor({
+		db: input.db,
+		orgId: request.org.id,
+		userId: request.actor.userId,
+		role: request.membership?.role ?? null,
+	})
+}
 
-	if (!request.actor) return noCompiledAccess(orgId)
+/**
+ * Same compile as {@link compileAccessForRequest} for a person who is not
+ * the caller (for example, checking that an invite link's creator can still
+ * share). `role` is their live membership role, or null for an outside
+ * collaborator.
+ */
+export async function compileAccessForActor(input: {
+	db: D1Database
+	orgId: OwnerId
+	userId: string
+	role: OrgRole | null
+}): Promise<CompiledAccess> {
+	const { orgId, userId, role } = input
 	if (role === 'owner') return ownerCompiledAccess(orgId, 0)
 
 	const epochOrNull = await readOrgEpoch(input.db, orgId)
@@ -364,7 +382,6 @@ export async function compileAccessForRequest(input: {
 	}
 	const epoch = epochOrNull
 
-	const userId = request.actor.userId
 	const cached = await readAccessCache(input.db, orgId, userId, epoch)
 	if (cached) return cached
 

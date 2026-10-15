@@ -3,16 +3,20 @@ import { ErrorAgentPromptButton } from '#client/error-agent-prompt-button.tsx'
 import { on } from '#client/event-mixin.ts'
 import { buildErrorAgentPrompt } from '#universal/error-agent-prompt.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { formatTimestampDate } from '#client/format-timestamp.ts'
 import { createRouteData } from '#client/route-data.tsx'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { renderIcon } from '#universal/icon.tsx'
+import { inviteLinkOfferCopy } from '#universal/invite-link-offer-copy.ts'
 import { type OrgInviteJoinLoaderData } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
 import {
 	cardCss,
 	getPrimaryButtonCss,
 	getSecondaryButtonCss,
+	mergeCss,
 	mutedLinkCss,
+	nativeDisclosureCss,
 	pageDescriptionCss,
 	pageHeaderCss,
 	pageTitleCss,
@@ -73,6 +77,7 @@ export async function orgInviteJoinRouteLoader(
 
 export function OrgInviteJoinRoute(handle: Handle) {
 	let joining = false
+	let declining = false
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
 
@@ -118,21 +123,54 @@ export function OrgInviteJoinRoute(handle: Handle) {
 				redirectTo?: string
 			} | null
 			if (!response.ok || !payload?.ok) {
-				throw new Error(payload?.error || 'Unable to join this organization.')
+				throw new Error(payload?.error || 'Unable to accept this invite.')
 			}
 			message = payload.alreadyMember
-				? 'You are already a member of this organization.'
-				: 'You joined the organization.'
+				? 'You already had this access.'
+				: 'Invite accepted.'
 			messageTone = 'info'
 			handle.update()
 			window.location.assign(payload.redirectTo || '/')
 		} catch (error) {
 			message =
-				error instanceof Error
-					? error.message
-					: 'Unable to join this organization.'
+				error instanceof Error ? error.message : 'Unable to accept this invite.'
 			messageTone = 'error'
 			joining = false
+			handle.update()
+		}
+	}
+
+	async function decline(token: string) {
+		declining = true
+		message = null
+		handle.update()
+		try {
+			const response = await fetch(
+				routes.orgInviteJoinDeclinePost.href({ token }),
+				{
+					method: 'POST',
+					headers: { Accept: 'application/json' },
+					credentials: 'include',
+				},
+			)
+			const payload = (await response.json().catch(() => null)) as {
+				ok?: boolean
+				error?: string
+				redirectTo?: string
+			} | null
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to decline this invite.')
+			}
+			window.location.assign(
+				payload.redirectTo || routes.accountOrganizations.href(),
+			)
+		} catch (error) {
+			message =
+				error instanceof Error
+					? error.message
+					: 'Unable to decline this invite.'
+			messageTone = 'error'
+			declining = false
 			handle.update()
 		}
 	}
@@ -206,6 +244,7 @@ export function OrgInviteJoinRoute(handle: Handle) {
 		}
 
 		const name = orgLabel(data)
+		const copy = inviteLinkOfferCopy(data)
 		const loginHref = `/login?redirectTo=${encodeURIComponent(
 			routes.orgInviteJoin.href({ token: data.token }),
 		)}`
@@ -214,13 +253,15 @@ export function OrgInviteJoinRoute(handle: Handle) {
 		)}`
 
 		return (
-			<section mix={css(pageCss)} data-testid="org-invite-join">
+			<section
+				mix={css(pageCss)}
+				data-testid="org-invite-join"
+				data-invite-kind={data.offer.kind}
+			>
 				<header mix={css(pageHeaderCss)}>
-					<h1 mix={css(pageTitleCss)}>Join {name}</h1>
+					<h1 mix={css(pageTitleCss)}>{copy.title}</h1>
 					<p mix={css(pageDescriptionCss)}>
-						{data.alreadyMember
-							? `You already belong to ${name}.`
-							: `You are invited to join ${name} as ${data.roleLabel}.`}
+						{data.alreadyMember ? copy.satisfied : copy.description}
 					</p>
 				</header>
 				<div mix={css(cardCss)}>
@@ -232,10 +273,15 @@ export function OrgInviteJoinRoute(handle: Handle) {
 							variant="well"
 						/>
 						<div mix={css(orgTextCss)}>
-							<p mix={css(orgNameCss)}>{name}</p>
-							<p mix={css(orgDetailCss)}>@{data.org.slug}</p>
+							<p mix={css(orgNameCss)}>{copy.subject}</p>
+							<p mix={css(orgDetailCss)}>{copy.subjectDetail}</p>
 						</div>
 					</div>
+					{copy.notice && !data.alreadyMember ? (
+						<p mix={css(noticeCss)} data-testid="org-invite-join-notice">
+							{copy.notice}
+						</p>
+					) : null}
 					{message ? (
 						<>
 							<p
@@ -270,35 +316,67 @@ export function OrgInviteJoinRoute(handle: Handle) {
 					) : null}
 					{data.alreadyMember ? (
 						<p mix={css(footerCss)}>
-							<a href={`/@${data.org.slug}`} mix={css(getPrimaryButtonCss())}>
-								Open {name}
+							<a href={copy.openHref} mix={css(getPrimaryButtonCss())}>
+								{copy.openLabel}
 							</a>
 						</p>
 					) : data.authenticated ? (
 						<div mix={css(actionsCss)}>
 							<button
 								type="button"
-								disabled={joining}
+								disabled={joining || declining}
 								data-testid="org-invite-join-confirm"
 								mix={[
-									css(getPrimaryButtonCss()),
+									css(mergeCss(getPrimaryButtonCss(), iconButtonCss)),
 									on('click', () => void join(data.token)),
 								]}
 							>
 								{renderIcon('plus', { size: '1.05rem' })}
-								{joining ? 'Joining…' : `Join ${name}`}
+								{joining ? 'Accepting…' : copy.acceptLabel}
+							</button>
+							<button
+								type="button"
+								disabled={joining || declining}
+								data-testid="org-invite-join-decline"
+								mix={[
+									css(getSecondaryButtonCss()),
+									on('click', () => void decline(data.token)),
+								]}
+							>
+								{declining ? 'Declining…' : 'Decline'}
 							</button>
 						</div>
 					) : (
 						<div mix={css(actionsCss)}>
 							<a href={loginHref} mix={css(getPrimaryButtonCss())}>
-								Sign in to join
+								Sign in to accept
 							</a>
 							<a href={signupHref} mix={css(getSecondaryButtonCss())}>
 								Create an account
 							</a>
 						</div>
 					)}
+					<details mix={css(detailsCss)} data-testid="org-invite-join-details">
+						<summary>Details</summary>
+						<dl mix={css(detailListCss)}>
+							<div>
+								<dt>Organization</dt>
+								<dd>
+									{name} (@{data.org.slug})
+								</dd>
+							</div>
+							{data.invitedBy ? (
+								<div>
+									<dt>Invited by</dt>
+									<dd>{data.invitedBy}</dd>
+								</div>
+							) : null}
+							<div>
+								<dt>Expires</dt>
+								<dd>{formatTimestampDate(data.expiresAt)}</dd>
+							</div>
+						</dl>
+					</details>
 				</div>
 			</section>
 		)
@@ -353,6 +431,12 @@ const actionsCss = {
 	alignItems: 'center',
 }
 
+const iconButtonCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	gap: spacing.xs,
+}
+
 const infoMessageCss = {
 	margin: `0 0 ${spacing.md}`,
 	color: colors.text,
@@ -361,4 +445,31 @@ const infoMessageCss = {
 const errorMessageCss = {
 	margin: `0 0 ${spacing.md}`,
 	color: colors.danger,
+}
+
+const noticeCss = {
+	margin: `0 0 ${spacing.lg}`,
+	color: colors.textMuted,
+	fontSize: typography.fontSize.sm,
+	lineHeight: 1.5,
+}
+
+const detailsCss = {
+	...nativeDisclosureCss,
+	marginTop: spacing.lg,
+}
+
+const detailListCss = {
+	margin: 0,
+	display: 'grid',
+	gap: spacing.sm,
+	'& dt': {
+		fontSize: typography.fontSize.sm,
+		color: colors.textMuted,
+	},
+	'& dd': {
+		margin: 0,
+		color: colors.text,
+		overflowWrap: 'anywhere' as const,
+	},
 }

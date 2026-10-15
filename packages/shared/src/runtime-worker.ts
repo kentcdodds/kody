@@ -72,7 +72,17 @@ export type RuntimePackageAppPath = {
 export type RuntimePackageAppServeInput = {
 	request: Request
 	owner: RuntimePackageAppServeOwner
-	visitor: RuntimePackageAppVisitor
+	/**
+	 * Null for an anonymous visitor of an internet-visible app. Bridge calls
+	 * that need an actor then fail closed.
+	 */
+	visitor: RuntimePackageAppVisitor | null
+	/**
+	 * With a null visitor: the published commit the owner approved for
+	 * internet-visible serving (ADR 0069). Serve refuses an anonymous request
+	 * when it is missing or the live published commit differs.
+	 */
+	approvedPublishedCommit?: string | null
 	packagePath: RuntimePackageAppPath
 	dispatch?: { readonly synthetic: true }
 }

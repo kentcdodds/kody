@@ -1,6 +1,4 @@
 import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
-import { personalOrgIdFromUserRow } from '#worker/orgs/personal-org-id.ts'
-import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { type RuntimePackageAppVisitor } from '@kody-internal/shared/runtime-worker.ts'
 import { html } from 'remix/html-template'
 import { createHtmlResponse } from 'remix/response/html'
@@ -52,7 +50,6 @@ import {
 import {
 	resolvePackageAppOrgOwnerByHandle,
 	resolvePackageAppOwnerByStableUserId,
-	type PackageAppOwner,
 } from '#app/package-app-owner.ts'
 import { viewerCanExecutePackageApp } from '#app/package-viewer-access.ts'
 import {
@@ -66,13 +63,16 @@ import {
 	parsePackageAppSubdomainPath,
 	servePackageAppRequest,
 } from '#app/handlers/package-app.ts'
+import { type PackageAppServeOwner } from '#worker/package-runtime/package-app-serve.ts'
+import { applyPackageAppCacheHeaders } from '#worker/package-runtime/package-app-cache-headers.ts'
+import { resolveInternetVisibleApprovedCommit } from '#app/package-app-internet-visible.ts'
 import { buildUnmatchedPackageAppOriginPathMessage } from '#worker/package-runtime/package-app-synthetic.ts'
 import {
 	pushServerTiming,
 	type ServerTimingEntry,
 } from '#worker/server-timing.ts'
-import { findPublicOwnerIdentityByHandle } from '#worker/identity/user-lookup.ts'
 import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
+import { runWithRequestContext } from '#worker/request-context.ts'
 import { stripPackageAppRuntimeRunId } from '#worker/package-runtime/package-app-diagnostics.ts'
 import { wantsJson } from '#worker/utils.ts'
 
@@ -105,6 +105,12 @@ import { wantsJson } from '#worker/utils.ts'
  * `/packages/{kodyId}` like `{slug}.kody.run`. The app origin hands off to
  * the custom host when a binding exists (app-level first, then org-level).
  * Unverified hostnames stay refused.
+ *
+ * Internet-visible apps (`saved_packages.is_internet_visible`, ADR 0069) also
+ * serve visitors without a usable session, anonymously: no handoff, no
+ * visitor, and bridge calls that need an actor fail closed. Responses served
+ * to a signed-in visitor are forced `private` so no shared cache can hand
+ * them to someone else (`package-app-cache-headers.ts`).
  *
  * The origins never redirect to each other in a cycle: the app origin only
  * ever redirects *to* a package-app subdomain, the apex only redirects to a
@@ -291,7 +297,11 @@ function redirectToPackagePage(input: {
 }
 
 type AuthorizedPackageAppServe =
-	| { kind: 'ok'; owner: PackageAppOwner; visitor: RuntimePackageAppVisitor }
+	| {
+			kind: 'ok'
+			owner: PackageAppServeOwner
+			visitor: RuntimePackageAppVisitor
+	  }
 	| { kind: 'session-required' }
 	| { kind: 'forbidden' }
 
@@ -341,6 +351,7 @@ async function authorizePackageAppVisitorForOrg(input: {
 	})
 	if (!canExecute) return { kind: 'forbidden' }
 
+	// Memoized per request: viewerCanExecutePackageApp loaded the same binding.
 	const binding = await loadOrgBindingForOrg(
 		input.env.APP_DB,
 		viewer.userId,
@@ -348,19 +359,7 @@ async function authorizePackageAppVisitorForOrg(input: {
 	)
 	// Team org entitlements resolve by org id alone. Pairing the visitor's
 	// email with the team org id would miss the users row and fall to Free.
-	const viewerPersonalOrg = await input.env.APP_DB.prepare(
-		`SELECT personal_org_id, stable_user_id FROM users
-		 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
-	)
-		.bind(viewer.userId)
-		.first<{ personal_org_id: string | null; stable_user_id: string }>()
-	const viewerPersonalOrgId = viewerPersonalOrg
-		? personalOrgIdFromUserRow(viewerPersonalOrg)
-		: null
-	const ownerEmail =
-		viewerPersonalOrgId != null && org.userId === viewerPersonalOrgId
-			? person.email
-			: ''
+	const ownerEmail = org.userId === person.personalOrgId ? person.email : ''
 	return {
 		kind: 'ok',
 		owner: {
@@ -392,14 +391,14 @@ async function redirectRetiredPackageAppSlug(input: {
 	 */
 	buildLocation: (currentSlug: string) => string
 }): Promise<Response | null> {
-	const identity = await findPublicOwnerIdentityByHandle({
-		db: input.env.APP_DB,
+	const org = await resolvePackageAppOrgOwnerByHandle({
+		env: input.env,
 		handle: input.packagePath.username,
 	})
-	if (!identity) return null
+	if (!org) return null
 	const lookup = await resolveSavedPackageForPackageAppSlug({
 		db: input.env.APP_DB,
-		userId: identity.ownerId,
+		userId: org.userId,
 		slug: input.packagePath.kodyId,
 	})
 	if (!lookup?.retired) return null
@@ -479,7 +478,11 @@ async function buildCustomHostnameHandoffTarget(input: {
 	env: Env
 	packagePath: PackageAppPath
 	url: URL
-}): Promise<{ target: URL; kodyId: string } | null> {
+}): Promise<{
+	target: URL
+	kodyId: string
+	bindingKind: 'app' | 'org'
+} | null> {
 	if (!(await isPackageAppCustomDomainsEnabled(input.env.APP_DB))) return null
 	const appMapping = await lookupVerifiedAppCustomHostnameForPackage({
 		db: input.env.APP_DB,
@@ -518,7 +521,7 @@ async function buildCustomHostnameHandoffTarget(input: {
 	target.search = withoutHandoffToken(input.url).search
 	const handoffKodyId =
 		mapping.bindingKind === 'app' ? mapping.kodyId : input.packagePath.kodyId
-	return { target, kodyId: handoffKodyId }
+	return { target, kodyId: handoffKodyId, bindingKind: mapping.bindingKind }
 }
 
 /**
@@ -550,17 +553,45 @@ async function redirectAppOriginToPackageAppOrigin(input: {
 	})
 	if (retiredRedirect) return retiredRedirect
 
+	const org = await resolvePackageAppOrgOwnerByHandle({
+		env,
+		handle: packagePath.username,
+	})
+	const slugLookup = org
+		? await resolveSavedPackageForPackageAppSlug({
+				db: env.APP_DB,
+				userId: org.userId,
+				slug: packagePath.kodyId,
+			})
+		: null
+	// Internet-visible apps serve anyone on the package-app origin, so a
+	// visitor who cannot run the app as themselves goes there without a
+	// handoff and is served anonymously.
+	const internetVisible = Boolean(
+		await resolveInternetVisibleApprovedCommit({
+			env,
+			lookup: slugLookup,
+			requestUrl: request.url,
+		}),
+	)
+
 	const customHandoff = await buildCustomHostnameHandoffTarget({
 		env,
 		packagePath,
 		url,
 	})
+	// Org-level custom hostnames serve only session-gated apps, so an
+	// internet-visible app keeps its app-level hostname or the subdomain.
+	const usableCustomHandoff =
+		customHandoff && !(internetVisible && customHandoff.bindingKind === 'org')
+			? customHandoff
+			: null
 	const target =
-		customHandoff?.target ??
+		usableCustomHandoff?.target ??
 		buildSubdomainTarget({ packageAppOrigin, packagePath, url })
 	// Custom-host consume binds to the mapping leaf/slug (lowercased). Mint
 	// with that id so a mixed-case app-origin URL cannot fail the path check.
-	const handoffKodyId = customHandoff?.kodyId ?? packagePath.kodyId
+	const handoffKodyId = usableCustomHandoff?.kodyId ?? packagePath.kodyId
 
 	// A non-safe method reaching the app origin is not part of the normal flow
 	// (package pages are loaded from, and post back to, the package-app
@@ -572,29 +603,24 @@ async function redirectAppOriginToPackageAppOrigin(input: {
 	}
 
 	const user = await readAuthenticatedAppUser(request, env)
-	if (!user) return await redirectToLoginWhenUnauthenticated(request, env)
-	const org = await resolvePackageAppOrgOwnerByHandle({
-		env,
-		handle: packagePath.username,
-	})
-	const handoffAppId = org
-		? (
-				await resolveSavedPackageForPackageAppSlug({
-					db: env.APP_DB,
-					userId: org.userId,
-					slug: packagePath.kodyId,
-				})
-			)?.savedPackage.id
-		: null
+	if (!user) {
+		if (internetVisible) {
+			return redirectResponse({ location: target.toString(), status: 302 })
+		}
+		return await redirectToLoginWhenUnauthenticated(request, env)
+	}
 	const canExecute = org
 		? await viewerCanExecutePackageApp({
 				env,
 				viewer: user.mcpUser,
 				ownerId: org.userId,
-				appId: handoffAppId ?? null,
+				appId: slugLookup?.savedPackage.id ?? null,
 			})
 		: false
 	if (!org || !canExecute) {
+		if (internetVisible) {
+			return redirectResponse({ location: target.toString(), status: 302 })
+		}
 		// `/@{username}/packages/{kodyId}` hands off only for visitors who
 		// may run the org's app. Everyone else belongs on the saved-package
 		// page (`/@{username}/{kodyId}`). That page shows an explicit
@@ -654,6 +680,160 @@ function handleApexRequest(input: {
 		})
 	}
 	return createUnmatchedPackageAppPathResponse()
+}
+
+/**
+ * Serve an internet-visible app to a visitor who is not acting as themselves
+ * (no session, or a session that cannot run the app). Returns null when the
+ * app is not internet-visible or has no approved commit. The handle, slug,
+ * and approved-commit lookups are per-isolate freshness caches, so a warm
+ * anonymous request reads nothing from storage.
+ */
+async function serveInternetVisiblePackageApp(input: {
+	request: Request
+	env: Env
+	handle: string
+	packagePath: PackageAppPath
+	serverTiming: Array<ServerTimingEntry>
+}): Promise<Response | null> {
+	const org = await resolvePackageAppOrgOwnerByHandle({
+		env: input.env,
+		handle: input.handle,
+	})
+	if (!org) return null
+	const lookup = await resolveSavedPackageForPackageAppSlug({
+		db: input.env.APP_DB,
+		userId: org.userId,
+		slug: input.packagePath.kodyId,
+	})
+	const approvedPublishedCommit = await resolveInternetVisibleApprovedCommit({
+		env: input.env,
+		lookup,
+		requestUrl: input.request.url,
+	})
+	if (!approvedPublishedCommit) return null
+	const response = await servePackageAppRequest({
+		request: input.request,
+		env: input.env,
+		owner: {
+			userId: org.userId,
+			username: org.username,
+			email: '',
+			displayName: org.displayName,
+		},
+		visitor: null,
+		approvedPublishedCommit,
+		packagePath: input.packagePath,
+		serverTiming: input.serverTiming,
+	})
+	return applyPackageAppCacheHeaders(response, 'anonymous')
+}
+
+/**
+ * Shared tail of the per-user subdomain and app-level custom hostname:
+ * exchange a handoff token for the host-only session cookie, authorize the
+ * session visitor, and serve. A visitor without a usable session (or one who
+ * cannot run the app) still gets an internet-visible app anonymously.
+ */
+async function servePackageAppForSession(input: {
+	request: Request
+	env: Env
+	url: URL
+	appBaseUrl: string
+	handle: string
+	packagePath: PackageAppPath
+}) {
+	const { request, env, url, appBaseUrl, handle, packagePath } = input
+	const handoffToken = url.searchParams.get(packageAppHandoffQueryParam)
+	if (handoffToken) {
+		const now = Date.now()
+		const claims = await consumePackageAppHandoffToken({
+			env,
+			token: handoffToken,
+			expected: {
+				username: packagePath.username,
+				kodyId: packagePath.kodyId,
+			},
+			now,
+		})
+		if (claims) {
+			return redirectResponse({
+				location: withoutHandoffToken(url).toString(),
+				status: 302,
+				setCookie: await createPackageAppSessionCookie({
+					env,
+					session: {
+						stableUserId: claims.stableUserId,
+						username: claims.username,
+					},
+					secure: isSecureRequest(request),
+					expiresAt: claims.sessionExpiresAt,
+					now,
+				}),
+			})
+		}
+	}
+
+	// A token that reaches here is stale, forged, or for another package, so
+	// it is still worthless — but it is still an internal auth artifact, and
+	// package code has no business seeing one. Serve the request as if it
+	// never carried a token, including when the parameter is present but empty.
+	const servedRequest = url.searchParams.has(packageAppHandoffQueryParam)
+		? new Request(withoutHandoffToken(url), request)
+		: request
+	const parsedSession = await readPackageAppSession({ request, env })
+	const serverTiming: Array<ServerTimingEntry> = []
+	const authorized: AuthorizedPackageAppServe = parsedSession
+		? await pushServerTiming(serverTiming, 'owner', () =>
+				authorizePackageAppVisitorForOrg({
+					env,
+					stableUserId: parsedSession.session.stableUserId,
+					issuedAt: parsedSession.issuedAt,
+					handle,
+					kodyId: packagePath.kodyId,
+				}),
+			)
+		: { kind: 'session-required' }
+
+	if (authorized.kind === 'ok') {
+		const response = await servePackageAppRequest({
+			request: servedRequest,
+			env,
+			owner: authorized.owner,
+			visitor: authorized.visitor,
+			packagePath,
+			serverTiming,
+		})
+		return applyPackageAppCacheHeaders(response, 'signed-in')
+	}
+
+	const anonymous = await serveInternetVisiblePackageApp({
+		request: servedRequest,
+		env,
+		handle,
+		packagePath,
+		serverTiming,
+	})
+	if (anonymous) return anonymous
+
+	switch (authorized.kind) {
+		case 'session-required':
+			return createPackageAppSessionRequiredResponse({
+				request,
+				appOriginUrl: buildAppOriginEntryUrl({ appBaseUrl, packagePath, url }),
+				handoffPresented: Boolean(handoffToken),
+			})
+		case 'forbidden':
+			return redirectToPackagePage({ env, request, packagePath })
+		default: {
+			authorized satisfies never
+			return createPackageAppSessionRequiredResponse({
+				request,
+				appOriginUrl: buildAppOriginEntryUrl({ appBaseUrl, packagePath, url }),
+				handoffPresented: Boolean(handoffToken),
+			})
+		}
+	}
 }
 
 async function handleUserSubdomainRequest(input: {
@@ -716,80 +896,14 @@ async function handleUserSubdomainRequest(input: {
 		}
 	}
 
-	const handoffToken = url.searchParams.get(packageAppHandoffQueryParam)
-	if (handoffToken) {
-		const now = Date.now()
-		const claims = await consumePackageAppHandoffToken({
-			env,
-			token: handoffToken,
-			expected: {
-				username: packagePath.username,
-				kodyId: packagePath.kodyId,
-			},
-			now,
-		})
-		if (claims) {
-			return redirectResponse({
-				location: withoutHandoffToken(url).toString(),
-				status: 302,
-				setCookie: await createPackageAppSessionCookie({
-					env,
-					session: {
-						stableUserId: claims.stableUserId,
-						username: claims.username,
-					},
-					secure: isSecureRequest(request),
-					expiresAt: claims.sessionExpiresAt,
-					now,
-				}),
-			})
-		}
-	}
-
-	const parsedSession = await readPackageAppSession({ request, env })
-	const serverTiming: Array<ServerTimingEntry> = []
-	const sessionRequired = () =>
-		createPackageAppSessionRequiredResponse({
-			request,
-			appOriginUrl: buildAppOriginEntryUrl({ appBaseUrl, packagePath, url }),
-			handoffPresented: Boolean(handoffToken),
-		})
-	if (!parsedSession) return sessionRequired()
-	const authorized = await pushServerTiming(serverTiming, 'owner', () =>
-		authorizePackageAppVisitorForOrg({
-			env,
-			stableUserId: parsedSession.session.stableUserId,
-			issuedAt: parsedSession.issuedAt,
-			handle: username,
-			kodyId: packagePath.kodyId,
-		}),
-	)
-
-	switch (authorized.kind) {
-		case 'session-required':
-			return sessionRequired()
-		case 'forbidden':
-			return redirectToPackagePage({ env, request, packagePath })
-		case 'ok':
-			// A token that reaches here is stale, forged, or for another package, so
-			// it is still worthless — but it is still an internal auth artifact, and
-			// package code has no business seeing one. Serve the request as if it
-			// never carried a token, including when the parameter is present but empty.
-			return await servePackageAppRequest({
-				request: url.searchParams.has(packageAppHandoffQueryParam)
-					? new Request(withoutHandoffToken(url), request)
-					: request,
-				env,
-				owner: authorized.owner,
-				visitor: authorized.visitor,
-				packagePath,
-				serverTiming,
-			})
-		default: {
-			authorized satisfies never
-			return sessionRequired()
-		}
-	}
+	return await servePackageAppForSession({
+		request,
+		env,
+		url,
+		appBaseUrl,
+		handle: username,
+		packagePath,
+	})
 }
 
 /**
@@ -868,76 +982,14 @@ async function handleCustomHostnameRequest(input: {
 		}
 	}
 
-	const handoffToken = url.searchParams.get(packageAppHandoffQueryParam)
-	if (handoffToken) {
-		const now = Date.now()
-		const claims = await consumePackageAppHandoffToken({
-			env,
-			token: handoffToken,
-			expected: {
-				username: packagePath.username,
-				kodyId: packagePath.kodyId,
-			},
-			now,
-		})
-		if (claims) {
-			return redirectResponse({
-				location: withoutHandoffToken(url).toString(),
-				status: 302,
-				setCookie: await createPackageAppSessionCookie({
-					env,
-					session: {
-						stableUserId: claims.stableUserId,
-						username: claims.username,
-					},
-					secure: isSecureRequest(request),
-					expiresAt: claims.sessionExpiresAt,
-					now,
-				}),
-			})
-		}
-	}
-
-	const parsedSession = await readPackageAppSession({ request, env })
-	const serverTiming: Array<ServerTimingEntry> = []
-	const sessionRequired = () =>
-		createPackageAppSessionRequiredResponse({
-			request,
-			appOriginUrl: buildAppOriginEntryUrl({ appBaseUrl, packagePath, url }),
-			handoffPresented: Boolean(handoffToken),
-		})
-	if (!parsedSession) return sessionRequired()
-	const authorized = await pushServerTiming(serverTiming, 'owner', () =>
-		authorizePackageAppVisitorForOrg({
-			env,
-			stableUserId: parsedSession.session.stableUserId,
-			issuedAt: parsedSession.issuedAt,
-			handle: mapping.username,
-			kodyId: packagePath.kodyId,
-		}),
-	)
-
-	switch (authorized.kind) {
-		case 'session-required':
-			return sessionRequired()
-		case 'forbidden':
-			return redirectToPackagePage({ env, request, packagePath })
-		case 'ok':
-			return await servePackageAppRequest({
-				request: url.searchParams.has(packageAppHandoffQueryParam)
-					? new Request(withoutHandoffToken(url), request)
-					: request,
-				env,
-				owner: authorized.owner,
-				visitor: authorized.visitor,
-				packagePath,
-				serverTiming,
-			})
-		default: {
-			authorized satisfies never
-			return sessionRequired()
-		}
-	}
+	return await servePackageAppForSession({
+		request,
+		env,
+		url,
+		appBaseUrl,
+		handle: mapping.username,
+		packagePath,
+	})
 }
 
 /**
@@ -951,7 +1003,11 @@ export async function handlePackageAppOriginRequest(
 	request: Request,
 	env: Env,
 ) {
-	const response = await dispatchPackageAppOriginRequest(request, env)
+	// One request context per package-app request so per-request memos (org
+	// binding, handle) dedupe across the auth gate and serve.
+	const response = await runWithRequestContext(request, () =>
+		dispatchPackageAppOriginRequest(request, env),
+	)
 	if (!response) return null
 	// servePackageAppRequest logs x-kody-runtime-run-id, then this boundary
 	// strips it so a browser on the package-app origin never sees the header.

@@ -8,9 +8,8 @@ export type CommunityListingPublishedDispatchQueueMessage = {
 export const communityForkUpstreamUpdatedDispatchKind = 'fork_upstream_updated'
 
 /**
- * Republish fan-out to forkers shares the listing-published queue. Previous
- * and current releases travel in the message because the listing row only
- * holds the latest values by the time the consumer runs.
+ * Legacy queue shape. Origin no longer enqueues it. The consumer acks any
+ * in-flight copy without fan-out; the follow pipeline emits the alias.
  */
 export type CommunityForkUpstreamUpdatedDispatchQueueMessage = {
 	kind: typeof communityForkUpstreamUpdatedDispatchKind
@@ -32,22 +31,5 @@ export async function enqueueCommunityListingPublishedDispatch(input: {
 	await input.queue.send({
 		eventId: crypto.randomUUID(),
 		listingId: input.listingId,
-	})
-}
-
-export async function enqueueCommunityForkUpstreamUpdatedDispatch(input: {
-	queue: Pick<Queue<CommunityListingDispatchQueueMessage>, 'send'>
-	listingId: string
-	previous: CommunityListingRelease
-	current: CommunityListingRelease
-	publishedAt: string
-}) {
-	await input.queue.send({
-		kind: communityForkUpstreamUpdatedDispatchKind,
-		eventId: crypto.randomUUID(),
-		listingId: input.listingId,
-		previous: input.previous,
-		current: input.current,
-		publishedAt: input.publishedAt,
 	})
 }

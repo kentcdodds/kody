@@ -970,6 +970,15 @@ export async function getInviteById(input: {
 	return row ? parseStoredInvite(row) : null
 }
 
+/** Any org's invite by id, for the recipient's own accept or decline. */
+export async function getInviteByIdAnyOrg(db: D1Database, inviteId: string) {
+	const row = await db
+		.prepare(`${inviteSelect} WHERE id = ?`)
+		.bind(inviteId)
+		.first<InviteRow>()
+	return row ? parseStoredInvite(row) : null
+}
+
 async function setInviteStatus(input: {
 	db: D1Database
 	inviteId: string
@@ -1046,6 +1055,44 @@ export async function markInviteRevoked(input: {
 			action: 'invite.revoked',
 			resourceType: 'invite',
 			resourceId: input.inviteId,
+		},
+	})
+}
+
+/**
+ * The recipient declined. An invite has exactly one recipient, so it closes
+ * like a revoke; the audit event says who turned it down.
+ */
+export async function markInviteDeclined(input: {
+	db: D1Database
+	orgId: string
+	inviteId: string
+	declinedByUserId: string
+	audit: OrgAuditWriter
+}) {
+	const pending = await input.db
+		.prepare(`SELECT 1 AS ok FROM invites WHERE id = ? AND status = 'pending'`)
+		.bind(input.inviteId)
+		.first<{ ok: number }>()
+	if (!pending) throw new Error('Only a pending invite can be declined.')
+	await runAccessBatchWithAudit({
+		db: input.db,
+		audit: input.audit,
+		statements: [
+			input.db
+				.prepare(
+					`UPDATE invites
+					 SET status = 'revoked'
+					 WHERE id = ? AND status = 'pending'`,
+				)
+				.bind(input.inviteId),
+		],
+		event: {
+			orgId: input.orgId,
+			action: 'invite.declined',
+			resourceType: 'invite',
+			resourceId: input.inviteId,
+			targetUserId: input.declinedByUserId,
 		},
 	})
 }

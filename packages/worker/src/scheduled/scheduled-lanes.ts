@@ -33,6 +33,7 @@ import { runCreditDebits } from '#worker/billing/credit-debits.ts'
 import { drainOrgAuditOutbox } from '#worker/orgs/org-audit-outbox.ts'
 import { checkWebhookAuthRegressionsAndAlert } from '#worker/webhooks/auth-regression-alert.ts'
 import { reconcilePackageAppCustomHostnames } from '#worker/package-app-custom-hostnames/reconcile.ts'
+import { runFollowMaintenance } from '#worker/follow/maintenance.ts'
 
 export {
 	isScheduledLaneName,
@@ -116,6 +117,11 @@ export async function runScheduledLane(input: {
 			})
 		case 'package_app_custom_hostnames_reconcile':
 			return reconcilePackageAppCustomHostnames({
+				env: input.env,
+				now: input.scheduledAt,
+			})
+		case 'follow_maintenance':
+			return runFollowMaintenance({
 				env: input.env,
 				now: input.scheduledAt,
 			})

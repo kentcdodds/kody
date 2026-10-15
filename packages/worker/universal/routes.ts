@@ -270,17 +270,23 @@ export const routes = route({
 	orgMembersRolePost: post('/@:orgSlug/-/members/role.json'),
 	orgMembersRemovePost: post('/@:orgSlug/-/members/remove.json'),
 	orgMembersInvitePost: post('/@:orgSlug/-/members/invite.json'),
+	orgMembersInviteRevokePost: post('/@:orgSlug/-/members/invite-revoke.json'),
 	orgMembersInviteLinksPost: post('/@:orgSlug/-/members/invite-links.json'),
 	orgMembersInviteLinksRevokePost: post(
 		'/@:orgSlug/-/members/invite-links-revoke.json',
 	),
 	orgInviteJoin: get('/join/:token'),
 	orgInviteJoinPost: post('/join/:token'),
+	orgInviteJoinDeclinePost: post('/join/:token/decline'),
 	orgTeams: get('/@:orgSlug/-/teams'),
 	orgTeamsApi: get('/@:orgSlug/-/teams.json'),
 	orgTeamsCreatePost: post('/@:orgSlug/-/teams/create.json'),
 	orgTeamsMemberAddPost: post('/@:orgSlug/-/teams/member-add.json'),
 	orgTeamsMemberRemovePost: post('/@:orgSlug/-/teams/member-remove.json'),
+	orgTeamsInviteLinksPost: post('/@:orgSlug/-/teams/invite-links.json'),
+	orgTeamsInviteLinksRevokePost: post(
+		'/@:orgSlug/-/teams/invite-links-revoke.json',
+	),
 	orgGrants: get('/@:orgSlug/-/grants'),
 	orgGrantsApi: get('/@:orgSlug/-/grants.json'),
 	orgGrantsRevokePost: post('/@:orgSlug/-/grants/revoke.json'),
@@ -351,6 +357,13 @@ export const routes = route({
 		'/profiles/:username/packages/:kodyId/collaborators.json',
 	communityPackageCollaboratorsApiPost: post(
 		'/profiles/:username/packages/:kodyId/collaborators.json',
+	),
+	// Package invite links on the Collaborators tab: GET lists active links,
+	// POST `{ action: 'create' | 'revoke' }`. Same access rules as above.
+	communityPackageInviteLinksApi:
+		'/profiles/:username/packages/:kodyId/invite-links.json',
+	communityPackageInviteLinksApiPost: post(
+		'/profiles/:username/packages/:kodyId/invite-links.json',
 	),
 	communityPackageApproveCredentialsApi:
 		'/profiles/:username/packages/:kodyId/approve-credentials.json',
@@ -428,6 +441,18 @@ export const routes = route({
 	accountOrganizationsApi: '/account/organizations.json',
 	accountOrganizationsNew: get('/account/organizations/new'),
 	accountOrganizationsNewPost: post('/account/organizations/new'),
+	accountInviteLinkAcceptPost: post(
+		'/account/organizations/invite-links/:linkId/accept.json',
+	),
+	accountInviteLinkDeclinePost: post(
+		'/account/organizations/invite-links/:linkId/decline.json',
+	),
+	accountInviteAcceptPost: post(
+		'/account/organizations/invites/:inviteId/accept.json',
+	),
+	accountInviteDeclinePost: post(
+		'/account/organizations/invites/:inviteId/decline.json',
+	),
 	accountDelete: post('/account/delete'),
 	auth: post('/auth'),
 	authProvidersApi: '/auth/providers.json',

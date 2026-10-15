@@ -58,6 +58,11 @@ import {
 	accountInputCss,
 	noticeCardCss,
 } from './account-management-components.tsx'
+import {
+	createPendingInviteActions,
+	type PendingInviteActions,
+	renderPendingInviteActions,
+} from './pending-invite-actions.tsx'
 
 type OrgViewer = { displayName: string; avatarUrl: string | null }
 
@@ -369,20 +374,6 @@ export async function accountOrganizationsRouteLoader(
 	return { accountOrganizations: payload }
 }
 
-function inviteRoleLabel(
-	invite: AccountOrganizationsLoaderData['invites'][number],
-) {
-	if (invite.kind !== 'membership') return 'Access grant'
-	switch (invite.role) {
-		case 'owner':
-		case 'member':
-		case 'billing':
-			return `${orgRoleLabel(invite.role)} invite`
-		default:
-			return 'Membership invite'
-	}
-}
-
 function renderOrganizationList(data: AccountOrganizationsLoaderData) {
 	const organizations = orderOrganizations(
 		organizationsWithSignupFallback({
@@ -414,8 +405,11 @@ function renderOrganizationList(data: AccountOrganizationsLoaderData) {
 	)
 }
 
-function renderInvites(invites: AccountOrganizationsLoaderData['invites']) {
-	if (invites.length === 0) {
+function renderInvites(
+	data: AccountOrganizationsLoaderData,
+	actions: PendingInviteActions,
+) {
+	if (data.pendingInvites.length === 0) {
 		return (
 			<div mix={css(emptyStateCss)} data-testid="invites-empty">
 				<span aria-hidden="true" mix={css(emptyIconCss)}>
@@ -424,7 +418,8 @@ function renderInvites(invites: AccountOrganizationsLoaderData['invites']) {
 				<div mix={css({ display: 'grid', gap: spacing.xs })}>
 					<p mix={css(emptyTitleCss)}>No invites waiting</p>
 					<p mix={css(mutedCopyCss)}>
-						When someone invites you to an organization, it shows up here.
+						When someone invites you to an organization, team, or package, it
+						shows up here.
 					</p>
 				</div>
 			</div>
@@ -432,16 +427,17 @@ function renderInvites(invites: AccountOrganizationsLoaderData['invites']) {
 	}
 	return (
 		<ul mix={css(orgListCss)} data-testid="invites-list">
-			{invites.map((invite) =>
+			{data.pendingInvites.map((invite) =>
 				renderOrgRow({
-					key: invite.id,
+					key: `${invite.source}:${invite.id}`,
 					slug: invite.orgSlug,
 					displayName: invite.orgDisplayName,
-					personal: false,
+					personal: invite.orgPersonal,
 					viewer: { displayName: '', avatarUrl: null },
-					detail: `Expires ${formatTimestampDate(invite.expiresAt)}`,
-					pills: [{ label: inviteRoleLabel(invite), tone: 'quiet' }],
-					testId: 'invite',
+					detail: `${invite.label} · Expires ${formatTimestampDate(invite.expiresAt)}`,
+					pills: [],
+					testId: 'pending-invite',
+					trailing: renderPendingInviteActions(invite, actions),
 				}),
 			)}
 		</ul>
@@ -460,6 +456,10 @@ export function AccountOrganizationsRoute(handle: Handle) {
 			if (payload === 'unauthorized') return routeDataRedirect('/login')
 			return payload
 		},
+	})
+	const inviteActions = createPendingInviteActions(handle, {
+		reload: () =>
+			organizationsData.reload(handle, readCurrentRouterHref(handle)),
 	})
 
 	return () => {
@@ -524,10 +524,15 @@ export function AccountOrganizationsRoute(handle: Handle) {
 						<AccountManagementPanel
 							id="invites"
 							title="Invites"
-							description="To accept an invite, paste the invite prompt you were sent into your agent."
+							description="Invites addressed to you and invite links you opened. They also wait on your Waiting page."
 							ariaLabel="Invites"
 						>
-							{renderInvites(data.invites)}
+							{inviteActions.message ? (
+								<AccountManagementMessage tone={inviteActions.tone}>
+									{inviteActions.message}
+								</AccountManagementMessage>
+							) : null}
+							{renderInvites(data, inviteActions)}
 						</AccountManagementPanel>
 					</>
 				) : null}

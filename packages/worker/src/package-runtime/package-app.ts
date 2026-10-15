@@ -1020,8 +1020,8 @@ type PackageAppRuntimeBridgeProps = {
 	/** The org that owns the app. */
 	userId: OwnerId
 	orgSlug: string | null
-	/** Who every bridge call acts as. */
-	visitor: RuntimePackageAppVisitor
+	/** Who every bridge call acts as; null for an anonymous visitor. */
+	visitor: RuntimePackageAppVisitor | null
 	email: string
 	displayName: string
 	packageId: string
@@ -1068,16 +1068,20 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		return createMcpCallerContext({
 			baseUrl: this.ctx.props.baseUrl,
 			executionOrigin: 'background',
-			user: {
-				userId: visitor.userId,
-				email: this.ctx.props.email,
-				username: visitor.username,
-				displayName: this.ctx.props.displayName,
-			},
-			orgBinding: {
-				org: { id: this.ctx.props.userId, slug: this.ctx.props.orgSlug },
-				role: visitor.role,
-			},
+			user: visitor
+				? {
+						userId: visitor.userId,
+						email: this.ctx.props.email,
+						username: visitor.username,
+						displayName: this.ctx.props.displayName,
+					}
+				: null,
+			orgBinding: visitor
+				? {
+						org: { id: this.ctx.props.userId, slug: this.ctx.props.orgSlug },
+						role: visitor.role,
+					}
+				: undefined,
 			storageContext: {
 				sessionId: null,
 				appId: this.ctx.props.packageId,
@@ -1672,7 +1676,7 @@ export async function createPackageAppWorkerId(input: {
 
 function createPackageAppWorkerCacheKey(input: {
 	userId: OwnerId
-	visitor: RuntimePackageAppVisitor
+	visitor: RuntimePackageAppVisitor | null
 	packageId: string
 	kodyId: string
 	sourceId: string
@@ -1688,9 +1692,9 @@ function createPackageAppWorkerCacheKey(input: {
 	}
 	return JSON.stringify([
 		input.userId,
-		input.visitor.userId,
-		input.visitor.username,
-		input.visitor.role,
+		input.visitor?.userId ?? null,
+		input.visitor?.username ?? null,
+		input.visitor?.role ?? null,
 		input.packageId,
 		input.kodyId,
 		input.sourceId,
@@ -1703,10 +1707,20 @@ function createPackageAppWorkerCacheKey(input: {
 	])
 }
 
-function packageAppVisitorOf(callerContext: McpCallerContext) {
+/**
+ * The visitor a package app acts as. An anonymous visitor (no request
+ * context) is null; `servingUsername` then names the owning org's slug.
+ */
+function packageAppVisitorOf(
+	callerContext: McpCallerContext,
+	servingUsername?: string,
+): { orgSlug: string | null; visitor: RuntimePackageAppVisitor | null } {
 	const request = callerContext.request
-	if (!request?.actor) {
-		throw new Error('A package app acts only as a signed-in visitor.')
+	if (!request) {
+		return { orgSlug: servingUsername ?? null, visitor: null }
+	}
+	if (!request.actor) {
+		throw new Error('A package app acts only as its visitor.')
 	}
 	return {
 		orgSlug: request.org.slug,
@@ -1714,7 +1728,7 @@ function packageAppVisitorOf(callerContext: McpCallerContext) {
 			userId: request.actor.userId,
 			username: request.actor.username ?? '',
 			role: request.membership?.role ?? null,
-		} satisfies RuntimePackageAppVisitor,
+		},
 	}
 }
 
@@ -2084,7 +2098,10 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 				props: {
 					baseUrl: input.baseUrl,
 					userId: input.userId,
-					...packageAppVisitorOf(input.runtime.callerContext),
+					...packageAppVisitorOf(
+						input.runtime.callerContext,
+						input.runtime.servingUsername,
+					),
 					email: input.runtime.callerContext.user?.email ?? '',
 					displayName:
 						input.runtime.callerContext.user?.displayName ??
@@ -2189,7 +2206,10 @@ export async function buildPackageAppWorker(input: {
 		const publicContext = buildPackageAppPublicContext(input)
 		const cacheKey = createPackageAppWorkerCacheKey({
 			userId: input.userId,
-			visitor: packageAppVisitorOf(input.runtime.callerContext).visitor,
+			visitor: packageAppVisitorOf(
+				input.runtime.callerContext,
+				input.runtime.servingUsername,
+			).visitor,
 			packageId: input.savedPackage.id,
 			kodyId: input.savedPackage.kodyId,
 			sourceId: input.savedPackage.sourceId,
@@ -2272,7 +2292,9 @@ function schedulePackageAppUniqueWorkerDay(input: {
 
 /**
  * A package app acts as its visitor, bound to the org that owns the app, with
- * the visitor's live role there.
+ * the visitor's live role there. An anonymous visitor (internet-visible app)
+ * has no user, so the context carries no request and every bridge call that
+ * needs an actor fails closed.
  */
 export async function createPackageAppCallerContext(input: {
 	baseUrl: string
@@ -2283,22 +2305,27 @@ export async function createPackageAppCallerContext(input: {
 		email: string
 		displayName?: string
 	}
-	visitor: RuntimePackageAppVisitor
+	visitor: RuntimePackageAppVisitor | null
 	packageId: string
 }) {
+	const { visitor } = input
 	return createMcpCallerContext({
 		baseUrl: input.baseUrl,
 		executionOrigin: 'background',
-		user: {
-			userId: input.visitor.userId,
-			email: input.owner.email,
-			username: input.visitor.username,
-			displayName: input.owner.displayName ?? `package:${input.packageId}`,
-		},
-		orgBinding: {
-			org: { id: input.owner.userId, slug: input.owner.username },
-			role: input.visitor.role,
-		},
+		user: visitor
+			? {
+					userId: visitor.userId,
+					email: input.owner.email,
+					username: visitor.username,
+					displayName: input.owner.displayName ?? `package:${input.packageId}`,
+				}
+			: null,
+		orgBinding: visitor
+			? {
+					org: { id: input.owner.userId, slug: input.owner.username },
+					role: visitor.role,
+				}
+			: undefined,
 		storageContext: {
 			sessionId: null,
 			appId: input.packageId,
