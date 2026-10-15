@@ -483,8 +483,10 @@ export function createPackageFollowController(
 					) : null}
 				</div>
 				{nothingChosen && !blocked ? (
-					<p mix={css(mutedSmallCss)}>
-						Choose at least one. To stop everything, unfollow.
+					<p data-testid="package-follow-choose" mix={css(mutedSmallCss)}>
+						{chosenEvents.length > 0
+							? 'Nothing checked here can reach this workspace without read access. Choose another event, or unfollow.'
+							: 'Choose at least one. To stop everything, unfollow.'}
 					</p>
 				) : null}
 				{submission.dropsGated && !nothingChosen ? (
