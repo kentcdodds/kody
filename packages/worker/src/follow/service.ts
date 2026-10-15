@@ -104,59 +104,16 @@ export async function addFollow(input: {
 	})
 	const now = new Date().toISOString()
 	if (existing) {
-		if (existing.status === 'paused') {
-			await resumeFollow(input.env.APP_DB, {
-				id: existing.id,
-				updatedAt: now,
-				creatorUserId: input.creatorUserId,
-			})
-			return followView({
-				...existing,
-				status: 'active',
-				pausedAt: null,
-				creatorUserId: input.creatorUserId,
-				updatedAt: now,
-			})
-		}
-		// Member deletion anonymizes creator_user_id to deleted-user while the
-		// org follow stays active. Retarget so a teammate who re-adds can gate
-		// delivery before the next publish pauses a private target.
-		if (existing.creatorUserId !== input.creatorUserId) {
-			const retargeted = await retargetFollowCreator(input.env.APP_DB, {
-				id: existing.id,
-				updatedAt: now,
-				creatorUserId: input.creatorUserId,
-			})
-			if (!retargeted) {
-				const current = await getFollowByTarget(input.env.APP_DB, {
-					followerOrgId: input.followerOrgId,
-					targetKind: target.kind,
-					targetId: target.id,
-				})
-				if (current?.status === 'paused') {
-					await resumeFollow(input.env.APP_DB, {
-						id: current.id,
-						updatedAt: now,
-						creatorUserId: input.creatorUserId,
-					})
-					return followView({
-						...current,
-						status: 'active',
-						pausedAt: null,
-						creatorUserId: input.creatorUserId,
-						updatedAt: now,
-					})
-				}
-				if (current) return followView(current)
-				throw followTargetNotFound(requested)
-			}
-			return followView({
-				...existing,
-				creatorUserId: input.creatorUserId,
-				updatedAt: now,
-			})
-		}
-		return followView(existing)
+		return await settleExistingFollow({
+			db: input.env.APP_DB,
+			followerOrgId: input.followerOrgId,
+			creatorUserId: input.creatorUserId,
+			targetKind: target.kind,
+			targetId: target.id,
+			requested,
+			existing,
+			now,
+		})
 	}
 
 	await consumeFollowCreateSlot(input.env.APP_DB, input.followerOrgId)
@@ -202,6 +159,68 @@ export async function listFollowsForOrg(input: {
 }): Promise<Array<FollowView>> {
 	const rows = await listFollowsByFollower(input.db, input.followerOrgId)
 	return rows.map(followView)
+}
+
+/**
+ * Resume/retarget an existing follow for the authorized caller. Compare-and-
+ * swap misses reload and retry a few times so a concurrent pause/resume does
+ * not return a synthetic active view with the wrong creator.
+ */
+async function settleExistingFollow(input: {
+	db: D1Database
+	followerOrgId: string
+	creatorUserId: string
+	targetKind: FollowTargetKind
+	targetId: string
+	requested: string
+	existing: NonNullable<Awaited<ReturnType<typeof getFollowByTarget>>>
+	now: string
+}): Promise<FollowView> {
+	let row = input.existing
+	for (let attempt = 0; attempt < 3; attempt += 1) {
+		if (row.status === 'paused') {
+			const resumed = await resumeFollow(input.db, {
+				id: row.id,
+				updatedAt: input.now,
+				creatorUserId: input.creatorUserId,
+			})
+			if (resumed) {
+				return followView({
+					...row,
+					status: 'active',
+					pausedAt: null,
+					creatorUserId: input.creatorUserId,
+					updatedAt: input.now,
+				})
+			}
+		} else if (row.creatorUserId !== input.creatorUserId) {
+			// Member deletion anonymizes creator_user_id to deleted-user while
+			// the org follow stays active. Retarget so a teammate who re-adds
+			// can gate delivery before the next publish pauses a private target.
+			const retargeted = await retargetFollowCreator(input.db, {
+				id: row.id,
+				updatedAt: input.now,
+				creatorUserId: input.creatorUserId,
+			})
+			if (retargeted) {
+				return followView({
+					...row,
+					creatorUserId: input.creatorUserId,
+					updatedAt: input.now,
+				})
+			}
+		} else {
+			return followView(row)
+		}
+		const current = await getFollowByTarget(input.db, {
+			followerOrgId: input.followerOrgId,
+			targetKind: input.targetKind,
+			targetId: input.targetId,
+		})
+		if (!current) throw followTargetNotFound(input.requested)
+		row = current
+	}
+	return followView(row)
 }
 
 /**

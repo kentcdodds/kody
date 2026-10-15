@@ -155,11 +155,15 @@ export async function pauseFollow(
 		.run()
 }
 
+/**
+ * Resume a paused follow for the given creator. Returns false when the row is
+ * no longer paused (another caller resumed it, or it was deleted).
+ */
 export async function resumeFollow(
 	db: D1Database,
 	input: { id: string; updatedAt: string; creatorUserId: string },
-): Promise<void> {
-	await db
+): Promise<boolean> {
+	const result = await db
 		.prepare(
 			`UPDATE follows
 			SET status = 'active', paused_at = NULL, creator_user_id = ?, updated_at = ?
@@ -167,6 +171,7 @@ export async function resumeFollow(
 		)
 		.bind(input.creatorUserId, input.updatedAt, input.id)
 		.run()
+	return (result.meta.changes ?? 0) > 0
 }
 
 /**

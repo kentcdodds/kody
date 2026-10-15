@@ -224,6 +224,29 @@ test('retargetFollowCreator returns false after a concurrent pause', async () =>
 	).toBe(false)
 })
 
+test('resumeFollow returns false when the follow is already active', async () => {
+	const db = followDb()
+	await ensureFollowTables(db)
+	await insertFollow(db, {
+		id: 'follow-active-resume',
+		followerOrgId: 'org-resume-race',
+		creatorUserId: 'person-1',
+		targetKind: 'package',
+		targetOwnerId: ownerId,
+		targetId: 'pkg-resume-race',
+		targetName: '@ada/notes',
+		createdAt: '2026-10-15T00:00:00.000Z',
+	})
+	const { resumeFollow } = await import('./repo.ts')
+	expect(
+		await resumeFollow(db, {
+			id: 'follow-active-resume',
+			updatedAt: '2026-10-15T02:01:00.000Z',
+			creatorUserId: 'person-2',
+		}),
+	).toBe(false)
+})
+
 test('followAdd resumes a paused follow without consuming a create slot', async () => {
 	const db = followDb()
 	await ensureFollowTables(db)
