@@ -58,6 +58,23 @@ export class LocalExecutePackageGraphError extends Error {
 }
 
 /**
+ * Tiny entry module for package-graph when the caller already knows the
+ * `kody:@…` import list and does not want to POST a multi-megabyte bundle
+ * (`kody dev` TanStack / React worker builds). Side-effect imports only —
+ * enough for the static scanner and `prepareKodyGraphFiles`.
+ */
+export function synthesizeLocalExecutePackageGraphEntry(
+	imports: ReadonlyArray<string>,
+): string {
+	const unique = uniqueSpecifiers(imports)
+	if (unique.length === 0) {
+		return 'export default async function main() {}\n'
+	}
+	const lines = unique.map((specifier) => `import ${JSON.stringify(specifier)}`)
+	return `${lines.join('\n')}\nexport default async function main() {}\n`
+}
+
+/**
  * Resolve published, stamped `kody:@…` modules for CLI `execute --local`
  * embedding. Does not execute the user module and does not claim a dynamic
  * worker day — callers meter this as an Open API prep operation.

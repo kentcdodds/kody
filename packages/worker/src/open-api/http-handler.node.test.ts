@@ -696,6 +696,74 @@ export default async () => x`,
 	).toBe(false)
 })
 
+test('package-graph accepts code over the old 512k char cap and imports-only prep', async () => {
+	const { maxLocalExecutePackageGraphCodeBytes } =
+		await import('./local-execute-package-graph.ts')
+	const api = await createApi()
+	const token = await mintWithLocalExecute(api)
+
+	// Former Zod `.max(512_000)` rejected TanStack / React worker bundles
+	// (~1.2–1.7 MiB). Inline code may now fill the Open API JSON body cap.
+	const overLegacyCap = `${'//'.padEnd(512_001, 'x')}\nexport default async function main() { return 1 }\n`
+	expect(overLegacyCap.length).toBeGreaterThan(512_000)
+	expect(overLegacyCap.length).toBeLessThan(
+		maxLocalExecutePackageGraphCodeBytes,
+	)
+	const large = await api.call('POST', '/v1/local-execute/package-graph', {
+		token,
+		body: { code: overLegacyCap },
+	})
+	expect(large.status).toBe(200)
+	expect(large.body).toMatchObject({
+		imports: [],
+		modules: [{ name: '.__kody_virtual__/runtime.js' }],
+	})
+
+	// Large `kody dev` bundles: pass imports alone (origin synthesizes entry).
+	const importsOnly = await api.call(
+		'POST',
+		'/v1/local-execute/package-graph',
+		{
+			token,
+			body: { imports: [] },
+		},
+	)
+	expect(importsOnly.status).toBe(200)
+	expect(importsOnly.body).toMatchObject({
+		imports: [],
+		modules: [{ name: '.__kody_virtual__/runtime.js' }],
+	})
+
+	const unresolvedImportsOnly = await api.call(
+		'POST',
+		'/v1/local-execute/package-graph',
+		{
+			token,
+			body: { imports: ['kody:@missing/pkg/export'] },
+		},
+	)
+	expect(unresolvedImportsOnly.status).toBe(400)
+	expect(unresolvedImportsOnly.body.error?.code).toBe(
+		'package_import_unresolved',
+	)
+
+	const neither = await api.call('POST', '/v1/local-execute/package-graph', {
+		token,
+		body: {},
+	})
+	expect(neither.status).toBe(400)
+	expect(neither.body.error?.code).toBe('invalid_request')
+
+	// Over the shared JSON body / code ceiling: assert on the Zod schema so we
+	// do not also trip the HTTP body reader (same 5 MiB cap).
+	const { localExecutePackageGraphInputSchema } =
+		await import('./local-execute-package-graph.ts')
+	const overCeiling = localExecutePackageGraphInputSchema.safeParse({
+		code: 'x'.repeat(maxLocalExecutePackageGraphCodeBytes + 1),
+	})
+	expect(overCeiling.success).toBe(false)
+})
+
 test('MCP OAuth Bearer authenticates CapabilityProxy and package-graph', async () => {
 	const oauthToken = 'cli-oauth-access-token-not-kody-at'
 	const api = await createApi({
