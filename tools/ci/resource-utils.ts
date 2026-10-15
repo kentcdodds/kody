@@ -1772,25 +1772,15 @@ export async function ensureDmarcEmailRoutingRule(input: {
 		matchers: [{ type: 'literal', field: 'to', value: mailbox }],
 		actions: [{ type: 'forward', value: [input.forwardTo] }],
 	}
-	if (existing) {
-		const alreadyOk =
-			existing.enabled !== false &&
-			emailRoutingRuleForwardsExactlyTo({
-				rule: existing,
-				forwardTo: input.forwardTo,
-			})
-		if (alreadyOk) {
-			console.error(
-				`Email Routing rule exists: ${mailbox} → ${input.forwardTo} (${existing.id})`,
-			)
-			return {
-				mailbox,
-				forwardTo: input.forwardTo,
-				created: false as const,
-				id: existing.id,
-			}
-		}
-	}
+	const alreadyOkRule =
+		existing &&
+		existing.enabled !== false &&
+		emailRoutingRuleForwardsExactlyTo({
+			rule: existing,
+			forwardTo: input.forwardTo,
+		})
+			? existing
+			: undefined
 
 	const destinations: Array<CloudflareEmailRoutingDestination> = []
 	{
@@ -1816,6 +1806,21 @@ export async function ensureDmarcEmailRoutingRule(input: {
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error)
 				if (/Cloudflare API request failed \(403\)/.test(message)) {
+					if (alreadyOkRule) {
+						// Rule already matches; destination list is unverifiable with
+						// this token. Accept the rule but warn — do not treat unverified
+						// destinations as verified when the list is readable.
+						console.error(
+							`WARNING: Email Routing rule exists (${mailbox} → ${input.forwardTo}, ${alreadyOkRule.id}) but token cannot list destinations (403) to re-verify the forward target. Add Account Email Routing destination read to Actions CLOUDFLARE_API_TOKEN.`,
+						)
+						return {
+							mailbox,
+							forwardTo: input.forwardTo,
+							created: false as const,
+							id: alreadyOkRule.id,
+							destinationUnverified: true as const,
+						}
+					}
 					// Soft-skip: missing Email Routing destination scope must not block
 					// Worker deploys (stamp-scan and other tip fixes). Loud warning so
 					// ops can grant Account Email Routing destination read + Zone edit.
@@ -1848,6 +1853,18 @@ export async function ensureDmarcEmailRoutingRule(input: {
 		return fail(
 			`Email Routing destination "${input.forwardTo}" exists but is not verified yet. Complete the Cloudflare verification email, then re-run deploy.`,
 		)
+	}
+
+	if (alreadyOkRule) {
+		console.error(
+			`Email Routing rule exists: ${mailbox} → ${input.forwardTo} (${alreadyOkRule.id})`,
+		)
+		return {
+			mailbox,
+			forwardTo: input.forwardTo,
+			created: false as const,
+			id: alreadyOkRule.id,
+		}
 	}
 
 	if (existing) {
