@@ -40,6 +40,11 @@ export function estimatePaidListMrrUsdCents(input: {
 	stripePlan: string | null | undefined
 	stripePriceId: string | null | undefined
 	catalog: Map<string, StripePriceCatalogEntry>
+	/**
+	 * Billed seat quantity (live owners + members). Defaults to 1 so personal
+	 * and single-seat estimates keep unit list MRR.
+	 */
+	quantity?: number
 }): { cents: number; source: AdminPaidSource } {
 	const plan = input.stripePlan?.trim() ?? ''
 	if (plan !== 'standard' && plan !== 'pro') {
@@ -49,8 +54,14 @@ export function estimatePaidListMrrUsdCents(input: {
 	if (!priceId) return { cents: 0, source: 'none' }
 	const entry = input.catalog.get(priceId)
 	if (!entry) return { cents: 0, source: 'none' }
+	const quantity =
+		typeof input.quantity === 'number' &&
+		Number.isSafeInteger(input.quantity) &&
+		input.quantity >= 1
+			? input.quantity
+			: 1
 	return {
-		cents: monthlyRecurringRevenueUsdCents(entry),
+		cents: monthlyRecurringRevenueUsdCents(entry) * quantity,
 		source: 'stripe_catalog',
 	}
 }
@@ -112,6 +123,10 @@ export function toAdminCostVsPay(input: {
 	isOperator?: boolean
 	/** Plan include; omit for fleet estimates (Cloudflare account-wide 1,000). */
 	includedPerAccountMonth?: number
+	/**
+	 * Billed seat quantity for team org list MRR. Defaults to 1 (unit price).
+	 */
+	quantity?: number
 }): AdminCostVsPay {
 	const cost = toAdminDynamicWorkerCost(
 		input.uniqueWorkerDays,
