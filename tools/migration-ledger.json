@@ -547,6 +547,10 @@
 		{
 			"filename": "0147-users-personal-org-id-required.sql",
 			"sha256": "f929f07d49cc5cbf391743d38df7595431d335287f2d336105ac404ccd8e805f"
+		},
+		{
+			"filename": "0149-invite-link-targets.sql",
+			"sha256": "f0e98f1965a29ba31b51c505f639815d9a0033f737537f0c08eb902f4528bf4f"
 		}
 	]
 }

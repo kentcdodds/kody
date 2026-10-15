@@ -332,9 +332,17 @@ import {
 } from '#app/handlers/org-section.ts'
 import { createOrgAvatarHandler } from '#app/handlers/org-avatar.ts'
 import {
+	createAccountInviteLinkAcceptPostHandler,
+	createAccountInviteLinkDeclinePostHandler,
+	createOrgInviteJoinDeclinePostHandler,
 	createOrgInviteJoinHandler,
 	createOrgInviteJoinPostHandler,
 } from '#app/handlers/org-invite-join.ts'
+import {
+	createOrgTeamsInviteLinksPostHandler,
+	createOrgTeamsInviteLinksRevokePostHandler,
+} from '#app/handlers/org-teams-invite-links.ts'
+import { createPackageInviteLinksApiHandler } from '#app/handlers/package-invite-links.ts'
 import {
 	createOrgMembersApiHandler,
 	createOrgMembersHandler,
@@ -482,6 +490,10 @@ export function createAppRouter(env: Env) {
 			accountOrganizationsNew: createAccountOrganizationsNewHandler(env),
 			accountOrganizationsNewPost:
 				createAccountOrganizationsNewPostHandler(env),
+			accountInviteLinkAcceptPost:
+				createAccountInviteLinkAcceptPostHandler(env),
+			accountInviteLinkDeclinePost:
+				createAccountInviteLinkDeclinePostHandler(env),
 			accountDelete: createAccountDeleteHandler(env),
 			accountExport: createAccountExportHandler(env),
 			accountIntegrationsApi: createAccountIntegrationsApiHandler(env),
@@ -519,6 +531,9 @@ export function createAppRouter(env: Env) {
 				createPackageCollaboratorsApiHandler(env),
 			communityPackageCollaboratorsApiPost:
 				createPackageCollaboratorsApiHandler(env),
+			communityPackageInviteLinksApi: createPackageInviteLinksApiHandler(env),
+			communityPackageInviteLinksApiPost:
+				createPackageInviteLinksApiHandler(env),
 			communityPackageApproveCredentialsApi:
 				createPackageCredentialApprovalApiHandler(env),
 			communityPackageApproveCredentialsApiPost:
@@ -734,6 +749,10 @@ export function createAppRouter(env: Env) {
 				createOrgMembersInviteLinksRevokePostHandler(env),
 			orgInviteJoin: createOrgInviteJoinHandler(env),
 			orgInviteJoinPost: createOrgInviteJoinPostHandler(env),
+			orgInviteJoinDeclinePost: createOrgInviteJoinDeclinePostHandler(env),
+			orgTeamsInviteLinksPost: createOrgTeamsInviteLinksPostHandler(env),
+			orgTeamsInviteLinksRevokePost:
+				createOrgTeamsInviteLinksRevokePostHandler(env),
 			orgTeams: createOrgTeamsHandler(env),
 			orgTeamsApi: createOrgTeamsApiHandler(env),
 			orgTeamsCreatePost: createOrgTeamsCreatePostHandler(env),

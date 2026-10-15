@@ -104,7 +104,7 @@ async function seed() {
 	await createOrgInviteLink({
 		db,
 		orgId,
-		role: 'member',
+		target: { kind: 'membership', role: 'member' },
 		createdByUserId: owner.personId,
 		tokenHash: await hashInviteLinkToken(token),
 		audit: createTestOrgAuditWriter({ db: auditDb }),

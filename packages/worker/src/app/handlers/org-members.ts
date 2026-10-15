@@ -2,6 +2,10 @@ import { type Action } from 'remix/router'
 import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
+	inviteLinkUrl,
+	readInviteLinkOptions,
+} from '#app/invite-link-options.ts'
+import {
 	orgHasPermission,
 	resolveOrgManagementAccess,
 	type ManagedOrg,
@@ -50,7 +54,7 @@ import {
 	type OrgMembersLoaderData,
 } from '#universal/loader-data.ts'
 import { orgRoleLabel } from '#universal/org-pages.ts'
-import { routes } from '#universal/routes.ts'
+import { type routes } from '#universal/routes.ts'
 
 const orgRoleValues = ['owner', 'member', 'billing'] as const
 
@@ -117,42 +121,23 @@ function toInviteView(invite: ListedOrgInvite): OrgInviteView {
 	}
 }
 
-function toInviteLinkView(link: ListedInviteLink): OrgInviteLinkView {
-	return {
-		id: link.id,
-		role: link.role,
-		roleLabel: orgRoleLabel(link.role),
-		allowedEmailDomains: link.allowedEmailDomains,
-		maxUses: link.maxUses,
-		useCount: link.useCount,
-		expiresAt: link.expiresAt,
-		createdAt: link.createdAt,
-		createdByUsername: link.createdByUsername,
-		createdByDisplayName: link.createdByDisplayName,
-	}
+function toInviteLinkView(link: ListedInviteLink): Array<OrgInviteLinkView> {
+	if (link.target.kind !== 'membership') return []
+	return [
+		{
+			id: link.id,
+			role: link.target.role,
+			roleLabel: orgRoleLabel(link.target.role),
+			allowedEmailDomains: link.allowedEmailDomains,
+			maxUses: link.maxUses,
+			useCount: link.useCount,
+			expiresAt: link.expiresAt,
+			createdAt: link.createdAt,
+			createdByUsername: link.createdByUsername,
+			createdByDisplayName: link.createdByDisplayName,
+		},
+	]
 }
-
-function parseDomainList(value: unknown): Array<string> | null {
-	if (value == null) return []
-	if (typeof value === 'string') {
-		return value
-			.split(/[\s,]+/)
-			.map((entry) => entry.trim())
-			.filter((entry) => entry.length > 0)
-	}
-	if (Array.isArray(value)) {
-		if (value.some((entry) => entry != null && typeof entry !== 'string')) {
-			return null
-		}
-		return value
-			.filter((entry): entry is string => typeof entry === 'string')
-			.map((entry) => entry.trim())
-			.filter((entry) => entry.length > 0)
-	}
-	return null
-}
-
-const MAX_INVITE_LINK_EXPIRY_DAYS = 365
 
 async function loadOrgMembersData(input: {
 	env: Env
@@ -178,7 +163,7 @@ async function loadOrgMembersData(input: {
 		org: input.org,
 		members: members.map(toMemberView),
 		invites: invites.map(toInviteView),
-		inviteLinks: inviteLinks.map(toInviteLinkView),
+		inviteLinks: inviteLinks.flatMap(toInviteLinkView),
 		canManage,
 	}
 }
@@ -564,86 +549,21 @@ export function createOrgMembersInviteLinksPostHandler(env: Env) {
 				return jsonResponse({ ok: false, error: 'Choose a valid role.' }, 400)
 			}
 			const role = isInviteLinkRole(body?.role) ? body.role : 'member'
-			const domains = parseDomainList(
-				body?.allowedEmailDomains ?? body?.domains ?? body?.allowedDomains,
-			)
-			if (domains == null) {
-				return jsonResponse(
-					{
-						ok: false,
-						error: 'Allowed email domains must be a list or string.',
-					},
-					400,
-				)
+			const parsedOptions = readInviteLinkOptions(body)
+			if (!parsedOptions.ok) {
+				return jsonResponse({ ok: false, error: parsedOptions.error }, 400)
 			}
-			let maxUses: number | null = null
-			if (
-				body?.maxUses !== undefined &&
-				body?.maxUses !== null &&
-				body?.maxUses !== ''
-			) {
-				const parsed =
-					typeof body.maxUses === 'number'
-						? body.maxUses
-						: typeof body.maxUses === 'string'
-							? Number(body.maxUses)
-							: NaN
-				if (!Number.isInteger(parsed) || parsed < 1) {
-					return jsonResponse(
-						{ ok: false, error: 'Max uses must be a positive integer.' },
-						400,
-					)
-				}
-				maxUses = parsed
-			}
-			let expiresAt: string | undefined
-			if (typeof body?.expiresAt === 'string' && body.expiresAt.trim()) {
-				const parsed = Date.parse(body.expiresAt)
-				if (Number.isNaN(parsed)) {
-					return jsonResponse(
-						{ ok: false, error: 'Enter a valid expiry date.' },
-						400,
-					)
-				}
-				expiresAt = new Date(parsed).toISOString()
-			} else if (
-				body?.expiresInDays !== undefined &&
-				body?.expiresInDays !== null &&
-				body?.expiresInDays !== ''
-			) {
-				const days =
-					typeof body.expiresInDays === 'number'
-						? body.expiresInDays
-						: typeof body.expiresInDays === 'string'
-							? Number(body.expiresInDays)
-							: NaN
-				if (
-					!Number.isFinite(days) ||
-					days <= 0 ||
-					days > MAX_INVITE_LINK_EXPIRY_DAYS
-				) {
-					return jsonResponse(
-						{
-							ok: false,
-							error: `Expiry days must be between 1 and ${MAX_INVITE_LINK_EXPIRY_DAYS}.`,
-						},
-						400,
-					)
-				}
-				expiresAt = new Date(
-					Date.now() + days * 24 * 60 * 60 * 1000,
-				).toISOString()
-			}
+			const { allowedEmailDomains, maxUses, expiresAt } = parsedOptions.options
 			const token = generateInviteLinkToken()
 			const tokenHash = await hashInviteLinkToken(token)
 			try {
 				const created = await createOrgInviteLink({
 					db: env.APP_DB,
 					orgId: access.org.id,
-					role,
+					target: { kind: 'membership', role },
 					createdByUserId: user.mcpUser.userId,
 					tokenHash,
-					allowedEmailDomains: domains,
+					allowedEmailDomains,
 					maxUses,
 					expiresAt,
 					audit: orgAuditWriterFromRequest(env, user.request),
@@ -653,8 +573,6 @@ export function createOrgMembersInviteLinksPostHandler(env: Env) {
 					user,
 					org: access.org,
 				})
-				const origin = new URL(request.url).origin
-				const path = routes.orgInviteJoin.href({ token })
 				return jsonResponse({
 					...payload,
 					inviteLink: {
@@ -663,7 +581,7 @@ export function createOrgMembersInviteLinksPostHandler(env: Env) {
 						maxUses: created.maxUses,
 						allowedEmailDomains: created.allowedEmailDomains,
 						role,
-						url: `${origin}${path}`,
+						url: inviteLinkUrl(request, token),
 						token,
 					},
 				})

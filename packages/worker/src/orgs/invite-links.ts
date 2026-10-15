@@ -1,16 +1,24 @@
 /**
- * Shareable org membership invite links. Token plaintext is shown once at
- * create; only the SHA-256 hash is stored. Links never grant Owner.
+ * Shareable invite links. Token plaintext is shown once at create; only the
+ * SHA-256 hash is stored. Links never grant Owner.
+ *
+ * A link carries one target:
+ * - `membership`: join the org with a role (team orgs only).
+ * - `team`: join the org as a Member (an existing role is kept) and the team.
+ * - `resource`: a preset on one package. Non-members stay outside
+ *   collaborators, so these links also work in personal orgs.
+ *
+ * Opening a link never applies it. The recipient accepts on `/join/:token`
+ * (or from their Organizations page once they have opened it); see
+ * `invite-link-redeem.ts` and `invite-link-pending.ts`.
  */
 import { toHex } from '@kody-internal/shared/hex.ts'
-import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 import { sha256Hex } from '@kody-internal/shared/sha256.ts'
 import { normalizeEmailAddress } from '#worker/email/address.ts'
 import { isPersonalOrg } from '#worker/orgs/is-personal-org.ts'
 import { isOrgActive } from '#worker/orgs/repo.ts'
-import { addOrgMember } from './access-writes.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { recordOrgAuditEvent, type OrgAuditWriter } from './org-audit.ts'
-import { syncSeatsAfterMembershipChange } from './seat-sync-after-membership.ts'
 
 export type InviteLinkRole = 'member' | 'billing'
 
@@ -23,11 +31,41 @@ export function isInviteLinkRole(value: unknown): value is InviteLinkRole {
 	)
 }
 
+export const inviteLinkResourcePresets = [
+	'use',
+	'contribute',
+	'manage',
+] as const
+
+export type InviteLinkResourcePreset =
+	(typeof inviteLinkResourcePresets)[number]
+
+export function isInviteLinkResourcePreset(
+	value: unknown,
+): value is InviteLinkResourcePreset {
+	return (
+		typeof value === 'string' &&
+		(inviteLinkResourcePresets as ReadonlyArray<string>).includes(value)
+	)
+}
+
+export type InviteLinkTarget =
+	| { kind: 'membership'; role: InviteLinkRole }
+	| { kind: 'team'; teamId: string }
+	| {
+			kind: 'resource'
+			resourceType: 'package'
+			resourceId: string
+			preset: InviteLinkResourcePreset
+	  }
+
+export type InviteLinkKind = InviteLinkTarget['kind']
+
 export type StoredInviteLink = {
 	id: string
 	orgId: string
 	tokenHash: string
-	role: InviteLinkRole
+	target: InviteLinkTarget
 	allowedEmailDomains: Array<string>
 	maxUses: number | null
 	useCount: number
@@ -40,7 +78,7 @@ export type StoredInviteLink = {
 
 export type ListedInviteLink = {
 	id: string
-	role: InviteLinkRole
+	target: InviteLinkTarget
 	allowedEmailDomains: Array<string>
 	maxUses: number | null
 	useCount: number
@@ -61,12 +99,19 @@ export type InviteLinkRedeemBlockReason =
 	| 'domain'
 	| 'unverified_email'
 	| 'inviter_gone'
+	| 'target_gone'
+	| 'already_used'
 
-type InviteLinkRow = {
+export type InviteLinkRow = {
 	id: string
 	org_id: string
 	token_hash: string
-	role: string
+	kind: string | null
+	role: string | null
+	team_id: string | null
+	resource_type: string | null
+	resource_id: string | null
+	preset: string | null
 	allowed_email_domains_json: string | null
 	max_uses: number | null
 	use_count: number
@@ -75,6 +120,32 @@ type InviteLinkRow = {
 	expires_at: string
 	created_at: string
 	revoked_at: string | null
+}
+
+const linkColumnNames = [
+	'id',
+	'org_id',
+	'token_hash',
+	'kind',
+	'role',
+	'team_id',
+	'resource_type',
+	'resource_id',
+	'preset',
+	'allowed_email_domains_json',
+	'max_uses',
+	'use_count',
+	'status',
+	'created_by_user_id',
+	'expires_at',
+	'created_at',
+	'revoked_at',
+] as const satisfies ReadonlyArray<keyof InviteLinkRow>
+
+export function linkColumns(alias?: string) {
+	return linkColumnNames
+		.map((column) => (alias ? `${alias}.${column}` : column))
+		.join(', ')
 }
 
 const DEFAULT_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000
@@ -137,9 +208,41 @@ function normalizeDomainList(
 	return [...unique].sort()
 }
 
-function rowToStored(row: InviteLinkRow): StoredInviteLink {
-	if (row.role !== 'member' && row.role !== 'billing') {
-		throw new Error(`Invite link ${row.id} has role ${row.role}.`)
+/** `null` when the row does not describe a target this code understands. */
+export function rowTarget(
+	row: Pick<
+		InviteLinkRow,
+		'kind' | 'role' | 'team_id' | 'resource_type' | 'resource_id' | 'preset'
+	>,
+): InviteLinkTarget | null {
+	const kind = row.kind ?? 'membership'
+	switch (kind) {
+		case 'membership':
+			return isInviteLinkRole(row.role)
+				? { kind: 'membership', role: row.role }
+				: null
+		case 'team':
+			return row.team_id ? { kind: 'team', teamId: row.team_id } : null
+		case 'resource':
+			return row.resource_type === 'package' &&
+				row.resource_id &&
+				isInviteLinkResourcePreset(row.preset)
+				? {
+						kind: 'resource',
+						resourceType: 'package',
+						resourceId: row.resource_id,
+						preset: row.preset,
+					}
+				: null
+		default:
+			return null
+	}
+}
+
+export function rowToStored(row: InviteLinkRow): StoredInviteLink {
+	const target = rowTarget(row)
+	if (!target) {
+		throw new Error(`Invite link ${row.id} has an unknown target.`)
 	}
 	if (row.status !== 'active' && row.status !== 'revoked') {
 		throw new Error(`Invite link ${row.id} has status ${row.status}.`)
@@ -149,7 +252,7 @@ function rowToStored(row: InviteLinkRow): StoredInviteLink {
 		id: row.id,
 		orgId: row.org_id,
 		tokenHash: row.token_hash,
-		role: row.role,
+		target,
 		allowedEmailDomains: domains.ok ? domains.domains : [],
 		maxUses: row.max_uses,
 		useCount: row.use_count,
@@ -161,8 +264,26 @@ function rowToStored(row: InviteLinkRow): StoredInviteLink {
 	}
 }
 
-function rowDomainsBlocked(row: InviteLinkRow) {
+export function rowDomainsBlocked(row: InviteLinkRow) {
 	return !readAllowedDomainsOrBlock(row.allowed_email_domains_json).ok
+}
+
+/** The org role a recipient who is not yet a member gets, if any. */
+export function inviteLinkJoinRole(
+	target: InviteLinkTarget,
+): InviteLinkRole | null {
+	switch (target.kind) {
+		case 'membership':
+			return target.role
+		case 'team':
+			return 'member'
+		case 'resource':
+			return null
+		default: {
+			const exhaustive: never = target
+			throw new Error(`Unknown invite link target: ${String(exhaustive)}`)
+		}
+	}
 }
 
 export type InviteLinkAvailabilityReason = Extract<
@@ -193,10 +314,112 @@ export function emailMatchesInviteLinkDomains(
 	return domains.includes(domain)
 }
 
+async function teamIsLive(db: D1Database, orgId: string, teamId: string) {
+	const row = await db
+		.prepare(
+			`SELECT id FROM teams
+			 WHERE id = ? AND org_id = ? AND deleted_at IS NULL`,
+		)
+		.bind(teamId, orgId)
+		.first<{ id: string }>()
+	return Boolean(row)
+}
+
+async function packageIsLive(db: D1Database, orgId: string, packageId: string) {
+	const row = await db
+		.prepare(
+			`SELECT id FROM saved_packages
+			 WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
+		)
+		.bind(packageId, orgId)
+		.first<{ id: string }>()
+	return Boolean(row)
+}
+
+export async function targetIsLive(
+	db: D1Database,
+	orgId: string,
+	target: InviteLinkTarget,
+) {
+	switch (target.kind) {
+		case 'membership':
+			return true
+		case 'team':
+			return await teamIsLive(db, orgId, target.teamId)
+		case 'resource':
+			return await packageIsLive(db, orgId, target.resourceId)
+		default: {
+			const exhaustive: never = target
+			throw new Error(`Unknown invite link target: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/** Membership and team links add people to the org; a personal org has none. */
+export function targetNeedsTeamOrg(target: InviteLinkTarget) {
+	return target.kind !== 'resource'
+}
+
+function targetColumns(target: InviteLinkTarget) {
+	switch (target.kind) {
+		case 'membership':
+			return {
+				kind: 'membership',
+				role: target.role,
+				teamId: null,
+				resourceType: null,
+				resourceId: null,
+				preset: null,
+			}
+		case 'team':
+			return {
+				kind: 'team',
+				role: 'member',
+				teamId: target.teamId,
+				resourceType: null,
+				resourceId: null,
+				preset: null,
+			}
+		case 'resource':
+			return {
+				kind: 'resource',
+				role: null,
+				teamId: null,
+				resourceType: target.resourceType,
+				resourceId: target.resourceId,
+				preset: target.preset,
+			}
+		default: {
+			const exhaustive: never = target
+			throw new Error(`Unknown invite link target: ${String(exhaustive)}`)
+		}
+	}
+}
+
+function targetAuditDetails(target: InviteLinkTarget) {
+	switch (target.kind) {
+		case 'membership':
+			return { role: target.role }
+		case 'team':
+			return { kind: 'team', role: 'member', teamId: target.teamId }
+		case 'resource':
+			return {
+				kind: 'resource',
+				resourceType: target.resourceType,
+				resourceId: target.resourceId,
+				preset: target.preset,
+			}
+		default: {
+			const exhaustive: never = target
+			throw new Error(`Unknown invite link target: ${String(exhaustive)}`)
+		}
+	}
+}
+
 export async function createOrgInviteLink(input: {
 	db: D1Database
 	orgId: string
-	role: InviteLinkRole
+	target: InviteLinkTarget
 	createdByUserId: string
 	tokenHash: string
 	allowedEmailDomains?: ReadonlyArray<string> | null
@@ -204,13 +427,23 @@ export async function createOrgInviteLink(input: {
 	expiresAt?: string
 	audit: OrgAuditWriter
 }) {
-	if (await isPersonalOrg(input.db, input.orgId)) {
+	if (
+		targetNeedsTeamOrg(input.target) &&
+		(await isPersonalOrg(input.db, input.orgId))
+	) {
 		throw new Error(
 			'Membership for your personal organization is managed with your account. Create a team organization to invite people.',
 		)
 	}
 	if (!(await isOrgActive(input.db, input.orgId))) {
 		throw new Error('This organization is not active.')
+	}
+	if (!(await targetIsLive(input.db, input.orgId, input.target))) {
+		throw new Error(
+			input.target.kind === 'team'
+				? 'That team was not found in this organization.'
+				: 'That package was not found in this organization.',
+		)
 	}
 	const domains = normalizeDomainList(input.allowedEmailDomains)
 	const maxUses =
@@ -227,19 +460,25 @@ export async function createOrgInviteLink(input: {
 	if (expiresAt <= now) {
 		throw new Error('Expiry must be in the future.')
 	}
+	const columns = targetColumns(input.target)
 	await input.db
 		.prepare(
 			`INSERT INTO org_invite_links (
-				id, org_id, token_hash, role, allowed_email_domains_json,
-				max_uses, use_count, status, created_by_user_id, expires_at,
-				created_at
-			) VALUES (?, ?, ?, ?, ?, ?, 0, 'active', ?, ?, ?)`,
+				id, org_id, token_hash, kind, role, team_id, resource_type,
+				resource_id, preset, allowed_email_domains_json, max_uses,
+				use_count, status, created_by_user_id, expires_at, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'active', ?, ?, ?)`,
 		)
 		.bind(
 			id,
 			input.orgId,
 			input.tokenHash,
-			input.role,
+			columns.kind,
+			columns.role,
+			columns.teamId,
+			columns.resourceType,
+			columns.resourceId,
+			columns.preset,
 			domains.length > 0 ? JSON.stringify(domains) : null,
 			maxUses,
 			input.createdByUserId,
@@ -253,7 +492,7 @@ export async function createOrgInviteLink(input: {
 		resourceType: 'invite_link',
 		resourceId: id,
 		details: {
-			role: input.role,
+			...targetAuditDetails(input.target),
 			maxUses,
 			expiresAt,
 			allowedEmailDomains: domains,
@@ -268,16 +507,14 @@ export async function getInviteLinkByTokenHash(
 ): Promise<StoredInviteLink | null> {
 	const row = await db
 		.prepare(
-			`SELECT id, org_id, token_hash, role, allowed_email_domains_json,
-			        max_uses, use_count, status, created_by_user_id, expires_at,
-			        created_at, revoked_at
+			`SELECT ${linkColumns()}
 			 FROM org_invite_links
 			 WHERE token_hash = ?`,
 		)
 		.bind(tokenHash)
 		.first<InviteLinkRow>()
 	if (!row) return null
-	if (rowDomainsBlocked(row)) return null
+	if (rowDomainsBlocked(row) || !rowTarget(row)) return null
 	return rowToStored(row)
 }
 
@@ -288,30 +525,72 @@ export async function getInviteLinkById(input: {
 }): Promise<StoredInviteLink | null> {
 	const row = await input.db
 		.prepare(
-			`SELECT id, org_id, token_hash, role, allowed_email_domains_json,
-			        max_uses, use_count, status, created_by_user_id, expires_at,
-			        created_at, revoked_at
+			`SELECT ${linkColumns()}
 			 FROM org_invite_links
 			 WHERE id = ? AND org_id = ?`,
 		)
 		.bind(input.linkId, input.orgId)
 		.first<InviteLinkRow>()
-	return row ? rowToStored(row) : null
+	return row && rowTarget(row) ? rowToStored(row) : null
+}
+
+/**
+ * Which links a management page lists and may revoke. The Members page sees
+ * membership links only, so links made for a team or a package never show up
+ * (or get revoked) there.
+ */
+export type InviteLinkScope =
+	| { kind: 'membership' }
+	| { kind: 'team'; teamId?: string }
+	| { kind: 'resource'; resourceType: 'package'; resourceId: string }
+
+function scopeSql(scope: InviteLinkScope, alias: string) {
+	const prefix = alias ? `${alias}.` : ''
+	switch (scope.kind) {
+		case 'membership':
+			return {
+				sql: ` AND COALESCE(${prefix}kind, 'membership') = 'membership'`,
+				binds: [] as Array<string>,
+			}
+		case 'team':
+			return scope.teamId
+				? {
+						sql: ` AND ${prefix}kind = 'team' AND ${prefix}team_id = ?`,
+						binds: [scope.teamId],
+					}
+				: { sql: ` AND ${prefix}kind = 'team'`, binds: [] as Array<string> }
+		case 'resource':
+			return {
+				sql: ` AND ${prefix}kind = 'resource' AND ${prefix}resource_type = ? AND ${prefix}resource_id = ?`,
+				binds: [scope.resourceType, scope.resourceId],
+			}
+		default: {
+			const exhaustive: never = scope
+			throw new Error(`Unknown invite link scope: ${String(exhaustive)}`)
+		}
+	}
 }
 
 /**
  * Active links that are still within expiry and under max uses. Revoked,
- * expired, and exhausted links drop off the Members page list.
+ * expired, and exhausted links drop off the management page lists.
  */
 export async function listActiveOrgInviteLinks(
 	db: D1Database,
 	orgId: string,
 	nowIso = new Date().toISOString(),
+	scope: InviteLinkScope = { kind: 'membership' },
 ): Promise<Array<ListedInviteLink>> {
+	const filter = scopeSql(scope, 'l')
 	const rows = await db
 		.prepare(
 			`SELECT l.id AS id,
+			        l.kind AS kind,
 			        l.role AS role,
+			        l.team_id AS team_id,
+			        l.resource_type AS resource_type,
+			        l.resource_id AS resource_id,
+			        l.preset AS preset,
 			        l.allowed_email_domains_json AS allowed_email_domains_json,
 			        l.max_uses AS max_uses,
 			        l.use_count AS use_count,
@@ -327,30 +606,40 @@ export async function listActiveOrgInviteLinks(
 			 WHERE l.org_id = ?
 			   AND l.status = 'active'
 			   AND l.expires_at > ?
-			   AND (l.max_uses IS NULL OR l.use_count < l.max_uses)
+			   AND (l.max_uses IS NULL OR l.use_count < l.max_uses)${filter.sql}
 			 ORDER BY l.created_at DESC`,
 		)
-		.bind(orgId, nowIso)
-		.all<{
-			id: string
-			role: string
-			allowed_email_domains_json: string | null
-			max_uses: number | null
-			use_count: number
-			expires_at: string
-			created_at: string
-			created_by_user_id: string
-			created_by_username: string | null
-			created_by_display_name: string | null
-		}>()
+		.bind(orgId, nowIso, ...filter.binds)
+		.all<
+			Pick<
+				InviteLinkRow,
+				| 'id'
+				| 'kind'
+				| 'role'
+				| 'team_id'
+				| 'resource_type'
+				| 'resource_id'
+				| 'preset'
+				| 'allowed_email_domains_json'
+				| 'max_uses'
+				| 'use_count'
+				| 'expires_at'
+				| 'created_at'
+				| 'created_by_user_id'
+			> & {
+				created_by_username: string | null
+				created_by_display_name: string | null
+			}
+		>()
 	return (rows.results ?? []).flatMap((row) => {
-		if (row.role !== 'member' && row.role !== 'billing') return []
+		const target = rowTarget(row)
+		if (!target) return []
 		const domains = readAllowedDomainsOrBlock(row.allowed_email_domains_json)
 		if (!domains.ok) return []
 		return [
 			{
 				id: row.id,
-				role: row.role,
+				target,
 				allowedEmailDomains: domains.domains,
 				maxUses: row.max_uses,
 				useCount: row.use_count,
@@ -369,256 +658,31 @@ export async function revokeOrgInviteLink(input: {
 	orgId: string
 	linkId: string
 	audit: OrgAuditWriter
+	scope?: InviteLinkScope
 }) {
 	const now = new Date().toISOString()
+	const filter = scopeSql(input.scope ?? { kind: 'membership' }, '')
 	const result = await input.db
 		.prepare(
 			`UPDATE org_invite_links
 			 SET status = 'revoked', revoked_at = ?
-			 WHERE id = ? AND org_id = ? AND status = 'active'`,
+			 WHERE id = ? AND org_id = ? AND status = 'active'${filter.sql}`,
 		)
-		.bind(now, input.linkId, input.orgId)
+		.bind(now, input.linkId, input.orgId, ...filter.binds)
 		.run()
 	if ((result.meta?.changes ?? 0) === 0) {
 		throw new Error('That invite link could not be revoked.')
 	}
+	await input.db
+		.prepare(`DELETE FROM org_invite_link_pending WHERE link_id = ?`)
+		.bind(input.linkId)
+		.run()
 	await recordOrgAuditEvent(input.audit, {
 		orgId: input.orgId,
 		action: 'invite_link.revoked',
 		resourceType: 'invite_link',
 		resourceId: input.linkId,
 	})
-}
-
-async function claimInviteLinkUse(input: {
-	db: D1Database
-	linkId: string
-	userId: string
-	nowIso: string
-}): Promise<'claimed' | 'already' | 'unavailable'> {
-	const existing = await input.db
-		.prepare(
-			`SELECT 1 AS ok FROM org_invite_link_redemptions
-			 WHERE link_id = ? AND user_id = ?`,
-		)
-		.bind(input.linkId, input.userId)
-		.first<{ ok: number }>()
-	if (existing) return 'already'
-
-	const insert = await input.db
-		.prepare(
-			`INSERT OR IGNORE INTO org_invite_link_redemptions (
-				link_id, user_id, created_at
-			) VALUES (?, ?, ?)`,
-		)
-		.bind(input.linkId, input.userId, input.nowIso)
-		.run()
-	if ((insert.meta?.changes ?? 0) === 0) return 'already'
-
-	const bumped = await input.db
-		.prepare(
-			`UPDATE org_invite_links
-			 SET use_count = use_count + 1
-			 WHERE id = ?
-			   AND status = 'active'
-			   AND expires_at > ?
-			   AND (max_uses IS NULL OR use_count < max_uses)`,
-		)
-		.bind(input.linkId, input.nowIso)
-		.run()
-	if ((bumped.meta?.changes ?? 0) === 0) {
-		await input.db
-			.prepare(
-				`DELETE FROM org_invite_link_redemptions
-				 WHERE link_id = ? AND user_id = ?`,
-			)
-			.bind(input.linkId, input.userId)
-			.run()
-		return 'unavailable'
-	}
-	return 'claimed'
-}
-
-async function assertInviteLinkCreatorStillValid(
-	db: D1Database,
-	link: StoredInviteLink,
-) {
-	const creator = await db
-		.prepare(
-			`SELECT role FROM org_memberships
-			 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
-		)
-		.bind(link.orgId, link.createdByUserId)
-		.first<{ role: string }>()
-	if (!creator) {
-		throw new Error('inviter_gone')
-	}
-}
-
-function seatRole(role: OrgRole) {
-	return role === 'owner' || role === 'member'
-}
-
-export type RedeemInviteLinkResult =
-	| { ok: true; alreadyMember: boolean; role: InviteLinkRole; orgId: string }
-	| { ok: false; reason: InviteLinkRedeemBlockReason; error: string }
-
-export async function redeemOrgInviteLink(input: {
-	db: D1Database
-	env: Env
-	link: StoredInviteLink
-	user: {
-		userId: string
-		email: string
-		emailVerified: boolean
-	}
-	audit: OrgAuditWriter
-}): Promise<RedeemInviteLinkResult> {
-	const nowIso = new Date().toISOString()
-	const block = inviteLinkIsRedeemable(input.link, nowIso)
-	if (block) {
-		return {
-			ok: false,
-			reason: block,
-			error: inviteLinkBlockMessage(block),
-		}
-	}
-	if (await isPersonalOrg(input.db, input.link.orgId)) {
-		return {
-			ok: false,
-			reason: 'personal_org',
-			error: inviteLinkBlockMessage('personal_org'),
-		}
-	}
-	if (!(await isOrgActive(input.db, input.link.orgId))) {
-		return {
-			ok: false,
-			reason: 'org_inactive',
-			error: inviteLinkBlockMessage('org_inactive'),
-		}
-	}
-	try {
-		await assertInviteLinkCreatorStillValid(input.db, input.link)
-	} catch {
-		return {
-			ok: false,
-			reason: 'inviter_gone',
-			error: inviteLinkBlockMessage('inviter_gone'),
-		}
-	}
-	if (input.link.allowedEmailDomains.length > 0) {
-		if (!input.user.emailVerified) {
-			return {
-				ok: false,
-				reason: 'unverified_email',
-				error: inviteLinkBlockMessage('unverified_email'),
-			}
-		}
-		if (
-			!emailMatchesInviteLinkDomains(
-				input.user.email,
-				input.link.allowedEmailDomains,
-			)
-		) {
-			return {
-				ok: false,
-				reason: 'domain',
-				error: inviteLinkBlockMessage('domain'),
-			}
-		}
-	}
-
-	const existing = await input.db
-		.prepare(
-			`SELECT role FROM org_memberships
-			 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
-		)
-		.bind(input.link.orgId, input.user.userId)
-		.first<{ role: string }>()
-	if (existing) {
-		return {
-			ok: true,
-			alreadyMember: true,
-			role: input.link.role,
-			orgId: input.link.orgId,
-		}
-	}
-
-	const claimed = await claimInviteLinkUse({
-		db: input.db,
-		linkId: input.link.id,
-		userId: input.user.userId,
-		nowIso,
-	})
-	if (claimed === 'unavailable') {
-		const refreshed = await getInviteLinkByTokenHash(
-			input.db,
-			input.link.tokenHash,
-		)
-		const reason: InviteLinkRedeemBlockReason =
-			refreshed == null
-				? 'invalid'
-				: (inviteLinkIsRedeemable(refreshed, nowIso) ?? 'exhausted')
-		return {
-			ok: false,
-			reason,
-			error: inviteLinkBlockMessage(reason),
-		}
-	}
-
-	const alreadyRedeemed = claimed === 'already'
-	const membershipBefore = alreadyRedeemed
-		? await input.db
-				.prepare(
-					`SELECT role FROM org_memberships
-					 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
-				)
-				.bind(input.link.orgId, input.user.userId)
-				.first<{ role: string }>()
-		: null
-	if (alreadyRedeemed && membershipBefore) {
-		return {
-			ok: true,
-			alreadyMember: true,
-			role: input.link.role,
-			orgId: input.link.orgId,
-		}
-	}
-
-	await addOrgMember({
-		db: input.db,
-		orgId: input.link.orgId,
-		userId: input.user.userId,
-		role: input.link.role,
-		invitedByUserId: input.link.createdByUserId,
-		audit: input.audit,
-	})
-	if (seatRole(input.link.role)) {
-		await syncSeatsAfterMembershipChange({
-			db: input.db,
-			env: input.env,
-			orgId: input.link.orgId,
-		})
-	}
-	if (!alreadyRedeemed) {
-		await recordOrgAuditEvent(input.audit, {
-			orgId: input.link.orgId,
-			action: 'invite_link.joined',
-			resourceType: 'invite_link',
-			resourceId: input.link.id,
-			targetUserId: input.user.userId,
-			details: {
-				role: input.link.role,
-				linkId: input.link.id,
-			},
-		})
-	}
-	return {
-		ok: true,
-		alreadyMember: false,
-		role: input.link.role,
-		orgId: input.link.orgId,
-	}
 }
 
 export function inviteLinkBlockMessage(
@@ -643,6 +707,10 @@ export function inviteLinkBlockMessage(
 			return 'Verify your email address before joining with this invite link.'
 		case 'inviter_gone':
 			return 'This invite link is no longer valid because the creator no longer has access.'
+		case 'target_gone':
+			return 'This invite link is no longer valid because what it shared was removed.'
+		case 'already_used':
+			return 'You already used this invite link. Ask for a new one if you need access again.'
 		default: {
 			const exhaustive: never = reason
 			return exhaustive

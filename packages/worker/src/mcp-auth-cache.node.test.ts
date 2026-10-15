@@ -20,10 +20,10 @@ import {
 	updateOrgMemberRole,
 	upsertGrant,
 } from '#worker/orgs/access-writes.ts'
+import { redeemOrgInviteLink } from '#worker/orgs/invite-link-redeem.ts'
 import {
 	createOrgInviteLink,
 	getInviteLinkByTokenHash,
-	redeemOrgInviteLink,
 } from '#worker/orgs/invite-links.ts'
 import { offboardOrgMember } from '#worker/orgs/offboarding.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
@@ -293,7 +293,7 @@ test('an invite-link join shows up on the very next request and leaving removes 
 	await createOrgInviteLink({
 		db,
 		orgId: org.id,
-		role: 'member',
+		target: { kind: 'membership', role: 'member' },
 		createdByUserId: founder.stableUserId,
 		tokenHash,
 		audit,

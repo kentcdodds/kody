@@ -111,6 +111,12 @@ const orgStructuralHardPurgeTargets: ReadonlyArray<UserScopedDataTarget> = [
 		parentTable: 'org_invite_links',
 		parentKey: 'link_id',
 	},
+	{
+		kind: 'org_via_parent',
+		table: 'org_invite_link_pending',
+		parentTable: 'org_invite_links',
+		parentKey: 'link_id',
+	},
 	{ kind: 'org_id', table: 'org_invite_links' },
 	{ kind: 'org_id', table: 'access_cache' },
 	{ kind: 'org_id', table: 'handles' },
@@ -133,6 +139,7 @@ const personScopedUserIdTablesExcludedFromOrgHardPurge = new Set([
 	'team_members',
 	'org_user_budgets',
 	'org_invite_link_redemptions',
+	'org_invite_link_pending',
 ])
 
 /**

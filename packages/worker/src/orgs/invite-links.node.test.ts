@@ -26,9 +26,9 @@ const {
 	getInviteLinkByTokenHash,
 	hashInviteLinkToken,
 	listActiveOrgInviteLinks,
-	redeemOrgInviteLink,
 	revokeOrgInviteLink,
 } = await import('./invite-links.ts')
+const { redeemOrgInviteLink } = await import('./invite-link-redeem.ts')
 
 const owner = { id: 1, personId: 'a'.repeat(64) }
 const joiner = { id: 2, personId: 'b'.repeat(64) }
@@ -101,7 +101,7 @@ async function createLink(
 	const created = await createOrgInviteLink({
 		db,
 		orgId,
-		role: options.role ?? 'member',
+		target: { kind: 'membership', role: options.role ?? 'member' },
 		createdByUserId: owner.personId,
 		tokenHash,
 		allowedEmailDomains: options.domains,
@@ -127,7 +127,7 @@ test('create stores only the token hash and lists the active link', async () => 
 		id,
 		orgId,
 		tokenHash,
-		role: 'member',
+		target: { kind: 'membership', role: 'member' },
 		status: 'active',
 		maxUses: null,
 		useCount: 0,
@@ -137,7 +137,7 @@ test('create stores only the token hash and lists the active link', async () => 
 	expect(listed).toHaveLength(1)
 	expect(listed[0]).toMatchObject({
 		id,
-		role: 'member',
+		target: { kind: 'membership', role: 'member' },
 		useCount: 0,
 		createdByUsername: 'ada',
 	})
@@ -148,7 +148,7 @@ test('personal orgs cannot create invite links', async () => {
 		createOrgInviteLink({
 			db,
 			orgId: owner.personId,
-			role: 'member',
+			target: { kind: 'membership', role: 'member' },
 			createdByUserId: owner.personId,
 			tokenHash: await hashInviteLinkToken('personal-token'),
 			audit: createTestOrgAuditWriter({ db: auditDb }),
@@ -178,6 +178,7 @@ test('join adds the member, syncs seats, and audits the link', async () => {
 		ok: true,
 		alreadyMember: false,
 		role: 'member',
+		target: { kind: 'membership', role: 'member' },
 		orgId,
 	})
 	expect(mocks.syncSeatsAfterMembershipChange).toHaveBeenCalledWith(
@@ -317,7 +318,7 @@ test('expired and revoked links cannot be redeemed', async () => {
 		createOrgInviteLink({
 			db,
 			orgId,
-			role: 'member',
+			target: { kind: 'membership', role: 'member' },
 			createdByUserId: owner.personId,
 			tokenHash: await hashInviteLinkToken('past-expiry'),
 			expiresAt: '2020-01-01T00:00:00.000Z',
