@@ -362,6 +362,7 @@ export function createPackageFollowController(
 						<span mix={css(labelCss)}>Follow in</span>
 						<select
 							data-testid="package-follow-workspace"
+							disabled={submitting}
 							mix={[
 								css(getSelectCss()),
 								on('change', (event) => {
