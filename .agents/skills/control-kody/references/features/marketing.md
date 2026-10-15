@@ -34,31 +34,33 @@ Anonymous HTML on `/` and several marketing routes is short-CDN-cached. The
 cache key includes the query string, so `/?accountDeleted=1` is its own document
 and shows "Your Kody account has been deleted"
 (`data-testid="account-deleted-notice"`). Weekly site-perf owns landing budgets.
-The `/` hero is centered: headline, subhead, a horizontally looping row of 64px
+The `/` hero is centered: headline, subhead, an endlessly scrolling row of 64px
 monochrome agent marks (SSR-shuffled `landingAgentOrder`, fades at both edges,
-pauses on hover or focus, zooms the hovered mark), and one "Connect your agent"
-CTA that copies an agent-led setup prompt (without JavaScript it is a link to
-`/docs/connect-your-agent`). Each mark links to `/with/:agent`, a short page for
-that agent with its shortest connect steps (copyable commands), a setup-prompt
-button, and links to the other agents. Agents without an official Kody path
-(`official: false`) lead with the setup prompt and the MCP URL instead. Slugs
-come from `universal/with-agents.ts` and unknown slugs 404. The homepage never
-links to `/onboarding` or `/signup`, for any session. Below the hero come
-"Primitives for your agents" cards, "What Kody is and is not", the agent orbit
-beside the example walkthrough, testimonials, the team git/npm section, the
-first-party YouTube light player with a horizontal video chooser, and the
-"Invisible software" close linking to `/believe`. The five-orb lantern lives on
-`/features`, not the homepage. Feature pages are `/features/memory`,
-`/features/packages`, `/features/triggers`, `/features/credentials`, and
-`/features/apps`; `/features/secrets` and `/features/integrations` 301 to
-`/features/credentials`. Signed-in visitors still see the player and chooser.
-Chooser membership and order come from the unlisted playlist `PLBPBUA8boGLA`.
-Client navigations load `GET /landing-hero-videos.json`. The lite player embeds
-the selected chooser video only, without a playlist id, so YouTube chrome uses
-that video's title. Chooser ids are on the YouTube allowlist for
-`/youtube-thumb` without a playlist round-trip on plain documents.
-`/?youtubeId=<id>` opens the site-wide allowlisted YouTube overlay on those
-routes; unknown or disallowed ids do not open the player.
+drifts until hovered, focused, scrolled, swiped, or dragged, zooms the hovered
+mark; one tab stop with arrow keys, Home, and End between marks), and one
+"Connect your agent" CTA that copies an agent-led setup prompt (without
+JavaScript it is a link to `/docs/connect-your-agent`). Each mark links to
+`/with/:agent`, a short page for that agent with its shortest connect steps
+(copyable commands), a setup-prompt button, and links to the other agents.
+Agents without an official Kody path (`official: false`) lead with the setup
+prompt and the MCP URL instead. Slugs come from `universal/with-agents.ts` and
+unknown slugs 404. The homepage never links to `/onboarding` or `/signup`, for
+any session. Below the hero come "Primitives for your agents" cards, "What Kody
+is and is not", the agent orbit beside the example walkthrough, testimonials,
+the team git/npm section, the first-party YouTube light player with a horizontal
+video chooser, and the "Invisible software" close linking to `/believe`. The
+five-orb lantern lives on `/features`, not the homepage. Feature pages are
+`/features/memory`, `/features/packages`, `/features/triggers`,
+`/features/credentials`, and `/features/apps`; `/features/secrets` and
+`/features/integrations` 301 to `/features/credentials`. Signed-in visitors
+still see the player and chooser. Chooser membership and order come from the
+unlisted playlist `PLBPBUA8boGLA`. Client navigations load
+`GET /landing-hero-videos.json`. The lite player embeds the selected chooser
+video only, without a playlist id, so YouTube chrome uses that video's title.
+Chooser ids are on the YouTube allowlist for `/youtube-thumb` without a playlist
+round-trip on plain documents. `/?youtubeId=<id>` opens the site-wide
+allowlisted YouTube overlay on those routes; unknown or disallowed ids do not
+open the player.
 
 ## APIs
 

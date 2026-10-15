@@ -115,10 +115,21 @@ test('homepage hero uses locked copy, compare, and one connect CTA', async () =>
 	const marqueeOrder = [...marquee.matchAll(/href="\/with\/([^"]+)"/g)].map(
 		(match) => match[1],
 	)
-	// SSR order comes from loader data; the second copy is the loop.
+	// SSR order comes from loader data. The real list sits between two
+	// aria-hidden loop copies, and only the real links are tabbable.
 	expect(marqueeOrder.slice(0, 3)).toEqual(['muse', 'codex', 'cursor'])
-	expect(marqueeOrder).toHaveLength(withAgents.length * 2)
-	expect(marquee.match(/tabindex="-1"/g)).toHaveLength(withAgents.length)
+	expect(marqueeOrder.slice(withAgents.length, withAgents.length + 3)).toEqual([
+		'muse',
+		'codex',
+		'cursor',
+	])
+	expect(marqueeOrder).toHaveLength(withAgents.length * 3)
+	expect(marquee.match(/tabindex="-1"/g)).toHaveLength(withAgents.length * 2)
+	expect(
+		marquee.match(
+			/aria-hidden="true" class="landing-agents-item"|class="landing-agents-item" aria-hidden="true"/g,
+		),
+	).toHaveLength(withAgents.length * 2)
 	expect(anonymous.hero).not.toContain('/signup')
 	expect(anonymous.hero).not.toContain('landing-hero-video')
 	expect(anonymous.hero).not.toContain('landing-hero-agents')

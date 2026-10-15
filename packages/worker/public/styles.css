@@ -768,8 +768,9 @@ html.is-settled {
 /* Hero agent marks: 64px monochrome icons (a mask filled with the text
    colour), each a link to its `/with/:agent` page. Hover, focus, or press
    zooms a mark like the video chooser thumbs, slides its neighbours aside,
-   and fades its name in. With JS and motion allowed the doubled track loops
-   (`landing-agent-marquee.tsx`); otherwise the row scrolls by hand. */
+   and fades its name in. With JS (`.is-looping`, set by
+   `landing-agent-marquee.tsx`) the loop copies show and the scroll wraps
+   endlessly; without it the row is a plain scroller. */
 .landing-agents-row {
 	width: 100%;
 }
@@ -882,29 +883,29 @@ html.is-settled {
 	.landing-agent-name {
 		transition: opacity 200ms var(--ease-out);
 	}
+}
 
-	html.js .landing-agents {
-		overflow: hidden;
-	}
+.landing-agents.is-looping .landing-agents-track {
+	padding-inline: 0;
+}
 
-	html.js .landing-agents-track {
-		padding-inline: 0;
-		animation: landing-agents-loop 55s linear infinite;
-	}
+.landing-agents.is-looping .landing-agents-item[aria-hidden] {
+	display: block;
+}
 
-	html.js .landing-agents-item[aria-hidden] {
-		display: block;
-	}
-
-	html.js .landing-agents:is(:hover, :focus-within) .landing-agents-track {
-		animation-play-state: paused;
+@media (hover: hover) and (pointer: fine) {
+	.landing-agents.is-looping {
+		cursor: grab;
 	}
 }
 
-@keyframes landing-agents-loop {
-	to {
-		translate: -50% 0;
-	}
+.landing-agents.is-dragging {
+	cursor: grabbing;
+	user-select: none;
+}
+
+.landing-agents.is-dragging .landing-agent {
+	cursor: grabbing;
 }
 
 .landing-hero-media {
