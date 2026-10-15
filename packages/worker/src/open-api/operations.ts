@@ -275,6 +275,7 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 	...capabilityRoutes('follows', [
 		['GET', '/v1/follows', 'followList'],
 		['POST', '/v1/follows', 'followAdd'],
+		['DELETE', '/v1/follows', 'followRemove'],
 	]),
 	...capabilityRoutes('repos', [
 		['GET', '/v1/repos', 'repoList'],

@@ -8,7 +8,9 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import {
 	addFollow,
 	consumeFollowCreateSlot,
+	FollowNotFoundError,
 	FollowRateLimitError,
+	removeFollow,
 } from './service.ts'
 import { followCreateMaxPerHour } from './types.ts'
 import {
@@ -214,6 +216,7 @@ test('retargetFollowCreator returns false after a concurrent pause', async () =>
 	await pauseFollow(db, {
 		id: 'follow-race',
 		pausedAt: '2026-10-15T02:00:00.000Z',
+		reason: 'access_lost',
 	})
 	expect(
 		await retargetFollowCreator(db, {
@@ -263,6 +266,7 @@ test('followAdd resumes a paused follow without consuming a create slot', async 
 	await pauseFollow(db, {
 		id: 'follow-paused',
 		pausedAt: '2026-10-15T01:00:00.000Z',
+		reason: 'access_lost',
 	})
 	for (let index = 0; index < followCreateMaxPerHour; index += 1) {
 		await consumeFollowCreateSlot(db, 'org-resume')
@@ -288,4 +292,146 @@ test('followAdd resumes a paused follow without consuming a create slot', async 
 	expect(row?.status).toBe('active')
 	expect(row?.pausedAt).toBeNull()
 	expect(row?.creatorUserId).toBe('person-2')
+})
+
+function useGrantAccess(packageId: string): EffectivePermissions {
+	return {
+		orgId: ownerId,
+		permissions: new Set<OrgPermission>(),
+		isOwner: false,
+		resourcePermissions: new Map([
+			[
+				resourceGrantKey('package', packageId),
+				new Set<OrgPermission>(['package:read', 'package:execute']),
+			],
+		]),
+		credentialScopes: null,
+		profileGrants: null,
+	}
+}
+
+test('followAdd stores the chosen events and changing them costs no create slot', async () => {
+	const db = followDb()
+	await ensureFollowTables(db)
+	serviceMocks.getOrgBySlug.mockResolvedValue({ id: ownerId, slug: 'ada' })
+	serviceMocks.getSavedPackageByName.mockResolvedValue(
+		savedPackage({ id: 'pkg-events', name: '@ada/notes', isPrivate: false }),
+	)
+	serviceMocks.loadFollowTargetPermissions.mockResolvedValue(
+		useGrantAccess('pkg-events'),
+	)
+	const env = { APP_DB: db } as Env
+	const created = await addFollow({
+		env,
+		followerOrgId: 'org-events',
+		creatorUserId: 'person-1',
+		name: '@ada/notes',
+		events: ['published'],
+	})
+	expect(created.events).toEqual(['published'])
+	for (let index = 1; index < followCreateMaxPerHour; index += 1) {
+		await consumeFollowCreateSlot(db, 'org-events')
+	}
+	const updated = await addFollow({
+		env,
+		followerOrgId: 'org-events',
+		creatorUserId: 'person-1',
+		name: '@ada/notes',
+		events: ['pushed', 'published', 'pushed'],
+	})
+	expect(updated.events).toEqual(['published', 'pushed'])
+	const kept = await addFollow({
+		env,
+		followerOrgId: 'org-events',
+		creatorUserId: 'person-1',
+		name: '@ada/notes',
+	})
+	expect(kept.events).toEqual(['published', 'pushed'])
+})
+
+test('followAdd rejects event choices the caller cannot receive', async () => {
+	const db = followDb()
+	await ensureFollowTables(db)
+	const env = { APP_DB: db } as Env
+	serviceMocks.getOrgBySlug.mockResolvedValue({ id: ownerId, slug: 'ada' })
+	serviceMocks.getSavedPackageByName.mockResolvedValue(
+		savedPackage({ id: 'pkg-public', name: '@ada/notes', isPrivate: false }),
+	)
+	serviceMocks.loadFollowTargetPermissions.mockResolvedValue(null)
+	const follow = (events: Array<'published' | 'pushed'>) =>
+		addFollow({
+			env,
+			followerOrgId: 'org-outsider',
+			creatorUserId: 'person-1',
+			name: '@ada/notes',
+			events,
+		})
+	await expect(follow([])).rejects.toThrow(/at least one event/)
+	await expect(follow(['pushed'])).rejects.toThrow(/need read access/)
+	await expect(follow(['published'])).resolves.toMatchObject({
+		events: ['published'],
+	})
+
+	serviceMocks.getSavedPackageByName.mockResolvedValue(null)
+	serviceMocks.getUserRepoByName.mockResolvedValue({
+		id: 'repo-stash',
+		userId: ownerId,
+		name: 'stash',
+		isPrivate: false,
+	})
+	await expect(
+		addFollow({
+			env,
+			followerOrgId: 'org-outsider',
+			creatorUserId: 'person-1',
+			name: '@ada/stash',
+			kind: 'repo',
+			events: ['published'],
+		}),
+	).rejects.toThrow(/only be followed for pushes/)
+})
+
+test('removeFollow deletes by live target or by stored name', async () => {
+	const db = followDb()
+	await ensureFollowTables(db)
+	const env = { APP_DB: db } as Env
+	for (const [id, targetId, targetName] of [
+		['follow-live', 'pkg-live', '@ada/live'],
+		['follow-gone', 'pkg-gone', '@ada/gone'],
+	] as const) {
+		await insertFollow(db, {
+			id,
+			followerOrgId: 'org-remove',
+			creatorUserId: 'person-1',
+			targetKind: 'package',
+			targetOwnerId: ownerId,
+			targetId,
+			targetName,
+			createdAt: '2026-10-15T00:00:00.000Z',
+		})
+	}
+	serviceMocks.getOrgBySlug.mockResolvedValue({ id: ownerId, slug: 'ada' })
+	serviceMocks.getSavedPackageByName.mockImplementation(
+		async (_db: unknown, input: { name: string }) =>
+			input.name === '@ada/renamed'
+				? savedPackage({
+						id: 'pkg-live',
+						name: '@ada/renamed',
+						isPrivate: false,
+					})
+				: null,
+	)
+	serviceMocks.getUserRepoByName.mockResolvedValue(null)
+	await expect(
+		removeFollow({ env, followerOrgId: 'org-remove', name: '@ada/renamed' }),
+	).resolves.toMatchObject({ removed: { name: '@ada/live' } })
+	await expect(
+		removeFollow({ env, followerOrgId: 'org-remove', name: '@ADA/gone' }),
+	).resolves.toMatchObject({ removed: { name: '@ada/gone' } })
+	await expect(
+		removeFollow({ env, followerOrgId: 'org-remove', name: '@ada/gone' }),
+	).rejects.toBeInstanceOf(FollowNotFoundError)
+	await expect(
+		removeFollow({ env, followerOrgId: 'org-other', name: '@ada/renamed' }),
+	).rejects.toBeInstanceOf(FollowNotFoundError)
 })

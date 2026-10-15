@@ -13,16 +13,25 @@ import {
 	loadFollowTargetPermissions,
 } from './access.ts'
 import {
+	followEventCopy,
+	followEventsForKind,
+	normalizeFollowEvents,
+} from '#universal/follows.ts'
+import {
+	deleteFollowForOrg,
 	getFollowByTarget,
 	insertFollow,
 	listFollowsByFollower,
 	resumeFollow,
 	retargetFollowCreator,
+	setFollowEvents,
 } from './repo.ts'
 import {
 	followCreateMaxPerHour,
 	followCreateWindowSeconds,
 	followView,
+	type FollowEvent,
+	type FollowRecord,
 	type FollowTargetKind,
 	type FollowTargetSnapshot,
 	type FollowView,
@@ -37,10 +46,16 @@ function followCreateRateLimitKey(followerOrgId: string) {
 	return `follow-create:${followerOrgId}`
 }
 
+/** A missing target and one the caller cannot read look the same. */
+export class FollowTargetNotFoundError extends McpCallerError {
+	constructor(name: string) {
+		super(`Follow target ${JSON.stringify(name.trim())} was not found.`)
+		this.name = 'FollowTargetNotFoundError'
+	}
+}
+
 function followTargetNotFound(name: string) {
-	return new McpCallerError(
-		`Follow target ${JSON.stringify(name.trim())} was not found.`,
-	)
+	return new FollowTargetNotFoundError(name)
 }
 
 export class FollowRateLimitError extends McpCallerError {
@@ -65,12 +80,51 @@ export async function consumeFollowCreateSlot(
 	if (!result.allowed) throw new FollowRateLimitError()
 }
 
+/**
+ * Validates an explicit event choice for this target and caller. Omitted
+ * events keep the stored choice (both events for a new follow).
+ */
+function resolveRequestedEvents(input: {
+	target: FollowTargetSnapshot
+	events: ReadonlyArray<FollowEvent> | undefined
+	canPush: boolean
+}): Array<FollowEvent> | null {
+	if (input.events === undefined) return null
+	const events = normalizeFollowEvents(input.events)
+	if (events.length === 0) {
+		throw new McpCallerError('Choose at least one event to follow.')
+	}
+	const available = followEventsForKind(input.target.kind)
+	for (const event of events) {
+		if (!available.includes(event)) {
+			throw new McpCallerError(
+				`Plain repos are never published, so ${input.target.name} can only be followed for pushes.`,
+			)
+		}
+	}
+	if (events.includes('pushed') && !input.canPush) {
+		throw new McpCallerError(
+			`${followEventCopy.pushed.label} from ${input.target.name} need read access to it. A Use grant includes read; run-only access does not.`,
+		)
+	}
+	return events
+}
+
+function eventFlags(events: ReadonlyArray<FollowEvent>) {
+	return {
+		publishedEnabled: events.includes('published'),
+		pushedEnabled: events.includes('pushed'),
+	}
+}
+
 export async function addFollow(input: {
 	env: Env
 	followerOrgId: string
 	creatorUserId: string
 	name: string
 	kind?: FollowTargetKind
+	/** `published` and/or `pushed`. Omit to keep the current choice. */
+	events?: ReadonlyArray<FollowEvent>
 }): Promise<FollowView> {
 	const requested = input.name.trim()
 	if (!isScopedPackageName(requested)) {
@@ -96,6 +150,11 @@ export async function addFollow(input: {
 		ownerId: target.ownerId,
 	})
 	if (!decision.canCreate) throw followTargetNotFound(requested)
+	const events = resolveRequestedEvents({
+		target,
+		events: input.events,
+		canPush: decision.canPush,
+	})
 
 	const existing = await getFollowByTarget(input.env.APP_DB, {
 		followerOrgId: input.followerOrgId,
@@ -112,6 +171,7 @@ export async function addFollow(input: {
 			targetId: target.id,
 			requested,
 			existing,
+			events,
 			now,
 		})
 	}
@@ -128,6 +188,7 @@ export async function addFollow(input: {
 			targetId: target.id,
 			targetName: target.name,
 			createdAt: now,
+			...(events ? eventFlags(events) : {}),
 		})
 	} catch (error) {
 		const raced = await getFollowByTarget(input.env.APP_DB, {
@@ -161,6 +222,55 @@ export async function listFollowsForOrg(input: {
 	return rows.map(followView)
 }
 
+export class FollowNotFoundError extends McpCallerError {
+	constructor(name: string) {
+		super(`This org does not follow ${JSON.stringify(name.trim())}.`)
+		this.name = 'FollowNotFoundError'
+	}
+}
+
+/**
+ * Unfollow by `@handle/name`. Matches the live target first, then the stored
+ * name, so a follow whose target was deleted or became unreadable can still
+ * be removed.
+ */
+export async function removeFollow(input: {
+	env: Env
+	followerOrgId: string
+	name: string
+	kind?: FollowTargetKind
+}): Promise<{ removed: FollowView }> {
+	const requested = input.name.trim()
+	const follows = await listFollowsByFollower(
+		input.env.APP_DB,
+		input.followerOrgId,
+	)
+	const target = isScopedPackageName(requested)
+		? await resolveFollowTarget(input.env.APP_DB, {
+				name: requested,
+				kind: input.kind,
+			})
+		: null
+	const match =
+		(target
+			? follows.find(
+					(follow) =>
+						follow.targetKind === target.kind && follow.targetId === target.id,
+				)
+			: undefined) ??
+		follows.find(
+			(follow) =>
+				follow.targetName.toLowerCase() === requested.toLowerCase() &&
+				(input.kind === undefined || follow.targetKind === input.kind),
+		)
+	if (!match) throw new FollowNotFoundError(requested)
+	await deleteFollowForOrg(input.env.APP_DB, {
+		followerOrgId: input.followerOrgId,
+		id: match.id,
+	})
+	return { removed: followView(match) }
+}
+
 /**
  * Resume/retarget an existing follow for the authorized caller. Compare-and-
  * swap misses reload and retry a few times so a concurrent pause/resume does
@@ -173,7 +283,35 @@ async function settleExistingFollow(input: {
 	targetKind: FollowTargetKind
 	targetId: string
 	requested: string
-	existing: NonNullable<Awaited<ReturnType<typeof getFollowByTarget>>>
+	existing: FollowRecord
+	events: Array<FollowEvent> | null
+	now: string
+}): Promise<FollowView> {
+	const settled = await settleExistingFollowStatus(input)
+	if (!input.events) return settled
+	const flags = eventFlags(input.events)
+	await setFollowEvents(input.db, {
+		id: input.existing.id,
+		...flags,
+		updatedAt: input.now,
+	})
+	const updated = await getFollowByTarget(input.db, {
+		followerOrgId: input.followerOrgId,
+		targetKind: input.targetKind,
+		targetId: input.targetId,
+	})
+	if (!updated) throw followTargetNotFound(input.requested)
+	return followView(updated)
+}
+
+async function settleExistingFollowStatus(input: {
+	db: D1Database
+	followerOrgId: string
+	creatorUserId: string
+	targetKind: FollowTargetKind
+	targetId: string
+	requested: string
+	existing: FollowRecord
 	now: string
 }): Promise<FollowView> {
 	let row = input.existing
@@ -189,6 +327,7 @@ async function settleExistingFollow(input: {
 					...row,
 					status: 'active',
 					pausedAt: null,
+					pausedReason: null,
 					creatorUserId: input.creatorUserId,
 					updatedAt: input.now,
 				})

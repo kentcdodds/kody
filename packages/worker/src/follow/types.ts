@@ -1,3 +1,18 @@
+import {
+	followCreateLimitPerHour,
+	followEventsForKind,
+	followPausedRetentionDays,
+	type FollowEvent,
+	type FollowPauseReason,
+} from '#universal/follows.ts'
+
+export {
+	followEvents,
+	followPauseReasons,
+	type FollowEvent,
+	type FollowPauseReason,
+} from '#universal/follows.ts'
+
 export const followTargetKinds = ['package', 'repo'] as const
 
 export type FollowTargetKind = (typeof followTargetKinds)[number]
@@ -9,11 +24,12 @@ export type FollowStatus = (typeof followStatuses)[number]
 export const followPublishedTopic = 'follow.published'
 export const followPushedTopic = 'follow.pushed'
 
-export const followCreateMaxPerHour = 30
+export const followCreateMaxPerHour = followCreateLimitPerHour
 export const followCreateWindowSeconds = 60 * 60
 export const followPushWindowMs = 5 * 60 * 1000
 export const followPushMaxCommits = 20
-export const followPauseRetentionMs = 30 * 24 * 60 * 60 * 1000
+export const followPauseRetentionMs =
+	followPausedRetentionDays * 24 * 60 * 60 * 1000
 export const followZeroCreditsSkipReason = 'zero_credits'
 
 export type FollowPushCommit = {
@@ -36,6 +52,9 @@ export type FollowRecord = {
 	targetName: string
 	status: FollowStatus
 	pausedAt: string | null
+	pausedReason: FollowPauseReason | null
+	publishedEnabled: boolean
+	pushedEnabled: boolean
 	lastDeliverySkipReason: string | null
 	lastDeliverySkipAt: string | null
 	createdAt: string
@@ -46,8 +65,11 @@ export type FollowView = {
 	name: string
 	kind: FollowTargetKind
 	status: FollowStatus
+	/** Events this follow delivers: `published` and/or `pushed`. */
+	events: Array<FollowEvent>
 	created_at: string
 	paused_at: string | null
+	paused_reason: FollowPauseReason | null
 	last_delivery_skip_reason: string | null
 }
 
@@ -71,13 +93,27 @@ export type FollowTargetSnapshot = {
 	isPrivate: boolean
 }
 
+/** Chosen events this kind can deliver (plain repos are never published). */
+export function followRecordEvents(
+	record: Pick<
+		FollowRecord,
+		'targetKind' | 'publishedEnabled' | 'pushedEnabled'
+	>,
+): Array<FollowEvent> {
+	return followEventsForKind(record.targetKind).filter((event) =>
+		event === 'published' ? record.publishedEnabled : record.pushedEnabled,
+	)
+}
+
 export function followView(record: FollowRecord): FollowView {
 	return {
 		name: record.targetName,
 		kind: record.targetKind,
 		status: record.status,
+		events: followRecordEvents(record),
 		created_at: record.createdAt,
 		paused_at: record.pausedAt,
+		paused_reason: record.pausedReason,
 		last_delivery_skip_reason: record.lastDeliverySkipReason,
 	}
 }

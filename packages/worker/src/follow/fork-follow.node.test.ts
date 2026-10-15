@@ -39,6 +39,7 @@ test('forking resumes a paused upstream follow for the forking person', async ()
 	await pauseFollow(db, {
 		id: 'follow-paused',
 		pausedAt: '2026-10-15T01:00:00.000Z',
+		reason: 'access_lost',
 	})
 	listingMocks.getCommunityListingById.mockResolvedValue(listing)
 	await ensureFollowForCommunityFork({

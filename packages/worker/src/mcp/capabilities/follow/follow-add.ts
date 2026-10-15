@@ -5,7 +5,7 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { addFollow } from '#worker/follow/service.ts'
 import { followTargetKinds } from '#worker/follow/types.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
-import { followViewSchema } from './shared.ts'
+import { followEventsSchema, followViewSchema } from './shared.ts'
 
 export const followAddCapability = defineDomainCapability(
 	capabilityDomainNames.follow,
@@ -13,7 +13,7 @@ export const followAddCapability = defineDomainCapability(
 		name: 'followAdd',
 		orgPermission: 'org:read',
 		description:
-			'Follow a package or plain repo by @handle/name so this org receives follow.published when its live version moves and, when you can read it, follow.pushed when the default branch moves. Public targets are followable by any signed-in caller. Private targets require package:read (a use grant qualifies; execute-only does not) and a missing or unreadable target is reported as not found. Creating a follow that already exists returns it and, if it was paused, resumes it when you can still read the target.',
+			'Follow a package or plain repo by @handle/name so this org receives follow.published when its live version moves and, when you can read it, follow.pushed when the default branch moves. Public targets are followable by any signed-in caller. Private targets require package:read (a use grant qualifies; execute-only does not) and a missing or unreadable target is reported as not found. Creating a follow that already exists returns it and, if it was paused, resumes it when you can still read the target. Pass events to choose published and/or pushed; omit them to keep the current choice (both for a new follow).',
 		keywords: [
 			'follow',
 			'follow_repo',
@@ -40,6 +40,7 @@ export const followAddCapability = defineDomainCapability(
 				.describe(
 					'package or repo. Omit to follow the package when both exist under that name, otherwise the plain repo.',
 				),
+			events: followEventsSchema.optional(),
 		}),
 		outputSchema: z.object({
 			follow: followViewSchema,
@@ -52,6 +53,7 @@ export const followAddCapability = defineDomainCapability(
 				creatorUserId: user.userId,
 				name: args.name,
 				kind: args.kind,
+				events: args.events,
 			})
 			return { follow }
 		},

@@ -555,6 +555,10 @@
 		{
 			"filename": "0149-follows.sql",
 			"sha256": "7fa4d43f1f83d682cd5c018d4df5a9d7542659c4368a41ae266b4b1e3d6e99b6"
+		},
+		{
+			"filename": "0150-follow-events.sql",
+			"sha256": "74c82b5ea0d063b45470a531a8132eed51bca18668e76c41b967bf8ebcdd7214"
 		}
 	]
 }
