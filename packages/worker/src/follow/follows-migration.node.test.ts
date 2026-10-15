@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 
-test('follow push pending revision column defaults to zero', () => {
+test('follow push pending revision and generation columns keep existing rows', () => {
 	const sqlite = new DatabaseSync(':memory:')
 	sqlite.exec(`
 		CREATE TABLE follow_push_pending (
@@ -41,6 +41,22 @@ test('follow push pending revision column defaults to zero', () => {
 		)
 		.get() as { revision: number }
 	expect(row.revision).toBe(0)
+	sqlite.exec(
+		readFileSync(
+			new URL(
+				'../../migrations/0153-follow-push-pending-generation.sql',
+				import.meta.url,
+			),
+			'utf8',
+		),
+	)
+	const withGeneration = sqlite
+		.prepare(
+			`SELECT revision, generation FROM follow_push_pending
+			 WHERE target_kind = 'package' AND target_id = 'pkg-1'`,
+		)
+		.get() as { revision: number; generation: string }
+	expect(withGeneration).toEqual({ revision: 0, generation: '' })
 })
 
 test('fork backfill stores personal org id and keeps the person as creator', () => {

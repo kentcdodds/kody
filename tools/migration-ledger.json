@@ -567,6 +567,10 @@
 		{
 			"filename": "0152-follow-push-pending-revision.sql",
 			"sha256": "3fcbc60dd250517171ce37af377a63599aa39cfc298896c17464128780b0a9af"
+		},
+		{
+			"filename": "0153-follow-push-pending-generation.sql",
+			"sha256": "d17ebba01042a0de9165b3a6a386a677eecc915009bf6c461879e354d07e5c2c"
 		}
 	]
 }

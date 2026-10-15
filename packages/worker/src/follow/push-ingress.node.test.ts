@@ -147,6 +147,7 @@ test('a compare-and-swap miss re-reads and keeps the concurrent commits', async 
 			totalCommitsCount: 1,
 			updatedAt: '2026-10-15T00:00:00.000Z',
 			revision: 0,
+			generation: '',
 		},
 		null,
 	)
@@ -197,6 +198,7 @@ test('same event timestamp contention still keeps both pushes', async () => {
 			totalCommitsCount: 1,
 			updatedAt: at,
 			revision: 0,
+			generation: '',
 		},
 		null,
 	)

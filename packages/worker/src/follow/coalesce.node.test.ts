@@ -4,6 +4,7 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { mergeFollowPushWindow } from './coalesce.ts'
 import {
 	ensureFollowTables,
+	deleteFollowPushPendingIfUnchanged,
 	getFollowPushPending,
 	upsertFollowPushPending,
 } from './repo.ts'
@@ -230,7 +231,7 @@ test('a push after the window replaces the pending row', async () => {
 	expect(replaced.action).toBe('replace')
 	if (replaced.action !== 'replace') return
 	expect(
-		await upsertFollowPushPending(db, replaced.pending, seeded?.revision ?? 0),
+		await upsertFollowPushPending(db, replaced.pending, seeded),
 	).toBe(true)
 	const stored = await getFollowPushPending(db, base)
 	expect(stored?.windowStartedAt).toBe('2026-10-15T00:06:00.000Z')
@@ -253,6 +254,7 @@ test('upsertFollowPushPending leaves a row whose revision moved', async () => {
 		totalCommitsCount: 1,
 		updatedAt: '2026-10-15T00:00:00.000Z',
 		revision: 0,
+		generation: '',
 	}
 	expect(await upsertFollowPushPending(db, stored, null)).toBe(true)
 	const raced = {
@@ -262,9 +264,17 @@ test('upsertFollowPushPending leaves a row whose revision moved', async () => {
 		totalCommitsCount: 2,
 		updatedAt: '2026-10-15T00:01:00.000Z',
 	}
-	expect(await upsertFollowPushPending(db, raced, -1)).toBe(false)
+	const read = await getFollowPushPending(db, base)
+	expect(read?.revision).toBe(0)
+	expect(read?.generation).not.toBe('')
+	expect(
+		await upsertFollowPushPending(db, raced, {
+			revision: -1,
+			generation: read?.generation ?? '',
+		}),
+	).toBe(false)
 	expect((await getFollowPushPending(db, base))?.afterCommit).toBe('after-1')
-	expect(await upsertFollowPushPending(db, raced, 0)).toBe(true)
+	expect(await upsertFollowPushPending(db, raced, read)).toBe(true)
 	const next = await getFollowPushPending(db, base)
 	expect(next?.afterCommit).toBe('after-raced')
 	expect(next?.commits.map((entry) => entry.id)).toEqual(['c1', 'c-race'])
@@ -327,10 +337,10 @@ test('same event timestamp still serializes concurrent merges via revision', asy
 	expect(writerB.pending.updatedAt).toBe(at)
 
 	expect(
-		await upsertFollowPushPending(db, writerA.pending, sharedAt?.revision ?? 0),
+		await upsertFollowPushPending(db, writerA.pending, sharedAt),
 	).toBe(true)
 	expect(
-		await upsertFollowPushPending(db, writerB.pending, sharedAt?.revision ?? 0),
+		await upsertFollowPushPending(db, writerB.pending, sharedAt),
 	).toBe(false)
 
 	const afterA = await getFollowPushPending(db, base)
@@ -352,11 +362,60 @@ test('same event timestamp still serializes concurrent merges via revision', asy
 	})
 	expect(retried.action).toBe('merge')
 	expect(
-		await upsertFollowPushPending(db, retried.pending, afterA?.revision ?? 1),
+		await upsertFollowPushPending(db, retried.pending, afterA),
 	).toBe(true)
 	const both = await getFollowPushPending(db, base)
 	expect(both?.revision).toBe(2)
 	expect(both?.updatedAt).toBe(at)
 	expect(both?.commits.map((entry) => entry.id)).toEqual(['c1', 'c-a', 'c-b'])
 	expect(both?.totalCommitsCount).toBe(3)
+})
+
+test('a reinserted window does not match a stale snapshot at revision 0', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	const db = createD1FromSqlite(sqlite)
+	await ensureFollowTables(db)
+	const window = (after: string, id: string) =>
+		mergeFollowPushWindow({
+			...base,
+			existing: null,
+			now: new Date('2026-10-15T00:00:00.000Z'),
+			incoming: {
+				before: 'before',
+				after,
+				ref: 'refs/heads/main',
+				commits: [commit(id)],
+				totalCommitsCount: 1,
+				at: '2026-10-15T00:00:00.000Z',
+			},
+		}).pending
+	expect(await upsertFollowPushPending(db, window('after-old', 'c-old'), null)).toBe(true)
+	const stale = await getFollowPushPending(db, base)
+	if (!stale) throw new Error('expected a pending row')
+
+	// Flush A deletes the window; push C inserts a fresh one (revision 0 again).
+	expect(await deleteFollowPushPendingIfUnchanged(db, stale)).toBe(true)
+	// A stale writer that read the deleted row must not recreate it.
+	expect(await upsertFollowPushPending(db, stale, stale)).toBe(false)
+	expect(await getFollowPushPending(db, base)).toBeNull()
+	expect(await upsertFollowPushPending(db, window('after-new', 'c-new'), null)).toBe(true)
+	const fresh = await getFollowPushPending(db, base)
+	expect(fresh?.revision).toBe(0)
+	expect(fresh?.generation).not.toBe(stale.generation)
+	// An insert never clobbers an existing row.
+	expect(await upsertFollowPushPending(db, window('after-x', 'c-x'), null)).toBe(false)
+
+	// Flush B still holds the old revision-0 snapshot: it must not delete C.
+	expect(await deleteFollowPushPendingIfUnchanged(db, stale)).toBe(false)
+	// A delayed writer holding the old snapshot must not overwrite C either.
+	expect(
+		await upsertFollowPushPending(
+			db,
+			{ ...stale, afterCommit: 'after-stale' },
+			stale,
+		),
+	).toBe(false)
+	const kept = await getFollowPushPending(db, base)
+	expect(kept?.afterCommit).toBe('after-new')
+	expect(kept?.commits.map((entry) => entry.id)).toEqual(['c-new'])
 })

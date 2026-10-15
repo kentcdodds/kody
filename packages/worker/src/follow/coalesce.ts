@@ -85,6 +85,7 @@ export function mergeFollowPushWindow(input: {
 				: input.existing.updatedAt,
 			// Caller CAS-es on the stored revision; the DB bumps it on write.
 			revision: input.existing.revision,
+			generation: input.existing.generation,
 		},
 	}
 }
@@ -109,6 +110,8 @@ function freshWindow(input: {
 		updatedAt: input.incoming.at,
 		// Insert starts at 0; upsert increments on later conflict updates.
 		revision: 0,
+		// Assigned by the DB insert; a fresh window has no identity yet.
+		generation: '',
 	}
 }
 

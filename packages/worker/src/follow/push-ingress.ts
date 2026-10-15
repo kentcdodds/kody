@@ -71,7 +71,9 @@ async function coalesceOneFollowPush(input: {
 		// Wall clock: delayed webhooks must not reopen a flushed window.
 		now: input.now,
 	})
-	const expectedRevision = existing?.revision ?? null
+	const expected = existing
+		? { revision: existing.revision, generation: existing.generation }
+		: null
 	switch (merged.action) {
 		case 'unchanged':
 			return true
@@ -79,7 +81,7 @@ async function coalesceOneFollowPush(input: {
 			return await upsertFollowPushPending(
 				input.env.APP_DB,
 				merged.pending,
-				expectedRevision,
+				expected,
 			)
 		case 'replace': {
 			const flushed = await flushPendingWindow({
@@ -97,13 +99,13 @@ async function coalesceOneFollowPush(input: {
 				return await upsertFollowPushPending(
 					input.env.APP_DB,
 					kept.pending,
-					expectedRevision,
+					expected,
 				)
 			}
 			return await upsertFollowPushPending(
 				input.env.APP_DB,
 				merged.pending,
-				expectedRevision,
+				expected,
 			)
 		}
 		default: {
@@ -126,6 +128,7 @@ export async function flushPendingWindow(input: {
 		totalCommitsCount: number
 		updatedAt: string
 		revision: number
+		generation: string
 	}
 }): Promise<boolean> {
 	try {

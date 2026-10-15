@@ -335,6 +335,7 @@ function mapPending(row: Record<string, unknown>): FollowPushPending {
 		totalCommitsCount: Number(row['total_commits_count'] ?? 0),
 		updatedAt: String(row['updated_at']),
 		revision: Number(row['revision'] ?? 0),
+		generation: String(row['generation'] ?? ''),
 	}
 }
 
@@ -363,7 +364,7 @@ export async function getFollowPushPending(
 		.prepare(
 			`SELECT target_kind, target_id, window_started_at, before_commit,
 				after_commit, ref, commits_json, total_commits_count, updated_at,
-				revision
+				revision, generation
 			FROM follow_push_pending
 			WHERE target_kind = ? AND target_id = ?`,
 		)
@@ -373,46 +374,64 @@ export async function getFollowPushPending(
 }
 
 /**
- * Insert or replace the open window only when `expectedRevision` is still
- * the stored `revision` (`null` when the row is absent). A miss means a
- * concurrent push won the race; the caller re-reads and merges. `updated_at`
+ * Write the open window with compare-and-swap. `expected === null` means the
+ * caller saw no row: insert a fresh window with a new `generation`, and miss
+ * if any row exists. Otherwise update only while the stored `revision` and
+ * `generation` still match what the caller read; a deleted row is never
+ * recreated by a stale writer, and a reinserted row (new generation) never
+ * matches an old snapshot even though its revision restarts at 0. A miss
+ * means a concurrent writer won; the caller re-reads and merges. `updated_at`
  * stays webhook event time for tip ordering and may not change on a write.
  */
 export async function upsertFollowPushPending(
 	db: D1Database,
 	row: FollowPushPending,
-	expectedRevision: number | null,
+	expected: Pick<FollowPushPending, 'revision' | 'generation'> | null,
 ): Promise<boolean> {
-	const result = await db
-		.prepare(
-			`INSERT INTO follow_push_pending (
-				target_kind, target_id, window_started_at, before_commit, after_commit,
-				ref, commits_json, total_commits_count, updated_at, revision
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-			ON CONFLICT (target_kind, target_id) DO UPDATE SET
-				window_started_at = excluded.window_started_at,
-				before_commit = excluded.before_commit,
-				after_commit = excluded.after_commit,
-				ref = excluded.ref,
-				commits_json = excluded.commits_json,
-				total_commits_count = excluded.total_commits_count,
-				updated_at = excluded.updated_at,
-				revision = follow_push_pending.revision + 1
-			WHERE follow_push_pending.revision = ?`,
-		)
-		.bind(
-			row.targetKind,
-			row.targetId,
-			row.windowStartedAt,
-			row.beforeCommit,
-			row.afterCommit,
-			row.ref,
-			JSON.stringify(row.commits),
-			row.totalCommitsCount,
-			row.updatedAt,
-			expectedRevision,
-		)
-		.run()
+	const values = [
+		row.windowStartedAt,
+		row.beforeCommit,
+		row.afterCommit,
+		row.ref,
+		JSON.stringify(row.commits),
+		row.totalCommitsCount,
+		row.updatedAt,
+	]
+	const result =
+		expected === null
+			? await db
+					.prepare(
+						`INSERT INTO follow_push_pending (
+							target_kind, target_id, window_started_at, before_commit,
+							after_commit, ref, commits_json, total_commits_count, updated_at,
+							revision, generation
+						) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+						ON CONFLICT (target_kind, target_id) DO NOTHING`,
+					)
+					.bind(row.targetKind, row.targetId, ...values, crypto.randomUUID())
+					.run()
+			: await db
+					.prepare(
+						`UPDATE follow_push_pending SET
+							window_started_at = ?,
+							before_commit = ?,
+							after_commit = ?,
+							ref = ?,
+							commits_json = ?,
+							total_commits_count = ?,
+							updated_at = ?,
+							revision = revision + 1
+						WHERE target_kind = ? AND target_id = ?
+							AND revision = ? AND generation = ?`,
+					)
+					.bind(
+						...values,
+						row.targetKind,
+						row.targetId,
+						expected.revision,
+						expected.generation,
+					)
+					.run()
 	return (result.meta.changes ?? 0) > 0
 }
 
@@ -424,7 +443,7 @@ export async function listDueFollowPushPending(
 		.prepare(
 			`SELECT target_kind, target_id, window_started_at, before_commit,
 				after_commit, ref, commits_json, total_commits_count, updated_at,
-				revision
+				revision, generation
 			FROM follow_push_pending
 			WHERE window_started_at <= ?`,
 		)
@@ -436,14 +455,18 @@ export async function listDueFollowPushPending(
 /** Deletes the flushed snapshot only when no newer write replaced it. */
 export async function deleteFollowPushPendingIfUnchanged(
 	db: D1Database,
-	row: Pick<FollowPushPending, 'targetKind' | 'targetId' | 'revision'>,
+	row: Pick<
+		FollowPushPending,
+		'targetKind' | 'targetId' | 'revision' | 'generation'
+	>,
 ): Promise<boolean> {
 	const result = await db
 		.prepare(
 			`DELETE FROM follow_push_pending
-			WHERE target_kind = ? AND target_id = ? AND revision = ?`,
+			WHERE target_kind = ? AND target_id = ? AND revision = ?
+				AND generation = ?`,
 		)
-		.bind(row.targetKind, row.targetId, row.revision)
+		.bind(row.targetKind, row.targetId, row.revision, row.generation)
 		.run()
 	return (result.meta.changes ?? 0) > 0
 }
@@ -486,6 +509,7 @@ export async function ensureFollowTables(db: D1Database) {
 			total_commits_count INTEGER NOT NULL,
 			updated_at TEXT NOT NULL,
 			revision INTEGER NOT NULL DEFAULT 0,
+			generation TEXT NOT NULL DEFAULT '',
 			PRIMARY KEY (target_kind, target_id)
 		)`,
 	]
