@@ -133,6 +133,7 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	// family, plus `Error:` / `D1_ERROR:` prefixes and missing trailing periods.
 	const dropped = [
 		'D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY',
+		'D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY (extended: SQLITE_BUSY_SNAPSHOT)',
 		// D1 blips (with and without D1_ERROR: prefix).
 		'Network connection lost.',
 		'D1_ERROR: D1 DB is overloaded. Requests queued for too long.',

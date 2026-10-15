@@ -209,16 +209,26 @@ test('isBareRetryableD1LockMessage rejects wrappers that embed lock or export te
 	)
 	expect(
 		isBareRetryableD1LockMessage(
+			'D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY (extended: SQLITE_BUSY_SNAPSHOT)',
+		),
+	).toBe(true)
+	expect(
+		isBareRetryableD1LockMessage(
 			'D1_ERROR: Currently processing a long-running export.',
 		),
 	).toBe(true)
 	expect(isBareRetryableD1LockMessage(d1StartupReset)).toBe(true)
 	// Substring retry matcher still accepts embedded text; bare Sentry matcher must not.
+	const d1SqliteBusyExtended =
+		'D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY (extended: SQLITE_BUSY_SNAPSHOT)'
 	expect(isRetryableD1LockMessage(rebuildFailureWrapper(d1SqliteBusy))).toBe(
 		true,
 	)
 	expect(
 		isBareRetryableD1LockMessage(rebuildFailureWrapper(d1SqliteBusy)),
+	).toBe(false)
+	expect(
+		isBareRetryableD1LockMessage(rebuildFailureWrapper(d1SqliteBusyExtended)),
 	).toBe(false)
 	expect(
 		isBareRetryableD1LockMessage(rebuildFailureWrapper(d1StartupReset)),

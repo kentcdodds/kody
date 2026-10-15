@@ -93,10 +93,12 @@ function isD1InternalErrorMessage(message: string) {
  * `D1_ERROR:` prefixes. Anchored so recovery wrappers that embed
  * `SQLITE_BUSY` / `database is locked` / the export phrase (for example
  * rebuild failure messages) stay non-matching for Sentry drops while retries
- * still use the substring predicate below.
+ * still use the substring predicate below. Optional `(extended: SQLITE_BUSY_…)`
+ * matches the same SQLite extended-result suffix D1 appends on constraint
+ * failures elsewhere in this repo.
  */
 const d1BareLockMessagePattern =
-	/^(?:NOSENTRY\s+)?database is locked(?::\s*SQLITE_BUSY)?$/i
+	/^(?:NOSENTRY\s+)?database is locked(?::\s*SQLITE_BUSY(?:\s*\(extended:\s*SQLITE_BUSY_[A-Z0-9_]+\))?)?$/i
 
 function isD1BareLockMessage(message: string) {
 	return d1BareLockMessagePattern.test(stripD1ErrorPrefixes(message))
