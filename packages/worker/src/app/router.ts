@@ -353,6 +353,7 @@ import {
 	createOrgMembersInviteLinksPostHandler,
 	createOrgMembersInviteLinksRevokePostHandler,
 	createOrgMembersInvitePostHandler,
+	createOrgMembersInviteRevokePostHandler,
 	createOrgMembersRemovePostHandler,
 	createOrgMembersRolePostHandler,
 } from '#app/handlers/org-members.ts'
@@ -750,6 +751,7 @@ export function createAppRouter(env: Env) {
 			orgMembersRolePost: createOrgMembersRolePostHandler(env),
 			orgMembersRemovePost: createOrgMembersRemovePostHandler(env),
 			orgMembersInvitePost: createOrgMembersInvitePostHandler(env),
+			orgMembersInviteRevokePost: createOrgMembersInviteRevokePostHandler(env),
 			orgMembersInviteLinksPost: createOrgMembersInviteLinksPostHandler(env),
 			orgMembersInviteLinksRevokePost:
 				createOrgMembersInviteLinksRevokePostHandler(env),

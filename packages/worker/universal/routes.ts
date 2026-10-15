@@ -270,6 +270,7 @@ export const routes = route({
 	orgMembersRolePost: post('/@:orgSlug/-/members/role.json'),
 	orgMembersRemovePost: post('/@:orgSlug/-/members/remove.json'),
 	orgMembersInvitePost: post('/@:orgSlug/-/members/invite.json'),
+	orgMembersInviteRevokePost: post('/@:orgSlug/-/members/invite-revoke.json'),
 	orgMembersInviteLinksPost: post('/@:orgSlug/-/members/invite-links.json'),
 	orgMembersInviteLinksRevokePost: post(
 		'/@:orgSlug/-/members/invite-links-revoke.json',

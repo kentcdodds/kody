@@ -21,6 +21,8 @@ import {
 import { jsonResponse } from '#worker/json-response.ts'
 import {
 	createInvite,
+	getInviteById,
+	markInviteRevoked,
 	updateOrgMemberRole,
 } from '#worker/orgs/access-writes.ts'
 import { assertCanAcceptFreeOrgOwnership } from '#worker/orgs/billing.ts'
@@ -646,4 +648,66 @@ export function createOrgMembersInviteLinksRevokePostHandler(env: Env) {
 			)
 		},
 	} satisfies Action<typeof routes.orgMembersInviteLinksRevokePost>
+}
+
+/** Revoke a pending membership invite this org sent by email or username. */
+export function createOrgMembersInviteRevokePostHandler(env: Env) {
+	return {
+		middleware: [],
+		async handler({ request }) {
+			const user = await readAuthenticatedAppUser(request, env)
+			if (!user) {
+				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
+			}
+			const access = await resolveOrgManagementAccess({
+				request,
+				env,
+				user,
+				permission: 'member:write',
+			})
+			if (!access.ok) {
+				return jsonResponse({ ok: false, error: access.error }, access.status)
+			}
+			if (access.org.personal) return personalOrgMembershipWriteResponse()
+			const body = await readJsonObject(request)
+			const inviteId =
+				typeof body?.inviteId === 'string' ? body.inviteId.trim() : ''
+			const invite = inviteId
+				? await getInviteById({
+						db: env.APP_DB,
+						orgId: access.org.id,
+						inviteId,
+					})
+				: null
+			if (!invite || invite.kind !== 'membership') {
+				return jsonResponse(
+					{ ok: false, error: 'That invite was not found.' },
+					404,
+				)
+			}
+			if (invite.role === 'owner' && access.org.role !== 'owner') {
+				return jsonResponse(
+					{ ok: false, error: 'Only an Owner can revoke an Owner invite.' },
+					403,
+				)
+			}
+			try {
+				await markInviteRevoked({
+					db: env.APP_DB,
+					orgId: access.org.id,
+					inviteId: invite.id,
+					audit: orgAuditWriterFromRequest(env, user.request),
+				})
+			} catch (error) {
+				const message =
+					error instanceof Error
+						? error.message
+						: 'Unable to revoke that invite.'
+				return jsonResponse({ ok: false, error: message }, 400)
+			}
+			return jsonResponse(
+				await loadOrgMembersData({ env, user, org: access.org }),
+			)
+		},
+	} satisfies Action<typeof routes.orgMembersInviteRevokePost>
 }
