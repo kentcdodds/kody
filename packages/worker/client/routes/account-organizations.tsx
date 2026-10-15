@@ -59,10 +59,10 @@ import {
 	noticeCardCss,
 } from './account-management-components.tsx'
 import {
-	type InviteLinkActions,
-	postInviteLinkAction,
-	renderInviteLinkActions,
-} from './account-organizations-invite-links.tsx'
+	createPendingInviteActions,
+	type PendingInviteActions,
+	renderPendingInviteActions,
+} from './pending-invite-actions.tsx'
 
 type OrgViewer = { displayName: string; avatarUrl: string | null }
 
@@ -374,20 +374,6 @@ export async function accountOrganizationsRouteLoader(
 	return { accountOrganizations: payload }
 }
 
-function inviteRoleLabel(
-	invite: AccountOrganizationsLoaderData['invites'][number],
-) {
-	if (invite.kind !== 'membership') return 'Access grant'
-	switch (invite.role) {
-		case 'owner':
-		case 'member':
-		case 'billing':
-			return `${orgRoleLabel(invite.role)} invite`
-		default:
-			return 'Membership invite'
-	}
-}
-
 function renderOrganizationList(data: AccountOrganizationsLoaderData) {
 	const organizations = orderOrganizations(
 		organizationsWithSignupFallback({
@@ -421,11 +407,9 @@ function renderOrganizationList(data: AccountOrganizationsLoaderData) {
 
 function renderInvites(
 	data: AccountOrganizationsLoaderData,
-	actions: InviteLinkActions,
+	actions: PendingInviteActions,
 ) {
-	const invites = data.invites
-	const inviteLinks = data.inviteLinks
-	if (invites.length === 0 && inviteLinks.length === 0) {
+	if (data.pendingInvites.length === 0) {
 		return (
 			<div mix={css(emptyStateCss)} data-testid="invites-empty">
 				<span aria-hidden="true" mix={css(emptyIconCss)}>
@@ -443,29 +427,17 @@ function renderInvites(
 	}
 	return (
 		<ul mix={css(orgListCss)} data-testid="invites-list">
-			{invites.map((invite) =>
+			{data.pendingInvites.map((invite) =>
 				renderOrgRow({
-					key: invite.id,
+					key: `${invite.source}:${invite.id}`,
 					slug: invite.orgSlug,
 					displayName: invite.orgDisplayName,
-					personal: false,
+					personal: invite.orgPersonal,
 					viewer: { displayName: '', avatarUrl: null },
-					detail: `Expires ${formatTimestampDate(invite.expiresAt)}`,
-					pills: [{ label: inviteRoleLabel(invite), tone: 'quiet' }],
-					testId: 'invite',
-				}),
-			)}
-			{inviteLinks.map((link) =>
-				renderOrgRow({
-					key: `link:${link.linkId}`,
-					slug: link.orgSlug,
-					displayName: link.orgDisplayName,
-					personal: link.orgPersonal,
-					viewer: { displayName: '', avatarUrl: null },
-					detail: `${link.label} · Expires ${formatTimestampDate(link.expiresAt)}`,
+					detail: `${invite.label} · Expires ${formatTimestampDate(invite.expiresAt)}`,
 					pills: [],
-					testId: 'invite-link',
-					trailing: renderInviteLinkActions(link.linkId, actions),
+					testId: 'pending-invite',
+					trailing: renderPendingInviteActions(invite, actions),
 				}),
 			)}
 		</ul>
@@ -485,42 +457,10 @@ export function AccountOrganizationsRoute(handle: Handle) {
 			return payload
 		},
 	})
-	let busyLinkId: string | null = null
-	let linkMessage: string | null = null
-	let linkMessageTone: 'info' | 'error' = 'info'
-
-	async function runLinkAction(linkId: string, action: 'accept' | 'decline') {
-		if (busyLinkId) return
-		busyLinkId = linkId
-		linkMessage = null
-		handle.update()
-		try {
-			const payload = await postInviteLinkAction(linkId, action)
-			if (action === 'accept' && payload.redirectTo) {
-				window.location.assign(payload.redirectTo)
-				return
-			}
-			linkMessage =
-				action === 'accept' ? 'Invite accepted.' : 'Invite declined.'
-			linkMessageTone = 'info'
-			organizationsData.reload(handle, readCurrentRouterHref(handle))
-		} catch (error) {
-			linkMessage =
-				error instanceof Error ? error.message : 'Unable to update that invite.'
-			linkMessageTone = 'error'
-			organizationsData.reload(handle, readCurrentRouterHref(handle))
-		}
-		busyLinkId = null
-		handle.update()
-	}
-
-	const inviteLinkActions = {
-		get busyLinkId() {
-			return busyLinkId
-		},
-		accept: (linkId: string) => void runLinkAction(linkId, 'accept'),
-		decline: (linkId: string) => void runLinkAction(linkId, 'decline'),
-	}
+	const inviteActions = createPendingInviteActions(handle, {
+		reload: () =>
+			organizationsData.reload(handle, readCurrentRouterHref(handle)),
+	})
 
 	return () => {
 		const href = readCurrentRouterHref(handle)
@@ -584,15 +524,15 @@ export function AccountOrganizationsRoute(handle: Handle) {
 						<AccountManagementPanel
 							id="invites"
 							title="Invites"
-							description="Accept invite links you opened here. For an invite prompt you were sent, paste it into your agent."
+							description="Invites addressed to you and invite links you opened. They also wait on your Waiting page."
 							ariaLabel="Invites"
 						>
-							{linkMessage ? (
-								<AccountManagementMessage tone={linkMessageTone}>
-									{linkMessage}
+							{inviteActions.message ? (
+								<AccountManagementMessage tone={inviteActions.tone}>
+									{inviteActions.message}
 								</AccountManagementMessage>
 							) : null}
-							{renderInvites(data, inviteLinkActions)}
+							{renderInvites(data, inviteActions)}
 						</AccountManagementPanel>
 					</>
 				) : null}

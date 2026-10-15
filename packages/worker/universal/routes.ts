@@ -443,6 +443,12 @@ export const routes = route({
 	accountInviteLinkDeclinePost: post(
 		'/account/organizations/invite-links/:linkId/decline.json',
 	),
+	accountInviteAcceptPost: post(
+		'/account/organizations/invites/:inviteId/accept.json',
+	),
+	accountInviteDeclinePost: post(
+		'/account/organizations/invites/:inviteId/decline.json',
+	),
 	accountDelete: post('/account/delete'),
 	auth: post('/auth'),
 	authProvidersApi: '/auth/providers.json',

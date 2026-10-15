@@ -295,8 +295,13 @@ export type PendingInviteSummary = {
 	id: string
 	orgSlug: string
 	orgDisplayName: string | null
+	orgPersonal: boolean
 	kind: string
 	role: string | null
+	resourceType: string | null
+	preset: string | null
+	/** Set for a grant invite on a live package in the inviting org. */
+	packageName: string | null
 	expiresAt: string
 }
 
@@ -307,9 +312,20 @@ export async function listPendingInvitesForPerson(
 	const rows = await db
 		.prepare(
 			`SELECT i.id AS id, o.slug AS org_slug, o.display_name AS org_display_name,
-			        i.kind AS kind, i.role AS role, i.expires_at AS expires_at
+			        i.kind AS kind, i.role AS role, i.resource_type AS resource_type,
+			        i.preset AS preset, i.expires_at AS expires_at,
+			        sp.name AS package_name,
+			        EXISTS (
+			          SELECT 1 FROM users owner
+			          WHERE COALESCE(NULLIF(TRIM(owner.personal_org_id), ''), owner.stable_user_id) = o.id
+			            AND owner.deleted_at IS NULL
+			        ) AS org_personal
 			 FROM invites i
 			 INNER JOIN orgs o ON o.id = i.org_id
+			 LEFT JOIN saved_packages sp
+			   ON i.kind = 'grant' AND i.resource_type = 'package'
+			  AND sp.id = i.resource_id AND sp.user_id = i.org_id
+			  AND sp.deleted_at IS NULL
 			 WHERE i.status = 'pending'
 			   AND i.expires_at > ?${andActiveOrgSql('o')}
 			   AND (
@@ -325,14 +341,22 @@ export async function listPendingInvitesForPerson(
 			org_display_name: string | null
 			kind: string
 			role: string | null
+			resource_type: string | null
+			preset: string | null
 			expires_at: string
+			package_name: string | null
+			org_personal: number | null
 		}>()
 	return (rows.results ?? []).map((row) => ({
 		id: row.id,
 		orgSlug: row.org_slug,
 		orgDisplayName: row.org_display_name,
+		orgPersonal: row.org_personal === 1,
 		kind: row.kind,
 		role: row.role,
+		resourceType: row.resource_type,
+		preset: row.preset,
+		packageName: row.package_name,
 		expiresAt: row.expires_at,
 	}))
 }

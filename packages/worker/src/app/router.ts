@@ -332,6 +332,10 @@ import {
 } from '#app/handlers/org-section.ts'
 import { createOrgAvatarHandler } from '#app/handlers/org-avatar.ts'
 import {
+	createAccountInviteAcceptPostHandler,
+	createAccountInviteDeclinePostHandler,
+} from '#app/handlers/account-invites.ts'
+import {
 	createAccountInviteLinkAcceptPostHandler,
 	createAccountInviteLinkDeclinePostHandler,
 	createOrgInviteJoinDeclinePostHandler,
@@ -494,6 +498,8 @@ export function createAppRouter(env: Env) {
 				createAccountInviteLinkAcceptPostHandler(env),
 			accountInviteLinkDeclinePost:
 				createAccountInviteLinkDeclinePostHandler(env),
+			accountInviteAcceptPost: createAccountInviteAcceptPostHandler(env),
+			accountInviteDeclinePost: createAccountInviteDeclinePostHandler(env),
 			accountDelete: createAccountDeleteHandler(env),
 			accountExport: createAccountExportHandler(env),
 			accountIntegrationsApi: createAccountIntegrationsApiHandler(env),

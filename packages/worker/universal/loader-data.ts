@@ -1212,15 +1212,6 @@ export type AccountOrganizationSummary = {
 	avatarUrl?: string | null
 }
 
-type AccountInviteSummary = {
-	id: string
-	orgSlug: string
-	orgDisplayName: string | null
-	kind: string
-	role: string | null
-	expiresAt: string
-}
-
 export type AccountProfileLoaderData = {
 	ok: true
 	email: string
@@ -1242,15 +1233,18 @@ type AccountOrganizationsNewLoaderData = {
 }
 
 /**
- * An invite link the person opened and has not accepted or declined. `label`
- * says what accepting gives ("Member", "Writers team", "Use on my-package").
+ * Something waiting on the signed-in person to accept or decline: an invite
+ * link they opened (`link`) or an invite addressed to their email or
+ * username (`invite`). `id` is only used to build the accept and decline
+ * URLs. `label` says what accepting gives ("Join as Member", "Join the
+ * Design team", "Use access to weather").
  */
-export type AccountInviteLinkSummary = {
-	linkId: string
+export type AccountPendingInvite = {
+	source: 'link' | 'invite'
+	id: string
 	orgSlug: string
 	orgDisplayName: string | null
 	orgPersonal: boolean
-	kind: 'membership' | 'team' | 'resource'
 	label: string
 	expiresAt: string
 }
@@ -1261,8 +1255,7 @@ export type AccountOrganizationsLoaderData = {
 	/** The signup organization is named and pictured after the person. */
 	viewer: { displayName: string; avatarUrl: string | null }
 	organizations: Array<AccountOrganizationSummary>
-	invites: Array<AccountInviteSummary>
-	inviteLinks: Array<AccountInviteLinkSummary>
+	pendingInvites: Array<AccountPendingInvite>
 }
 
 type OrgManagementOrg = {
@@ -3241,6 +3234,8 @@ export type AccountUsageLoaderData = AccountUsageStoryData & {
 export type AccountWaitingLoaderData = {
 	ok: true
 	items: Array<WaitingItem>
+	/** Invites to accept or decline, shown above the other items. */
+	invites: Array<AccountPendingInvite>
 }
 
 export type AccountExperimentsLoaderData = {
