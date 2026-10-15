@@ -1412,3 +1412,97 @@ test('applied purge ignores plannedPurgeMemoryIds so live grants stay', async ()
 		.first<{ deleted_at: string | null }>()
 	expect(stillLive?.deleted_at).toBeNull()
 })
+
+test('grant sweep batches live memory lookups and only revokes non-live grants', async () => {
+	const { db, sqlite } = await createDb()
+	const ada = testStableUserIdFromEmail('ada-purge-batch-live@example.com')
+	const guest = testStableUserIdFromEmail('guest-purge-batch-live@example.com')
+	insertUser(sqlite, {
+		id: 1,
+		username: 'ada-purge-batch-live',
+		email: 'ada-purge-batch-live@example.com',
+		personId: ada,
+	})
+	insertUser(sqlite, {
+		id: 2,
+		username: 'guest-purge-batch-live',
+		email: 'guest-purge-batch-live@example.com',
+		personId: guest,
+	})
+	await provisionPersonalOrg(db, {
+		stableUserId: ada,
+		username: 'ada-purge-batch-live',
+	})
+	await provisionPersonalOrg(db, {
+		stableUserId: guest,
+		username: 'guest-purge-batch-live',
+	})
+	const created = await createOrganization(db, {} as Env, {
+		personId: ada,
+		audit: createTestOrgAuditWriter(),
+		slug: 'purge-batch-live-co',
+		displayName: 'Purge Batch Live',
+	})
+	if (!created.ok) throw new Error(created.error)
+	const org = await db
+		.prepare(`SELECT id FROM orgs WHERE slug = 'purge-batch-live-co'`)
+		.first<{ id: string }>()
+	const liveId = 'mem-batch-live'
+	const goneId = 'mem-batch-gone'
+	sqlite
+		.prepare(
+			`INSERT INTO mcp_memories (
+				id, user_id, status, subject, summary, details, created_at, updated_at
+			) VALUES (?, ?, 'active', 'Live', 'summary', '', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+		)
+		.run(liveId, org!.id)
+	sqlite
+		.prepare(
+			`INSERT INTO mcp_memories (
+				id, user_id, status, subject, summary, details, created_at, updated_at,
+				deleted_at, vector_deleted_at
+			) VALUES (?, ?, 'deleted', 'Gone', 'summary', '', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', '2026-01-02T00:00:00.000Z')`,
+		)
+		.run(goneId, org!.id)
+	for (const [grantId, memoryId] of [
+		['g-batch-live', liveId],
+		['g-batch-gone', goneId],
+	] as const) {
+		sqlite
+			.prepare(
+				`INSERT INTO grants (
+					id, org_id, resource_type, resource_id, subject_type, subject_id,
+					created_by_user_id, created_at, updated_at
+				) VALUES (?, ?, 'memory', ?, 'user', ?, ?, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+			)
+			.run(grantId, org!.id, memoryId, guest, ada)
+		sqlite
+			.prepare(
+				`INSERT INTO grant_permissions (grant_id, permission) VALUES (?, 'memory:read')`,
+			)
+			.run(grantId)
+	}
+
+	const meter = createInMemoryUserMeterEnv()
+	const env = {
+		APP_DB: db,
+		USER_METER: meter.env.USER_METER,
+	} as unknown as Env
+	const result = await runMemoryPersonalizePurge({
+		env,
+		audit: createTestOrgAuditWriter(),
+		dryRun: false,
+		orgIds: [org!.id],
+		purgeOrphans: false,
+	})
+	expect(result.grantsRevoked).toBe(1)
+	expect(result.grantRows.map((row) => row.resourceId)).toEqual([goneId])
+	const liveGrant = await db
+		.prepare(`SELECT deleted_at FROM grants WHERE id = 'g-batch-live'`)
+		.first<{ deleted_at: string | null }>()
+	const goneGrant = await db
+		.prepare(`SELECT deleted_at FROM grants WHERE id = 'g-batch-gone'`)
+		.first<{ deleted_at: string | null }>()
+	expect(liveGrant?.deleted_at).toBeNull()
+	expect(goneGrant?.deleted_at).toBeTruthy()
+})

@@ -8,6 +8,10 @@
  * stranded Vectorize entries after a successful D1 soft-delete.
  */
 import {
+	chunkArray,
+	maxD1BoundParameters,
+} from '@kody-internal/shared/chunk.ts'
+import {
 	parseOwnerId,
 	type PersonId,
 } from '@kody-internal/shared/owner-person-ids.ts'
@@ -216,6 +220,33 @@ async function isLiveOrgMemory(input: {
 		.bind(input.orgId, input.memoryId)
 		.first<{ x: number }>()
 	return live != null
+}
+
+/** Live memory ids among `memoryIds` for one org (chunked for D1 bind limits). */
+async function listLiveOrgMemoryIds(input: {
+	db: D1Database
+	orgId: string
+	memoryIds: ReadonlyArray<string>
+}): Promise<Set<string>> {
+	const live = new Set<string>()
+	const uniqueIds = [...new Set(input.memoryIds)]
+	if (uniqueIds.length === 0) return live
+	// One fixed bind (orgId) + id list must stay under D1's parameter cap.
+	const idChunkSize = Math.max(1, maxD1BoundParameters - 1)
+	for (const chunk of chunkArray(uniqueIds, idChunkSize)) {
+		const placeholders = chunk.map(() => '?').join(', ')
+		const { results } = await input.db
+			.prepare(
+				`SELECT id FROM mcp_memories
+				 WHERE user_id = ?
+				   AND deleted_at IS NULL
+				   AND id IN (${placeholders})`,
+			)
+			.bind(input.orgId, ...chunk)
+			.all<{ id: string }>()
+		for (const row of results ?? []) live.add(row.id)
+	}
+	return live
 }
 
 /**
@@ -660,16 +691,14 @@ export async function runMemoryPersonalizePurge(input: {
 			orgId: org.id,
 			resourceType: 'memory',
 		})
+		const liveMemoryIds = await listLiveOrgMemoryIds({
+			db: input.env.APP_DB,
+			orgId: org.id,
+			memoryIds: memoryGrants.map((grant) => grant.resourceId),
+		})
 		for (const grant of memoryGrants) {
 			const purgedNow = plannedPurgeMemoryIds.has(grant.resourceId)
-			if (!purgedNow) {
-				const live = await isLiveOrgMemory({
-					db: input.env.APP_DB,
-					orgId: org.id,
-					memoryId: grant.resourceId,
-				})
-				if (live) continue
-			}
+			if (!purgedNow && liveMemoryIds.has(grant.resourceId)) continue
 			if (dryRun) {
 				grantsWouldRevoke += 1
 				grantRows.push({
