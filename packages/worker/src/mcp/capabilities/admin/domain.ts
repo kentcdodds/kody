@@ -11,6 +11,10 @@ import { adminOrgResourceTransferCapability } from './admin-org-resource-transfe
 import { adminCommunityOrphanForksCleanupCapability } from './admin-community-orphan-forks-cleanup.ts'
 import { adminFeatureFlagListCapability } from './admin-feature-flag-list.ts'
 import { adminFeatureFlagOverrideCapability } from './admin-feature-flag-override.ts'
+import {
+	adminFeatureFlagRepoCheckCapability,
+	adminFeatureFlagRepoOverrideCapability,
+} from './admin-feature-flag-repo-override.ts'
 import { adminFeatureFlagSetCapability } from './admin-feature-flag-set.ts'
 import { adminPackageCodemodApplyCapability } from './admin-package-codemod-apply.ts'
 import { adminPackageCodemodDryRunCapability } from './admin-package-codemod-dry-run.ts'
@@ -177,6 +181,8 @@ export const adminDomain = defineDomain({
 		adminFeatureFlagListCapability,
 		adminFeatureFlagSetCapability,
 		adminFeatureFlagOverrideCapability,
+		adminFeatureFlagRepoOverrideCapability,
+		adminFeatureFlagRepoCheckCapability,
 		adminReservedUsernameListCapability,
 		adminReservedUsernameAddCapability,
 		adminReservedUsernameRemoveCapability,

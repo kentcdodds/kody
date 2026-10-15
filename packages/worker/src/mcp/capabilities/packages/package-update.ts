@@ -29,6 +29,7 @@ import {
 	clearInternetVisible,
 	loadCapabilityApprovalSummary,
 } from '#worker/package-capabilities/capability-approval-service.ts'
+import { enqueueWentPublicApproval } from '#worker/package-capabilities/went-public-approval.ts'
 import { packageSummarySchema, toPackageSummary } from './shared.ts'
 
 const packageUpdateChangesSchema = z
@@ -109,7 +110,7 @@ export const packageUpdateCapability = defineDomainCapability(
 				.string()
 				.optional()
 				.describe(
-					'Present when internet_visible was requested and is waiting on owner Approve (went_public).',
+					'Present when internet_visible was requested and is waiting on owner Approve (went_public). One Approve on that page records the capability set and turns internet-visible on.',
 				),
 			internet_visible_pending: z
 				.boolean()
@@ -237,21 +238,29 @@ export const packageUpdateCapability = defineDomainCapability(
 						`Publish the package before making it internet-visible. Then send the owner to approve capabilities: ${approvalUrl}`,
 					)
 				}
-				if (!summary.fingerprintMatchesApproval) {
-					throw new McpCallerError(
-						`Internet-visible requires owner approval of the credential and capability summary. Send them to ${approvalUrl}`,
-					)
+				if (summary.fingerprintMatchesApproval) {
+					// Record/refresh the pin for the current published commit, then
+					// leave went_public pending for the owner's Approve click.
+					await approvePackageCapabilitySet({
+						env: ctx.env,
+						ownerUserId: owner.ownerUserId,
+						actorUserId: owner.actorUserId,
+						savedPackage: existing,
+						requestUrl: ctx.callerContext.baseUrl,
+						expectedFingerprint: summary.capabilitySet.fingerprint,
+					})
+				} else {
+					// Agents cannot approve capabilities. Record the ask so the
+					// owner's one Approve covers the capability set and going public.
+					await enqueueWentPublicApproval({
+						env: ctx.env,
+						ownerUserId: owner.ownerUserId,
+						savedPackage: existing,
+						publishedCommit: summary.publishedCommit,
+						fingerprint: summary.capabilitySet.fingerprint,
+						requestedByUserId: owner.actorUserId,
+					})
 				}
-				// Record/refresh the pin for the current published commit, then
-				// leave went_public pending for the owner's Approve click.
-				await approvePackageCapabilitySet({
-					env: ctx.env,
-					ownerUserId: owner.ownerUserId,
-					actorUserId: owner.actorUserId,
-					savedPackage: existing,
-					requestUrl: ctx.callerContext.baseUrl,
-					expectedFingerprint: summary.capabilitySet.fingerprint,
-				})
 				internetVisiblePending = true
 			}
 			if (args.changes.internet_visible === false) {

@@ -43,6 +43,11 @@ extended by `0065-experiments-opt-in.sql`:
 - `users.experiments_opt_in` — account preference (0/1) for the
   `experiments_opt_in` flag audience, edited at `/account/experiments`.
 
+- `feature_flag_repo_overrides` — per-repo forced on/off for repo-scoped flags,
+  keyed by `(flag_key, source_id)` (migration 0148). No foreign keys, so a table
+  rebuild cannot cascade away rollout state; overrides for deleted sources are
+  inert.
+
 Removing a flag from the registry breaks the build at every remaining gate site;
 leftover DB rows for removed keys surface as **stale** in the admin UI
 (delete-only — `deleteStaleFeatureFlag` refuses keys still in the registry).
@@ -63,6 +68,25 @@ leftover DB rows for removed keys surface as **stale** in the admin UI
 
 Evaluation failures for authenticated users **fail closed** (all flags off) so a
 default-on flag can never bypass an operator kill switch when D1 is unavailable.
+
+### Repo-scoped flags
+
+Some flags gate a repo rather than a user (for example `repo-push-queue`, which
+routes a repo's `git-receive-pack` through the `kody-push-queue` Durable
+Object). `evaluateRepoFeatureFlag(db, key, { sourceId, ownerId })` in
+`packages/worker/src/feature-flags/repo-flags.ts` resolves:
+
+1. Per-repo override row (the allowlist; wins over everything, including
+   audience).
+2. The repo owner's per-user override.
+3. Global row, with `rollout_percent` bucketed by `key:sourceId` (source ids are
+   stable; repo names are neither unique nor permanent).
+4. Registry `defaultEnabled`.
+5. Audience gate against the repo owner (stable user id or personal org id).
+
+Operate it with `adminFeatureFlagRepoOverride({ key, sourceId, enabled })` (or
+`clear: true`) and inspect with `adminFeatureFlagRepoCheck({ key, sourceId })`;
+both are admin-only and audited.
 
 ### Experiments audience
 

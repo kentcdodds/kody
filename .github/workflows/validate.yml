@@ -121,6 +121,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run highlight:build
 
+      - name: 📮 Push queue build
+        if: ${{ !cancelled() }}
+        run: npm run push-queue:build
+
       - name: 🔌 API build
         if: ${{ !cancelled() }}
         run: npm run api:build

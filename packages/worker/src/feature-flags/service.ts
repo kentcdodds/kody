@@ -47,8 +47,8 @@ type OverrideEnabledRow = {
 /**
  * Deterministic 0–99 bucket for percentage rollouts.
  */
-function computeRolloutBucket(key: string, userId: number): number {
-	return fnv1a32(`${key}:${userId}`) % 100
+function computeRolloutBucket(key: string, subject: number | string): number {
+	return fnv1a32(`${key}:${subject}`) % 100
 }
 
 /**
@@ -100,9 +100,10 @@ function applyAudienceGate(input: {
 	}
 }
 
-function evaluateFlagState(input: {
+export function evaluateFlagState(input: {
 	key: string
-	userId: number | null
+	/** User id for user flags, source id for repo flags; null skips rollout. */
+	rolloutSubject: number | string | null
 	overrideEnabled: boolean | null
 	global: {
 		enabled: boolean
@@ -136,7 +137,7 @@ function evaluateFlagState(input: {
 				experimentsOptIn: input.experimentsOptIn,
 			})
 		}
-		if (input.userId === null) {
+		if (input.rolloutSubject === null) {
 			return applyAudienceGate({
 				evaluation: { enabled: false, source: 'rollout' },
 				audience,
@@ -146,7 +147,7 @@ function evaluateFlagState(input: {
 		return applyAudienceGate({
 			evaluation: {
 				enabled:
-					computeRolloutBucket(input.key, input.userId) <
+					computeRolloutBucket(input.key, input.rolloutSubject) <
 					input.global.rolloutPercent,
 				source: 'rollout',
 			},
@@ -203,7 +204,7 @@ function normalizeFeatureFlagAudience(
 	return audience
 }
 
-async function readExperimentsOptInForUser(
+export async function readExperimentsOptInForUser(
 	db: D1Database,
 	userId: number | null,
 ): Promise<boolean> {
@@ -261,7 +262,7 @@ export async function evaluateFeatureFlag(
 
 	return evaluateFlagState({
 		key,
-		userId,
+		rolloutSubject: userId,
 		overrideEnabled: null,
 		global: global
 			? {
@@ -371,7 +372,7 @@ export async function getFeatureFlagEvaluationsForUser(
 			: null
 		evaluations[key] = evaluateFlagState({
 			key,
-			userId,
+			rolloutSubject: userId,
 			overrideEnabled,
 			global: global
 				? {
@@ -552,6 +553,10 @@ export async function listFeatureFlagsForAdmin(
 		overridesByKey.set(row.flag_key, list)
 	}
 
+	const repoOverrideKeyResult = await db
+		.prepare(`SELECT DISTINCT flag_key FROM feature_flag_repo_overrides`)
+		.all<{ flag_key: string }>()
+
 	const flags: Array<AdminFeatureFlag> = []
 	const seenKeys = new Set<string>()
 
@@ -586,6 +591,9 @@ export async function listFeatureFlagsForAdmin(
 	}
 	for (const key of overridesByKey.keys()) {
 		if (!seenKeys.has(key)) staleKeys.add(key)
+	}
+	for (const row of repoOverrideKeyResult.results ?? []) {
+		if (!seenKeys.has(row.flag_key)) staleKeys.add(row.flag_key)
 	}
 
 	for (const key of [...staleKeys].sort()) {
@@ -628,10 +636,11 @@ export async function deleteStaleFeatureFlag(
 		db
 			.prepare(`DELETE FROM feature_flag_user_overrides WHERE flag_key = ?`)
 			.bind(key),
+		db
+			.prepare(`DELETE FROM feature_flag_repo_overrides WHERE flag_key = ?`)
+			.bind(key),
 		db.prepare(`DELETE FROM feature_flags WHERE key = ?`).bind(key),
 	])
 
-	return (
-		(results[0]?.meta.changes ?? 0) > 0 || (results[1]?.meta.changes ?? 0) > 0
-	)
+	return results.some((result) => (result?.meta.changes ?? 0) > 0)
 }

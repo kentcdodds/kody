@@ -21,6 +21,7 @@ function loaderData(
 	return {
 		ok: true,
 		pendingApprovals: [],
+		goPublicRequestId: null,
 		email: 'kody@example.com',
 		package: {
 			id: packageId,
@@ -466,4 +467,48 @@ test('security audit says it does not cover a paused publish waiting on the page
 	expect(securityAuditField(await render(loaderData()))).not.toContain(
 		'data-testid="package-security-audit-paused-note"',
 	)
+})
+
+test('a go-public request folds into the capability Approve as one decision', async () => {
+	const wentPublic = {
+		id: 'req-went-public',
+		reason: 'went_public' as const,
+		reasonLabel: 'Went public',
+		pendingCommit: publishedCommit,
+		createdAt: '2026-10-14T00:00:00.000Z',
+		changes: ['Serve this package on the public internet.'],
+		approveAction: 'approve-went-public' as const,
+	}
+	const html = await render(
+		loaderData({
+			pendingApprovals: [wentPublic],
+			goPublicRequestId: wentPublic.id,
+		}),
+	)
+
+	expect(html).not.toContain('data-testid="package-pending-approvals"')
+	expect(html).not.toContain('data-testid="package-pending-approval-approve"')
+	expect(html).toContain(
+		'Approving turns on internet-visible serving for this package.',
+	)
+	expect(html).toContain(
+		'data-testid="package-approve-capabilities-go-public-note"',
+	)
+	expect(html).toContain(
+		'One approval records this capability set and turns on internet-visible serving.',
+	)
+	const approve = html.slice(
+		html.indexOf('data-testid="package-approve-capabilities"'),
+	)
+	expect(approve.slice(0, approve.indexOf('</button>'))).toContain(
+		'Approve and make internet-visible',
+	)
+	expect(html.match(/<button[^>]*>[^<]*Approve/g)).toHaveLength(1)
+
+	const separate = await render(loaderData({ pendingApprovals: [wentPublic] }))
+	expect(separate).toContain('data-testid="package-pending-approval-approve"')
+	expect(separate).not.toContain(
+		'data-testid="package-approve-capabilities-go-public-note"',
+	)
+	expect(separate).toContain('Approve capability set')
 })

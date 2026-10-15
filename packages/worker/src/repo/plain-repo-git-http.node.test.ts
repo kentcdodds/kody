@@ -221,6 +221,46 @@ test('proxy waits through Artifacts receive-pack busy then succeeds', async () =
 	expect(attempts).toBe(2)
 })
 
+test('proxy waits through in-band HTTP 200 busy (sideband fatal) then succeeds', async () => {
+	resetMocks()
+	seedPlainRepo()
+	let attempts = 0
+	const packResult = '000eunpack ok\n0000'
+	using _server = createMswNodeServer([
+		http.post(`${artifactsRemote}/git-receive-pack`, async () => {
+			attempts += 1
+			const body =
+				attempts < 3
+					? `0025\x03${artifactsGitReceivePackBusyCode}\n`
+					: packResult
+			return HttpResponse.text(body, {
+				status: 200,
+				headers: {
+					'Content-Type': 'application/x-git-receive-pack-result',
+				},
+			})
+		}),
+	])
+	const response = await handlePlainRepoGitHttpRequest(
+		new Request(
+			`https://kody.codes/git/sources/${sourceId}.git/git-receive-pack`,
+			{
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${artifactToken}`,
+					'Content-Type': 'application/x-git-receive-pack-request',
+				},
+				body: 'PACK-IN-BAND',
+			},
+		),
+		{ APP_DB: {} } as Env,
+	)
+	expect(response).not.toBeNull()
+	expect(response!.status).toBe(200)
+	expect(await response!.text()).toBe(packResult)
+	expect(attempts).toBe(3)
+})
+
 test('proxy returns 503 Retry-After after the receive-pack wait budget', async () => {
 	resetMocks()
 	seedPlainRepo()

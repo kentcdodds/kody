@@ -54,7 +54,7 @@ export type PreviewResourceKind =
  * Every preview resource name derives from the worker name the preview
  * workflow resolves (`kody-pr-<number>` for pull requests, `kody-branch-<slug>`
  * for manual branch previews) plus a lowercase kebab suffix: `-runtime`,
- * `-platform`, `-jobs`, `-highlight`, `-api`, `-mock-<service>`, `-db`, `-audit-db`,
+ * `-platform`, `-jobs`, `-highlight`, `-push-queue`, `-api`, `-mock-<service>`, `-db`, `-audit-db`,
  * `-jobs-db`, `-vectors`, `-oauth-kv`, `-bundle-artifacts-kv`, `-community-assets`, `-email-blobs`,
  * `-repo-session-blobs`, `-operator-backups`, and one queue plus dead-letter queue for each origin
  * producer preview provisions (`tools/ci/preview-queue-plan.ts`;
@@ -743,6 +743,10 @@ async function ensurePreviewResources(options: CliOptions) {
 				binding: 'HIGHLIGHT',
 				service: `${options.workerName}-highlight`,
 			},
+			{
+				binding: 'REPO_PUSH_QUEUE',
+				service: `${options.workerName}-push-queue`,
+			},
 		],
 	})
 
@@ -812,6 +816,7 @@ export function listPreviewWorkerNames(workerName: string) {
 		workerName,
 		`${workerName}-jobs`,
 		`${workerName}-highlight`,
+		`${workerName}-push-queue`,
 		...listMockServerNames().map((service) => `${workerName}-mock-${service}`),
 	]
 }

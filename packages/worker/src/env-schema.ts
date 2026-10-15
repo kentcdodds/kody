@@ -185,6 +185,9 @@ export const EnvSchema = object({
 	// Highlight worker service binding. Optional: tests and single-worker
 	// local fallback to plaintext tokens when the binding is absent.
 	HIGHLIGHT: optionalFetcherSchema,
+	// Repo push queue worker (`kody-push-queue`). Optional: tests and local
+	// single-worker dev keep the isolate-local receive-pack wait path.
+	REPO_PUSH_QUEUE: optionalFetcherSchema,
 	STORAGE_RUNNER: requiredDurableObjectNamespaceSchema(
 		'Missing STORAGE_RUNNER binding for durable execute and job storage.',
 	),

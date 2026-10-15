@@ -5,6 +5,7 @@
  * come back `unavailable` without saying why, so a bundle never leaks which
  * packages exist.
  */
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import {
@@ -314,7 +315,15 @@ async function publishItemView(
 		case 'went_public':
 			return {
 				...base,
-				...state,
+				...(state.canApprove &&
+				!(await wentPublicCapabilitiesApproved(viewer, savedPackage))
+					? {
+							...state,
+							canApprove: false,
+							statusMessage:
+								'Its credentials and capabilities are not approved yet. Review them on the package’s approval page, where one Approve also turns on internet-visible serving.',
+						}
+					: state),
 				detailLabel: 'Published commit',
 				title: 'Serve on the public internet',
 				summary: `${readWentPublicSummary(request.details)} Approving turns on internet-visible serving for this version. Denying leaves it off.`,
@@ -336,6 +345,29 @@ async function publishItemView(
 			const exhaustive: never = request.reason
 			throw new Error(`Unknown approval reason: ${String(exhaustive)}`)
 		}
+	}
+}
+
+/** Going public needs the live capability set approved first. */
+async function wentPublicCapabilitiesApproved(
+	viewer: ApprovalViewer,
+	savedPackage: SavedPackageRecord,
+) {
+	try {
+		const summary = await loadCapabilityApprovalSummary({
+			env: viewer.env,
+			ownerUserId: viewer.request.org.id as OwnerId,
+			savedPackage,
+			requestUrl: viewer.baseUrl,
+		})
+		return summary.fingerprintMatchesApproval
+	} catch (error) {
+		// One unreadable package must not break the bundle; it can still be denied.
+		console.error('Failed to load capability summary for went_public item:', {
+			packageId: savedPackage.id,
+			error: getErrorMessage(error),
+		})
+		return false
 	}
 }
 
