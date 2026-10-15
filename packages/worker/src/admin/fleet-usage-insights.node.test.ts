@@ -44,7 +44,7 @@ function createFleetDb(input: {
 		event_count: number
 	}>
 	metricLeaders?: Array<{
-		user_id: string
+		stable_user_id: string
 		username: string
 		metric: string
 		total_duration_ms: number
@@ -196,7 +196,7 @@ test('loadFleetUsageInsights returns bounded consumer rankings and pressure pane
 		],
 		metricLeaders: [
 			{
-				user_id: ownerIdFromStored('user-a'),
+				stable_user_id: 'user-a',
 				username: 'alice',
 				metric: 'execute',
 				total_duration_ms: 1_000,
@@ -716,4 +716,63 @@ test('fleet entitlement reads key consumption duration and worker-days by person
 	])
 	expect(durationBinds.some((params) => params.includes(orgId))).toBe(true)
 	expect(durationBinds.every((params) => !params.includes(personId))).toBe(true)
+})
+
+test('loadFleetUsageInsights rankings expose person id for distinct personal org rollups', async () => {
+	const personId = 'person-rank'
+	const orgId = 'org-rank'
+	expect(personId).not.toBe(orgId)
+	entitlementMocks.readAdminEntitlementConsumption.mockResolvedValue([])
+	const db = createFleetDb({
+		runtimeLeaders: [
+			{
+				stable_user_id: personId,
+				username: 'ada',
+				total_duration_ms: 9_000,
+			},
+		],
+		eventLeaders: [
+			{ stable_user_id: personId, username: 'ada', event_count: 100 },
+		],
+		metricLeaders: [
+			{
+				stable_user_id: personId,
+				username: 'ada',
+				metric: 'execute',
+				total_duration_ms: 4_000,
+			},
+		],
+		activeUsers: [activeUser(personId, 'ada', 'free', 100, { org_id: orgId })],
+		dynamicWorkerDays: 0,
+		dynamicWorkerLeaders: [],
+	})
+	const data = await loadFleetUsageInsights({
+		db,
+		env: { APP_DB: db } as Env,
+		now,
+	})
+	expect(data.topRuntimeDurationConsumers).toEqual([
+		{
+			stableUserId: ownerIdFromStored(personId),
+			username: 'ada',
+			totalDurationMs: 9_000,
+		},
+	])
+	expect(data.topEventCountConsumers).toEqual([
+		{
+			stableUserId: ownerIdFromStored(personId),
+			username: 'ada',
+			eventCount: 100,
+		},
+	])
+	expect(
+		data.topDurationConsumersByMetric.find((row) => row.metric === 'execute')
+			?.consumers,
+	).toEqual([
+		{
+			stableUserId: ownerIdFromStored(personId),
+			username: 'ada',
+			totalDurationMs: 4_000,
+		},
+	])
 })

@@ -377,19 +377,24 @@ async function loadEntitlementRowForStableUserId(
 	const orgColumns = userEntitlementColumnsSql('o')
 	const email = input.email?.trim().toLowerCase()
 
-	// When email is provided, require a live users row for (email, stable id)
-	// before reading org billing — a mismatched caller context must not inherit
-	// another account's plan. Entitlement columns come from `orgs` only;
-	// `org_id` is the owner key for wallets, seats, and overrides.
+	// When email is provided, require a live users row for that email whose
+	// person id or personal org id matches the caller id — owner-keyed hot
+	// paths pass the personal org id with the owner's email
+	// (`ownerIdFromCaller` + `entitlementEmailForOwner`). A mismatched email
+	// must not inherit another account's plan (team org id + member email
+	// stays Free). Entitlement columns come from `orgs` only; `org_id` is the
+	// owner key for wallets, seats, and overrides.
 	if (email) {
 		return await db
 			.prepare(
 				`SELECT o.id AS org_id, ${orgColumns}
 				 FROM users u
 				 ${joinOrgsOnPersonalOrgIdSql}${andLiveDeletedAtSql('o')}
-				 WHERE u.email = ? AND u.stable_user_id = ? AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}`,
+				 WHERE u.email = ?
+				   AND (u.stable_user_id = ? OR u.personal_org_id = ?)
+				   AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}`,
 			)
-			.bind(email, input.stableUserId)
+			.bind(email, input.stableUserId, input.stableUserId)
 			.first<UserEntitlementLookupRow>()
 	}
 

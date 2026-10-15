@@ -111,13 +111,24 @@ function createEntitlementsTestDb(
 				}
 			: null
 
+	function userMatchesEmailAndOwnerId(
+		row: TestUser,
+		email: unknown,
+		ownerId: unknown,
+	) {
+		return (
+			row.email === email &&
+			(row.stable_user_id === ownerId || row.personal_org_id === ownerId)
+		)
+	}
+
 	function entitlementPlanFirst(query: string, params: Array<unknown>) {
 		// Pair match is required: omitted bind params or email-only fixtures
-		// must not resolve a plan.
+		// must not resolve a plan. Owner id may be person or personal org id.
 		if (query.includes('email = ?')) {
 			return planRow(
-				users.find(
-					(row) => row.email === params[0] && row.stable_user_id === params[1],
+				users.find((row) =>
+					userMatchesEmailAndOwnerId(row, params[0], params[1]),
 				),
 			)
 		}
@@ -142,8 +153,8 @@ function createEntitlementsTestDb(
 		}
 		// Entitlement read joined to a users identity row.
 		if (query.includes('INNER JOIN orgs')) {
-			const user = users.find(
-				(row) => row.email === params[0] && row.stable_user_id === params[1],
+			const user = users.find((row) =>
+				userMatchesEmailAndOwnerId(row, params[0], params[1]),
 			)
 			if (!user) return null
 			return planRow(orgById(personalOrgIdFor(user)))
@@ -539,8 +550,12 @@ test('getUserPlan resolves plans, defaults unresolved contexts to free, and reje
 	).toBe('pro')
 	const pairedPlanQuery = [...queries]
 		.reverse()
-		.find((entry) => /u\.email = \? AND u\.stable_user_id = \?/.test(entry.sql))
-	expect(pairedPlanQuery?.params).toEqual([plannedEmail, userId])
+		.find((entry) =>
+			/u\.email = \?[\s\S]*u\.stable_user_id = \? OR u\.personal_org_id = \?/.test(
+				entry.sql,
+			),
+		)
+	expect(pairedPlanQuery?.params).toEqual([plannedEmail, userId, userId])
 
 	// Background contexts reverse-resolve valid stable ids when their persisted
 	// email is blank or missing.
@@ -598,6 +613,39 @@ test('getUserEntitlement keys wallet seats and overrides by personal org id when
 	expect(ownerKeyedParams.every((bound) => bound !== personId)).toBe(true)
 })
 
+test('getUserEntitlement with owner email resolves paid plan when personal org id is distinct', async () => {
+	const personId = testStableUserIdFromEmail('ada-distinct@example.com')
+	const orgId = testStableUserIdFromEmail('ada-org@example.com')
+	expect(personId).not.toBe(orgId)
+	const email = 'ada-distinct@example.com'
+	const { db } = createEntitlementsTestDb({
+		users: [
+			{
+				email,
+				plan: 'pro',
+				stripe_plan: 'pro',
+				stable_user_id: personId,
+				personal_org_id: orgId,
+			},
+		],
+		orgs: [
+			{
+				email,
+				plan: 'pro',
+				stripe_plan: 'pro',
+				stable_user_id: orgId,
+			},
+		],
+	})
+	// Hot paths pass personal org id + owner email (ownerIdFromCaller).
+	expect(await getUserPlan(db, { userId: orgId, email })).toBe('pro')
+	expect(await getUserPlan(db, { userId: personId, email })).toBe('pro')
+	// Mismatched email still fails closed (team org + member email pattern).
+	expect(
+		await getUserPlan(db, { userId: orgId, email: 'other@example.com' }),
+	).toBe('free')
+})
+
 test('getUserPlan ignores org billing when email does not match the stable user id', async () => {
 	const userId = testStableUserIdFromEmail(plannedEmail)
 	const { db } = createEntitlementsTestDb({
@@ -627,8 +675,8 @@ test('getUserPlan resolves team org plans with blank email; member email alone s
 			},
 		],
 	})
-	// Actor email + team OwnerId is the package-owner pairing before the fix:
-	// the email path requires users.stable_user_id = owner id and misses.
+	// Actor email + team OwnerId must not inherit the team plan: email path
+	// matches only the caller's person id or personal org id.
 	expect(await getUserPlan(db, { userId: teamOrgId, email: memberEmail })).toBe(
 		'free',
 	)
@@ -646,8 +694,9 @@ test('getCachedUserPlan caches per db binding and never caches failures', async 
 	expect(
 		queries.filter(
 			(query) =>
-				/email = \? AND (?:u\.)?stable_user_id = \?/.test(query.sql) &&
-				!query.sql.includes('SELECT 1 AS present'),
+				/email = \?[\s\S]*stable_user_id = \? OR (?:u\.)?personal_org_id = \?/.test(
+					query.sql,
+				) && !query.sql.includes('SELECT 1 AS present'),
 		),
 	).toHaveLength(1)
 
@@ -768,8 +817,9 @@ test('assertWithinEntitlement reuses cached plan within TTL while still enforcin
 	const planQueries = () =>
 		queries.filter(
 			(query) =>
-				/email = \? AND (?:u\.)?stable_user_id = \?/.test(query.sql) &&
-				!query.sql.includes('SELECT 1 AS present'),
+				/email = \?[\s\S]*stable_user_id = \? OR (?:u\.)?personal_org_id = \?/.test(
+					query.sql,
+				) && !query.sql.includes('SELECT 1 AS present'),
 		)
 
 	await check()

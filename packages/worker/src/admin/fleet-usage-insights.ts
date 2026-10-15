@@ -112,12 +112,6 @@ type ActiveUserRow = UserEntitlementRow & {
 	event_count: number
 }
 
-type MetricDurationRow = {
-	user_id: string
-	metric: string
-	total_duration_ms: number
-}
-
 export type FleetEntitlementPressureIssue =
 	| {
 			kind: 'entitlement'
@@ -328,7 +322,7 @@ async function queryTopRuntimeDurationConsumers(
 		.prepare(
 			`SELECT u.stable_user_id, u.username, SUM(r.total_duration_ms) AS total_duration_ms
 			 FROM usage_rollups r
-			 INNER JOIN users u ON u.stable_user_id = r.user_id
+			 INNER JOIN users u ON ${personalOrgIdSql} = r.user_id
 			 WHERE r.month = ?
 				AND r.metric IN (${metricPlaceholders})
 				AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
@@ -361,7 +355,7 @@ async function queryTopEventCountConsumers(
 		.prepare(
 			`SELECT u.stable_user_id, u.username, SUM(r.event_count) AS event_count
 			 FROM usage_rollups r
-			 INNER JOIN users u ON u.stable_user_id = r.user_id
+			 INNER JOIN users u ON ${personalOrgIdSql} = r.user_id
 			 WHERE r.month = ?
 				AND r.metric NOT IN (${observeOnlyMetricPlaceholders})
 				AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
@@ -451,15 +445,15 @@ async function queryTopDurationConsumersByMetric(
 		.join(', ')
 	const rows = await db
 		.prepare(
-			`SELECT ranked.user_id, ranked.metric, ranked.total_duration_ms, ranked.username
+			`SELECT ranked.stable_user_id, ranked.metric, ranked.total_duration_ms, ranked.username
 			 FROM (
-				SELECT r.user_id, r.metric, r.total_duration_ms, u.username,
+				SELECT u.stable_user_id, r.metric, r.total_duration_ms, u.username,
 					ROW_NUMBER() OVER (
 						PARTITION BY r.metric
 						ORDER BY r.total_duration_ms DESC
 					) AS rank_in_metric
 				FROM usage_rollups r
-				INNER JOIN users u ON u.stable_user_id = r.user_id
+				INNER JOIN users u ON ${personalOrgIdSql} = r.user_id
 				WHERE r.month = ?
 					AND r.metric IN (${metricPlaceholders})
 					AND r.total_duration_ms > 0
@@ -473,7 +467,12 @@ async function queryTopDurationConsumersByMetric(
 			...adminFleetRuntimeDurationMetrics,
 			adminFleetTopConsumersLimit,
 		)
-		.all<MetricDurationRow & { username: string }>()
+		.all<{
+			stable_user_id: string
+			metric: string
+			total_duration_ms: number
+			username: string
+		}>()
 
 	const byMetric = new Map<
 		AdminUsageMetric,
@@ -487,7 +486,7 @@ async function queryTopDurationConsumersByMetric(
 		const consumers = byMetric.get(row.metric)
 		if (!consumers) continue
 		consumers.push({
-			stableUserId: row.user_id,
+			stableUserId: row.stable_user_id,
 			username: row.username,
 			totalDurationMs: Number(row.total_duration_ms),
 		})
