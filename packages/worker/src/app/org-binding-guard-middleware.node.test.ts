@@ -38,6 +38,8 @@ const personScopedAccountRoutes: Record<string, string> = {
 	accountEmailDestinationsApi: 'notification addresses belong to the person',
 	accountEmailDestinationsApiPost:
 		'notification addresses belong to the person',
+	accountEmailVerificationDelivery:
+		'verification delivery status belongs to the person session',
 	accountBillingCancellationFeedbackPost: 'feedback from the person',
 	accountMcpServerLogo:
 		'path has no org; handler binds via Referer or request org',
