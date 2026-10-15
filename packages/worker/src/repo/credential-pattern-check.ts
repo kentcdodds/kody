@@ -240,7 +240,13 @@ export function buildCredentialPatternCheck(
 		sourceFiles,
 		preliminary.keys,
 	)
-	const stamp = scanCredentialStamp(merged.files)
+	// Merge only rewrites package.json when it adds missing stamp keys. Reuse
+	// the first scan whenever the file set is unchanged so multi-MB packages
+	// do not pay for a second full AST walk inside the RepoSession DO.
+	const stamp =
+		merged.addedKeys.length === 0
+			? preliminary
+			: scanCredentialStamp(merged.files)
 	const patternsByPath = new Map<string, Array<string>>()
 	for (const finding of detectLegacyCredentialPatternsCodemod.detect(
 		merged.files,

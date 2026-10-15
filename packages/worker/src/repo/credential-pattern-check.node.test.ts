@@ -145,3 +145,41 @@ test('secretJwtSign with a non-literal key name fails the stamp gate', () => {
 	expect(dynamic.message).toMatch(/non-literal/)
 	expect(hintLines(dynamic.message)).toEqual([hintsHeading, signingHint])
 })
+
+test('large kody.app.assets client bundle does not fail the publish gate', () => {
+	const chunk =
+		'function x(){eval("1");new Function("return 1");import(n);return 1}'
+	const largeClient = `${chunk};`.repeat(
+		Math.ceil((1.7 * 1024 * 1024) / (chunk.length + 1)),
+	)
+	const started = performance.now()
+	const result = buildCredentialPatternCheck({
+		'package.json': JSON.stringify({
+			name: '@kody/world-like',
+			exports: { '.': './src/server.ts' },
+			kody: {
+				id: 'world-like',
+				description: 'Large asset regression.',
+				app: { entry: './src/server.ts', assets: './public' },
+				credentials: {
+					API_KEY: { kind: 'secret', description: 'API key.' },
+				},
+			},
+		}),
+		'src/server.ts': [
+			"import { credential } from 'kody:runtime'",
+			'export default {',
+			'  async fetch() {',
+			'    await credential("API_KEY")',
+			'    return new Response("ok")',
+			'  },',
+			'}',
+		].join('\n'),
+		'public/client/main.js': largeClient,
+	})
+	const elapsedMs = performance.now() - started
+	expect(result.ok).toBe(true)
+	expect(result.stampKeys).toEqual(['API_KEY'])
+	expect(result.message).not.toMatch(/server_eval|eval|new Function/)
+	expect(elapsedMs).toBeLessThan(2_000)
+})

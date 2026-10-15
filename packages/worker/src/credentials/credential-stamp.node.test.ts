@@ -5,6 +5,11 @@ import {
 	mergeCredentialStampIntoManifestFiles,
 	scanCredentialStamp,
 } from './credential-stamp.ts'
+import {
+	isPackageAppAssetPath,
+	listScannableModulePaths,
+	readPackageAppAssetsDirectory,
+} from './module-placeholder-scan.ts'
 
 function manifest(kody: Record<string, unknown> = {}) {
 	return JSON.stringify({
@@ -279,6 +284,96 @@ test('server eval / new Function / non-literal import fail; UI client entry is e
 	)
 	expect(serverPaths.has('src/server.ts')).toBe(true)
 	expect(serverPaths.has('src/client.ts')).toBe(false)
+})
+
+function assetsAppFiles(extra: Record<string, string>) {
+	return {
+		'package.json': JSON.stringify({
+			name: '@kody/assets-app',
+			exports: { '.': './src/server.ts' },
+			kody: {
+				id: 'assets-app',
+				description: 'Assets app.',
+				app: { entry: './src/server.ts', assets: './public' },
+				credentials: {
+					API_KEY: { kind: 'secret', description: 'API key.' },
+				},
+			},
+		}),
+		...extra,
+	}
+}
+
+test('kody.app.assets modules are not scannable and stay off the server eval graph', () => {
+	expect(
+		readPackageAppAssetsDirectory(
+			JSON.stringify({ kody: { app: { assets: './public/' } } }),
+		),
+	).toBe('public')
+	expect(isPackageAppAssetPath('public/client/main.js', 'public')).toBe(true)
+	expect(isPackageAppAssetPath('src/server.ts', 'public')).toBe(false)
+
+	const files = assetsAppFiles({
+		'src/server.ts': 'export default { fetch() { return new Response("ok") } }',
+		'public/client/main.js':
+			'eval("asset"); new Function("return 1"); import(name); credential("LEAK")',
+	})
+	expect(listScannableModulePaths(files)).toEqual(['src/server.ts'])
+	expect(listScannableModulePaths(files)).not.toContain('public/client/main.js')
+	const serverPaths = collectServerRuntimeModulePaths(files)
+	expect(serverPaths.has('src/server.ts')).toBe(true)
+	expect(serverPaths.has('public/client/main.js')).toBe(false)
+
+	const stamp = scanCredentialStamp(files)
+	expect(stamp.failures.filter((f) => f.code === 'server_eval')).toEqual([])
+	expect(stamp.keys).not.toContain('LEAK')
+})
+
+test('large prebuilt client asset does not fail stamp and stays cheap to scan', () => {
+	// ~1.7 MB of minified-shaped JS with eval / Function / dynamic import —
+	// mirrors @kentcdodds/world-builder public/client/main.js before the
+	// assets skip. The scan must stay well under DO CPU limits.
+	const chunk =
+		'function x(){eval("1");new Function("return 1");import(n);return 1}'
+	const largeClient = `${chunk};`.repeat(
+		Math.ceil((1.7 * 1024 * 1024) / (chunk.length + 1)),
+	)
+	expect(largeClient.length).toBeGreaterThan(1.5 * 1024 * 1024)
+
+	const files = assetsAppFiles({
+		'src/server.ts': [
+			"import { credential } from 'kody:runtime'",
+			'export default {',
+			'  async fetch() {',
+			'    await credential("API_KEY")',
+			'    return new Response("ok")',
+			'  },',
+			'}',
+		].join('\n'),
+		'public/client/main.js': largeClient,
+	})
+
+	const started = performance.now()
+	const stamp = scanCredentialStamp(files)
+	const elapsedMs = performance.now() - started
+	expect(stamp.failures).toEqual([])
+	expect(stamp.keys).toEqual(['API_KEY'])
+	expect(listScannableModulePaths(files)).not.toContain('public/client/main.js')
+	// Soft budget: parsing a 1.7 MB asset used to blow the DO CPU limit;
+	// skipping it should finish in well under a second on Node.
+	expect(elapsedMs).toBeLessThan(2_000)
+
+	const serverStillFails = scanCredentialStamp(
+		assetsAppFiles({
+			'src/server.ts': 'export default { fetch() { return eval("1") } }',
+			'public/client/main.js': largeClient,
+		}),
+	)
+	expect(
+		serverStillFails.failures.some(
+			(f) => f.code === 'server_eval' && f.path === 'src/server.ts',
+		),
+	).toBe(true)
 })
 
 test('computed |scope= and secretMounts fail the stamp gate', () => {

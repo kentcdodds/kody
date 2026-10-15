@@ -12,6 +12,7 @@ import {
 	constantsWithoutShadows,
 	createModuleConstantsReader,
 	getNodeName,
+	isPackageAppAssetPath,
 	listScannableModulePaths,
 	parseModule,
 	resolveStringExpression,
@@ -24,6 +25,7 @@ import {
 	type PackageCredentialScan,
 } from '#worker/credentials/credential-inventory-scan.ts'
 import {
+	getPackageAppAssetsDirectory,
 	getPackageAppClientEntryPath,
 	getPackageAppEntryPath,
 	listPackageSubscriptions,
@@ -458,6 +460,7 @@ export function collectServerRuntimeModulePaths(
 	}
 	void getPackageAppClientEntryPath(manifest)
 
+	const assetsDirectory = getPackageAppAssetsDirectory(manifest)
 	const serverReachable = new Set<string>()
 	for (const entry of serverEntries) {
 		for (const path of collectReachableSourceFilePaths({
@@ -465,7 +468,10 @@ export function collectServerRuntimeModulePaths(
 			entryPoint: entry,
 			rootPackage,
 		})) {
-			if (scannableModuleFilePattern.test(path)) {
+			if (
+				scannableModuleFilePattern.test(path) &&
+				!isPackageAppAssetPath(path, assetsDirectory)
+			) {
 				serverReachable.add(path)
 			}
 		}
