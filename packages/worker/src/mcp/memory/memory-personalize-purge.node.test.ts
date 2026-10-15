@@ -66,7 +66,8 @@ async function createDb() {
 			updated_at TEXT NOT NULL,
 			last_accessed_at TEXT,
 			deleted_at TEXT,
-			vector_deleted_at TEXT
+			vector_deleted_at TEXT,
+			vector_cleanup_attempted_at TEXT
 		);
 		CREATE TABLE IF NOT EXISTS grants (
 			id TEXT PRIMARY KEY NOT NULL,
@@ -892,6 +893,197 @@ test('vector retry prefers older pending rows and skips already-cleaned ones', a
 		.bind(olderId, org!.id)
 		.first<{ vector_deleted_at: string | null }>()
 	expect(olderMarked?.vector_deleted_at).toBeTruthy()
+})
+
+test('failed vector attempts rotate so newer pending rows are reached', async () => {
+	const { db, sqlite } = await createDb()
+	const ada = testStableUserIdFromEmail('ada-purge-vec-rotate@example.com')
+	insertUser(sqlite, {
+		id: 1,
+		username: 'ada-purge-vec-rotate',
+		email: 'ada-purge-vec-rotate@example.com',
+		personId: ada,
+	})
+	await provisionPersonalOrg(db, {
+		stableUserId: ada,
+		username: 'ada-purge-vec-rotate',
+	})
+	const created = await createOrganization(db, {} as Env, {
+		personId: ada,
+		audit: createTestOrgAuditWriter(),
+		slug: 'purge-vec-rotate-co',
+		displayName: 'Purge Vec Rotate',
+	})
+	if (!created.ok) throw new Error(created.error)
+	const org = await db
+		.prepare(`SELECT id FROM orgs WHERE slug = 'purge-vec-rotate-co'`)
+		.first<{ id: string }>()
+	const stickyFailId = 'mem-sticky-fail'
+	const neverAttemptedId = 'mem-never-attempted'
+	sqlite
+		.prepare(
+			`INSERT INTO mcp_memories (
+				id, user_id, status, subject, summary, details, created_at, updated_at,
+				deleted_at, vector_deleted_at, vector_cleanup_attempted_at
+			) VALUES (?, ?, 'deleted', 'Sticky', 'summary', '', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', NULL, '2026-01-04T00:00:00.000Z')`,
+		)
+		.run(stickyFailId, org!.id)
+	sqlite
+		.prepare(
+			`INSERT INTO mcp_memories (
+				id, user_id, status, subject, summary, details, created_at, updated_at,
+				deleted_at, vector_deleted_at, vector_cleanup_attempted_at
+			) VALUES (?, ?, 'deleted', 'Fresh', 'summary', '', '2026-01-02T00:00:00.000Z', '2026-01-02T00:00:00.000Z', '2026-01-02T00:00:00.000Z', NULL, NULL)`,
+		)
+		.run(neverAttemptedId, org!.id)
+
+	const meter = createInMemoryUserMeterEnv()
+	const env = {
+		APP_DB: db,
+		USER_METER: meter.env.USER_METER,
+	} as unknown as Env
+	const deleteMock = vi.mocked(deleteMemoryVector)
+	deleteMock.mockClear()
+	deleteMock.mockImplementation(async (_env, memoryId) => {
+		if (memoryId === stickyFailId) {
+			throw new Error('vectorize permanently unavailable')
+		}
+	})
+
+	const result = await runMemoryPersonalizePurge({
+		env,
+		audit: createTestOrgAuditWriter(),
+		dryRun: false,
+		orgIds: [org!.id],
+		memoryLimitPerOrg: 1,
+	})
+	expect(deleteMock).toHaveBeenCalledWith(env, neverAttemptedId)
+	expect(deleteMock).not.toHaveBeenCalledWith(env, stickyFailId)
+	expect(result.vectorCleanupFailed).toBe(0)
+	const freshMarked = await db
+		.prepare(
+			`SELECT vector_deleted_at FROM mcp_memories WHERE id = ? AND user_id = ?`,
+		)
+		.bind(neverAttemptedId, org!.id)
+		.first<{ vector_deleted_at: string | null }>()
+	expect(freshMarked?.vector_deleted_at).toBeTruthy()
+})
+
+test('mid-org page retries only this invocation pending vectors', async () => {
+	const { db, sqlite } = await createDb()
+	const ada = testStableUserIdFromEmail('ada-purge-vec-mid@example.com')
+	const guest = testStableUserIdFromEmail('guest-purge-vec-mid@example.com')
+	insertUser(sqlite, {
+		id: 1,
+		username: 'ada-purge-vec-mid',
+		email: 'ada-purge-vec-mid@example.com',
+		personId: ada,
+	})
+	insertUser(sqlite, {
+		id: 2,
+		username: 'guest-purge-vec-mid',
+		email: 'guest-purge-vec-mid@example.com',
+		personId: guest,
+	})
+	await provisionPersonalOrg(db, {
+		stableUserId: ada,
+		username: 'ada-purge-vec-mid',
+	})
+	await provisionPersonalOrg(db, {
+		stableUserId: guest,
+		username: 'guest-purge-vec-mid',
+	})
+	const created = await createOrganization(db, {} as Env, {
+		personId: ada,
+		audit: createTestOrgAuditWriter(),
+		slug: 'purge-vec-mid-co',
+		displayName: 'Purge Vec Mid',
+	})
+	if (!created.ok) throw new Error(created.error)
+	const org = await db
+		.prepare(`SELECT id FROM orgs WHERE slug = 'purge-vec-mid-co'`)
+		.first<{ id: string }>()
+	const strandedId = 'mem-mid-stranded'
+	const liveId = 'mem-mid-a'
+	const extraLiveId = 'mem-mid-b'
+	sqlite
+		.prepare(
+			`INSERT INTO mcp_memories (
+				id, user_id, status, subject, summary, details, created_at, updated_at,
+				deleted_at, vector_deleted_at
+			) VALUES (?, ?, 'deleted', 'Stranded', 'summary', '', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', NULL)`,
+		)
+		.run(strandedId, org!.id)
+	for (const [id, subject] of [
+		[liveId, 'Live'],
+		[extraLiveId, 'Extra'],
+	] as const) {
+		sqlite
+			.prepare(
+				`INSERT INTO mcp_memories (
+					id, user_id, status, subject, summary, details, created_at, updated_at
+				) VALUES (?, ?, 'active', ?, 'summary', '', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+			)
+			.run(id, org!.id, subject)
+		sqlite
+			.prepare(
+				`INSERT INTO grants (
+					id, org_id, resource_type, resource_id, subject_type, subject_id,
+					created_by_user_id, created_at, updated_at
+				) VALUES (?, ?, 'memory', ?, 'user', ?, ?, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+			)
+			.run(`g-${id}`, org!.id, id, guest, ada)
+		sqlite
+			.prepare(
+				`INSERT INTO grant_permissions (grant_id, permission) VALUES (?, 'memory:read')`,
+			)
+			.run(`g-${id}`)
+	}
+	const personalAda = personalOrgId(personIdFromStored(ada))
+	const personalGuest = personalOrgId(personIdFromStored(guest))
+	for (const memoryId of [liveId, extraLiveId]) {
+		for (const personalOrg of [personalAda, personalGuest]) {
+			sqlite
+				.prepare(
+					`INSERT INTO mcp_memories (
+						id, user_id, status, subject, summary, details, source_uris_json,
+						created_at, updated_at
+					) VALUES (?, ?, 'active', 'copy', 'summary', '', ?, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+				)
+				.run(
+					`copy-${personalOrg}-${memoryId}`,
+					personalOrg,
+					JSON.stringify([legacyOrgMemoryProvenanceUri(org!.id, memoryId)]),
+				)
+		}
+	}
+
+	const meter = createInMemoryUserMeterEnv()
+	const env = {
+		APP_DB: db,
+		USER_METER: meter.env.USER_METER,
+	} as unknown as Env
+	const deleteMock = vi.mocked(deleteMemoryVector)
+	deleteMock.mockClear()
+	deleteMock.mockRejectedValue(new Error('vectorize unavailable'))
+	try {
+		const page1 = await runMemoryPersonalizePurge({
+			env,
+			audit: createTestOrgAuditWriter(),
+			dryRun: false,
+			orgIds: [org!.id],
+			memoryLimitPerOrg: 1,
+		})
+		expect(page1.purged).toBe(1)
+		expect(page1.nextMemoryCursor).toBe(liveId)
+		expect(page1.vectorCleanupFailed).toBe(1)
+		const calledIds = deleteMock.mock.calls.map((call) => call[1])
+		expect(calledIds).toContain(liveId)
+		expect(calledIds).not.toContain(strandedId)
+	} finally {
+		deleteMock.mockReset()
+		deleteMock.mockResolvedValue(undefined)
+	}
 })
 
 test('soft_delete_failed is distinct from already_gone when the live row remains', async () => {

@@ -112,7 +112,28 @@ async function markMemoryVectorDeleted(input: {
 	await input.db
 		.prepare(
 			`UPDATE mcp_memories
-			 SET vector_deleted_at = ?
+			 SET vector_deleted_at = ?,
+			     vector_cleanup_attempted_at = ?
+			 WHERE user_id = ?
+			   AND id = ?
+			   AND status = 'deleted'
+			   AND deleted_at IS NOT NULL
+			   AND vector_deleted_at IS NULL`,
+		)
+		.bind(input.at, input.at, input.orgId, input.memoryId)
+		.run()
+}
+
+async function markMemoryVectorCleanupAttempted(input: {
+	db: D1Database
+	orgId: string
+	memoryId: string
+	at: string
+}): Promise<void> {
+	await input.db
+		.prepare(
+			`UPDATE mcp_memories
+			 SET vector_cleanup_attempted_at = ?
 			 WHERE user_id = ?
 			   AND id = ?
 			   AND status = 'deleted'
@@ -169,6 +190,13 @@ async function softDeleteTeamMemory(input: {
 					memoryId: input.memory.id,
 					at: now,
 				})
+			} else {
+				await markMemoryVectorCleanupAttempted({
+					db: input.env.APP_DB,
+					orgId: input.orgId,
+					memoryId: input.memory.id,
+					at: now,
+				})
 			}
 			return { status: 'soft_deleted', vectorDeleted }
 		},
@@ -192,8 +220,9 @@ async function isLiveOrgMemory(input: {
 
 /**
  * Soft-deleted memories whose Vectorize cleanup has not been recorded yet.
- * Oldest first so stranded rows are not starved by newer deletes; already-clean
- * rows (vector_deleted_at set) are excluded so they do not consume the budget.
+ * Prefer never-attempted, then least-recently attempted, so permanently failing
+ * oldest ids do not starve newer pending rows. Already-clean rows
+ * (vector_deleted_at set) are excluded so they do not consume the budget.
  */
 async function listSoftDeletedMemoriesPendingVectorPage(input: {
 	db: D1Database
@@ -207,7 +236,11 @@ async function listSoftDeletedMemoriesPendingVectorPage(input: {
 			   AND status = 'deleted'
 			   AND deleted_at IS NOT NULL
 			   AND vector_deleted_at IS NULL
-			 ORDER BY deleted_at ASC, id ASC
+			 ORDER BY
+			   CASE WHEN vector_cleanup_attempted_at IS NULL THEN 0 ELSE 1 END,
+			   vector_cleanup_attempted_at ASC,
+			   deleted_at ASC,
+			   id ASC
 			 LIMIT ?`,
 		)
 		.bind(input.orgId, input.limit)
@@ -222,14 +255,18 @@ async function reconcileOrgVectorCleanup(input: {
 	memoryLimit: number
 	pendingVectorMemoryIds: Set<string>
 	warnings: Array<string>
+	/** When false, only retry this invocation's pending ids (mid-org pages). */
+	includeStrandedPage?: boolean
 }): Promise<number> {
 	const retryIds = new Set(input.pendingVectorMemoryIds)
-	for (const id of await listSoftDeletedMemoriesPendingVectorPage({
-		db: input.env.APP_DB,
-		orgId: input.orgId,
-		limit: input.memoryLimit,
-	})) {
-		retryIds.add(id)
+	if (input.includeStrandedPage !== false) {
+		for (const id of await listSoftDeletedMemoriesPendingVectorPage({
+			db: input.env.APP_DB,
+			orgId: input.orgId,
+			limit: input.memoryLimit,
+		})) {
+			retryIds.add(id)
+		}
 	}
 	let vectorCleanupFailed = 0
 	const cleanedAt = new Date().toISOString()
@@ -245,6 +282,12 @@ async function reconcileOrgVectorCleanup(input: {
 			input.pendingVectorMemoryIds.delete(memoryId)
 			continue
 		}
+		await markMemoryVectorCleanupAttempted({
+			db: input.env.APP_DB,
+			orgId: input.orgId,
+			memoryId,
+			at: cleanedAt,
+		})
 		vectorCleanupFailed += 1
 		input.warnings.push(
 			`Vector cleanup still failing for memory ${memoryId} on org ${input.orgSlug ?? input.orgId}`,
@@ -569,6 +612,8 @@ export async function runMemoryPersonalizePurge(input: {
 				// Retry and count pending Vectorize deletes before leaving a
 				// partial org page so failures are not dropped from this run.
 				if (!dryRun) {
+					// Mid-org: retry only this page's pending deletes. The bounded
+					// stranded-row scan runs once the org is exhausted.
 					vectorCleanupFailed += await reconcileOrgVectorCleanup({
 						env: input.env,
 						orgId: org.id,
@@ -576,6 +621,7 @@ export async function runMemoryPersonalizePurge(input: {
 						memoryLimit,
 						pendingVectorMemoryIds,
 						warnings,
+						includeStrandedPage: false,
 					})
 				}
 				nextOrgCursor = lastCompletedOrgId
