@@ -154,6 +154,7 @@ test('a compare-and-swap miss re-reads and keeps the concurrent commits', async 
 			entity_id: 'pkg-1',
 		} as EntitySourceRow,
 		event: pushedEvent('2026-10-15T00:01:00.000Z'),
+		now: new Date('2026-10-15T00:01:00.000Z'),
 	})
 	const pending = await getFollowPushPending(db, {
 		targetKind: 'package',

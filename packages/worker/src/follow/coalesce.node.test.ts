@@ -124,6 +124,38 @@ test('a stale webhook appends commits without moving after backward', () => {
 	expect(stale.pending.totalCommitsCount).toBe(2)
 })
 
+test('a delayed old webhook does not reopen a wall-clock-expired window', () => {
+	const first = mergeFollowPushWindow({
+		...base,
+		existing: null,
+		now: new Date('2026-10-15T00:00:00.000Z'),
+		incoming: {
+			before: 'before-1',
+			after: 'after-1',
+			ref: 'refs/heads/main',
+			commits: [commit('c1')],
+			totalCommitsCount: 1,
+			at: '2026-10-15T00:10:00.000Z',
+		},
+	})
+	const delayed = mergeFollowPushWindow({
+		...base,
+		existing: first.pending,
+		// Wall clock is past the five-minute window even though the delayed
+		// event timestamp is still inside the window by event time.
+		now: new Date('2026-10-15T00:16:00.000Z'),
+		incoming: {
+			before: 'before-0',
+			after: 'before-1',
+			ref: 'refs/heads/main',
+			commits: [commit('c0')],
+			totalCommitsCount: 1,
+			at: '2026-10-15T00:11:00.000Z',
+		},
+	})
+	expect(delayed.action).toBe('replace')
+})
+
 test('a push after the window replaces the pending row', async () => {
 	const sqlite = new DatabaseSync(':memory:')
 	const db = createD1FromSqlite(sqlite)

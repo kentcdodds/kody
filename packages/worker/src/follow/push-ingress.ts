@@ -26,6 +26,8 @@ export async function recordFollowDefaultBranchPush(input: {
 		CloudflareArtifactsRepoEvent,
 		{ type: 'cf.artifacts.repo.pushed' }
 	>
+	/** Wall clock for window open/close. Tests may pin this. */
+	now?: Date
 }): Promise<void> {
 	if (!hasAppDb(input.env.APP_DB)) return
 	const targetKind = followTargetKindForEntity(input.source.entity_kind)
@@ -36,12 +38,14 @@ export async function recordFollowDefaultBranchPush(input: {
 	})
 	if (follows.length === 0) return
 	const incoming = ingressFromEvent(input.event)
+	const now = input.now ?? new Date()
 	for (let attempt = 0; attempt < followPushCoalesceAttempts; attempt += 1) {
 		const wrote = await coalesceOneFollowPush({
 			env: input.env,
 			targetKind,
 			targetId: input.source.entity_id,
 			incoming,
+			now,
 		})
 		if (wrote) return
 	}
@@ -53,6 +57,7 @@ async function coalesceOneFollowPush(input: {
 	targetKind: FollowTargetKind
 	targetId: string
 	incoming: ReturnType<typeof ingressFromEvent>
+	now: Date
 }): Promise<boolean> {
 	const existing = await getFollowPushPending(input.env.APP_DB, {
 		targetKind: input.targetKind,
@@ -63,7 +68,8 @@ async function coalesceOneFollowPush(input: {
 		targetId: input.targetId,
 		existing,
 		incoming: input.incoming,
-		now: new Date(input.incoming.at),
+		// Wall clock: delayed webhooks must not reopen a flushed window.
+		now: input.now,
 	})
 	const expectedUpdatedAt = existing?.updatedAt ?? null
 	switch (merged.action) {

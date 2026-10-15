@@ -44,6 +44,10 @@ export function mergeFollowPushWindow(input: {
 	targetId: string
 	existing: FollowPushPending | null
 	incoming: FollowPushIngress
+	/**
+	 * Wall clock for open/close. Tip ordering and stored `updatedAt` still use
+	 * webhook event time so a late older push does not move `after` backward.
+	 */
 	now: Date
 }): FollowPushMerge {
 	const fresh = freshWindow(input)
