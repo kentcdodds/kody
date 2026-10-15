@@ -6,6 +6,7 @@ import {
 } from '#worker/orgs/access-writes.ts'
 import { FreeOrgLimitError } from '#worker/orgs/billing.ts'
 import { type OrgAuditWriter } from '#worker/orgs/org-audit.ts'
+import { orgHandleTakenError } from '#worker/orgs/org-handle-claim.ts'
 
 export type CreateOrganizationInput = {
 	audit: OrgAuditWriter
@@ -18,17 +19,21 @@ export type CreateOrganizationResult =
 	| { ok: true; slug: string }
 	| { ok: false; error: string }
 
+/**
+ * Map createOrg slug errors for the web form. Reserved and taken messages are
+ * already the same copy username signup / MCP use — pass them through. Format
+ * failures get handle-oriented wording (the field label is Handle).
+ */
 function slugValidationMessage(message: string) {
-	if (message.toLowerCase().includes('reserved'))
-		return 'This name is reserved.'
-	if (message.toLowerCase().includes('taken')) return 'That name is taken.'
+	if (message.toLowerCase().includes('reserved')) return message
+	if (message.toLowerCase().includes('taken')) return orgHandleTakenError
 	return 'Use 3 to 32 letters, numbers, and hyphens. Start and end with a letter or number.'
 }
 
 /**
  * Web-facing create organization. Validates the display name, then calls the
- * same {@link createOrg} path MCP `orgCreate` uses (slug format and reserved
- * names, the free-org ownership cap).
+ * same {@link createOrg} path MCP `orgCreate` uses (slug format, reserved
+ * names, shared-namespace collision, the free-org ownership cap).
  */
 export async function createOrganization(
 	db: D1Database,
@@ -40,11 +45,6 @@ export async function createOrganization(
 	if (!displayName || displayName.length > 80) {
 		return { ok: false, error: 'Enter a name up to 80 characters.' }
 	}
-	const taken = await db
-		.prepare(`SELECT handle FROM handles WHERE handle = ?`)
-		.bind(slug)
-		.first<{ handle: string }>()
-	if (taken) return { ok: false, error: 'That name is taken.' }
 
 	try {
 		const created = await createOrg({
@@ -64,7 +64,7 @@ export async function createOrganization(
 			return { ok: false, error: error.message }
 		}
 		const field = getUniqueConstraintField(error)
-		if (field) return { ok: false, error: 'That name is taken.' }
+		if (field) return { ok: false, error: orgHandleTakenError }
 		throw error
 	}
 }
