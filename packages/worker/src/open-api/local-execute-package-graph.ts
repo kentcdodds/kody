@@ -16,48 +16,52 @@ import { type NativeApiOperationId } from './operations.ts'
 import { maxApiRequestBodyBytes } from './request-params.ts'
 
 /**
- * Inline `code` ceiling for package-graph. Matches the Open API JSON body cap
- * (`maxApiRequestBodyBytes`, 5 MiB) — the same ceiling every other JSON Open
- * API operation already has. Publish allows larger repo source files via
- * Artifacts git (`maxRepoSourceFileBytes`, 10 MiB); callers with modules that
- * large (or who do not want to POST a multi-megabyte `kody dev` worker
- * bundle) should pass `imports` instead of inlining the whole bundle.
+ * Headroom under `maxApiRequestBodyBytes` for the JSON wrapper
+ * (`{"code":"…","imports":[…],…}`) so a max-sized `code` does not 413 at the
+ * edge body reader before Zod runs.
  */
-export const maxLocalExecutePackageGraphCodeBytes = maxApiRequestBodyBytes
+const packageGraphCodeBodyOverheadBytes = 64 * 1024
+
+/**
+ * Inline `code` ceiling for package-graph. Capped just under the Open API JSON
+ * body limit (`maxApiRequestBodyBytes`, 5 MiB) so the whole request still fits.
+ * Publish allows larger repo source files via Artifacts git
+ * (`maxRepoSourceFileBytes`, 10 MiB); callers with modules that large (or who
+ * do not want to POST a multi-megabyte `kody dev` worker bundle) should pass
+ * `imports` instead of inlining the whole bundle.
+ */
+export const maxLocalExecutePackageGraphCodeBytes =
+	maxApiRequestBodyBytes - packageGraphCodeBodyOverheadBytes
 
 const packageGraphImportsSchema = z.array(z.string().min(1).max(512)).max(64)
 
-export const localExecutePackageGraphInputSchema = z
-	.object({
-		/**
-		 * Ad hoc / bundled module source to scan for static `kody:@…` imports.
-		 * Optional when `imports` is provided (CLI `kody dev` large bundles).
-		 */
-		code: z
-			.string()
-			.min(1)
-			.max(maxLocalExecutePackageGraphCodeBytes)
-			.optional(),
-		/**
-		 * Explicit `kody:@…` import list. When `code` is omitted, origin
-		 * synthesizes a tiny entry from these specifiers and resolves that.
-		 * When `code` is present, origin still scans `code` (authoritative)
-		 * and ignores this list for resolution — callers may still send it so
-		 * older CLIs keep working.
-		 */
-		imports: packageGraphImportsSchema.optional(),
-		conversationId: z.string().min(1).max(128).optional(),
-	})
-	.strict()
-	.superRefine((value, ctx) => {
-		if (value.code === undefined && value.imports === undefined) {
-			ctx.addIssue({
-				code: 'custom',
-				message: 'Provide code and/or imports.',
-				path: ['code'],
-			})
-		}
-	})
+const packageGraphConversationIdSchema = z.string().min(1).max(128).optional()
+
+const packageGraphCodeSchema = z
+	.string()
+	.min(1)
+	.max(maxLocalExecutePackageGraphCodeBytes)
+
+/**
+ * `code` and/or `imports` (at least one). Union keeps OpenAPI `anyOf` branches
+ * with required keys so the document does not advertise an empty optional body.
+ */
+export const localExecutePackageGraphInputSchema = z.union([
+	z
+		.object({
+			code: packageGraphCodeSchema,
+			imports: packageGraphImportsSchema.optional(),
+			conversationId: packageGraphConversationIdSchema,
+		})
+		.strict(),
+	z
+		.object({
+			imports: packageGraphImportsSchema,
+			code: packageGraphCodeSchema.optional(),
+			conversationId: packageGraphConversationIdSchema,
+		})
+		.strict(),
+])
 
 export const localExecutePackageGraphOutputSchema = z.object({
 	modules: z.array(
@@ -82,7 +86,7 @@ export const localExecutePackageGraphOperationDefinitions: Record<
 	localExecutePackageGraph: {
 		summary: 'Download stamped package modules for local execute',
 		description:
-			'Resolve published, stamped `kody:@…` importable-module artifacts for an ad hoc execute module so `@kodycodes/cli execute --local` / `kody dev` can embed them in workerd. Uses the same static-import scanner and resolution policy as cloud execute (packages resolve only in the caller org). Pass inline `code` (up to the Open API JSON body limit of 5 MiB) and/or `imports`; when only `imports` is set, origin synthesizes a tiny entry so multi-megabyte worker bundles (TanStack / React apps) do not need to be posted. Does **not** execute the user module and does not meter `dynamic_worker_day`. CapabilityProxy remains for per-call `kody:runtime` hops during the later local run. Requires `org:execute` and a scoped API token or CLI MCP OAuth bearer.',
+			'Resolve published, stamped `kody:@…` importable-module artifacts for an ad hoc execute module so `@kodycodes/cli execute --local` / `kody dev` can embed them in workerd. Uses the same static-import scanner and resolution policy as cloud execute (packages resolve only in the caller org). Pass inline `code` (up to just under the Open API JSON body limit of 5 MiB, leaving room for the JSON wrapper) and/or `imports`; when only `imports` is set, origin synthesizes a tiny entry so multi-megabyte worker bundles (TanStack / React apps) do not need to be posted. Does **not** execute the user module and does not meter `dynamic_worker_day`. CapabilityProxy remains for per-call `kody:runtime` hops during the later local run. Requires `org:execute` and a scoped API token or CLI MCP OAuth bearer.',
 		inputSchema: localExecutePackageGraphInputSchema,
 		outputSchema: localExecutePackageGraphOutputSchema,
 		readOnly: true,

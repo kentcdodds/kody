@@ -703,7 +703,8 @@ test('package-graph accepts code over the old 512k char cap and imports-only pre
 	const token = await mintWithLocalExecute(api)
 
 	// Former Zod `.max(512_000)` rejected TanStack / React worker bundles
-	// (~1.2–1.7 MiB). Inline code may now fill the Open API JSON body cap.
+	// (~1.2–1.7 MiB). Inline code may now approach the Open API JSON body cap
+	// (minus JSON-wrapper headroom).
 	const overLegacyCap = `${'//'.padEnd(512_001, 'x')}\nexport default async function main() { return 1 }\n`
 	expect(overLegacyCap.length).toBeGreaterThan(512_000)
 	expect(overLegacyCap.length).toBeLessThan(
@@ -718,6 +719,20 @@ test('package-graph accepts code over the old 512k char cap and imports-only pre
 		imports: [],
 		modules: [{ name: '.__kody_virtual__/runtime.js' }],
 	})
+
+	// Same size class with a real `kody:@` import so resolution still runs.
+	const largeUnresolved = await api.call(
+		'POST',
+		'/v1/local-execute/package-graph',
+		{
+			token,
+			body: {
+				code: `import x from 'kody:@missing/pkg/export'\n${'//'.padEnd(512_001, 'x')}\nexport default async () => x\n`,
+			},
+		},
+	)
+	expect(largeUnresolved.status).toBe(400)
+	expect(largeUnresolved.body.error?.code).toBe('package_import_unresolved')
 
 	// Large `kody dev` bundles: pass imports alone (origin synthesizes entry).
 	const importsOnly = await api.call(

@@ -170,6 +170,18 @@ function readRequired(schema: JsonSchema) {
 		: []
 }
 
+function readUnionVariants(schema: JsonSchema): Array<JsonSchema> {
+	const variants: Array<JsonSchema> = []
+	for (const key of ['anyOf', 'oneOf'] as const) {
+		const entries = schema[key]
+		if (!Array.isArray(entries)) continue
+		for (const entry of entries) {
+			if (isRecord(entry)) variants.push(entry as JsonSchema)
+		}
+	}
+	return variants
+}
+
 export function resolveApiOperation(
 	operation: ApiOperation,
 	registry: BuiltCapabilityRegistry,
@@ -349,26 +361,46 @@ function buildOperation(
 			})
 		}
 	} else {
-		const bodyRequired = readRequired(inputSchema).filter(
-			(name) => !pathParams.includes(name) && !omitted.has(name),
-		)
-		const {
-			required: _required,
-			properties: _properties,
-			...rest
-		} = inputSchema
-		requestBody = {
-			required: bodyRequired.length > 0,
-			content: {
-				'application/json': {
-					schema: {
-						...rest,
-						type: 'object',
-						properties: Object.fromEntries(bodyEntries),
-						...(bodyRequired.length > 0 ? { required: bodyRequired } : {}),
+		const unionVariants = readUnionVariants(inputSchema)
+		if (unionVariants.length > 0) {
+			// Preserve anyOf/oneOf as-is. Body is required when every variant
+			// requires at least one non-path body field (e.g. package-graph
+			// code|imports).
+			const everyVariantRequiresBody = unionVariants.every((variant) =>
+				readRequired(variant).some(
+					(name) => !pathParams.includes(name) && !omitted.has(name),
+				),
+			)
+			requestBody = {
+				required: everyVariantRequiresBody,
+				content: {
+					'application/json': {
+						schema: inputSchema,
 					},
 				},
-			},
+			}
+		} else {
+			const bodyRequired = readRequired(inputSchema).filter(
+				(name) => !pathParams.includes(name) && !omitted.has(name),
+			)
+			const {
+				required: _required,
+				properties: _properties,
+				...rest
+			} = inputSchema
+			requestBody = {
+				required: bodyRequired.length > 0,
+				content: {
+					'application/json': {
+						schema: {
+							...rest,
+							type: 'object',
+							properties: Object.fromEntries(bodyEntries),
+							...(bodyRequired.length > 0 ? { required: bodyRequired } : {}),
+						},
+					},
+				},
+			}
 		}
 	}
 	const outputSchema = resolved.outputSchema
