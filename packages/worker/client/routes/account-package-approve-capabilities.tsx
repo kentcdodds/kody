@@ -744,12 +744,7 @@ const capabilityRowCss = {
 
 const backToSettingsLabel = 'Back to package settings'
 
-/**
- * The approve control and the settings link are different elements (button vs
- * anchor) with different built-in fonts. Stacking both labels in one grid
- * cell makes each box as wide as the longer label; the shared metrics make
- * the heights match too.
- */
+/** Both labels share one cell so each control is as wide as the longer one. */
 function equalActionLabel(visible: string, match: string) {
 	return (
 		<>
@@ -776,18 +771,14 @@ const approveActionControlCss = {
 	display: 'inline-grid',
 	alignItems: 'center',
 	justifyItems: 'center',
-	boxSizing: 'border-box' as const,
 	maxWidth: '100%',
-	margin: 0,
 	padding: `${spacing.sm} ${spacing.md}`,
-	border: 'none',
 	appearance: 'none' as const,
 	fontFamily: typography.fontFamily,
 	fontSize: typography.fontSize.base,
 	fontWeight: typography.fontWeight.semibold,
 	lineHeight: 1.25,
 	textAlign: 'center' as const,
-	textDecoration: 'none',
 	whiteSpace: 'normal' as const,
 	[mq.mobile]: {
 		width: '100%',
