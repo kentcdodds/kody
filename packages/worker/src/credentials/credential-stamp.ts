@@ -16,6 +16,7 @@ import {
 	parseModule,
 	resolveStringExpression,
 	scannableModuleFilePattern,
+	unwrapExpression,
 	walkAst,
 } from '#worker/credentials/module-placeholder-scan.ts'
 import {
@@ -472,32 +473,53 @@ export function collectServerRuntimeModulePaths(
 	return serverReachable
 }
 
+const globalObjectNames = new Set(['globalThis', 'window', 'global', 'self'])
+
+function templateLiteralStaticText(node: AstNode | undefined): string | null {
+	if (node?.type !== 'TemplateLiteral') return null
+	if ((node.expressions?.length ?? 0) > 0) return null
+	const quasi = node.quasis?.[0]
+	if (!quasi) return null
+	const value = quasi.value as
+		| { cooked?: string | null; raw?: string }
+		| undefined
+	if (typeof value?.cooked === 'string') return value.cooked
+	if (typeof value?.raw === 'string') return value.raw
+	return getNodeName(quasi)
+}
+
 /**
  * True when `node` is `eval` / `Function`, or a member access that ends in
  * those names (`globalThis.eval`, `window['Function']`, `new globalThis.Function`).
  * Call-form `Function("…")()` is covered the same way as `new Function`.
+ * Parenthesized / TS-wrapped callees are unwrapped first.
  */
 function isEvalOrFunctionTarget(node: AstNode | null | undefined): boolean {
-	if (!node) return false
-	if (node.type === 'Identifier') {
-		const name = getNodeName(node)
+	const target = unwrapExpression(node ?? undefined)
+	if (!target) return false
+	if (target.type === 'Identifier') {
+		const name = getNodeName(target)
 		return name === 'eval' || name === 'Function'
 	}
 	if (
-		node.type === 'MemberExpression' ||
-		node.type === 'OptionalMemberExpression'
+		target.type === 'MemberExpression' ||
+		target.type === 'OptionalMemberExpression'
 	) {
-		if (node.computed === true) {
+		if (target.computed === true) {
+			const prop = unwrapExpression(target.property)
 			const literal =
-				node.property?.type === 'Literal' ||
-				node.property?.type === 'StringLiteral'
-					? typeof node.property.value === 'string'
-						? node.property.value
+				prop?.type === 'Literal' || prop?.type === 'StringLiteral'
+					? typeof prop.value === 'string'
+						? prop.value
 						: null
-					: null
-			return literal === 'eval' || literal === 'Function'
+					: templateLiteralStaticText(prop)
+			if (literal != null) return literal === 'eval' || literal === 'Function'
+			// Fail closed on globalThis[expr] / window[name] — property is not a
+			// static literal, so publish cannot prove it is not eval/Function.
+			const object = unwrapExpression(target.object)
+			return globalObjectNames.has(getNodeName(object) ?? '')
 		}
-		const name = getNodeName(node.property)
+		const name = getNodeName(target.property)
 		return name === 'eval' || name === 'Function'
 	}
 	return false

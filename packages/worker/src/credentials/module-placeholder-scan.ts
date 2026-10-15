@@ -183,7 +183,7 @@ export const transparentExpressionTypes = new Set([
 	'TSTypeAssertion',
 ])
 
-function unwrapExpression(node: AstNode | undefined) {
+export function unwrapExpression(node: AstNode | undefined) {
 	let current = node
 	while (current && transparentExpressionTypes.has(current.type)) {
 		current = current.expression
