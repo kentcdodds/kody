@@ -118,13 +118,41 @@ export type EffectiveCredentialMapping = {
 
 export type CredentialMappingTarget =
 	| { type: 'default'; layer: CredentialMappingLayer }
-	| { type: 'trigger'; trigger: CredentialTriggerRef }
+	| {
+			type: 'trigger'
+			trigger: CredentialTriggerRef
+			/**
+			 * Edit this enablement. Omit for the viewer's sole (or first) live
+			 * enablement of the trigger.
+			 */
+			enablementId?: string
+			/**
+			 * Create another enablement even when the viewer already has one
+			 * (cron and non-email subscription only). Writes a new row; never
+			 * reuses or deletes an existing enablement.
+			 */
+			createInstance?: boolean
+	  }
 
 export type CredentialMappingChange = {
 	target: CredentialMappingTarget
 	needKey: string
 	/** `null` clears the override (inherit); `[]` is "none on purpose". */
 	credentials: Array<CredentialPick> | null
+}
+
+/**
+ * Session-only turn-on / turn-off for one of the viewer's enablements on the
+ * package Triggers tab. `createInstance` mints another row when the viewer
+ * already has one; omit it to reuse the existing enablementEnable path.
+ */
+export type PackageCredentialsEnablementAction = {
+	trigger: CredentialTriggerRef
+	state: 'on' | 'off'
+	/** Required when turning off (or when targeting one of several). */
+	enablementId?: string
+	/** Turn on another instance; ignored when `state` is `off`. */
+	createInstance?: boolean
 }
 
 /** A proposed change always sets picks; proposals cannot clear. */
@@ -192,20 +220,58 @@ export type PackageCredentialNeedView = {
 	createUrl: string
 }
 
-export type PackageTriggerView = {
-	trigger: CredentialTriggerRef
-	instanceId: string | null
+/** One of the viewer's live enablements of a declared trigger. */
+export type PackageTriggerInstanceView = {
 	enablement: {
 		id: string
 		state: 'on' | 'paused' | 'off'
 		enabledByYou: boolean
-	} | null
+	}
+	/** Only the enabler edits this instance's credential mappings. */
 	canEdit: boolean
 	mappings: Array<{
 		needKey: string
 		override: StoredCredentialMapping | null
 		effective: EffectiveCredentialMapping
 	}>
+}
+
+export type PackageTriggerView = {
+	trigger: CredentialTriggerRef
+	/** Webhook endpoint id, job id, or package id; null for an unminted webhook. */
+	instanceId: string | null
+	/**
+	 * The viewer's primary enablement (first live), or the webhook's single
+	 * enabler when that is someone else. Prefer {@link instances} when listing
+	 * every copy the viewer holds.
+	 */
+	enablement: {
+		id: string
+		state: 'on' | 'paused' | 'off'
+		enabledByYou: boolean
+	} | null
+	/** Only the enabler edits; true when the viewer is (or would become) it. */
+	canEdit: boolean
+	/**
+	 * Mappings for {@link enablement}. Empty when withheld or when the trigger
+	 * is off. Prefer each entry in {@link instances} for multi-instance UIs.
+	 */
+	mappings: Array<{
+		needKey: string
+		override: StoredCredentialMapping | null
+		effective: EffectiveCredentialMapping
+	}>
+	/**
+	 * Every live enablement the viewer holds for this declared trigger (or one
+	 * read-only webhook entry when someone else enabled it). Empty when off.
+	 */
+	instances: Array<PackageTriggerInstanceView>
+	/**
+	 * The viewer may turn on another copy with its own credential mapping
+	 * (cron and non-email subscriptions). Webhooks stay one URL / one live
+	 * enablement; inbound email uses sender-scoped Approve instead.
+	 */
+	canAddInstance: boolean
 }
 
 export type PackageCredentialsIncomplete = {

@@ -25,6 +25,7 @@ import {
 	type PackageCredentialNeedView,
 	type PackageCredentialsIncomplete,
 	type PackageCredentialsView,
+	type PackageTriggerInstanceView,
 	type PackageTriggerView,
 	type StoredCredentialMapping,
 } from '#universal/credential-contracts.ts'
@@ -148,20 +149,14 @@ export async function loadPackageMappingScope(input: {
 			savedPackage,
 		}),
 	])
-	const ownEnablementIds = triggers.flatMap((trigger) => {
-		// One person can hold several inbound-email enablements. Load every
-		// one of theirs so a sender-specific edit sees that sender's mapping.
-		if (
-			trigger.kind === 'subscription' &&
-			isInboundEmailApprovalTopic(trigger.name)
-		) {
-			return trigger.enablements
-				.filter((enablement) => String(enablement.enablerUserId) === actorId)
-				.map((enablement) => enablement.id)
-		}
-		const { enablement, otherEnabler } = viewerEnablement(trigger, actorId)
-		return enablement && !otherEnabler ? [enablement.id] : []
-	})
+	const ownEnablementIds = triggers.flatMap((trigger) =>
+		// One person may hold several enablements of the same trigger (cron,
+		// subscription, or inbound-email senders). Load every one of theirs so
+		// each instance's mapping is visible and editable.
+		trigger.enablements
+			.filter((enablement) => String(enablement.enablerUserId) === actorId)
+			.map((enablement) => enablement.id),
+	)
 	const rows = await loadCredentialMappings({
 		db: input.env.APP_DB,
 		orgId: savedPackage.userId,
@@ -434,33 +429,80 @@ export async function buildPackageCredentialsView(
 			scope.actorId,
 		)
 		const ref = { kind: trigger.kind, name: trigger.name }
+		const emailTopic =
+			trigger.kind === 'subscription' &&
+			isInboundEmailApprovalTopic(trigger.name)
+		const ownRows = trigger.enablements.filter(
+			(row) => String(row.enablerUserId) === scope.actorId,
+		)
+		const mappingRowsFor = (
+			row: EnablementRecord | null,
+			options: { recordIncomplete: boolean },
+		) =>
+			otherEnabler
+				? []
+				: scope.needs.map((need) => {
+						const override = row
+							? findStoredRow(scope, need.key, {
+									target: 'enablement',
+									enablementId: row.id,
+									personId: scope.actorId,
+								})
+							: null
+						const effective = effectiveMapping(scope, need, {
+							trigger: override,
+							createUrl: createUrlFor(need.key),
+						})
+						if (
+							options.recordIncomplete &&
+							row &&
+							isIncomplete(effective.status)
+						) {
+							incomplete.push({
+								needKey: need.key,
+								where: { type: 'trigger', trigger: ref },
+								status: effective.status,
+							})
+						}
+						return {
+							needKey: need.key,
+							override: storedView(scope, override),
+							effective,
+						}
+					})
+		const canEditPrimary =
+			trigger.kind === 'webhook'
+				? trigger.instanceId !== null && !otherEnabler
+				: true
+		const instances: Array<PackageTriggerInstanceView> = otherEnabler
+			? enablement
+				? [
+						{
+							enablement: {
+								id: enablement.id,
+								state: enablement.state,
+								enabledByYou: false,
+							},
+							canEdit: false,
+							mappings: [],
+						},
+					]
+				: []
+			: ownRows.map((row) => ({
+					enablement: {
+						id: row.id,
+						state: row.state,
+						enabledByYou: true,
+					},
+					canEdit: canEditPrimary,
+					mappings: mappingRowsFor(row, { recordIncomplete: true }),
+				}))
+		// An off trigger still lists need rows (null overrides) so the editor
+		// can turn it on by saving a pick — same shape as before instances.
 		const mappings = otherEnabler
 			? []
-			: scope.needs.map((need) => {
-					const override = enablement
-						? findStoredRow(scope, need.key, {
-								target: 'enablement',
-								enablementId: enablement.id,
-								personId: scope.actorId,
-							})
-						: null
-					const effective = effectiveMapping(scope, need, {
-						trigger: override,
-						createUrl: createUrlFor(need.key),
-					})
-					if (enablement && isIncomplete(effective.status)) {
-						incomplete.push({
-							needKey: need.key,
-							where: { type: 'trigger', trigger: ref },
-							status: effective.status,
-						})
-					}
-					return {
-						needKey: need.key,
-						override: storedView(scope, override),
-						effective,
-					}
-				})
+			: (instances[0]?.mappings ??
+				mappingRowsFor(null, { recordIncomplete: false }))
 		return {
 			trigger: ref,
 			instanceId: trigger.instanceId,
@@ -471,11 +513,14 @@ export async function buildPackageCredentialsView(
 						enabledByYou: !otherEnabler,
 					}
 				: null,
-			canEdit:
-				trigger.kind === 'webhook'
-					? trigger.instanceId !== null && !otherEnabler
-					: true,
+			canEdit: canEditPrimary,
 			mappings,
+			instances,
+			canAddInstance:
+				canEditPrimary &&
+				trigger.kind !== 'webhook' &&
+				!emailTopic &&
+				trigger.instanceId !== null,
 		}
 	})
 	const listed = await listCredentialsForViewer({

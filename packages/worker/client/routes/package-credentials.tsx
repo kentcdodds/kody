@@ -10,7 +10,10 @@ import {
 } from '#client/route-data.tsx'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { resolvePackageListIconUrl } from '#universal/identity-icon-urls.ts'
-import { type PackageCredentialsView } from '#universal/credential-contracts.ts'
+import {
+	type PackageCredentialsEnablementAction,
+	type PackageCredentialsView,
+} from '#universal/credential-contracts.ts'
 import {
 	type PackageCredentialsLoaderData,
 	type PackageCredentialsTab,
@@ -29,9 +32,11 @@ import {
 	renderShellStatus,
 } from './community-detail-sections.tsx'
 import { loadPackageCredentialsPage } from './package-credentials-data.ts'
+import { postPackageCredentialChanges } from './package-credentials-editing.ts'
 import { createPackageMappingEditor } from './package-credentials-editor.tsx'
 import {
 	type PackageTabContext,
+	type TriggerEnablementActionInput,
 	renderCredentialsTab,
 	renderMappingsTab,
 	renderTriggersTab,
@@ -130,6 +135,62 @@ export function PackageCredentialsRoute(handle: Handle) {
 			}
 		},
 	})
+	let enablementBusyKey: string | null = null
+	let enablementError: string | null = null
+	let enablementSession = 0
+
+	async function setTriggerEnablement(input: TriggerEnablementActionInput) {
+		const busyKey =
+			input.enablementId ?? `${input.trigger.kind}:${input.trigger.name}`
+		if (enablementBusyKey) return
+		enablementBusyKey = busyKey
+		enablementError = null
+		enablementSession += 1
+		const started = enablementSession
+		handle.update()
+		const action: PackageCredentialsEnablementAction = {
+			trigger: input.trigger,
+			state: input.state,
+			...(input.enablementId ? { enablementId: input.enablementId } : {}),
+			...(input.createInstance ? { createInstance: true } : {}),
+		}
+		const postedTo = { ...page }
+		const result = await postPackageCredentialChanges({
+			username: postedTo.username,
+			kodyId: postedTo.kodyId,
+			enablements: [action],
+		})
+		if (enablementSession !== started) return
+		enablementBusyKey = null
+		switch (result.kind) {
+			case 'saved':
+				if (packageKey(postedTo) === packageKey(page)) {
+					writes += 1
+					saved = { view: result.view, writes, packageKey: packageKey(page) }
+				}
+				enablementError = null
+				handle.update()
+				return
+			case 'refused':
+				enablementError =
+					result.errors[0]?.message ?? 'Kody could not update this trigger.'
+				handle.update()
+				return
+			case 'error':
+				enablementError = result.message
+				handle.update()
+				return
+			case 'unauthorized':
+				window.location.assign(
+					`/login?redirectTo=${encodeURIComponent(window.location.pathname)}`,
+				)
+				return
+			default: {
+				const exhaustive: never = result
+				return exhaustive
+			}
+		}
+	}
 
 	function currentView(
 		loaded: PackageCredentialsView | null,
@@ -226,6 +287,9 @@ export function PackageCredentialsRoute(handle: Handle) {
 							kodyId,
 							view,
 							renderMappingCell: editor.renderCell,
+							setTriggerEnablement,
+							enablementBusyKey,
+							enablementError,
 						})
 					: null}
 				{data && !data.view

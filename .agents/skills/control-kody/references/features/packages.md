@@ -97,6 +97,10 @@ fixtures use `control-kody execute` / `search` against the same origin.
   change: `grant`, `revoke`, and personal-org-only `invite`, `revoke-invite`;
   403 without `package:manage_access`)
 - `GET|POST /profiles/:username/packages/:kodyId/approve-capabilities.json`
+- `GET|POST /profiles/:username/packages/:kodyId/credentials.json` (Credentials
+  / Default mappings / Triggers tabs; POST `{ changes }` and/or
+  `{ enablements }` for mapping edits and the viewer’s own on/off /
+  multi-instance toggles)
 - `GET /account/packages/:packageId/files.json` (404 + `redirectTo` the tree)
 - `GET|POST /account/packages/:packageId/approve-publish.json`
 - `GET|POST /account/packages/:packageId/approve-capabilities.json`

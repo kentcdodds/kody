@@ -67,6 +67,16 @@ test('the view shows needs, options, triggers, and what is incomplete', async ()
 		['webhook', 'incoming', null, false],
 	])
 	expect(view.triggers[2]!.instanceId).toBeNull()
+	expect(view.triggers.map((trigger) => trigger.instances)).toEqual([
+		[],
+		[],
+		[],
+	])
+	expect(view.triggers.map((trigger) => trigger.canAddInstance)).toEqual([
+		true,
+		true,
+		false,
+	])
 	expect(view.incomplete).toEqual([
 		{ needKey: 'mail', where: { type: 'default' }, status: 'ambiguous' },
 		{ needKey: 'chat', where: { type: 'default' }, status: 'unbound' },
@@ -298,6 +308,43 @@ test('changes that cannot apply carry a coded error and nothing is written', asy
 		{ target: mine, needKey: 'mail', credentials: [{ name: 'slack-bot' }] },
 	])
 	expect(mismatch[0]!.error).toMatchObject({ code: 'provider_mismatch' })
+})
+
+test('createInstance adds a second enablement with its own credential mapping', async () => {
+	const t = await setup()
+	const prod = await t.storeKey('resend-prod', 'resend')
+	const test_ = await t.storeKey('resend-test', 'resend')
+	await t.apply('bea', 'owner', [
+		{ target: daily, needKey: 'mail', credentials: [{ id: prod }] },
+	])
+	expect(await t.enablementCount()).toBe(1)
+	const first = await buildPackageCredentialsView(
+		await t.scopeFor('bea', 'owner'),
+	)
+	expect(first.triggers[0]!.instances).toHaveLength(1)
+	expect(first.triggers[0]!.instances[0]!.mappings[0]).toMatchObject({
+		needKey: 'mail',
+		override: { credentials: [{ id: prod }] },
+	})
+
+	await t.apply('bea', 'owner', [
+		{
+			target: { ...daily, createInstance: true },
+			needKey: 'mail',
+			credentials: [{ id: test_ }],
+		},
+	])
+	expect(await t.enablementCount()).toBe(2)
+	const view = await buildPackageCredentialsView(
+		await t.scopeFor('bea', 'owner'),
+	)
+	const cron = view.triggers[0]!
+	expect(cron.instances).toHaveLength(2)
+	expect(cron.canAddInstance).toBe(true)
+	const mapped = cron.instances.map(
+		(instance) => instance.mappings[0]?.override?.credentials[0]?.id ?? null,
+	)
+	expect(mapped).toEqual([prod, test_])
 })
 
 test('the viewer scope binds the :username org and needs package:execute', async () => {

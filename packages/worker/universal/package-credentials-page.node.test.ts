@@ -5,6 +5,7 @@ import {
 	type PackageTriggerView,
 } from '#universal/credential-contracts.ts'
 import {
+	canToggleTriggerEnablement,
 	credentialRefHref,
 	credentialRefLabel,
 	describeIncompleteMapping,
@@ -54,6 +55,8 @@ function trigger(
 		enablement: null,
 		canEdit: false,
 		mappings: [],
+		instances: [],
+		canAddInstance: false,
 		...overrides,
 	}
 }
@@ -175,6 +178,40 @@ test('mappings under someone else’s enablement read as withheld in every state
 		),
 	).toBeNull()
 	expect(withheldTriggerMappingsNote(trigger({ trigger: hook }))).toBeNull()
+})
+
+test('the Triggers tab toggle is for the viewer’s own cron or live enablement', () => {
+	expect(
+		canToggleTriggerEnablement(
+			trigger({ trigger: { kind: 'cron', name: 'daily' }, canEdit: true }),
+		),
+	).toBe(true)
+	expect(
+		canToggleTriggerEnablement(
+			trigger({
+				trigger: { kind: 'webhook', name: 'hook' },
+				instanceId: null,
+				canEdit: true,
+			}),
+		),
+	).toBe(false)
+	expect(
+		canToggleTriggerEnablement(
+			trigger({
+				trigger: { kind: 'webhook', name: 'hook' },
+				canEdit: true,
+			}),
+		),
+	).toBe(false)
+	expect(
+		canToggleTriggerEnablement(
+			trigger({
+				trigger: { kind: 'webhook', name: 'hook' },
+				canEdit: true,
+				enablement: { id: 'en', state: 'on', enabledByYou: true },
+			}),
+		),
+	).toBe(true)
 })
 
 test('credential refs link to the org credential detail by id', () => {

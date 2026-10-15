@@ -273,11 +273,25 @@ export type PackageCredentialNeedView = {
 	createUrl: string
 }
 
+export type PackageTriggerInstanceView = {
+	enablement: {
+		id: string
+		state: 'on' | 'paused' | 'off'
+		enabledByYou: boolean
+	}
+	canEdit: boolean
+	mappings: Array<{
+		needKey: string
+		override: StoredCredentialMapping | null
+		effective: EffectiveCredentialMapping
+	}>
+}
+
 export type PackageTriggerView = {
 	trigger: CredentialTriggerRef
 	/** Webhook endpoint id, job id, or package id; null for an unminted webhook. */
 	instanceId: string | null
-	/** The viewer's enablement, or the webhook's single enabler. */
+	/** The viewer's primary enablement, or the webhook's single enabler. */
 	enablement: {
 		id: string
 		state: 'on' | 'paused' | 'off'
@@ -290,6 +304,14 @@ export type PackageTriggerView = {
 		override: StoredCredentialMapping | null
 		effective: EffectiveCredentialMapping
 	}>
+	/** Every live enablement the viewer holds (or one read-only webhook entry). */
+	instances: Array<PackageTriggerInstanceView>
+	/**
+	 * The viewer may turn on another copy with its own credential mapping
+	 * (cron and non-email subscriptions). Webhooks stay one URL / one live
+	 * enablement.
+	 */
+	canAddInstance: boolean
 }
 
 export type PackageCredentialsView = {
@@ -309,11 +331,16 @@ export type PackageCredentialsView = {
 }
 ```
 
-`POST { changes: Array<CredentialMappingChange> }` applies edits made directly
-on the website (a person editing a tab) and returns the updated
-`PackageCredentialsView`. It uses the same validator and writer as Approve and
-is atomic: every change applies, or none does. This endpoint is session-only;
-MCP and API tokens cannot reach it.
+`POST { changes?: Array<CredentialMappingChange>, enablements?: Array<{ trigger, state: 'on'|'off', enablementId?, createInstance? }> }`
+applies edits made directly on the website (a person editing a tab) and/or turns
+the viewer's enablements on or off, then returns the updated
+`PackageCredentialsView`. Mapping changes use the same validator and writer as
+Approve and are atomic: every change applies, or none does. `enablements` is how
+the Triggers tab toggle calls `enablementEnable` / `enablementDisable` for the
+signed-in person (`createInstance: true` inserts another enablement for a cron
+or non-email subscription). A trigger mapping target may include `enablementId`
+(edit that instance) or `createInstance: true` (map onto a new instance). This
+endpoint is session-only; MCP and API tokens cannot reach it.
 
 - `:username` is the org slug. The viewer must belong to the org (or hold a
   grant in it) and have `package:execute` on the package; otherwise `404`.

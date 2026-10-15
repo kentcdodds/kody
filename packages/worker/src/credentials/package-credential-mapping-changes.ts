@@ -219,6 +219,50 @@ function resolveTarget(
 				target.trigger,
 				sender,
 			)
+			if (target.enablementId) {
+				const named = trigger.enablements.find(
+					(row) =>
+						row.id === target.enablementId &&
+						String(row.enablerUserId) === scope.actorId,
+				)
+				if (!named) {
+					refuse(
+						'not_allowed',
+						`Enablement "${target.enablementId}" is not one of yours for this trigger.`,
+					)
+				}
+				return {
+					rowTarget: {
+						target: 'enablement',
+						enablementId: named.id,
+						personId: scope.actorId,
+					},
+					trigger,
+					willEnable: false,
+				}
+			}
+			if (target.createInstance) {
+				if (trigger.kind === 'webhook') {
+					refuse(
+						'not_allowed',
+						`Webhook "${trigger.name}" already has a URL. Each webhook URL runs as one enablement; mint another URL for another instance.`,
+					)
+				}
+				if (
+					trigger.kind === 'subscription' &&
+					isInboundEmailApprovalTopic(trigger.name)
+				) {
+					refuse(
+						'email_approval_required',
+						`Inbound email runs per sender. Approve another sender from the inbox; do not create a second instance here.`,
+					)
+				}
+				return {
+					rowTarget: null,
+					trigger,
+					willEnable: change.credentials !== null,
+				}
+			}
 			return enablement
 				? {
 						rowTarget: {
@@ -481,7 +525,7 @@ function changeTargetKey(change: ResolvedMappingChange) {
 	const where =
 		target.type === 'default'
 			? `default:${target.layer}`
-			: `trigger:${target.trigger.kind}:${target.trigger.name}`
+			: `trigger:${target.trigger.kind}:${target.trigger.name}:${target.enablementId ?? ''}:${target.createInstance ? 'new' : ''}`
 	return `${where}\u0000${change.needKey}`
 }
 
@@ -535,12 +579,21 @@ export async function writeMappingChanges(
 		const guards: Array<D1PreparedStatement> = []
 		const statements: Array<D1PreparedStatement> = []
 		const auditPlans: Array<OrgAuditOutboxPlan> = []
+		const newInstanceIds = new Map<DeclaredTrigger, string>()
 		const enableTrigger = async (
 			trigger: DeclaredTrigger,
 			change: ResolvedMappingChange | null,
 		) => {
-			const known = enabledIds.get(trigger)
-			if (known) return known
+			const createInstance =
+				change?.target.type === 'trigger' &&
+				Boolean(change.target.createInstance)
+			if (createInstance) {
+				const knownNew = newInstanceIds.get(trigger)
+				if (knownNew) return knownNew
+			} else {
+				const known = enabledIds.get(trigger)
+				if (known) return known
+			}
 			const email =
 				trigger.kind === 'subscription' &&
 				isInboundEmailApprovalTopic(trigger.name)
@@ -552,6 +605,7 @@ export async function writeMappingChanges(
 				kind: trigger.kind,
 				name: trigger.name,
 				now,
+				createInstance,
 				...(email ? { sender: options.sender ?? null } : {}),
 			}).catch((error: unknown) => {
 				if (isMappingWriteRefusal(error)) {
@@ -566,7 +620,8 @@ export async function writeMappingChanges(
 				enablementId = plan.enablementId
 				newEnablements.push(plan)
 			}
-			enabledIds.set(trigger, enablementId)
+			if (createInstance) newInstanceIds.set(trigger, enablementId)
+			else enabledIds.set(trigger, enablementId)
 			return enablementId
 		}
 		for (const entry of enable) {

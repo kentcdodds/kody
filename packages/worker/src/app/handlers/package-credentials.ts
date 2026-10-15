@@ -12,15 +12,28 @@ import {
 	buildPackageCredentialsView,
 	loadPackageMappingScope,
 } from '#worker/credentials/package-credential-mappings.ts'
+import {
+	disableEnablementForCaller,
+	enableTriggerForCaller,
+	planTriggerEnablementForCaller,
+	runNewEnablementPlans,
+	TriggerEnablementError,
+} from '#worker/enablements/service.ts'
 import { isMcpCallerError } from '#mcp/caller-error.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import {
 	credentialTriggerKinds,
 	maxCredentialProposalValues,
 	type CredentialMappingChange,
+	type PackageCredentialsEnablementAction,
 	type PackageCredentialsWriteFailure,
 } from '#universal/credential-contracts.ts'
 import { type routes } from '#universal/routes.ts'
+
+const triggerRefSchema = z.strictObject({
+	kind: z.enum(credentialTriggerKinds),
+	name: z.string().trim().min(1),
+})
 
 const changeSchema = z.strictObject({
 	target: z.discriminatedUnion('type', [
@@ -30,10 +43,9 @@ const changeSchema = z.strictObject({
 		}),
 		z.strictObject({
 			type: z.literal('trigger'),
-			trigger: z.strictObject({
-				kind: z.enum(credentialTriggerKinds),
-				name: z.string().trim().min(1),
-			}),
+			trigger: triggerRefSchema,
+			enablementId: z.string().trim().min(1).optional(),
+			createInstance: z.boolean().optional(),
 		}),
 	]),
 	needKey: z.string().trim().min(1),
@@ -43,16 +55,80 @@ const changeSchema = z.strictObject({
 		.nullable(),
 })
 
-const bodySchema = z.strictObject({
-	changes: z.array(changeSchema).min(1).max(maxCredentialProposalValues),
+const enablementActionSchema = z.strictObject({
+	trigger: triggerRefSchema,
+	state: z.enum(['on', 'off']),
+	enablementId: z.string().trim().min(1).optional(),
+	createInstance: z.boolean().optional(),
 })
+
+const bodySchema = z
+	.strictObject({
+		changes: z.array(changeSchema).max(maxCredentialProposalValues).optional(),
+		enablements: z.array(enablementActionSchema).max(16).optional(),
+	})
+	.refine(
+		(body) =>
+			(body.changes?.length ?? 0) > 0 || (body.enablements?.length ?? 0) > 0,
+		{ message: 'expected { changes } and/or { enablements }' },
+	)
+
+async function applyEnablementActions(input: {
+	env: Env
+	scope: NonNullable<
+		Awaited<ReturnType<typeof loadPackageMappingScopeForViewer>>
+	>
+	actions: ReadonlyArray<PackageCredentialsEnablementAction>
+}) {
+	for (const action of input.actions) {
+		if (action.state === 'off') {
+			if (!action.enablementId) {
+				throw new TriggerEnablementError(
+					'trigger_unknown',
+					'Turning a trigger off needs its enablement id.',
+				)
+			}
+			await disableEnablementForCaller({
+				env: input.env,
+				request: input.scope.request,
+				enablementId: action.enablementId,
+			})
+			continue
+		}
+		if (action.createInstance) {
+			const plan = await planTriggerEnablementForCaller({
+				env: input.env,
+				baseUrl: input.scope.baseUrl,
+				request: input.scope.request,
+				savedPackage: input.scope.savedPackage,
+				kind: action.trigger.kind,
+				name: action.trigger.name,
+				createInstance: true,
+			})
+			if (plan.enablement) continue
+			await runNewEnablementPlans({
+				db: input.env.APP_DB,
+				plans: [plan],
+			})
+			continue
+		}
+		await enableTriggerForCaller({
+			env: input.env,
+			baseUrl: input.scope.baseUrl,
+			request: input.scope.request,
+			packageIdOrKodyId: input.scope.savedPackage.id,
+			kind: action.trigger.kind,
+			name: action.trigger.name,
+		})
+	}
+}
 
 /**
  * `/profiles/:username/packages/:kodyId/credentials.json`: the package
  * Credentials, Default mappings, and Triggers tabs. GET returns the
- * `PackageCredentialsView`; POST `{ changes }` applies every change or none
- * and returns the updated view. Signed-in sessions only; anyone without
- * `package:execute` on the package gets a 404.
+ * `PackageCredentialsView`; POST `{ changes }` and/or `{ enablements }`
+ * applies every change or none and returns the updated view. Signed-in
+ * sessions only; anyone without `package:execute` on the package gets a 404.
  */
 export function createPackageCredentialsApiHandler(env: Env) {
 	return {
@@ -88,65 +164,101 @@ export function createPackageCredentialsApiHandler(env: Env) {
 				return jsonResponse(
 					{
 						ok: false,
-						error: `Invalid request body: ${parsed.error.issues[0]?.message ?? 'expected { changes }'}.`,
+						error: `Invalid request body: ${parsed.error.issues[0]?.message ?? 'expected { changes } and/or { enablements }'}.`,
 					},
 					400,
 				)
 			}
-			const changes: Array<CredentialMappingChange> = parsed.data.changes
-			const resolved = await resolveMappingChanges(scope, changes)
-			const errors = resolved.flatMap((change) =>
-				change.error
-					? [
-							{
-								needKey: change.needKey,
-								target: change.target,
-								...change.error,
-							},
-						]
-					: [],
-			)
-			if (errors.length > 0) {
-				return jsonResponse(
-					{ ok: false, errors } satisfies PackageCredentialsWriteFailure,
-					400,
-				)
-			}
-			try {
-				await writeMappingChanges(scope, resolved)
-			} catch (error) {
-				if (
-					error instanceof MappingWriteRefused &&
-					error.code !== 'webhook_other_enabler' &&
-					error.code !== 'email_sender_conflict' &&
-					error.change
-				) {
-					return jsonResponse(
-						{
-							ok: false,
-							errors: [
+			const changes: Array<CredentialMappingChange> = parsed.data.changes ?? []
+			const enablements = parsed.data.enablements ?? []
+			if (changes.length > 0) {
+				const resolved = await resolveMappingChanges(scope, changes)
+				const errors = resolved.flatMap((change) =>
+					change.error
+						? [
 								{
-									needKey: error.change.needKey,
-									target: error.change.target,
-									code: error.code,
-									message: error.message,
+									needKey: change.needKey,
+									target: change.target,
+									...change.error,
 								},
-							],
-						} satisfies PackageCredentialsWriteFailure,
+							]
+						: [],
+				)
+				if (errors.length > 0) {
+					return jsonResponse(
+						{ ok: false, errors } satisfies PackageCredentialsWriteFailure,
 						400,
 					)
 				}
-				// A webhook or email sender someone else turned on between resolve and write.
-				if (
-					!(error instanceof MappingWriteRefused) &&
-					!(isMcpCallerError(error) && error instanceof Error)
-				) {
+				try {
+					if (enablements.length > 0) {
+						await applyEnablementActions({ env, scope, actions: enablements })
+					}
+					await writeMappingChanges(scope, resolved)
+				} catch (error) {
+					if (
+						error instanceof MappingWriteRefused &&
+						error.code !== 'webhook_other_enabler' &&
+						error.code !== 'email_sender_conflict' &&
+						error.change
+					) {
+						return jsonResponse(
+							{
+								ok: false,
+								errors: [
+									{
+										needKey: error.change.needKey,
+										target: error.change.target,
+										code: error.code,
+										message: error.message,
+									},
+								],
+							} satisfies PackageCredentialsWriteFailure,
+							400,
+						)
+					}
+					if (error instanceof TriggerEnablementError) {
+						const conflict =
+							error.code === 'webhook_other_enabler' ||
+							error.code === 'email_sender_conflict'
+						return jsonResponse(
+							{ ok: false, error: error.message },
+							{ status: conflict ? 409 : 400 },
+						)
+					}
+					// A webhook or email sender someone else turned on between resolve and write.
+					if (
+						!(error instanceof MappingWriteRefused) &&
+						!(isMcpCallerError(error) && error instanceof Error)
+					) {
+						throw error
+					}
+					return jsonResponse(
+						{ ok: false, error: error.message },
+						{ status: 409 },
+					)
+				}
+			} else {
+				try {
+					await applyEnablementActions({ env, scope, actions: enablements })
+				} catch (error) {
+					if (error instanceof TriggerEnablementError) {
+						const conflict =
+							error.code === 'webhook_other_enabler' ||
+							error.code === 'email_sender_conflict'
+						return jsonResponse(
+							{ ok: false, error: error.message },
+							{ status: conflict ? 409 : 400 },
+						)
+					}
+					if (isMcpCallerError(error) && error instanceof Error) {
+						return jsonResponse(
+							{ ok: false, error: error.message },
+							{ status: 409 },
+						)
+					}
 					throw error
 				}
-				return jsonResponse(
-					{ ok: false, error: error.message },
-					{ status: 409 },
-				)
 			}
 			const fresh = await loadPackageMappingScope({
 				env,

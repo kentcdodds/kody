@@ -472,6 +472,12 @@ export async function planTriggerEnablementForCaller(input: {
 	now?: string
 	/** Required when turning on an inbound-email subscription. */
 	sender?: CredentialProposalSender | null
+	/**
+	 * Insert another enablement even when the caller already holds one.
+	 * Cron and non-email subscriptions only; webhooks stay one live row per
+	 * URL, and inbound email keeps its sender-scoped Approve path.
+	 */
+	createInstance?: boolean
 }): Promise<TriggerEnablementPlan> {
 	const actor = requireActor(input.request)
 	const { savedPackage } = input
@@ -564,7 +570,32 @@ export async function planTriggerEnablementForCaller(input: {
 				: {}),
 		})
 	).filter((row) => String(row.enablerUserId) === String(actor.userId))
-	const ownExisting = findCallerEnablement(ownRows, storedSender)
+	const createInstance = Boolean(input.createInstance)
+	if (createInstance) {
+		if (input.kind === 'webhook') {
+			throw new TriggerEnablementError(
+				'webhook_other_enabler',
+				`Webhook "${trigger.triggerName}" already has a URL. Each webhook URL runs as one enablement; mint another URL for another instance.`,
+			)
+		}
+		if (
+			input.kind === 'subscription' &&
+			isInboundEmailApprovalTopic(trigger.triggerName)
+		) {
+			throw new TriggerEnablementError(
+				'email_approval_required',
+				emailApprovalRequiredMessage({
+					baseUrl: input.baseUrl,
+					orgSlug: input.request.org.slug,
+					kodyId: savedPackage.kodyId,
+					topic: trigger.triggerName,
+				}),
+			)
+		}
+	}
+	const ownExisting = createInstance
+		? undefined
+		: findCallerEnablement(ownRows, storedSender)
 	if (ownExisting) return { enablement: ownExisting }
 	const buildInsert =
 		input.kind === 'webhook'

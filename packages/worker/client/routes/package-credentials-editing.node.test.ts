@@ -61,6 +61,8 @@ function trigger(overrides: Partial<PackageTriggerView> = {}) {
 		enablement: null,
 		canEdit: true,
 		mappings: [],
+		instances: [],
+		canAddInstance: true,
 		...overrides,
 	} satisfies PackageTriggerView
 }
@@ -168,6 +170,19 @@ test('only the enabler edits a trigger, and an off trigger turns on when saved',
 	expect(triggerWillEnable(trigger(), pick)).toBe(true)
 	expect(triggerWillEnable(trigger(), { mode: 'none' })).toBe(true)
 	expect(triggerWillEnable(trigger(), inherit)).toBe(false)
+	expect(
+		triggerWillEnable(
+			trigger({
+				enablement: { id: 'en', state: 'on', enabledByYou: true },
+			}),
+			pick,
+			{
+				type: 'trigger',
+				trigger: { kind: 'cron', name: 'daily' },
+				createInstance: true,
+			},
+		),
+	).toBe(true)
 	expect(triggerDraftProblem(trigger(), inherit)).toContain('stay off')
 	expect(triggerDraftProblem(trigger(), pick)).toBeNull()
 	expect(triggerDraftProblem(null, inherit)).toBeNull()
