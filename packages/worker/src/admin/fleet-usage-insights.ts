@@ -39,6 +39,10 @@ import {
 	type AdminUsageMetric,
 } from '#universal/loader-data.ts'
 
+import {
+	joinOrgsOnPersonalOrgIdSql,
+	personalOrgIdSql,
+} from '#worker/orgs/personal-org-sql.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export const adminFleetTopConsumersLimit = 10
 
@@ -102,14 +106,10 @@ type RuntimeDurationRow = {
 
 type ActiveUserRow = UserEntitlementRow & {
 	stable_user_id: OwnerId
+	/** Personal org id (owner key for usage / wallets / meters). */
+	org_id: OwnerId
 	username: string
 	event_count: number
-}
-
-type MetricDurationRow = {
-	user_id: string
-	metric: string
-	total_duration_ms: number
 }
 
 export type FleetEntitlementPressureIssue =
@@ -202,16 +202,16 @@ export async function loadFleetEntitlementCrossingSnapshots(input: {
 	)
 	if (activeUsers.length === 0) return []
 
-	const userIds = activeUsers.map((user) => user.stable_user_id)
+	const ownerIds = activeUsers.map((user) => user.org_id)
 	const [durationByUser, uniqueWorkerDaysByUser, adminUserIds] =
 		await Promise.all([
 			queryCombinedRuntimeDurationByUserIds(
 				input.db,
 				currentMonth,
-				userIds,
+				ownerIds,
 				adminFleetRuntimeDurationAlertMetrics,
 			),
-			queryUniqueWorkerDaysByUserIds(input.db, currentMonth, userIds),
+			queryUniqueWorkerDaysByUserIds(input.db, currentMonth, ownerIds),
 			listAdminStableUserIds(input.db),
 		])
 	const snapshots: Array<FleetEntitlementCrossingSnapshot> = []
@@ -222,14 +222,14 @@ export async function loadFleetEntitlementCrossingSnapshots(input: {
 		async (user) => {
 			const effective = await resolveUserEntitlementFromRow({
 				db: input.env.APP_DB,
-				stableUserId: user.stable_user_id,
+				stableUserId: user.org_id,
 				row: user,
 				now: input.now,
 			})
 			const { plan, ladder } = effective
 			const consumption = await readAdminEntitlementConsumption({
 				env: input.env,
-				usageUserId: user.stable_user_id,
+				usageUserId: user.org_id,
 				entitlement: effective,
 				now: input.now,
 				inboundReceive: inboundReceiveAgainstBasePlan(user, effective),
@@ -248,8 +248,8 @@ export async function loadFleetEntitlementCrossingSnapshots(input: {
 					percentOfLimit: item.percentOfLimit,
 					overEightyPercent: item.overEightyPercent,
 				})),
-				runtimeDurationMs: durationByUser.get(user.stable_user_id) ?? 0,
-				uniqueWorkerDays: uniqueWorkerDaysByUser.get(user.stable_user_id) ?? 0,
+				runtimeDurationMs: durationByUser.get(user.org_id) ?? 0,
+				uniqueWorkerDays: uniqueWorkerDaysByUser.get(user.org_id) ?? 0,
 			})
 		},
 	)
@@ -322,7 +322,7 @@ async function queryTopRuntimeDurationConsumers(
 		.prepare(
 			`SELECT u.stable_user_id, u.username, SUM(r.total_duration_ms) AS total_duration_ms
 			 FROM usage_rollups r
-			 INNER JOIN users u ON u.stable_user_id = r.user_id
+			 INNER JOIN users u ON ${personalOrgIdSql} = r.user_id
 			 WHERE r.month = ?
 				AND r.metric IN (${metricPlaceholders})
 				AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
@@ -355,7 +355,7 @@ async function queryTopEventCountConsumers(
 		.prepare(
 			`SELECT u.stable_user_id, u.username, SUM(r.event_count) AS event_count
 			 FROM usage_rollups r
-			 INNER JOIN users u ON u.stable_user_id = r.user_id
+			 INNER JOIN users u ON ${personalOrgIdSql} = r.user_id
 			 WHERE r.month = ?
 				AND r.metric NOT IN (${observeOnlyMetricPlaceholders})
 				AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
@@ -398,7 +398,7 @@ async function queryDynamicWorkerCost(
 					o.stripe_price_id, r.event_count
 				 FROM usage_rollups r
 				 INNER JOIN orgs o ON o.id = r.user_id${andLiveDeletedAtSql('o')}
-				 INNER JOIN users u ON u.stable_user_id = o.id
+				 INNER JOIN users u ON COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id) = o.id
 				 WHERE r.month = ?
 					AND r.metric = 'dynamic_worker_day'
 					AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
@@ -445,15 +445,15 @@ async function queryTopDurationConsumersByMetric(
 		.join(', ')
 	const rows = await db
 		.prepare(
-			`SELECT ranked.user_id, ranked.metric, ranked.total_duration_ms, ranked.username
+			`SELECT ranked.stable_user_id, ranked.metric, ranked.total_duration_ms, ranked.username
 			 FROM (
-				SELECT r.user_id, r.metric, r.total_duration_ms, u.username,
+				SELECT u.stable_user_id, r.metric, r.total_duration_ms, u.username,
 					ROW_NUMBER() OVER (
 						PARTITION BY r.metric
 						ORDER BY r.total_duration_ms DESC
 					) AS rank_in_metric
 				FROM usage_rollups r
-				INNER JOIN users u ON u.stable_user_id = r.user_id
+				INNER JOIN users u ON ${personalOrgIdSql} = r.user_id
 				WHERE r.month = ?
 					AND r.metric IN (${metricPlaceholders})
 					AND r.total_duration_ms > 0
@@ -467,7 +467,12 @@ async function queryTopDurationConsumersByMetric(
 			...adminFleetRuntimeDurationMetrics,
 			adminFleetTopConsumersLimit,
 		)
-		.all<MetricDurationRow & { username: string }>()
+		.all<{
+			stable_user_id: string
+			metric: string
+			total_duration_ms: number
+			username: string
+		}>()
 
 	const byMetric = new Map<
 		AdminUsageMetric,
@@ -481,7 +486,7 @@ async function queryTopDurationConsumersByMetric(
 		const consumers = byMetric.get(row.metric)
 		if (!consumers) continue
 		consumers.push({
-			stableUserId: row.user_id,
+			stableUserId: row.stable_user_id,
 			username: row.username,
 			totalDurationMs: Number(row.total_duration_ms),
 		})
@@ -511,14 +516,14 @@ async function buildEntitlementPressurePanel(input: {
 		async (user) => {
 			const entitlement = await resolveUserEntitlementFromRow({
 				db: input.env.APP_DB,
-				stableUserId: user.stable_user_id,
+				stableUserId: user.org_id,
 				row: user,
 				now: input.now,
 			})
 			const plan = toAdminPlanName(entitlement.plan)
 			const consumption = await readAdminEntitlementConsumption({
 				env: input.env,
-				usageUserId: user.stable_user_id,
+				usageUserId: user.org_id,
 				entitlement,
 				now: input.now,
 				inboundReceive: inboundReceiveAgainstBasePlan(user, entitlement),
@@ -556,14 +561,14 @@ async function listActiveUsersForEntitlementSweep(
 	const entitlementColumns = userEntitlementColumnsSql('o')
 	const rows = await db
 		.prepare(
-			`SELECT u.stable_user_id, u.username, ${entitlementColumns}, SUM(r.event_count) AS event_count
+			`SELECT u.stable_user_id, o.id AS org_id, u.username, ${entitlementColumns}, SUM(r.event_count) AS event_count
 			 FROM usage_rollups r
-			 INNER JOIN users u ON COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id) = r.user_id
-			 INNER JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)${andLiveDeletedAtSql('o')}
+			 INNER JOIN users u ON ${personalOrgIdSql} = r.user_id
+			 ${joinOrgsOnPersonalOrgIdSql}${andLiveDeletedAtSql('o')}
 			 WHERE r.month = ?
 				AND r.metric NOT IN (${observeOnlyMetricPlaceholders})
 				AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
-			 GROUP BY u.stable_user_id, u.username, ${entitlementColumns}
+			 GROUP BY u.stable_user_id, o.id, u.username, ${entitlementColumns}
 			 ORDER BY event_count DESC
 			 LIMIT ?`,
 		)

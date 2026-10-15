@@ -26,6 +26,8 @@ import { resolveCachedArtifactSourceHead } from '#worker/repo/artifact-head-cach
 import { getEntitySourceByEntity } from '#worker/repo/entity-sources.ts'
 import { getUserRepoByName } from '#worker/repo/user-repos.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import { viewerOrgsFollowTarget } from '#worker/follow/repo.ts'
+import { type FollowTargetKind } from '#worker/follow/types.ts'
 import {
 	type AccountPackageDetail,
 	type CommunityDetailLoaderData,
@@ -77,6 +79,10 @@ export type PackagePageAccess =
 			/** May adopt a community fork (org owner only; widens secret access). */
 			viewerCanAdoptCommunityFork: boolean
 			loggedIn: boolean
+			/** Saved package or plain repo a Follow control acts on. */
+			followTarget: { kind: FollowTargetKind; id: string } | null
+			/** One of the viewer's orgs follows this target (active or paused). */
+			viewerFollowing?: boolean
 			invocationUrlOrigin: string
 			ownerUserId: string
 			/** True when `/@owner` is publicly reachable. */
@@ -322,6 +328,7 @@ async function loadPlainRepoPage(input: {
 		viewerCanManageAccess: false,
 		viewerCanAdoptCommunityFork: false,
 		loggedIn: Boolean(viewer),
+		followTarget: { kind: 'repo', id: repo.id },
 		invocationUrlOrigin: getAppBaseUrl({
 			env: input.env,
 			requestUrl: input.request.url,
@@ -361,6 +368,35 @@ async function loadPackagePageUncached(input: {
 				)
 			: input.viewer,
 	])
+	const page = await resolvePackagePageForViewer(input, target, viewer)
+	if (page.kind !== 'page' || !viewer) return page
+	const followTarget = page.followTarget
+	if (!followTarget) return page
+	return {
+		...page,
+		viewerFollowing: await recordServerTiming(
+			'viewer-follow',
+			() =>
+				viewerOrgsFollowTarget(input.env.APP_DB, {
+					personId: viewer.userId,
+					targetKind: followTarget.kind,
+					targetId: followTarget.id,
+				}),
+			input.request,
+		),
+	}
+}
+
+async function resolvePackagePageForViewer(
+	input: {
+		env: Env
+		request: Request
+		username: string
+		kodyId: string
+	},
+	target: Awaited<ReturnType<typeof resolvePackagePageUrl>>,
+	viewer: McpUserContext | null,
+): Promise<PackagePageAccess> {
 	if (!target) {
 		return await loadPlainRepoPage({
 			env: input.env,
@@ -513,6 +549,7 @@ async function loadPackagePageUncached(input: {
 			viewerCanManageAccess,
 			viewerCanAdoptCommunityFork,
 			loggedIn: true,
+			followTarget: { kind: 'package', id: packageId },
 			invocationUrlOrigin,
 			ownerUserId: target.userId,
 			ownerProfilePublic,
@@ -540,6 +577,9 @@ async function loadPackagePageUncached(input: {
 			viewerCanManageAccess: false,
 			viewerCanAdoptCommunityFork: false,
 			loggedIn: Boolean(viewer),
+			followTarget: target.savedPackage
+				? { kind: 'package', id: target.savedPackage.id }
+				: null,
 			invocationUrlOrigin,
 			ownerUserId: target.userId,
 			ownerProfilePublic: listing.ownerProfilePublic,

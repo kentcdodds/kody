@@ -14,6 +14,7 @@ import {
 import { loadHomePageOnboardingData } from '#app/onboarding-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { pickWalkthroughHosts } from '#universal/walkthrough-hosts.ts'
+import { pickWithAgentOrder } from '#universal/with-agents.ts'
 import { type routes } from '#universal/routes.ts'
 
 export function createHomeHandler(env: Env) {
@@ -48,6 +49,7 @@ export function createHomeHandler(env: Env) {
 						loaderData: {
 							onboarding,
 							walkthroughHosts,
+							landingAgentOrder: pickWithAgentOrder(),
 							landingHeroVideos: await landingHeroVideos,
 						},
 					}),

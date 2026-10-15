@@ -1,5 +1,4 @@
 import { expect, test } from 'vitest'
-import { landingHomePrimitives } from './landing-home-copy.ts'
 import {
 	landingLanternImage,
 	landingLanternOrbClipPath,
@@ -9,13 +8,16 @@ import {
 	landingLeaderPath,
 	landingLeaderWordAnchor,
 	landingOrbitLightTone,
-	landingPrimitiveIds,
 } from './landing-lantern.ts'
 
-test('lantern orbs cover every homepage primitive exactly once, in copy order', () => {
-	const copyIds = landingHomePrimitives.map((primitive) => primitive.id)
-	expect(landingLanternOrbs.map((orb) => orb.id)).toEqual(copyIds)
-	expect([...landingPrimitiveIds]).toEqual(copyIds)
+test('lantern orbs stay inside the glass with a shared size', () => {
+	expect(landingLanternOrbs.map((orb) => orb.id)).toEqual([
+		'memory',
+		'packages',
+		'triggers',
+		'integrations',
+		'apps',
+	])
 	const packagesOrb = landingLanternOrbs.find((orb) => orb.id === 'packages')!
 	for (const orb of landingLanternOrbs) {
 		expect(orb.x).toBeGreaterThan(0)
@@ -70,19 +72,18 @@ function clipContains(clip: string, x: number, y: number) {
 	return inside
 }
 
-test('orbit light tones cycle through the six primitive colors', () => {
+test('orbit light tones cycle through the five primitive colors', () => {
 	expect(
-		Array.from({ length: 9 }, (_, index) => landingOrbitLightTone(index)),
+		Array.from({ length: 8 }, (_, index) => landingOrbitLightTone(index)),
 	).toEqual([
 		'memory',
-		'secrets',
 		'packages',
 		'triggers',
 		'integrations',
 		'apps',
 		'memory',
-		'secrets',
 		'packages',
+		'triggers',
 	])
 	expect(landingOrbitLightTone(-1)).toBe('apps')
 })

@@ -64,6 +64,7 @@ import {
 	vaultSecretResolver,
 	webhookSecretResolver,
 } from './secret-resolvers.ts'
+import { assertSelfPublishedPackageResolvesNothing } from './self-published-package-guard.ts'
 import { signingCredentialResolver } from './signing-resolver.ts'
 import { urlCredentialResolver } from './url-resolver.ts'
 
@@ -112,6 +113,12 @@ async function resolveWith<U extends CredentialUse>(
 	let result
 	try {
 		await assertActorHasOrgAccess(input)
+		await assertSelfPublishedPackageResolvesNothing({
+			env: input.env,
+			request: input.actor,
+			packageId: input.packageStamp?.packageId ?? input.runPackageId,
+			credentialName: subject.name,
+		})
 		const handle = await resolver.resolve({ input, credential, subject })
 		await handle.authorize()
 		result = await handle.apply()

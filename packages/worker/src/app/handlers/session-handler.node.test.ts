@@ -103,10 +103,11 @@ test('session handler only renews remembered sessions after the renewal window',
 					'mcp-skills-extension': false,
 					'mcp-events-extension': false,
 					'package-app-custom-domains': false,
+					'repo-push-queue': false,
+					'credential-need-enforcement': false,
 				},
 				organizations: [],
 				inviteCount: 0,
-				lastUsedOrganization: null,
 			},
 		})
 		const setCookie = response.headers.get('Set-Cookie')

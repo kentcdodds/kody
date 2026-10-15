@@ -20,6 +20,8 @@ import {
 	type ApprovalItemView,
 } from '#universal/approval-bundles.ts'
 import { insertPackageSecurityAudit } from '#worker/package-capabilities/security-audits-repo.ts'
+import { approvePackageCapabilitySet } from '#worker/package-capabilities/capability-approval-service.ts'
+import { enqueueWentPublicApproval } from '#worker/package-capabilities/went-public-approval.ts'
 import {
 	type ApprovalViewer,
 	capabilityGrantLines,
@@ -543,6 +545,7 @@ test('pending items that cannot be approved yet still count as waiting', () => {
 		canApprove,
 		canDeny: true,
 		fingerprint: key,
+		detailLabel: 'Approval fingerprint',
 		grants: [],
 		reviewHref: null,
 		decision: null,
@@ -712,4 +715,47 @@ test('a capabilities item shows the security audit for the current version only'
 		recordedAt: '2026-10-14T15:30:00.000Z',
 	})
 	expect(after.canApprove).toBe(before.canApprove)
+})
+
+test('a went-public item waits for the capability set, which the package page approves with it', async () => {
+	const t = await setup()
+	const viewer = t.viewerFor('bea')
+	const capabilities = await loadApprovalItemView(viewer, {
+		type: 'capabilities',
+		packageId: t.savedPackage.id,
+	})
+	const request = await enqueueWentPublicApproval({
+		env: t.env,
+		ownerUserId: t.acmeId,
+		savedPackage: t.savedPackage,
+		publishedCommit: 'commit-1',
+		fingerprint: capabilities.fingerprint!,
+		requestedByUserId: t.people.bea.stableUserId,
+	})
+	const ref = { type: 'publish' as const, requestId: request.id }
+
+	const waiting = await loadApprovalItemView(viewer, ref)
+	expect(waiting).toMatchObject({
+		title: 'Serve on the public internet',
+		status: 'pending',
+		canApprove: false,
+		canDeny: true,
+		statusMessage: expect.stringContaining('one Approve also turns on'),
+	})
+	expect(waiting.reviewHref).toContain('/approve-capabilities')
+
+	const approved = await approvePackageCapabilitySet({
+		env: t.env,
+		ownerUserId: t.acmeId,
+		actorUserId: t.people.bea.stableUserId,
+		savedPackage: t.savedPackage,
+		requestUrl: mappingFixtureBaseUrl,
+		expectedFingerprint: capabilities.fingerprint!,
+	})
+	expect(approved.wentPublicRequest?.id).toBe(request.id)
+	expect(await loadApprovalItemView(viewer, ref)).toMatchObject({
+		status: 'pending',
+		canApprove: true,
+		statusMessage: null,
+	})
 })

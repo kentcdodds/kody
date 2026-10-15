@@ -70,24 +70,31 @@ export function packageSourceFiles(input: {
  * The closure a published package carries: the one stored at its publish.
  * A publish that stored none (an older publish, or a path that skipped it) is
  * computed from its published source. `visiting` breaks import cycles.
+ *
+ * `fresh` skips this package's stored closure and recomputes it from its own
+ * needs and its imports' current closures, which picks up needs a dependency
+ * declared after this package last published.
  */
 export async function loadPublishedCredentialNeeds(input: {
 	env: Env
 	userId: string
 	sourceId: string
 	visiting?: ReadonlySet<string>
+	fresh?: boolean
 }): Promise<Array<CredentialNeed>> {
 	const visiting = input.visiting ?? new Set<string>()
 	if (visiting.has(input.sourceId)) return []
 	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
 	if (!source?.published_commit || source.user_id !== input.userId) return []
-	const stored = readStoredCredentialNeeds(
-		await readPublishedCredentialNeeds({
-			env: input.env,
-			sourceId: source.id,
-			publishedCommit: source.published_commit,
-		}),
-	)
+	const stored = input.fresh
+		? null
+		: readStoredCredentialNeeds(
+				await readPublishedCredentialNeeds({
+					env: input.env,
+					sourceId: source.id,
+					publishedCommit: source.published_commit,
+				}),
+			)
 	if (stored) return stored
 	const { manifest } = await loadPublishedEntityManifest({
 		env: input.env,

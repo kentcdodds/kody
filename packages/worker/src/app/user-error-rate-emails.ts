@@ -12,6 +12,7 @@ import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
 import { getSavedPackageByIdInAnyOrg } from '#worker/package-registry/repo.ts'
 import { listRunRecords } from '#worker/run-records/service.ts'
 import { type RunRecord } from '#worker/run-records/types.ts'
+import { personalOrgIdSql } from '#worker/orgs/personal-org-sql.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 const observeOnlyMetricPlaceholders = observeOnlyUsageEventTypes
@@ -47,6 +48,8 @@ export function shouldSendUserErrorRateEmail(input: {
 
 type ErrorRateCandidate = {
 	stable_user_id: string
+	/** Personal org id — owner key for usage rollups and run records. */
+	org_id: string
 	email: string
 	event_count: number
 	error_count: number
@@ -72,16 +75,16 @@ export async function sendUserErrorRateEmails(input: {
 
 	const month = utcMonthKey(now)
 	const candidates = await input.env.APP_DB.prepare(
-		`SELECT u.stable_user_id, u.email,
+		`SELECT u.stable_user_id, ${personalOrgIdSql} AS org_id, u.email,
 		        SUM(r.event_count) AS event_count,
 		        SUM(r.error_count) AS error_count
 		 FROM usage_rollups r
-		 INNER JOIN users u ON u.stable_user_id = r.user_id
+		 INNER JOIN users u ON ${personalOrgIdSql} = r.user_id
 		 WHERE r.month = ?
 		   AND r.metric NOT IN (${observeOnlyMetricPlaceholders})
 		   AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 		   AND u.email_verified_at IS NOT NULL
-		 GROUP BY u.stable_user_id
+		 GROUP BY u.stable_user_id, ${personalOrgIdSql}
 		 HAVING SUM(r.error_count) >= ?
 		 ORDER BY SUM(r.error_count) DESC
 		 LIMIT ?`,
@@ -237,7 +240,7 @@ async function sendOneUserErrorRateEmail(input: {
 		failingRuns: await loadFailingRuns({
 			env: input.env,
 			appBaseUrl: input.emailConfig.appBaseUrl,
-			userId: input.user.stable_user_id,
+			userId: input.user.org_id,
 			month: input.month,
 		}),
 	})

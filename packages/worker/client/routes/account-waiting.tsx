@@ -16,7 +16,16 @@ import {
 	AccountPageHeader,
 	noticeCardCss,
 } from '#client/routes/account-management-components.tsx'
-import { type AccountWaitingLoaderData } from '#universal/loader-data.ts'
+import { formatTimestampDate } from '#client/format-timestamp.ts'
+import {
+	createPendingInviteActions,
+	type PendingInviteActions,
+	renderPendingInviteActions,
+} from '#client/routes/pending-invite-actions.tsx'
+import {
+	type AccountPendingInvite,
+	type AccountWaitingLoaderData,
+} from '#universal/loader-data.ts'
 import { type WaitingItem, type WaitingSeverity } from '#universal/waiting.ts'
 import { routes } from '#universal/routes.ts'
 import { colors, spacing } from '#universal/styles/tokens.ts'
@@ -67,6 +76,9 @@ export function AccountWaitingRoute(handle: Handle) {
 			return payload
 		},
 	})
+	const inviteActions = createPendingInviteActions(handle, {
+		reload: () => waitingData.reload(handle, readCurrentRouterHref(handle)),
+	})
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
@@ -91,18 +103,54 @@ export function AccountWaitingRoute(handle: Handle) {
 						{snapshot.error.message}
 					</AccountManagementMessage>
 				) : null}
-				{data ? renderWaitingBody(data.items, currentHref) : null}
+				{inviteActions.message ? (
+					<AccountManagementMessage tone={inviteActions.tone}>
+						{inviteActions.message}
+					</AccountManagementMessage>
+				) : null}
+				{data ? renderWaitingBody(data, currentHref, inviteActions) : null}
 			</AccountManagementShell>
 		)
 	}
 }
 
-function renderWaitingBody(items: Array<WaitingItem>, currentHref: string) {
-	if (items.length === 0) {
+function inviteSender(invite: AccountPendingInvite) {
+	return invite.orgDisplayName?.trim() || `@${invite.orgSlug}`
+}
+
+function renderInviteCard(
+	invite: AccountPendingInvite,
+	actions: PendingInviteActions,
+) {
+	return (
+		<section
+			key={`invite:${invite.source}:${invite.id}`}
+			data-testid="waiting-invite"
+			mix={css({
+				...noticeCardCss,
+				...getAccentCalloutCss({ accentColor: colors.primary }),
+			})}
+		>
+			<h2 mix={css(cardTitleCss)}>{invite.label}</h2>
+			<p mix={css(cardWhyCss)}>
+				{`Invite from ${inviteSender(invite)} · Expires ${formatTimestampDate(invite.expiresAt)}`}
+			</p>
+			{renderPendingInviteActions(invite, actions)}
+		</section>
+	)
+}
+
+function renderWaitingBody(
+	data: AccountWaitingLoaderData,
+	currentHref: string,
+	inviteActions: PendingInviteActions,
+) {
+	const items: Array<WaitingItem> = data.items
+	if (items.length === 0 && data.invites.length === 0) {
 		return (
 			<AccountManagementPanel
 				title="Nothing is waiting on you"
-				description="Connections are healthy, and no publishes or grants need a click."
+				description="Connections are healthy, no invites are waiting, and no publishes or grants need a click."
 			>
 				<p mix={css({ margin: 0, color: colors.textMuted })}>
 					<a href={relocateAccountHref('/account/activity', currentHref)}>
@@ -123,6 +171,7 @@ function renderWaitingBody(items: Array<WaitingItem>, currentHref: string) {
 				gap: spacing.md,
 			})}
 		>
+			{data.invites.map((invite) => renderInviteCard(invite, inviteActions))}
 			{items.map((item) => (
 				<section
 					key={item.id}
@@ -134,27 +183,8 @@ function renderWaitingBody(items: Array<WaitingItem>, currentHref: string) {
 						}),
 					})}
 				>
-					<h2
-						mix={css({
-							margin: 0,
-							fontSize: '1.05rem',
-							fontWeight: 700,
-							letterSpacing: '-0.01em',
-							lineHeight: 1.3,
-						})}
-					>
-						{item.title}
-					</h2>
-					<p
-						mix={css({
-							margin: 0,
-							color: colors.textMuted,
-							fontSize: '0.95rem',
-							lineHeight: 1.5,
-						})}
-					>
-						{item.why}
-					</p>
+					<h2 mix={css(cardTitleCss)}>{item.title}</h2>
+					<p mix={css(cardWhyCss)}>{item.why}</p>
 					<a
 						href={item.href}
 						mix={[
@@ -180,4 +210,19 @@ function renderWaitingBody(items: Array<WaitingItem>, currentHref: string) {
 			))}
 		</div>
 	)
+}
+
+const cardTitleCss = {
+	margin: 0,
+	fontSize: '1.05rem',
+	fontWeight: 700,
+	letterSpacing: '-0.01em',
+	lineHeight: 1.3,
+}
+
+const cardWhyCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: '0.95rem',
+	lineHeight: 1.5,
 }

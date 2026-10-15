@@ -7,6 +7,8 @@
  */
 import * as Sentry from '@sentry/cloudflare'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { isCredentialKind } from '#universal/credential-contracts.ts'
+import { credentialKindLabel } from '#universal/credentials-list.ts'
 import { enqueuePackageApprovalRequest } from '#worker/package-capabilities/approval-requests-repo.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
@@ -105,19 +107,27 @@ export function diffCredentialNeeds(
 	return changes
 }
 
-function describeShape(need: NeedShape) {
-	const kind = need.kind ?? 'any fetch-capable kind'
-	return `${kind}, provider "${need.provider}"${need.multiple ? ', multiple' : ''}`
+function describeNeedKind(kind: NeedShape['kind']) {
+	if (kind === undefined) return 'any fetch-capable kind'
+	return isCredentialKind(kind) ? credentialKindLabel(kind) : kind
 }
 
-/** `MAIL (added: secret, provider "resend")` */
+function describeNeedTail(need: NeedShape) {
+	const viaMultiple = need.multiple ? ' (several allowed)' : ''
+	return `${describeNeedKind(need.kind)} from ${need.provider}${viaMultiple}`
+}
+
+/**
+ * Plain-language change line for the approval UI and agent pause message.
+ * Example: `This version adds a credential need: NEXTDNS_API_KEY Key from nextdns`
+ */
 export function describeCredentialNeedChange(change: CredentialNeedChange) {
-	const via = change.from ? ` via ${change.from}` : ''
+	const via = change.from ? ` (via ${change.from})` : ''
 	switch (change.change) {
 		case 'added':
-			return `${change.key} (added${via}: ${describeShape(change.after)})`
+			return `This version adds a credential need: ${change.key} ${describeNeedTail(change.after)}${via}`
 		case 'changed':
-			return `${change.key} (changed${via}: ${describeShape(change.before)} to ${describeShape(change.after)})`
+			return `This version changes the credential need ${change.key}${via}: was ${describeNeedTail(change.before)}, now ${describeNeedTail(change.after)}`
 		default: {
 			const exhaustive: never = change
 			throw new Error(`Unknown need change: ${String(exhaustive)}`)
@@ -128,7 +138,7 @@ export function describeCredentialNeedChange(change: CredentialNeedChange) {
 export function describeCredentialNeedChanges(
 	changes: ReadonlyArray<CredentialNeedChange>,
 ) {
-	return changes.map(describeCredentialNeedChange).join(', ')
+	return changes.map(describeCredentialNeedChange).join('. ')
 }
 
 export function createCredentialNeedsApprovalMessage(input: {
@@ -139,7 +149,7 @@ export function createCredentialNeedsApprovalMessage(input: {
 	const where = input.approvalUrl
 		? `The owner approves it at ${input.approvalUrl}.`
 		: 'The owner approves it on the package approval page.'
-	return `Package "${input.packageName}" changed its credential needs: ${describeCredentialNeedChanges(input.changes)}. This publish waits for approval, and the previously published version keeps running until then. ${where}`
+	return `Package "${input.packageName}" changed its credential needs. ${describeCredentialNeedChanges(input.changes)}. This publish waits for approval, and the previously published version keeps running until then. ${where}`
 }
 
 async function computeNeeds(input: {

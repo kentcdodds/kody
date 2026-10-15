@@ -192,7 +192,11 @@ your customizations, then publish with `repoPublishSession` and
 
 When the listing owner republishes with a new pinned commit, packages in your
 account can react through the `community.fork.upstream_updated` subscription
-topic. Use it to auto-rebase, or to ping you on Discord. See
+topic. Forking also follows the upstream package. You can follow a public
+package without forking it (`follow.published` / `follow.pushed`): choose
+**Follow** on its page, pick the workspace and events, and manage every follow
+on your workspace's **Follows** page. Use the fork topic to auto-rebase, or to
+ping you on Discord. See
 [Package subscriptions](../guides/package-subscriptions.md#communityforkupstream_updated).
 
 ## One-click install

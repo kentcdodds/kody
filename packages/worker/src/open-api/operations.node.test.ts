@@ -322,6 +322,17 @@ test('the OpenAPI document covers every operation with resolvable refs', async (
 		),
 	).toBe(true)
 
+	const packageGraph =
+		document.paths['/v1/local-execute/package-graph']?.['post']
+	expect(packageGraph?.['x-kody-permission']).toBe('org:execute')
+	expect(packageGraph?.requestBody?.required).toBe(true)
+	const packageGraphSchema =
+		packageGraph?.requestBody?.content['application/json']?.schema
+	expect(
+		Array.isArray(packageGraphSchema?.['anyOf']) ||
+			Array.isArray(packageGraphSchema?.['oneOf']),
+	).toBe(true)
+
 	const tokenCreate = document.paths['/v1/tokens']?.['post']
 	expect(tokenCreate?.['x-kody-permission']).toBe('none')
 	expect(tokenCreate?.requestBody?.required).toBe(true)

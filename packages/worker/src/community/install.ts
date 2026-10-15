@@ -78,6 +78,10 @@ export async function installCommunityListing(input: {
 	env: Env
 	baseUrl: string
 	userId: OwnerId
+	/** Org that should own the upstream follow. Defaults to `userId`. */
+	followerOrgId?: OwnerId
+	/** Acting person recorded on the follow. Defaults to `userId`. */
+	creatorUserId?: string
 	userEmail?: string | null
 	expectedPackageScope: string
 	listingId: string
@@ -107,6 +111,8 @@ export async function installCommunityListing(input: {
 		env: input.env,
 		baseUrl: input.baseUrl,
 		userId: input.userId,
+		followerOrgId: input.followerOrgId,
+		creatorUserId: input.creatorUserId,
 		expectedPackageScope: input.expectedPackageScope,
 		listingId: input.listingId,
 		kodyId: input.kodyId,

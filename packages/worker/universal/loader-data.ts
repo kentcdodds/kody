@@ -70,6 +70,7 @@ import {
 	type AccountActivityViewFilter,
 } from '#universal/account-activity-filters.ts'
 import { type FleetPackageErrorRateConcentration } from '#universal/fleet-package-error-rate-concentration.ts'
+import { type OrgFollowsLoaderData } from '#universal/follows.ts'
 
 export type { ProfileVisibility }
 export type { AdminFeatureFlag }
@@ -1212,15 +1213,6 @@ export type AccountOrganizationSummary = {
 	avatarUrl?: string | null
 }
 
-type AccountInviteSummary = {
-	id: string
-	orgSlug: string
-	orgDisplayName: string | null
-	kind: string
-	role: string | null
-	expiresAt: string
-}
-
 export type AccountProfileLoaderData = {
 	ok: true
 	email: string
@@ -1241,14 +1233,30 @@ type AccountOrganizationsNewLoaderData = {
 	draft: { displayName: string; slug: string }
 }
 
+/**
+ * Something waiting on the signed-in person to accept or decline: an invite
+ * link they opened (`link`) or an invite addressed to their email or
+ * username (`invite`). `id` is only used to build the accept and decline
+ * URLs. `label` says what accepting gives ("Join as Member", "Join the
+ * Design team", "Use access to weather").
+ */
+export type AccountPendingInvite = {
+	source: 'link' | 'invite'
+	id: string
+	orgSlug: string
+	orgDisplayName: string | null
+	orgPersonal: boolean
+	label: string
+	expiresAt: string
+}
+
 export type AccountOrganizationsLoaderData = {
 	ok: true
 	username: string
 	/** The signup organization is named and pictured after the person. */
 	viewer: { displayName: string; avatarUrl: string | null }
 	organizations: Array<AccountOrganizationSummary>
-	lastUsedOrganization: string | null
-	invites: Array<AccountInviteSummary>
+	pendingInvites: Array<AccountPendingInvite>
 }
 
 type OrgManagementOrg = {
@@ -1339,6 +1347,26 @@ export type OrgMembersLoaderData = {
 	canManage: boolean
 }
 
+/** What accepting an invite link gives, as the join page describes it. */
+export type OrgInviteJoinOffer =
+	| { kind: 'membership'; role: 'member' | 'billing'; roleLabel: string }
+	| {
+			kind: 'team'
+			teamName: string
+			/** The viewer is not a member yet, so accepting also joins the org. */
+			joinsOrg: boolean
+	  }
+	| {
+			kind: 'resource'
+			packageName: string
+			packageHref: string
+			preset: 'use' | 'contribute' | 'manage'
+			presetLabel: string
+			presetDescription: string
+			/** The viewer is not a member, so they stay an outside collaborator. */
+			outsideCollaborator: boolean
+	  }
+
 export type OrgInviteJoinLoaderData =
 	| {
 			ok: true
@@ -1347,9 +1375,12 @@ export type OrgInviteJoinLoaderData =
 				slug: string
 				displayName: string | null
 				avatarUrl: string | null
+				personal: boolean
 			}
-			role: 'member' | 'billing'
-			roleLabel: string
+			offer: OrgInviteJoinOffer
+			invitedBy: string | null
+			expiresAt: string
+			/** The viewer already has everything the link gives. */
 			alreadyMember: boolean
 			authenticated: boolean
 	  }
@@ -1364,7 +1395,30 @@ export type OrgInviteJoinLoaderData =
 				| 'exhausted'
 				| 'org_inactive'
 				| 'personal_org'
+				| 'target_gone'
+				| 'inviter_gone'
+				| 'already_used'
 	  }
+
+/**
+ * An active invite link on a Teams or package Collaborators page. `teamId`
+ * groups team links under their team and is never shown.
+ */
+export type ScopedInviteLinkView = {
+	id: string
+	label: string
+	teamId: string | null
+	maxUses: number | null
+	useCount: number
+	expiresAt: string
+	createdByUsername: string | null
+	createdByDisplayName: string | null
+}
+
+export type PackageInviteLinksView = {
+	ok: true
+	links: Array<ScopedInviteLinkView>
+}
 
 export type OrgTeamMemberView = {
 	userId: string
@@ -1390,6 +1444,9 @@ export type OrgTeamsLoaderData = {
 	orgMembers: Array<OrgMemberView>
 	canManage: boolean
 	canRemoveMembers: boolean
+	/** True when the viewer may create team invite links (team and member write). */
+	canCreateInviteLinks: boolean
+	inviteLinks: Array<ScopedInviteLinkView>
 }
 
 export type OrgGrantView = {
@@ -2211,6 +2268,12 @@ export type AccountPackagePendingApproval = {
 export type AccountPackageApproveCapabilitiesLoaderData = {
 	ok: true
 	pendingApprovals: Array<AccountPackagePendingApproval>
+	/**
+	 * Pending `went_public` request to approve together with the capability
+	 * set (`approve-capabilities-and-go-public`). Null unless the owner asked
+	 * to go public and the live capability set is not yet approved.
+	 */
+	goPublicRequestId: string | null
 	email: string
 	package: {
 		id: string
@@ -2226,6 +2289,10 @@ export type AccountPackageApproveCapabilitiesLoaderData = {
 		kind: 'credential' | 'storage'
 		credentialId?: string
 		name?: string
+		/** How the package reaches the credential: need, mount, grant, or package. */
+		source?: 'need' | 'mount' | 'grant' | 'package'
+		/** The declared `kody.credentials` key a `need` credential fills. */
+		needKey?: string
 		credentialKind?: string
 		hosts: Array<string>
 		placement?: string | null
@@ -2877,9 +2944,12 @@ export type AppLoaderData = {
 	accountUsage?: AccountUsageLoaderData
 	orgCredits?: OrgCreditsLoaderData
 	accountWaiting?: AccountWaitingLoaderData
+	orgFollows?: OrgFollowsLoaderData
 	accountExperiments?: AccountExperimentsLoaderData
 	discord?: DiscordPageLoaderData
 	walkthroughHosts?: WalkthroughHostPick
+	/** Homepage agent marquee: one SSR shuffle of `withAgents` slugs. */
+	landingAgentOrder?: Array<string>
 	onboardingAgentChooser?: OnboardingAgentChooserPick
 }
 
@@ -3172,6 +3242,8 @@ export type AccountUsageLoaderData = AccountUsageStoryData & {
 export type AccountWaitingLoaderData = {
 	ok: true
 	items: Array<WaitingItem>
+	/** Invites to accept or decline, shown above the other items. */
+	invites: Array<AccountPendingInvite>
 }
 
 export type AccountExperimentsLoaderData = {

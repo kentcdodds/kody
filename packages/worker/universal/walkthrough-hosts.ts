@@ -1,6 +1,6 @@
 /**
  * Hosts that can appear as the three conversations in the How Kody works
- * walkthrough (and the homepage factory loop). Coding hosts create the
+ * walkthrough (and the homepage agent orbit). Coding hosts create the
  * package; invoke is a chat/phone host; notify can be either kind. A coding
  * host with a real phone surface (its own mobile app, a mobile tab in its
  * company's chat app, or a chat-app bridge) is `both`, so it also fills the

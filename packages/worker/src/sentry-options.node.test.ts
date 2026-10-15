@@ -133,6 +133,7 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	// family, plus `Error:` / `D1_ERROR:` prefixes and missing trailing periods.
 	const dropped = [
 		'D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY',
+		'D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY (extended: SQLITE_BUSY_SNAPSHOT)',
 		// D1 blips (with and without D1_ERROR: prefix).
 		'Network connection lost.',
 		'D1_ERROR: D1 DB is overloaded. Requests queued for too long.',
@@ -280,6 +281,33 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 			),
 		),
 	).toBeNull()
+	// D1 Sentry filter uses the all-messages rule with anchored/exact blip
+	// matching: recovery wrappers stay visible even when they embed the D1
+	// text (real `buildRebuildFailureMessage` / `throwRebuildFailure` shape).
+	const d1SqliteBusy = 'D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY'
+	const d1StartupReset =
+		'Internal error while starting up Durable Object storage caused object to be reset; reference = abc123'
+	const rebuildFailedWithBusy = `Package source publish succeeded, but bundle artifact rebuild failed for source "source-1" at commit "commit-1". Succeeded: none. Failed: { kind "app", artifact "<default>", entry "index.ts", bundle "app" }: ${d1SqliteBusy}. Re-run the publish capability to repair artifacts.`
+	const rebuildFailedWithStartupReset = `Package source publish succeeded, but bundle artifact rebuild failed for source "source-1" at commit "commit-1". Succeeded: none. Failed: { kind "app", artifact "<default>", entry "index.ts", bundle "app" }: ${d1StartupReset}. Re-run the publish capability to repair artifacts.`
+	const recoveryAroundStartupReset = exceptionEvent(
+		'artifact rebuild failed after partial writes',
+		d1StartupReset,
+	)
+	expect(filterSentryEvent(recoveryAroundStartupReset)).toBe(
+		recoveryAroundStartupReset,
+	)
+	const recoveryAroundD1Busy = exceptionEvent(
+		'serveMcp could not recover after retries',
+		d1SqliteBusy,
+	)
+	expect(filterSentryEvent(recoveryAroundD1Busy)).toBe(recoveryAroundD1Busy)
+	const rebuildBusyChain = exceptionEvent(rebuildFailedWithBusy, d1SqliteBusy)
+	expect(filterSentryEvent(rebuildBusyChain)).toBe(rebuildBusyChain)
+	const rebuildStartupChain = exceptionEvent(
+		rebuildFailedWithStartupReset,
+		d1StartupReset,
+	)
+	expect(filterSentryEvent(rebuildStartupChain)).toBe(rebuildStartupChain)
 	// KODY-8F: retry wrapper + bare opaque cause (or recovery wrap + cause).
 	expect(
 		filterSentryEvent(

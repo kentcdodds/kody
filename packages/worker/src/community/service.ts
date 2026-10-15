@@ -64,17 +64,13 @@ import { KODY_DESCRIPTION_MAX_LENGTH } from '#worker/package-registry/types.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { normalizePackageNameInput } from '#worker/package-registry/package-name.ts'
 import { getPackageScopeByUserId } from '#worker/package-registry/user-scope.ts'
+import { ensureFollowForCommunityFork } from '#worker/follow/fork-follow.ts'
+import { notifyFollowsOfPublishedPackage } from '#worker/follow/notify.ts'
 import { enqueueCommunityActivityDispatch } from './activity-dispatch-queue-producer.ts'
 import { assertNotCommunityBanned } from './assert-not-community-banned.ts'
 import { CommunityActionError } from './errors.ts'
-import {
-	hasCommunityListingReleaseChanged,
-	type CommunityListingRelease,
-} from './fork-upstream-updated-subscription-event.ts'
-import {
-	enqueueCommunityForkUpstreamUpdatedDispatch,
-	enqueueCommunityListingPublishedDispatch,
-} from './listing-published-dispatch-queue-producer.ts'
+import { hasCommunityListingReleaseChanged } from './fork-upstream-updated-subscription-event.ts'
+import { enqueueCommunityListingPublishedDispatch } from './listing-published-dispatch-queue-producer.ts'
 import { type CommunityListingPublishedProjection } from './listing-published-subscription-event.ts'
 import {
 	deletePackageSlugRedirects,
@@ -224,29 +220,6 @@ async function enqueuePublishedCommunityListing(input: {
 		})
 	} catch (error) {
 		console.error('community-listing-published-dispatch-enqueue-failed', error)
-	}
-}
-
-async function enqueueCommunityForkUpstreamUpdated(input: {
-	env: Env
-	listingId: string
-	previous: CommunityListingRelease
-	current: CommunityListingRelease
-	publishedAt: string
-}) {
-	try {
-		await enqueueCommunityForkUpstreamUpdatedDispatch({
-			queue: input.env.COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE,
-			listingId: input.listingId,
-			previous: input.previous,
-			current: input.current,
-			publishedAt: input.publishedAt,
-		})
-	} catch (error) {
-		console.error(
-			'community-fork-upstream-updated-dispatch-enqueue-failed',
-			error,
-		)
 	}
 }
 
@@ -828,13 +801,19 @@ export async function publishCommunityListing(input: {
 		}
 		const current = { pinnedCommit: publishedCommit, packageVersion }
 		if (hasCommunityListingReleaseChanged({ previous, current })) {
-			await enqueueCommunityForkUpstreamUpdated({
-				env: input.env,
-				listingId,
-				previous,
-				current,
-				publishedAt: now,
-			})
+			try {
+				await notifyFollowsOfPublishedPackage({
+					env: input.env,
+					ownerId: input.userId,
+					packageId: input.packageId,
+					previousCommit: previous.pinnedCommit,
+					publishedCommit: current.pinnedCommit,
+					publishedAt: now,
+					listing: { listingId, previous, current },
+				})
+			} catch (error) {
+				console.error('follow-published-notify-failed', listingId, error)
+			}
 		}
 	}
 	invalidateCommunityPublicCache()
@@ -1322,12 +1301,22 @@ export type PrepareCommunityForkInput = {
 	 * can separate what a user chose from what their agent did on its own.
 	 */
 	actor?: CommunityForkActor | null
+	/**
+	 * Org that owns the follow. Web install passes the personal org. An
+	 * org-scoped `communityFork` passes the active org. Omit to use `userId`
+	 * (person-keyed fixtures and legacy equal-id rows).
+	 */
+	followerOrgId?: OwnerId
+	/** Acting person. Omit to use `userId` when that value is already the person. */
+	creatorUserId?: string
 }
 
 export type PreparedCommunityFork = {
 	env: Env
 	baseUrl: string
 	userId: OwnerId
+	followerOrgId: OwnerId
+	creatorUserId: string
 	listingId: string
 	listingName: string
 	listingKodyId: string
@@ -1582,6 +1571,8 @@ export async function prepareCommunityFork(
 		env: input.env,
 		baseUrl: input.baseUrl,
 		userId: input.userId,
+		followerOrgId: input.followerOrgId ?? input.userId,
+		creatorUserId: input.creatorUserId ?? input.userId,
 		listingId: input.listingId,
 		listingName: listing.name,
 		listingKodyId: listing.kodyId,
@@ -1777,6 +1768,12 @@ export async function persistPreparedCommunityFork(
 				listing_name: prepared.listingName,
 				listing_kody_id: prepared.listingKodyId,
 				actor: prepared.actor,
+			})
+			await ensureFollowForCommunityFork({
+				env: prepared.env,
+				listingId: prepared.listingId,
+				followerOrgId: prepared.followerOrgId,
+				creatorUserId: prepared.creatorUserId,
 			})
 			await enqueueRecordedCommunityActivity({
 				env: prepared.env,

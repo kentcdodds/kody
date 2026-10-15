@@ -8,7 +8,7 @@ import {
 } from '#client/primitive-widget-parts.tsx'
 
 /**
- * `/features/secrets` scenes. The page's buttons drive them; each scene
+ * `/features/credentials` safety scenes. The page's buttons drive them; each scene
  * holds the visible example, and `public/feature-scenes/secrets.css`
  * animates it. A keyed `.pw-run` restarts the timeline on every click.
  * Status text that screen readers hear stays outside `.pw-run`, because

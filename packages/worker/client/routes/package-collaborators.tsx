@@ -47,6 +47,7 @@ import {
 	renderShellStatus,
 } from './community-detail-sections.tsx'
 import { loadPackageCollaboratorsPage } from './package-collaborators-data.ts'
+import { PackageInviteLinksPanel } from './package-collaborators-invite-links.tsx'
 import { createPackageCollaboratorInvites } from './package-collaborators-invites.tsx'
 import {
 	collaboratorDetail,
@@ -609,6 +610,12 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 						{view.org.personal ? invites.render(view) : null}
 						{view.org.personal ? null : renderAddTeam(view)}
 						{view.org.personal ? null : renderAddMember(view)}
+						<PackageInviteLinksPanel
+							username={username}
+							kodyId={kodyId}
+							orgSlug={view.org.slug}
+							personal={view.org.personal}
+						/>
 					</>
 				) : null}
 			</article>

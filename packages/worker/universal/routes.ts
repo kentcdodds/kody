@@ -71,7 +71,6 @@ export const routes = route({
 	accountWaitingClickPost: post('/account/waiting/click.json'),
 	// Prefetch-adopt cookie write for org SPA navigations (#3517). Not a
 	// section twin; keep distinct so navigation e2e does not see a refetch.
-	accountLastUsedOrgApi: '/account/last-used-org.json',
 	accountExperiments: '/account/experiments',
 	accountExperimentsApi: '/account/experiments.json',
 	accountExperimentsApiPost: post('/account/experiments.json'),
@@ -243,6 +242,11 @@ export const routes = route({
 		'/@:orgSlug/-/mcp-servers/:serverId/authorize',
 	),
 	orgMemories: get('/@:orgSlug/-/memories(/*rest)'),
+	// Packages and plain repos this org follows. POST follows, changes events,
+	// or unfollows one target for the org in the URL.
+	orgFollows: get('/@:orgSlug/-/follows'),
+	orgFollowsApi: get('/@:orgSlug/-/follows.json'),
+	orgFollowsApiPost: post('/@:orgSlug/-/follows.json'),
 	orgOverview: get('/@:orgSlug/-/overview'),
 	orgRepositories: get('/@:orgSlug/-/repositories'),
 	orgRepositoriesApi: get('/@:orgSlug/-/repositories.json'),
@@ -271,17 +275,23 @@ export const routes = route({
 	orgMembersRolePost: post('/@:orgSlug/-/members/role.json'),
 	orgMembersRemovePost: post('/@:orgSlug/-/members/remove.json'),
 	orgMembersInvitePost: post('/@:orgSlug/-/members/invite.json'),
+	orgMembersInviteRevokePost: post('/@:orgSlug/-/members/invite-revoke.json'),
 	orgMembersInviteLinksPost: post('/@:orgSlug/-/members/invite-links.json'),
 	orgMembersInviteLinksRevokePost: post(
 		'/@:orgSlug/-/members/invite-links-revoke.json',
 	),
 	orgInviteJoin: get('/join/:token'),
 	orgInviteJoinPost: post('/join/:token'),
+	orgInviteJoinDeclinePost: post('/join/:token/decline'),
 	orgTeams: get('/@:orgSlug/-/teams'),
 	orgTeamsApi: get('/@:orgSlug/-/teams.json'),
 	orgTeamsCreatePost: post('/@:orgSlug/-/teams/create.json'),
 	orgTeamsMemberAddPost: post('/@:orgSlug/-/teams/member-add.json'),
 	orgTeamsMemberRemovePost: post('/@:orgSlug/-/teams/member-remove.json'),
+	orgTeamsInviteLinksPost: post('/@:orgSlug/-/teams/invite-links.json'),
+	orgTeamsInviteLinksRevokePost: post(
+		'/@:orgSlug/-/teams/invite-links-revoke.json',
+	),
 	orgGrants: get('/@:orgSlug/-/grants'),
 	orgGrantsApi: get('/@:orgSlug/-/grants.json'),
 	orgGrantsRevokePost: post('/@:orgSlug/-/grants/revoke.json'),
@@ -348,10 +358,21 @@ export const routes = route({
 	// Package Collaborators tab: GET the grants and pending invites, POST one
 	// change (grant, revoke, invite, revoke-invite). Session-only; 404 without
 	// package:read, 403 without package:manage_access.
+	// Follow control on a package or plain repo page: which of the viewer's
+	// orgs follow it, and which events the viewer can receive. Writes go to
+	// `/@:orgSlug/-/follows.json` so the following org is always in the URL.
+	communityPackageFollowApi: '/profiles/:username/packages/:kodyId/follow.json',
 	communityPackageCollaboratorsApi:
 		'/profiles/:username/packages/:kodyId/collaborators.json',
 	communityPackageCollaboratorsApiPost: post(
 		'/profiles/:username/packages/:kodyId/collaborators.json',
+	),
+	// Package invite links on the Collaborators tab: GET lists active links,
+	// POST `{ action: 'create' | 'revoke' }`. Same access rules as above.
+	communityPackageInviteLinksApi:
+		'/profiles/:username/packages/:kodyId/invite-links.json',
+	communityPackageInviteLinksApiPost: post(
+		'/profiles/:username/packages/:kodyId/invite-links.json',
 	),
 	communityPackageApproveCredentialsApi:
 		'/profiles/:username/packages/:kodyId/approve-credentials.json',
@@ -375,6 +396,7 @@ export const routes = route({
 	features: '/features',
 	featureMemory: '/features/memory',
 	featureSecrets: '/features/secrets',
+	featureCredentials: '/features/credentials',
 	featurePackages: '/features/packages',
 	featureTriggers: '/features/triggers',
 	featureIntegrations: '/features/integrations',
@@ -383,6 +405,8 @@ export const routes = route({
 	pricing: '/pricing',
 	faq: '/faq',
 	caseStudies: '/case-studies',
+	believe: '/believe',
+	withAgent: '/with/:agent',
 	n8nAlternatives: '/compare/n8n-alternatives',
 	mcpGateway: '/use-cases/mcp-gateway',
 	sharedMemory: '/use-cases/shared-agent-memory',
@@ -426,6 +450,18 @@ export const routes = route({
 	accountOrganizationsApi: '/account/organizations.json',
 	accountOrganizationsNew: get('/account/organizations/new'),
 	accountOrganizationsNewPost: post('/account/organizations/new'),
+	accountInviteLinkAcceptPost: post(
+		'/account/organizations/invite-links/:linkId/accept.json',
+	),
+	accountInviteLinkDeclinePost: post(
+		'/account/organizations/invite-links/:linkId/decline.json',
+	),
+	accountInviteAcceptPost: post(
+		'/account/organizations/invites/:inviteId/accept.json',
+	),
+	accountInviteDeclinePost: post(
+		'/account/organizations/invites/:inviteId/decline.json',
+	),
 	accountDelete: post('/account/delete'),
 	auth: post('/auth'),
 	authProvidersApi: '/auth/providers.json',

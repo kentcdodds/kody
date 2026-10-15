@@ -1,6 +1,10 @@
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
+	credentialNeedEnforcementScope,
+	selectCredentialNeedEnforcementScope,
+} from '#worker/credentials/credential-need-enforcement-scope.ts'
+import {
 	listSavedPackagesByUserId,
 	listSavedPackagesPage,
 } from '#worker/package-registry/repo.ts'
@@ -51,6 +55,11 @@ export type PackageCodemodRunScope =
 export type PackageCodemodRunFilters = {
 	userIds?: Array<string>
 	packageIds?: Array<string>
+	/**
+	 * Keep the run to packages the credential-need enforcement can reach.
+	 * Reverts ignore it: they only touch items an earlier run applied.
+	 */
+	scope?: typeof credentialNeedEnforcementScope
 }
 
 export type PackageCodemodItemStatus =
@@ -273,6 +282,7 @@ function normalizeFiltersJson(filters?: PackageCodemodRunFilters | null) {
 	const normalized: PackageCodemodRunFilters = {}
 	if (userIds.length > 0) normalized.userIds = userIds
 	if (packageIds.length > 0) normalized.packageIds = packageIds
+	if (filters?.scope) normalized.scope = filters.scope
 	return JSON.stringify(normalized)
 }
 
@@ -291,6 +301,9 @@ function parseStoredFiltersJson(filtersJson: string): PackageCodemodRunFilters {
 			filters.packageIds = record.packageIds.filter(
 				(value): value is string => typeof value === 'string',
 			)
+		}
+		if (record.scope === credentialNeedEnforcementScope) {
+			filters.scope = credentialNeedEnforcementScope
 		}
 		return filters
 	} catch {
@@ -380,6 +393,15 @@ async function ensureRun(input: {
 	})
 }
 
+async function applyScopeFilter(
+	env: Env,
+	packages: Array<SavedPackageRecord>,
+	filters: PackageCodemodRunFilters | undefined,
+) {
+	if (filters?.scope !== credentialNeedEnforcementScope) return packages
+	return await selectCredentialNeedEnforcementScope(env.APP_DB, packages)
+}
+
 async function listCandidatePackages(input: {
 	env: Env
 	scope: PackageCodemodRunScope
@@ -397,9 +419,15 @@ async function listCandidatePackages(input: {
 			const all = await listSavedPackagesByUserId(input.env.APP_DB, {
 				userId: input.scope.userId,
 			})
-			const ordered = [...all]
-				.filter((savedPackage) => matchesFilters(savedPackage, input.filters))
-				.sort((left, right) => compareBinaryIds(left.id, right.id))
+			const ordered = (
+				await applyScopeFilter(
+					input.env,
+					all.filter((savedPackage) =>
+						matchesFilters(savedPackage, input.filters),
+					),
+					input.filters,
+				)
+			).sort((left, right) => compareBinaryIds(left.id, right.id))
 			const startIndex =
 				cursor == null
 					? 0
@@ -432,9 +460,18 @@ async function listCandidatePackages(input: {
 				if (page.length === 0) {
 					return { packages, nextCursor: null }
 				}
+				const matching = new Set(
+					await applyScopeFilter(
+						input.env,
+						page.filter((savedPackage) =>
+							matchesFilters(savedPackage, input.filters),
+						),
+						input.filters,
+					),
+				)
 				for (const savedPackage of page) {
 					cursor = savedPackage.id
-					if (!matchesFilters(savedPackage, input.filters)) continue
+					if (!matching.has(savedPackage)) continue
 					packages.push(savedPackage)
 					if (packages.length >= input.limit) {
 						return {
@@ -535,6 +572,8 @@ async function runChecksOnFiles(input: {
 async function buildCodemodContext(input: {
 	env: Env
 	savedPackage: SavedPackageRecord
+	manifestPath: string
+	sourceRoot: string
 }): Promise<PackageCodemodContext> {
 	const ownerScope = await getPackageScopeByUserId(
 		input.env.APP_DB,
@@ -542,7 +581,11 @@ async function buildCodemodContext(input: {
 	)
 	const name = input.savedPackage.name
 	const leaf = name.slice(name.indexOf('/') + 1)
-	return { packageName: `@${ownerScope}/${leaf}` }
+	return {
+		packageName: `@${ownerScope}/${leaf}`,
+		manifestPath: input.manifestPath,
+		sourceRoot: input.sourceRoot,
+	}
 }
 
 async function processScanItem(input: {
@@ -734,6 +777,8 @@ async function processPackageForMode(input: {
 	const context = await buildCodemodContext({
 		env: input.env,
 		savedPackage: input.savedPackage,
+		manifestPath: loaded.source.manifest_path,
+		sourceRoot: loaded.source.source_root,
 	})
 	switch (input.mode) {
 		case 'scan':

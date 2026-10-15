@@ -299,6 +299,7 @@ export function createPasswordResetConfirmHandler(env: Env) {
 				d1: env.APP_DB,
 				helpers,
 				userId: resetRecord.user_id,
+				// person-keyed (not personal org)
 				stableUserId: personalOrgId(
 					personIdFromStored(userRecord.stable_user_id),
 				),

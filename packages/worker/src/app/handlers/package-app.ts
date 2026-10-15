@@ -14,6 +14,9 @@ import {
 	withPackageAppRequestId,
 } from '#worker/package-runtime/package-app-diagnostics.ts'
 import { buildPackageAppNotFoundMessage } from '#worker/package-runtime/package-app-synthetic.ts'
+import { applyPackageAppCacheHeaders } from '#worker/package-runtime/package-app-cache-headers.ts'
+import { resolveInternetVisibleApprovedCommit } from '#app/package-app-internet-visible.ts'
+import { runWithRequestContext } from '#worker/request-context.ts'
 import {
 	createPackageCodeRequest,
 	isPackageAppRequestPath,
@@ -36,7 +39,8 @@ export {
 
 /**
  * Serve a hosted package app inline on the app origin, authenticated by the
- * browser `kody_session` cookie.
+ * browser `kody_session` cookie. An internet-visible app also serves a
+ * visitor who is signed out or cannot run it, anonymously.
  *
  * This is the local dev / preview / test path. When `PACKAGE_APP_BASE_URL` is
  * configured, package apps are served from that origin instead and this handler
@@ -44,7 +48,16 @@ export {
  */
 export async function handlePackageAppRequest(request: Request, env: Env) {
 	const tagged = withPackageAppRequestId(request)
-	request = tagged.request
+	return await runWithRequestContext(tagged.request, () =>
+		handleTaggedPackageAppRequest(tagged.request, tagged.requestId, env),
+	)
+}
+
+async function handleTaggedPackageAppRequest(
+	request: Request,
+	requestId: string,
+	env: Env,
+) {
 	if (!isNonProductionRuntime(env)) {
 		logPackageAppHttpError({
 			request,
@@ -69,29 +82,57 @@ export async function handlePackageAppRequest(request: Request, env: Env) {
 	if (!packagePath) {
 		return new Response(buildPackageAppNotFoundMessage(), { status: 404 })
 	}
+	const org = await resolvePackageAppOrgOwnerByHandle({
+		env,
+		handle: packagePath.username,
+	})
+	const slugLookup = org
+		? await resolveSavedPackageForPackageAppSlug({
+				db: env.APP_DB,
+				userId: org.userId,
+				slug: packagePath.kodyId,
+			})
+		: null
+	const approvedPublishedCommit = await resolveInternetVisibleApprovedCommit({
+		env,
+		lookup: slugLookup,
+		requestUrl: request.url,
+	})
+	const serveAnonymously =
+		org && approvedPublishedCommit
+			? async () =>
+					applyPackageAppCacheHeaders(
+						await servePackageAppRequest({
+							request,
+							env,
+							packagePath,
+							owner: {
+								userId: org.userId,
+								username: org.username,
+								email: '',
+								displayName: org.displayName,
+							},
+							visitor: null,
+							approvedPublishedCommit,
+						}),
+						'anonymous',
+					)
+			: null
 	const user = await readAuthenticatedAppUser(request, env)
 	if (!user) {
+		if (serveAnonymously) return await serveAnonymously()
 		if (requestHasSessionCookie(request)) {
 			logPackageAppAuthFailed({
-				requestId: tagged.requestId,
+				requestId,
 				method: request.method,
 				pathname: requestUrl.pathname,
 			})
 		}
 		return redirectToLoginWhenUnauthenticated(request, env)
 	}
-	const org = await resolvePackageAppOrgOwnerByHandle({
-		env,
-		handle: packagePath.username,
-	})
 	if (!org) {
 		return new Response(buildPackageAppNotFoundMessage(), { status: 404 })
 	}
-	const slugLookup = await resolveSavedPackageForPackageAppSlug({
-		db: env.APP_DB,
-		userId: org.userId,
-		slug: packagePath.kodyId,
-	})
 	const canExecute = await viewerCanExecutePackageApp({
 		env,
 		viewer: user.mcpUser,
@@ -99,6 +140,7 @@ export async function handlePackageAppRequest(request: Request, env: Env) {
 		appId: slugLookup?.savedPackage.id ?? null,
 	})
 	if (!canExecute) {
+		if (serveAnonymously) return await serveAnonymously()
 		return new Response(null, {
 			status: 302,
 			headers: {
@@ -115,7 +157,7 @@ export async function handlePackageAppRequest(request: Request, env: Env) {
 		user.mcpUser.userId,
 		org.userId,
 	)
-	return await servePackageAppRequest({
+	const response = await servePackageAppRequest({
 		request,
 		env,
 		packagePath,
@@ -132,4 +174,5 @@ export async function handlePackageAppRequest(request: Request, env: Env) {
 			role: binding?.role ?? null,
 		},
 	})
+	return applyPackageAppCacheHeaders(response, 'signed-in')
 }

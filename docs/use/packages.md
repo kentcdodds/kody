@@ -200,6 +200,21 @@ credentials; opt-in types that a package can declare are described in
   package without slots. See
   [Placeholders in `fetch`](./secrets-and-values.md#placeholders-in-fetch).
 
+#### Declare what someone else's run may use
+
+Your own package needs no declarations. That means a package in your personal
+org that is not an unadopted Community fork and is not internet-visible. A
+package anyone else runs may use only the credentials it declares in
+`kody.credentials`: a team-org package, one a Use collaborator runs, an
+unadopted fork, or any internet-visible package. That covers `{{secret:NAME}}`,
+`{{integration-token:NAME}}`, vault refs (declare the provider), and
+`credential(key)` / `credentials(key)`. An undeclared use fails with
+`credential_need_undeclared`, naming the package and the key to add. A slot with
+no `kind` covers any of them; slots its imports declare count too. A name
+mounted in `kody.secretMounts` still needs a slot when a placeholder fills it.
+The check is behind the `credential-need-enforcement` flag (see
+[ADR 0068](../contributing/decisions/0068-credentials-own-placement-scoped-clients.md#amendment-2026-10-15-credential-need-enforcement)).
+
 #### Opt-in: credential clients
 
 A package (or ad hoc execute) can ask for a client instead of writing a
@@ -214,11 +229,11 @@ await resend.fetch('/emails', { method: 'POST', body: JSON.stringify(email) })
 ```
 
 - `credential(key)` picks the one credential you can Use with the need's kind
-  and provider (an undeclared key is read as a provider). It rejects with an
-  Error carrying `code` (`credential_unbound`, `credential_ambiguous`,
-  `credential_not_found`, `credential_denied`, `invalid_request`,
-  `host_not_allowed`, `insecure_transport`) and `retryWith`, a list of picks to
-  retry with.
+  and provider (an undeclared key is read as a provider in ad hoc code and your
+  own packages). It rejects with an Error carrying `code` (`credential_unbound`,
+  `credential_ambiguous`, `credential_not_found`, `credential_need_undeclared`,
+  `credential_denied`, `invalid_request`, `host_not_allowed`,
+  `insecure_transport`) and `retryWith`, a list of picks to retry with.
 - The client has `name`, `scope`, `kind`, and `hosts`, plus `fetch` (secret,
   oauth, url, and login credentials), `sign` (signing), or `callTool` (an org
   MCP server). A relative URL resolves against the first host. A header the
@@ -868,6 +883,59 @@ again. A locked package keeps its locked-publish flow first: approving that
 publish on approve-publish runs this check and pauses there if the needs
 changed. Platform codemods do not pause.
 
+## Approval when a package goes internet-visible
+
+Turning on internet-visible serving in package settings, or with `packageUpdate`
+(`internet_visible: true`), sends you to the same approval page. It lists what
+the package and each of its dependencies declare or were given:
+
+- credentials that fill a `kody.credentials` need: the org's credentials for
+  that provider and kind (including members' personal credentials shared with
+  the org), plus any credential mapped to that need in the package's credential
+  settings
+- credentials named in `kody.secretMounts`
+- the package's own package-scoped credentials
+- credentials you granted that package
+- package storage, when the published source uses `packageStorage()` or a
+  storage capability (or when the source cannot be read)
+
+Account credentials a package could read only because you wrote it are not
+listed; they are not a declaration. A package that declares nothing shows **This
+package uses no credentials or other capabilities.**
+
+One **Approve and make internet-visible** click approves that capability set and
+turns internet-visible serving on. Each of the two decisions is still checked
+and recorded in the org activity log on its own. If the capability set was
+already approved, the page shows only the request to go public.
+
+When the published version has no [security audit](#security-audit) yet, both
+responses also return the next step for the agent. `packageUpdate` returns
+`security_audit` next to `approval_url`; the settings toggle returns
+`securityAudit` next to `approvalUrl`. Each names the operation
+(`packageSecurityAuditRecord`), its Open API route, and the exact `package_id`,
+`published_commit`, and `fingerprint` to record. The agent runs the audit,
+records it, and then hands you the approval link.
+
+An agent can make a package internet-visible on its own (self-publish) when the
+package and every package it depends on declare nothing (no `kody.credentials`
+slots and no `secretMounts`, `secretProvider`, `subscriptions`, `emits`, `jobs`,
+`retrievers`, or `webhooks`) and a security audit with verdict `pass` is
+recorded for the current published version. `packageUpdate` then turns serving
+on right away and returns `self_published: true`. If the audit is missing, the
+request waits (`self_publish_blocker: 'not_audited'`); recording a passing audit
+with `packageSecurityAuditRecord` re-evaluates it and self-publishes then, and
+so does calling `packageUpdate` again. The org activity log records it as
+`package.went_public.self_publish`. A self-published package cannot use any
+credential while it stays public this way, even one it declares later. To give
+it credentials, declare them, publish, turn internet-visible off, and approve
+turning it on again. Self-publish needs credential-need enforcement to be on.
+Otherwise, or when anything is declared, `packageUpdate` returns the
+`approval_url` and a `self_publish_blocker` that says why (`enforcement_off`,
+`unpublished`, `stale_dependencies` (a dependency republished since this package
+was published; publish it again), `declares_credentials`,
+`declares_capabilities`, `not_audited`, `audit_concerns`, or `not_permitted`
+when the caller cannot publish the package).
+
 ## Approve many changes at once
 
 When several approvals wait on you, an agent can put them on one page.
@@ -912,16 +980,32 @@ The approval page has a **Security audit** field. It reads **No security audit
 performed** until an audit is recorded for the package's current published
 commit and capability fingerprint. Click it to copy a prompt for your agent. The
 prompt names the package, commit, and fingerprint. It asks the agent to review
-that version's code for declared vs used credentials, leaked secrets, unintended
-public exposure, risky network hosts, and package storage use.
+that version's code for declared vs used credentials, leaked credentials,
+unintended public exposure, risky network hosts, and package storage use. An
+agent that moves a package toward internet-visible gets the same request as the
+`security_audit` next step (see
+[Approval when a package goes internet-visible](#approval-when-a-package-goes-internet-visible)).
 
 The agent records the result with **`packageSecurityAuditRecord`**
 (`POST /v1/packages/{package_id}/security-audits`, `package:write` plus
 `package:read`). It passes `package_id`, `published_commit`, `fingerprint`, a
 `verdict` (`pass` or `concerns`), a plain-language `summary`, and an optional
-`auditor` name. The capability rejects a commit or fingerprint that no longer
-matches the current version, and redacts token-shaped strings from the summary.
-Each record stores who recorded it and when, and is audit-logged. The field then
+`auditor` name:
+
+```ts
+await kody.packageSecurityAuditRecord({
+	package_id: '…',
+	published_commit: '…',
+	fingerprint: '…',
+	verdict: 'pass',
+	summary: 'What was checked and found.',
+})
+```
+
+The capability rejects a commit or fingerprint that no longer matches the
+current version, and redacts token-shaped strings from the summary. Its response
+includes `approval_url` and a `next_step` to send the owner that link. Each
+record stores who recorded it and when, and is audit-logged. The field then
 reads **Audited {date} by {auditor}** and links to the summary. A new publish or
 a changed capability set reads as not audited again. The field covers only the
 published version, not a paused publish waiting on the same page. Capability
@@ -929,7 +1013,8 @@ items on an approval bundle page show the same state and link to the package's
 approval page for the prompt or summary.
 
 The audit is informational. It never approves capabilities or makes a package
-internet-visible; **Approve capability set** stays a separate owner click.
+internet-visible; Approve stays the owner's own click, except for self-publish
+of a package that declares nothing.
 
 ## Community fork provenance
 

@@ -14,6 +14,18 @@ const mockModule = vi.hoisted(() => ({
 	loadCapabilityApprovalSummary: vi.fn(),
 	approvePackageCapabilitySet: vi.fn(),
 	insertPackageSecurityAudit: vi.fn(),
+	getPendingWentPublicApproval: vi.fn(),
+	attemptSelfPublish: vi.fn(),
+}))
+
+vi.mock('#worker/package-capabilities/went-public-approval.ts', () => ({
+	getPendingWentPublicApproval: (...args: Array<unknown>) =>
+		mockModule.getPendingWentPublicApproval(...args),
+}))
+
+vi.mock('#worker/package-capabilities/self-publish.ts', () => ({
+	attemptSelfPublish: (...args: Array<unknown>) =>
+		mockModule.attemptSelfPublish(...args),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -131,6 +143,8 @@ test('packageSecurityAuditRecord stores the audit for the current version, audit
 		recorded_at: expect.any(String),
 		audit_url:
 			'https://heykody.dev/@user/notes/approve-capabilities#security-audit',
+		approval_url: 'https://heykody.dev/@user/notes/approve-capabilities',
+		next_step: `Audit recorded for published commit ${publishedCommit}. Send the owner https://heykody.dev/@user/notes/approve-capabilities to read it and decide; recording an audit approves nothing.`,
 	})
 	expect(mockModule.insertPackageSecurityAudit).toHaveBeenCalledWith(
 		{},
@@ -159,6 +173,103 @@ test('packageSecurityAuditRecord stores the audit for the current version, audit
 		}),
 	)
 	expect(mockModule.approvePackageCapabilitySet).not.toHaveBeenCalled()
+	expect(mockModule.attemptSelfPublish).not.toHaveBeenCalled()
+})
+
+test('packageSecurityAuditRecord re-evaluates a pending internet-visible request on a pass', async () => {
+	mockCurrentVersion()
+	mockModule.getPendingWentPublicApproval.mockResolvedValue({
+		id: 'request-1',
+		baseCommit: publishedCommit,
+	})
+	mockModule.attemptSelfPublish.mockResolvedValueOnce({
+		status: 'self_published',
+	})
+
+	const published = await packageSecurityAuditRecordCapability.handler(
+		validArgs,
+		createCtx(),
+	)
+	expect(published).toMatchObject({ self_published: true })
+	expect(published.next_step).toContain('self-published')
+	expect(mockModule.attemptSelfPublish).toHaveBeenCalledWith(
+		expect.objectContaining({
+			ownerUserId: 'user-1',
+			actorUserId: 'user-1',
+			requestUrl: 'https://heykody.dev',
+			summary: expect.objectContaining({ publishedCommit }),
+			pendingRequestId: 'request-1',
+		}),
+	)
+
+	mockModule.attemptSelfPublish.mockResolvedValueOnce({
+		status: 'blocked',
+		blocker: 'declares_credentials',
+	})
+	const blocked = await packageSecurityAuditRecordCapability.handler(
+		validArgs,
+		createCtx(),
+	)
+	expect(blocked).toMatchObject({
+		self_publish_blocker: 'declares_credentials',
+	})
+	expect(blocked).not.toHaveProperty('self_published')
+
+	mockModule.attemptSelfPublish.mockClear()
+	await packageSecurityAuditRecordCapability.handler(
+		{ ...validArgs, verdict: 'concerns' },
+		createCtx(),
+	)
+	mockModule.getPendingWentPublicApproval.mockResolvedValue(null)
+	await packageSecurityAuditRecordCapability.handler(validArgs, createCtx())
+	expect(mockModule.attemptSelfPublish).not.toHaveBeenCalled()
+	mockModule.getPendingWentPublicApproval.mockReset()
+})
+
+test('packageSecurityAuditRecord does not bind self-publish to a pending request for an older publish', async () => {
+	mockCurrentVersion()
+	mockModule.getPendingWentPublicApproval.mockResolvedValue({
+		id: 'stale-request',
+		baseCommit: 'commit-older',
+	})
+	mockModule.attemptSelfPublish.mockReset()
+	mockModule.attemptSelfPublish.mockResolvedValueOnce({
+		status: 'self_published',
+	})
+	try {
+		await packageSecurityAuditRecordCapability.handler(validArgs, createCtx())
+		expect(mockModule.attemptSelfPublish).toHaveBeenCalledWith(
+			expect.objectContaining({ pendingRequestId: undefined }),
+		)
+	} finally {
+		mockModule.getPendingWentPublicApproval.mockReset()
+	}
+})
+
+test('packageSecurityAuditRecord keeps a recorded audit when the self-publish re-evaluation throws', async () => {
+	mockCurrentVersion()
+	mockModule.getPendingWentPublicApproval.mockResolvedValue({
+		id: 'request-1',
+		baseCommit: publishedCommit,
+	})
+	mockModule.attemptSelfPublish.mockRejectedValueOnce(new Error('D1 down'))
+	const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+	try {
+		const result = await packageSecurityAuditRecordCapability.handler(
+			validArgs,
+			createCtx(),
+		)
+		expect(result).toMatchObject({ ok: true, verdict: 'pass' })
+		expect(result).not.toHaveProperty('self_published')
+		expect(result.next_step).toContain('recording an audit approves nothing')
+		expect(consoleError).toHaveBeenCalledWith(
+			'Self-publish re-evaluation after a security audit failed',
+			expect.objectContaining({ packageId: 'pkg-1' }),
+		)
+	} finally {
+		consoleError.mockRestore()
+		mockModule.getPendingWentPublicApproval.mockReset()
+	}
 })
 
 test('packageSecurityAuditRecord leaves the auditor blank so the page credits the recorder', async () => {

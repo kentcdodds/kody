@@ -1,9 +1,11 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { getOwnerEmailAttachmentById } from '#worker/email/owner-email-reader.ts'
-import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
+import {
+	emailOwnerOrgId,
+	requireVerifiedEmailAccountUser,
+} from './require-verified-user.ts'
 
 const emailAttachmentContentSchema = z.object({
 	id: z.string(),
@@ -35,7 +37,7 @@ export const emailAttachmentGetCapability = defineDomainCapability(
 			const user = await requireVerifiedEmailAccountUser(ctx)
 			const attachment = await getOwnerEmailAttachmentById({
 				env: ctx.env,
-				ownerId: personalOrgId(user.userId),
+				ownerId: emailOwnerOrgId(ctx, user),
 				blobs: ctx.env.EMAIL_BLOBS,
 				attachmentId: args.attachment_id,
 			})

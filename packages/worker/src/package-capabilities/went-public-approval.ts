@@ -3,6 +3,7 @@ import {
 	enqueuePackageApprovalRequest,
 	getPendingPackageApprovalRequest,
 	type PackageApprovalRequest,
+	setPendingPackageApprovalRequestFlag,
 } from './approval-requests-repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
@@ -19,6 +20,8 @@ export async function enqueueWentPublicApproval(input: {
 	publishedCommit: string
 	fingerprint: string
 	requestedByUserId: string | null
+	/** Set only by self-publish, which approves the request itself. */
+	selfPublish?: boolean
 }): Promise<PackageApprovalRequest> {
 	return enqueuePackageApprovalRequest(input.env.APP_DB, {
 		packageId: input.savedPackage.id,
@@ -29,8 +32,29 @@ export async function enqueueWentPublicApproval(input: {
 		details: {
 			fingerprint: input.fingerprint,
 			summary: 'Serve this package on the public internet.',
+			...(input.selfPublish ? { [selfPublishDetailKey]: true } : {}),
 		},
 		requestedByUserId: input.requestedByUserId,
+	})
+}
+
+/** `went_public` details key marking a request self-publish approved. */
+export const selfPublishDetailKey = 'selfPublish'
+
+export function isSelfPublishRequest(request: PackageApprovalRequest | null) {
+	return request?.details[selfPublishDetailKey] === true
+}
+
+/** Marks or unmarks a still-pending request; false when it was resolved. */
+export async function setSelfPublishMark(
+	env: Env,
+	requestId: string,
+	marked: boolean,
+) {
+	return setPendingPackageApprovalRequestFlag(env.APP_DB, {
+		id: requestId,
+		key: selfPublishDetailKey,
+		value: marked,
 	})
 }
 

@@ -2,6 +2,11 @@ import {
 	listPublicWebsitePages,
 	listPublicBlogPages,
 } from '#app/public-content.ts'
+import {
+	kodyMcpServerName,
+	kodyMcpServerTitle,
+	kodyMcpServerVersion,
+} from '#mcp/kody-mcp-server-info.ts'
 import { listGuides } from '#worker/guides/catalog.ts'
 import { mcpOauthScopes } from '#worker/mcp-oauth-scopes.ts'
 import { docHref, docsIntroSlug } from '#universal/docs-nav.ts'
@@ -25,7 +30,7 @@ export const openaiAppsChallengeToken =
 	'cgisbN1peOFC_FcpE83Zn5gihUckKsjEVj-tItKRkxU'
 
 /** Matches the MCP server `version` advertised on both protocol lanes. */
-export const kodyMcpServerCardVersion = '1.0.0'
+export const kodyMcpServerCardVersion = kodyMcpServerVersion
 
 const aiCrawlerUserAgents = [
 	'GPTBot',
@@ -214,7 +219,10 @@ export function buildMcpServerCard(origin: string) {
 	const endpoint = `${origin}${mcpResourcePath}`
 	return {
 		serverInfo: {
-			name: 'Kody',
+			// Match handshake Implementation.name / title so discovery clients
+			// that compare card identity to initialize serverInfo agree.
+			name: kodyMcpServerName,
+			title: kodyMcpServerTitle,
 			version: kodyMcpServerCardVersion,
 		},
 		description:

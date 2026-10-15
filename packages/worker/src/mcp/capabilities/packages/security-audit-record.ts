@@ -15,6 +15,11 @@ import {
 import { buildPackageCapabilityApprovalUrl } from '#worker/package-capabilities/capability-approval-url.ts'
 import { loadCapabilityApprovalSummary } from '#worker/package-capabilities/capability-approval-service.ts'
 import {
+	attemptSelfPublish,
+	type SelfPublishAttempt,
+} from '#worker/package-capabilities/self-publish.ts'
+import { getPendingWentPublicApproval } from '#worker/package-capabilities/went-public-approval.ts'
+import {
 	insertPackageSecurityAudit,
 	packageSecurityAuditVerdicts,
 } from '#worker/package-capabilities/security-audits-repo.ts'
@@ -33,7 +38,7 @@ export const packageSecurityAuditRecordCapability = defineDomainCapability(
 		name: 'packageSecurityAuditRecord',
 		orgPermission: 'package:write',
 		description:
-			'Record an informational security audit for the exact published version of a saved package: its published commit plus capability-set fingerprint (both shown in the security audit prompt on the package capability approval page). Review that version first: declared vs used credentials, leaked secrets, unintended public exposure, risky network hosts, and package storage use. Then record verdict pass or concerns with a plain-language summary. The audit is tied to that commit and fingerprint; a new publish or changed capability set reads as not audited again. Recording an audit never approves capabilities or makes anything internet-visible; the owner still approves on the website. Requires package:read (to review the source) as well as package:write. Token-shaped strings in the summary are redacted.',
+			'Record an informational security audit for the exact published version of a saved package: its published commit plus capability-set fingerprint (both shown in the security audit prompt on the package capability approval page, and in the security_audit next step packageUpdate returns when a package moves toward internet-visible). Review that version first: declared vs used credentials, leaked credentials, unintended public exposure, risky network hosts, and package storage use. Then record verdict pass or concerns with a plain-language summary. The audit is tied to that commit and fingerprint; a new publish or changed capability set reads as not audited again. Recording an audit approves nothing by itself. One exception: when a request to make the package internet-visible is already pending (packageUpdate internet_visible: true), recording verdict pass re-evaluates self-publish, which makes the package internet-visible without the owner click (self_published: true) if credential-need enforcement is on and nothing in its dependency tree declares a credential or another capability. Otherwise hand the owner approval_url next. Requires package:read (to review the source) as well as package:write. Token-shaped strings in the summary are redacted.',
 		keywords: [
 			'package',
 			'security',
@@ -97,6 +102,22 @@ export const packageSecurityAuditRecordCapability = defineDomainCapability(
 			verdict: z.enum(packageSecurityAuditVerdicts),
 			recorded_at: z.string(),
 			audit_url: z.string(),
+			approval_url: z
+				.string()
+				.describe('The package approval page to hand the owner next.'),
+			next_step: z.string(),
+			self_published: z
+				.literal(true)
+				.optional()
+				.describe(
+					'Present when this pass made the package internet-visible through self-publish for a pending internet-visible request.',
+				),
+			self_publish_blocker: z
+				.string()
+				.optional()
+				.describe(
+					'Present when an internet-visible request is pending and self-publish still does not apply; the owner approves at approval_url. Same values as packageUpdate self_publish_blocker.',
+				),
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
@@ -176,6 +197,16 @@ export const packageSecurityAuditRecordCapability = defineDomainCapability(
 				username: owner.ownerScope,
 				kodyId: savedPackage.kodyId,
 			})
+			const selfPublish = await reevaluatePendingSelfPublish({
+				env: ctx.env,
+				request: requireMcpRequest(ctx.callerContext),
+				requestUrl: ctx.callerContext.baseUrl,
+				ownerUserId: owner.ownerUserId,
+				actorUserId: owner.actorUserId,
+				savedPackage,
+				summary,
+				verdict: record.verdict,
+			})
 			return {
 				ok: true as const,
 				audit_id: record.id,
@@ -185,7 +216,54 @@ export const packageSecurityAuditRecordCapability = defineDomainCapability(
 				verdict: record.verdict,
 				recorded_at: record.recordedAt,
 				audit_url: `${approvalUrl}#${packageSecurityAuditAnchor}`,
+				approval_url: approvalUrl,
+				next_step:
+					selfPublish?.status === 'self_published'
+						? `Audit recorded for published commit ${record.publishedCommit}, and the pending internet-visible request was self-published: the package is internet-visible now. The owner can review it at ${approvalUrl}.`
+						: `Audit recorded for published commit ${record.publishedCommit}. Send the owner ${approvalUrl} to read it and decide; recording an audit approves nothing.`,
+				...(selfPublish?.status === 'self_published'
+					? { self_published: true as const }
+					: {}),
+				...(selfPublish?.status === 'blocked'
+					? { self_publish_blocker: selfPublish.blocker }
+					: {}),
 			}
 		},
 	},
 )
+
+/**
+ * A pass recorded while an internet-visible request is pending gets the same
+ * self-publish evaluation as toggling it again. A failed attempt leaves the
+ * request pending for the owner; the audit stays recorded either way.
+ */
+async function reevaluatePendingSelfPublish(
+	input: Parameters<typeof attemptSelfPublish>[0] & { verdict: string },
+): Promise<SelfPublishAttempt | null> {
+	if (input.verdict !== 'pass' || input.savedPackage.isInternetVisible) {
+		return null
+	}
+	const pending = await getPendingWentPublicApproval({
+		env: input.env,
+		ownerUserId: input.ownerUserId,
+		packageId: input.savedPackage.id,
+	})
+	if (!pending) return null
+	// A request for an older publish can no longer be approved by anyone, so
+	// self-publish enqueues one for the audited commit instead, as a re-toggle
+	// would.
+	const pendingRequestId =
+		pending.baseCommit === input.summary.publishedCommit
+			? pending.id
+			: undefined
+	try {
+		return await attemptSelfPublish({ ...input, pendingRequestId })
+	} catch (error) {
+		// The audit is already recorded; failing here would invite a duplicate on retry.
+		console.error('Self-publish re-evaluation after a security audit failed', {
+			packageId: input.savedPackage.id,
+			error,
+		})
+		return null
+	}
+}

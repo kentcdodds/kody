@@ -329,7 +329,7 @@
 	animation: none !important;
 }
 
-/* Dark ink on the accent clears 4.5:1 in both themes; white on this pink does not. */
+/* Dark ink on the accent clears 4.5:1 in both themes; white on this purple does not. */
 .feature-detail .pw .pw-apx-form .run {
 	min-height: 44px;
 	margin-top: 0.35em;

@@ -307,7 +307,8 @@ export function createAccountPackageApproveCapabilitiesApiHandler(env: Env) {
 						action:
 							'action' in body &&
 							(body.action === 'approve-credential-needs' ||
-								body.action === 'approve-went-public')
+								body.action === 'approve-went-public' ||
+								body.action === 'approve-capabilities-and-go-public')
 								? body.action
 								: 'approve-capabilities',
 						packageId: packageId.packageId,

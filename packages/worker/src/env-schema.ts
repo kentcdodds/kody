@@ -135,6 +135,42 @@ const optionalSentryTracesSampleRateSchema = createSchema<
 	return fail('Expected number or numeric string', context.path)
 })
 
+const optionalPackageAppTicketKeysSchema = createSchema<
+	unknown,
+	string | undefined
+>((value, context) => {
+	if (value === undefined) return { value: undefined }
+	if (typeof value !== 'string') return fail('Expected string', context.path)
+	const keys = value
+		.split(',')
+		.map((key) => key.trim())
+		.filter((key) => key.length > 0)
+	if (keys.length === 0) return { value: undefined }
+	if (keys.some((key) => key.length < 32)) {
+		return fail(
+			'Every PACKAGE_APP_TICKET_KEYS entry must be at least 32 characters.',
+			context.path,
+		)
+	}
+	return { value: keys.join(',') }
+})
+
+const optionalPositivePercentSchema = createSchema<
+	unknown,
+	number | string | undefined
+>((value, context) => {
+	if (value === undefined) return { value: undefined }
+	if (typeof value === 'string' && !value.trim()) return { value: undefined }
+	if (typeof value !== 'number' && typeof value !== 'string') {
+		return fail('Expected number or numeric string', context.path)
+	}
+	const n = typeof value === 'number' ? value : Number(value.trim())
+	if (!Number.isFinite(n) || n <= 0) {
+		return fail('Expected a positive percent', context.path)
+	}
+	return { value }
+})
+
 const secretStoreKeySchema = createSchema<unknown, string>((value, context) => {
 	if (typeof value !== 'string') {
 		return fail(
@@ -185,6 +221,9 @@ export const EnvSchema = object({
 	// Highlight worker service binding. Optional: tests and single-worker
 	// local fallback to plaintext tokens when the binding is absent.
 	HIGHLIGHT: optionalFetcherSchema,
+	// Repo push queue worker (`kody-push-queue`). Optional: tests and local
+	// single-worker dev keep the isolate-local receive-pack wait path.
+	REPO_PUSH_QUEUE: optionalFetcherSchema,
 	STORAGE_RUNNER: requiredDurableObjectNamespaceSchema(
 		'Missing STORAGE_RUNNER binding for durable execute and job storage.',
 	),
@@ -228,6 +267,13 @@ export const EnvSchema = object({
 	// `/` on a dual-served package-app host goes to the app origin; it is
 	// never redirected onto the canonical package-app apex.
 	PACKAGE_APP_LEGACY_REDIRECT: optionalNonEmptyStringSchema,
+	// Comma-separated HMAC keys for package-app access tickets. The first key
+	// signs; every key verifies (rotation: docs/contributing/secret-rotation.md).
+	// Unset derives one key from COOKIE_SECRET.
+	PACKAGE_APP_TICKET_KEYS: optionalPackageAppTicketKeysSchema,
+	// Percent of the existing usage limit at which the package-app usage
+	// circuit breaker opens. Unset means 100 (trip exactly at the limit).
+	PACKAGE_APP_USAGE_BREAKER_LIMIT_PERCENT: optionalPositivePercentSchema,
 	USER_EMAIL_DOMAIN: optionalNonEmptyStringSchema,
 	// Overrides the system email domain derived from APP_BASE_URL. Committed
 	// in production so email and the web origin can move independently.

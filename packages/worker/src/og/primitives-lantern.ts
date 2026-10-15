@@ -41,24 +41,23 @@ const DOT_SIZE = 12
 /**
  * sRGB of `--primitive-*` / `--primitive-*-dark` in styles.css. Satori does
  * not resolve oklch. Memory is the brain's red, triggers the lightning's
- * yellow; integrations stays the plug's green.
+ * yellow; integrations (credentials) stays the plug's green and apps is the
+ * app grid's purple.
  */
 export const landingPrimitiveOgColors = {
 	light: {
 		memory: '#f13b2e',
-		secrets: '#9754ed',
 		packages: '#007df3',
 		triggers: '#d6b603',
 		integrations: '#05b047',
-		apps: '#ff4db8',
+		apps: '#9f61f2',
 	},
 	dark: {
 		memory: '#fd7464',
-		secrets: '#b884ff',
 		packages: '#53a6ff',
 		triggers: '#fcd936',
 		integrations: '#43d066',
-		apps: '#ff8ad4',
+		apps: '#b884ff',
 	},
 } as const satisfies Record<OgTheme, Record<LandingPrimitiveId, string>>
 

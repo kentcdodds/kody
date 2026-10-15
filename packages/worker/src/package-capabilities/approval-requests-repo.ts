@@ -157,6 +157,34 @@ export async function enqueuePackageApprovalRequest(
 	}
 }
 
+/**
+ * Sets or clears one boolean detail flag on a request that is still pending.
+ * False when the request was no longer pending.
+ */
+export async function setPendingPackageApprovalRequestFlag(
+	db: D1Database,
+	input: { id: string; key: string; value: boolean },
+): Promise<boolean> {
+	const path = `$.${input.key}`
+	const statement = input.value
+		? db
+				.prepare(
+					`UPDATE package_approval_requests
+					SET details_json = json_set(coalesce(details_json, '{}'), ?, json('true'))
+					WHERE id = ? AND status = 'pending'`,
+				)
+				.bind(path, input.id)
+		: db
+				.prepare(
+					`UPDATE package_approval_requests
+					SET details_json = json_remove(coalesce(details_json, '{}'), ?)
+					WHERE id = ? AND status = 'pending'`,
+				)
+				.bind(path, input.id)
+	const result = await statement.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
 export async function getPendingPackageApprovalRequest(
 	db: D1Database,
 	input: {
@@ -170,6 +198,28 @@ export async function getPendingPackageApprovalRequest(
 			`SELECT ${columns} FROM package_approval_requests
 			WHERE package_id = ? AND owner_user_id = ? AND reason = ?
 				AND status = 'pending'
+			LIMIT 1`,
+		)
+		.bind(input.packageId, input.ownerUserId, input.reason)
+		.first<Record<string, unknown>>()
+	return row ? mapRow(row) : null
+}
+
+/** The most recently approved request for one package and reason. */
+export async function getLatestApprovedPackageApprovalRequest(
+	db: D1Database,
+	input: {
+		packageId: string
+		ownerUserId: string
+		reason: PackageApprovalReason
+	},
+): Promise<PackageApprovalRequest | null> {
+	const row = await db
+		.prepare(
+			`SELECT ${columns} FROM package_approval_requests
+			WHERE package_id = ? AND owner_user_id = ? AND reason = ?
+				AND status = 'approved'
+			ORDER BY resolved_at DESC, created_at DESC
 			LIMIT 1`,
 		)
 		.bind(input.packageId, input.ownerUserId, input.reason)

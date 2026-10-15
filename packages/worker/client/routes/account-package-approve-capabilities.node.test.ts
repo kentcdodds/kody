@@ -21,6 +21,7 @@ function loaderData(
 	return {
 		ok: true,
 		pendingApprovals: [],
+		goPublicRequestId: null,
 		email: 'kody@example.com',
 		package: {
 			id: packageId,
@@ -237,6 +238,8 @@ test('capability approval copy matches an already internet-visible package', asy
 		'It is internet-visible, so requests from anyone can run code that uses these.',
 	)
 	expect(live).toContain('Re-approve capability set')
+	expect(live).toContain('Credential values never appear here.')
+	expect(live).not.toContain('Secret values')
 	expect(live).not.toContain('Before @kody/mau-chart is served')
 	expect(live).not.toContain('Once it is internet-visible')
 
@@ -245,13 +248,211 @@ test('capability approval copy matches an already internet-visible package', asy
 		'Before @kody/mau-chart is served on the public internet',
 	)
 	expect(notLive).toContain('Once it is internet-visible')
+	expect(notLive).toContain('Credential values never appear here.')
+	expect(notLive).not.toContain('Secret values')
 })
 
-test('capability approval says so plainly when nothing is reachable', async () => {
+test('a credential-needs-only approval states the change and never claims public visibility', async () => {
+	const pendingCommit = 'e650a38aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+	const html = await render(
+		loaderData({
+			package: {
+				...loaderData().package,
+				name: '@kentcdodds/nextdns',
+				kodyId: 'nextdns',
+				hasApp: false,
+				isInternetVisible: false,
+			},
+			pendingApprovals: [
+				{
+					id: 'req-cred-1',
+					reason: 'credential_needs_changed',
+					reasonLabel: 'Credential needs changed',
+					pendingCommit,
+					createdAt: '2026-10-14T00:00:00.000Z',
+					changes: [
+						'This version adds a credential need: NEXTDNS_API_KEY Key from nextdns',
+					],
+					approveAction: 'approve-credential-needs',
+				},
+			],
+		}),
+	)
+
+	expect(html).toContain('Approve credential needs')
+	expect(html).toContain(
+		'This version adds a credential need: NEXTDNS_API_KEY Key from nextdns',
+	)
+	expect(html).toContain(
+		'The previously published version keeps running until you approve.',
+	)
+	expect(html).toContain('Credential values never appear here.')
+	expect(html).toContain('Approve and publish')
+	expect(html).toContain('The previously published version can use these.')
+	expect(html).not.toContain('Approve capability set')
+	expect(html).not.toContain('data-testid="package-approve-capabilities"')
+
+	expect(html).not.toContain('Approve internet-visible capabilities')
+	expect(html).not.toContain('public internet')
+	expect(html).not.toContain('internet-visible')
+	expect(html).not.toContain('Once it is internet-visible')
+	expect(html).not.toContain('Secret values')
+	expect(html).not.toContain('Approve and make internet-visible')
+
+	const card = html.slice(
+		html.indexOf('data-testid="package-pending-approval"'),
+		html.indexOf('data-testid="package-pending-approval-approve"'),
+	)
+	const detailsIndex = card.indexOf('<summary>Details</summary>')
+	expect(detailsIndex).toBeGreaterThan(-1)
+	expect(card.slice(0, detailsIndex)).not.toContain(pendingCommit)
+	expect(card.slice(detailsIndex)).toContain(pendingCommit)
+})
+
+test('a went_public pending approval still mentions internet visibility', async () => {
+	const html = await render(
+		loaderData({
+			pendingApprovals: [
+				{
+					id: 'req-1',
+					reason: 'went_public',
+					reasonLabel: 'Went internet-visible',
+					pendingCommit: 'cccccccccccccccccccccccccccccccccccccccc',
+					createdAt: '2026-10-14T00:00:00.000Z',
+					changes: ['Serve this package on the public internet.'],
+					approveAction: 'approve-went-public',
+				},
+			],
+		}),
+	)
+
+	expect(html).toContain('Approve package changes')
+	expect(html).toContain(
+		'Approving turns on internet-visible serving for this package.',
+	)
+	expect(html).toContain(
+		'Internet-visible serving stays off until you approve.',
+	)
+	expect(html).toContain('Approve and make internet-visible')
+	expect(html).toContain('Once it is internet-visible')
+	expect(html).toContain('Approve capability set')
+})
+
+test('credential-needs-only copy wins over an already internet-visible package', async () => {
+	const html = await render(
+		loaderData({
+			package: {
+				...loaderData().package,
+				isInternetVisible: true,
+			},
+			pendingApprovals: [
+				{
+					id: 'req-cred-1',
+					reason: 'credential_needs_changed',
+					reasonLabel: 'Credential needs changed',
+					pendingCommit: 'dddddddddddddddddddddddddddddddddddddddd',
+					createdAt: '2026-10-14T00:00:00.000Z',
+					changes: [
+						'This version changes the credential need MAIL: was Key from resend, now OAuth from resend',
+					],
+					approveAction: 'approve-credential-needs',
+				},
+			],
+		}),
+	)
+
+	expect(html).toContain('Approve credential needs')
+	expect(html).toContain('The previously published version can use these.')
+	expect(html).not.toContain(
+		'It is internet-visible, so requests from anyone can run code that uses these.',
+	)
+	expect(html).not.toContain('Approve capability set')
+	expect(html).not.toContain('Re-approve capability set')
+	expect(html).not.toContain('public internet')
+})
+
+test('a package that declares nothing gets one plain empty state', async () => {
 	const html = await render(loaderData({ entries: [] }))
 
+	expect(html).toContain('data-testid="package-approve-capabilities-empty"')
+	expect(html).toContain(
+		'This package uses no credentials or other capabilities.',
+	)
+	expect(html).not.toContain('>Credentials<')
+	expect(html).not.toContain('>Other capabilities<')
+	expect(html).not.toContain('Package storage')
+	expect(html).toContain('Approve capability set')
+})
+
+test('storage alone keeps the credentials section and says none are used', async () => {
+	const html = await render(
+		loaderData({
+			entries: [
+				{
+					kind: 'storage',
+					storageId: packageId,
+					hosts: [],
+					via: ['mau-chart'],
+				},
+			],
+		}),
+	)
+
 	expect(html).toContain('This package does not use any of your credentials.')
-	expect(html).toContain('No other capabilities.')
+	expect(html).toContain('>Package storage<')
+	expect(html).not.toContain('data-testid="package-approve-capabilities-empty"')
+})
+
+test('an unpublished package shows neither the empty state nor sections', async () => {
+	const html = await render(
+		loaderData({
+			entries: [],
+			publishedCommit: null,
+			securityAudit: { status: 'unpublished' },
+		}),
+	)
+
+	expect(html).toContain('Publish this package before approving')
+	expect(html).not.toContain('data-testid="package-approve-capabilities-empty"')
+	expect(html).not.toContain('>Credentials<')
+})
+
+test('each credential says how this package reaches it', async () => {
+	const credential = (
+		id: string,
+		extra: Partial<
+			AccountPackageApproveCapabilitiesLoaderData['entries'][number]
+		>,
+	) => ({
+		kind: 'credential' as const,
+		credentialId: id,
+		name: id,
+		credentialKind: 'secret',
+		hosts: ['api.example.com'],
+		placement: null,
+		via: ['mau-chart'],
+		...extra,
+	})
+	const html = await render(
+		loaderData({
+			entries: [
+				credential('need-cred', {
+					source: 'need',
+					needKey: 'github',
+					credentialKind: 'oauth',
+				}),
+				credential('mount-cred', { source: 'mount' }),
+				credential('grant-cred', { source: 'grant' }),
+				credential('package-cred', { source: 'package' }),
+			],
+		}),
+	)
+
+	expect(html).toContain('fills its declared github credential')
+	expect(html).toContain('Key · declared by this package')
+	expect(html).toContain('Key · you granted this package access')
+	expect(html).toContain('Key · saved for this package only')
+	expect(html).not.toContain('used by this package')
 })
 
 test('security audit reads "No security audit performed" and offers a copyable agent prompt', async () => {
@@ -343,4 +544,64 @@ test('security audit says it does not cover a paused publish waiting on the page
 	expect(securityAuditField(await render(loaderData()))).not.toContain(
 		'data-testid="package-security-audit-paused-note"',
 	)
+})
+
+test('a go-public request folds into the capability Approve as one decision', async () => {
+	const wentPublic = {
+		id: 'req-went-public',
+		reason: 'went_public' as const,
+		reasonLabel: 'Went public',
+		pendingCommit: publishedCommit,
+		createdAt: '2026-10-14T00:00:00.000Z',
+		changes: ['Serve this package on the public internet.'],
+		approveAction: 'approve-went-public' as const,
+	}
+	const html = await render(
+		loaderData({
+			pendingApprovals: [wentPublic],
+			goPublicRequestId: wentPublic.id,
+		}),
+	)
+
+	expect(html).not.toContain('data-testid="package-pending-approvals"')
+	expect(html).not.toContain('data-testid="package-pending-approval-approve"')
+	expect(html).toContain(
+		'Approving turns on internet-visible serving for this package.',
+	)
+	expect(html).toContain(
+		'data-testid="package-approve-capabilities-go-public-note"',
+	)
+	expect(html).toContain(
+		'One approval records this capability set and turns on internet-visible serving.',
+	)
+	const approve = html.slice(
+		html.indexOf('data-testid="package-approve-capabilities"'),
+		html.indexOf(
+			'</button>',
+			html.indexOf('data-testid="package-approve-capabilities"'),
+		),
+	)
+	expect(approve).toContain('Approve and make internet-visible')
+	expect(approve).toContain('aria-hidden="true"')
+	expect(approve).toContain('Back to package settings')
+	const back = html.slice(
+		html.indexOf('data-testid="package-approve-capabilities-back"'),
+		html.indexOf(
+			'</a>',
+			html.indexOf('data-testid="package-approve-capabilities-back"'),
+		),
+	)
+	expect(back).toContain('Back to package settings')
+	expect(back).toContain('aria-hidden="true"')
+	expect(back).toContain('Approve and make internet-visible')
+	expect(
+		html.match(/data-testid="package-approve-capabilities"/g),
+	).toHaveLength(1)
+
+	const separate = await render(loaderData({ pendingApprovals: [wentPublic] }))
+	expect(separate).toContain('data-testid="package-pending-approval-approve"')
+	expect(separate).not.toContain(
+		'data-testid="package-approve-capabilities-go-public-note"',
+	)
+	expect(separate).toContain('Approve capability set')
 })

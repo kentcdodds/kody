@@ -868,6 +868,7 @@ async function fetchWithDynamicWorkerBudget(
 	const packageAppOriginResponse = await handlePackageAppOriginRequest(
 		request,
 		env,
+		ctx,
 	)
 	if (packageAppOriginResponse) return packageAppOriginResponse
 
@@ -907,6 +908,7 @@ async function handleOriginAppFetch(
 	const packageAppOriginResponse = await handlePackageAppOriginRequest(
 		request,
 		env,
+		ctx,
 	)
 	if (packageAppOriginResponse) return packageAppOriginResponse
 

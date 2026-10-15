@@ -376,6 +376,7 @@ function plainRepoPage(
 		invocationUrlOrigin: 'https://example.com',
 		ownerUserId: ownerIdFromStored('owner-1'),
 		ownerProfilePublic: true,
+		followTarget: null,
 		...overrides,
 	}
 }

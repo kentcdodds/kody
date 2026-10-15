@@ -78,10 +78,10 @@ connect a second account, change `provider` (for example
 
 See the [OAuth guide](../oauth.md) for query parameters and reconnect behavior.
 
-## Fix an existing connection
+## Fix a connection missing a host
 
-A Dropbox connection made before this link existed may allow only
-`api.dropboxapi.com`. Either:
+A Dropbox connection that only allows `api.dropboxapi.com` can list files but
+fails every upload and download. Either:
 
 - Open the connect link above again and reconnect. Kody keeps the connection's
   hosts and adds the ones in the link.
@@ -152,7 +152,7 @@ export default async function main() {
 ## Troubleshooting
 
 - `does not allow requests to host "content.dropboxapi.com"`: the connection is
-  missing a Dropbox host. See Fix an existing connection.
+  missing a Dropbox host. See Fix a connection missing a host.
 - `redirect_uri` mismatch: the registered redirect must be exactly
   `https://kody.codes/connect/oauth`.
 - Authorize fails with a scope error: enable that scope on the app's

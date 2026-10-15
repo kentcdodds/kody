@@ -14,17 +14,23 @@ const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
 
 const pageMain = document.querySelector('main')
 const startButton = document.querySelector('[data-breakout-start]')
+// Optional so a page cached from before the footer link still offers the game.
+const footerStart = document.querySelector('[data-breakout-footer-start]')
 if (
 	pageMain instanceof HTMLElement &&
 	startButton instanceof HTMLButtonElement &&
 	document.createElement('canvas').getContext('2d')
 ) {
 	const forced = new URLSearchParams(location.search).has('play')
-	if (forced || document.body.dataset.overallStatus !== 'operational') {
-		startButton.hidden = false
-		startButton.addEventListener(
+	const waiting =
+		forced || document.body.dataset.overallStatus !== 'operational'
+	const trigger = waiting ? startButton : footerStart
+	if (trigger instanceof HTMLElement) {
+		trigger.hidden = false
+		const control = trigger.querySelector('button') ?? trigger
+		control.addEventListener(
 			'click',
-			() => void startGame(pageMain, startButton),
+			() => void startGame(pageMain, [startButton, footerStart]),
 			{ once: true },
 		)
 	}
@@ -32,11 +38,11 @@ if (
 
 /**
  * @param {HTMLElement} main
- * @param {HTMLButtonElement} button
+ * @param {Array<Element | null>} triggers
  */
-async function startGame(main, button) {
+async function startGame(main, triggers) {
 	clearTimeout(Number(document.documentElement.dataset.refreshTimer))
-	button.remove()
+	for (const trigger of triggers) trigger?.remove()
 	wrapWords(main)
 	const blocks = Array.from(main.children).filter(
 		(child) => child instanceof HTMLElement,

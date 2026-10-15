@@ -170,7 +170,9 @@ test('web create organization form rejects the reserved `me` handle in any case'
 		expect(response.status).toBe(302)
 		const location = new URL(response.headers.get('Location')!, request.url)
 		expect(location.pathname).toBe(routes.accountOrganizationsNew.href())
-		expect(location.searchParams.get('error')).toBe('This name is reserved.')
+		expect(location.searchParams.get('error')).toBe(
+			'This username is reserved.',
+		)
 	}
 	expect(
 		await db

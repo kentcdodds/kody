@@ -458,17 +458,14 @@ export const clientRoutes = {
 	[routePattern(routes.featureMemory)]: (
 		<LazyMarketingRoute render={(m) => <m.MemoryRoute />} />
 	),
-	[routePattern(routes.featureSecrets)]: (
-		<LazyMarketingRoute render={(m) => <m.SecretsRoute />} />
-	),
 	[routePattern(routes.featurePackages)]: (
 		<LazyMarketingRoute render={(m) => <m.PackagesRoute />} />
 	),
 	[routePattern(routes.featureTriggers)]: (
 		<LazyMarketingRoute render={(m) => <m.TriggersRoute />} />
 	),
-	[routePattern(routes.featureIntegrations)]: (
-		<LazyMarketingRoute render={(m) => <m.IntegrationsRoute />} />
+	[routePattern(routes.featureCredentials)]: (
+		<LazyMarketingRoute render={(m) => <m.CredentialsRoute />} />
 	),
 	[routePattern(routes.featureApps)]: (
 		<LazyMarketingRoute render={(m) => <m.AppsRoute />} />
@@ -539,6 +536,12 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.caseStudies)]: (
 		<LazyMarketingRoute render={(m) => <m.CaseStudiesRoute />} />
+	),
+	[routePattern(routes.believe)]: (
+		<LazyMarketingRoute render={(m) => <m.BelieveRoute />} />
+	),
+	[routePattern(routes.withAgent)]: (
+		<LazyMarketingRoute render={(m) => <m.WithAgentRoute />} />
 	),
 	[routePattern(routes.support)]: (
 		<LazyMarketingRoute render={(m) => <m.SupportRoute />} />

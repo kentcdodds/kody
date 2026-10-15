@@ -8,6 +8,7 @@ test('capability approval pages are focused; other package pages keep site chrom
 	expect(
 		isFocusedPagePathname('/account/packages/pkg-1/approve-capabilities'),
 	).toBe(true)
+	expect(isFocusedPagePathname('/@acme/-/approvals/bundle-1')).toBe(true)
 	expect(isFocusedPagePathname('/@kody/mau-chart')).toBe(false)
 	expect(isFocusedPagePathname('/@kody/mau-chart/settings')).toBe(false)
 	expect(isFocusedPagePathname('/@kody/mau-chart/approve-publish')).toBe(false)

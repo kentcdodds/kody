@@ -102,6 +102,7 @@ export { OrgSettingsRoute, orgSettingsRouteLoader } from './org-settings.tsx'
 export { OrgMembersRoute, orgMembersRouteLoader } from './org-members.tsx'
 export { OrgTeamsRoute, orgTeamsRouteLoader } from './org-teams.tsx'
 export { OrgGrantsRoute, orgGrantsRouteLoader } from './org-grants.tsx'
+export { OrgFollowsRoute, orgFollowsRouteLoader } from './org-follows.tsx'
 export {
 	OrgCollaboratorsRoute,
 	orgCollaboratorsRouteLoader,

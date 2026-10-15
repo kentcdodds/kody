@@ -2,23 +2,11 @@ import { type RouteLoader, type RouteLoaderResult } from './route-loader.ts'
 
 const routerHrefOrigin = 'https://kody.local'
 
-/**
- * AbortSignals that belong to intent/render prefetch loader runs. Account
- * JSON fetches key off the signal (not a global depth) so a real navigation
- * that overlaps a prefetch does not inherit `X-Kody-Prefetch` (#3517).
- */
-const prefetchAbortSignals = new WeakSet<AbortSignal>()
-
-export function isPrefetchAbortSignal(signal: AbortSignal | undefined) {
-	return signal !== undefined && prefetchAbortSignals.has(signal)
-}
-
 function runRouteLoaderAsPrefetch(
 	loader: RouteLoader,
 	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	prefetchAbortSignals.add(signal)
 	return Promise.resolve(loader(url, signal))
 }
 

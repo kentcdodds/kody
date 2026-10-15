@@ -1,7 +1,17 @@
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { listSecrets } from '#mcp/secrets/service.ts'
-import { packageHasImplicitUserSecretReadAccess } from '#mcp/secrets/package-access.ts'
+import {
+	listOrgReachableCredentials,
+	resolveNeedCandidates,
+	type UsableCredential,
+} from '#worker/credentials/credential-candidates.ts'
+import { loadAllCredentialMappingsForPackage } from '#worker/credentials/credential-mappings.ts'
+import { loadPublishedCredentialNeeds } from '#worker/credentials/credential-needs-closure.ts'
+import {
+	ownCredentialNeeds,
+	type CredentialNeed,
+} from '#worker/credentials/credential-needs.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { listKodyPackageDependencyNames } from '#worker/package-registry/types.ts'
 import { resolveSavedPackageImport } from '#worker/package-runtime/package-import-resolution.ts'
@@ -18,6 +28,7 @@ import {
 	emptyDependencySnapshot,
 	type PackageDependencySnapshot,
 } from './dependency-snapshot.ts'
+import { publishedPackageUsesStorage } from './package-storage-use.ts'
 
 export type PackageCapabilityComputeResult = {
 	capabilitySet: CapabilitySet
@@ -32,6 +43,12 @@ export type PackageCapabilityComputeResult = {
  * Prefer dependencies recorded on the published `app` (or `module`) bundle
  * artifact for the root published commit. Fall back to walking declared
  * `kody.dependencies` when no artifact deps exist yet.
+ *
+ * Each package contributes only what it declares or was granted: credentials
+ * that fill its `kody.credentials` needs, its `kody.secretMounts`, its
+ * package-scoped credentials, credentials the owner granted it, and package
+ * storage when its published source uses it. Implicit user-credential read
+ * (self-authored packages) is not a declaration, so it adds nothing here.
  *
  * Callers must only invoke this when a published commit exists. Manifest load
  * failures fail closed (throw) so approval cannot silently omit mounts.
@@ -52,17 +69,30 @@ export async function computePackageCapabilitySet(input: {
 	})
 	const entries: Array<CapabilitySetEntry> = []
 	const viaRoot = [input.packageKodyId]
+	let reachableCredentials: Promise<Array<UsableCredential>> | null = null
+	const loadReachableCredentials = () =>
+		(reachableCredentials ??= listOrgReachableCredentials({
+			db: input.env.APP_DB,
+			orgId: input.ownerUserId,
+		}))
 
 	await appendPackageCapabilityEntries({
 		env: input.env,
 		ownerUserId: input.ownerUserId,
 		packageId: input.packageId,
-		packageKodyId: input.packageKodyId,
 		sourceId: input.sourceId,
-		requestUrl: input.requestUrl,
+		publishedCommit: input.publishedCommit,
 		baseUrl,
 		via: viaRoot,
 		entries,
+		loadReachableCredentials,
+		// The root runs its whole published closure, inherited needs included,
+		// and its mappings are stored against those keys on the root package.
+		needs: await loadPublishedCredentialNeeds({
+			env: input.env,
+			userId: input.ownerUserId,
+			sourceId: input.sourceId,
+		}),
 	})
 
 	const dependencySnapshot = await resolveDependencySnapshot({
@@ -90,12 +120,12 @@ export async function computePackageCapabilitySet(input: {
 			env: input.env,
 			ownerUserId: input.ownerUserId,
 			packageId,
-			packageKodyId: dependency.kodyId,
 			sourceId: dependency.sourceId,
-			requestUrl: input.requestUrl,
+			publishedCommit: dependency.publishedCommit,
 			baseUrl,
 			via,
 			entries,
+			loadReachableCredentials,
 		})
 	}
 
@@ -281,26 +311,36 @@ async function appendPackageCapabilityEntries(input: {
 	env: Env
 	ownerUserId: OwnerId
 	packageId: string
-	packageKodyId: string
 	sourceId: string
-	requestUrl: string
+	publishedCommit: string
 	baseUrl: string
 	via: Array<string>
 	entries: Array<CapabilitySetEntry>
+	loadReachableCredentials: () => Promise<Array<UsableCredential>>
+	/** Needs beyond the package's own manifest (the root's published closure). */
+	needs?: ReadonlyArray<CredentialNeed>
 }): Promise<void> {
-	input.entries.push({
-		kind: 'storage',
-		storageId: input.packageId,
-		hosts: [],
-		via: input.via,
-	})
-
-	const loaded = await loadPackageManifestBySourceId({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.ownerUserId,
-		sourceId: input.sourceId,
-	})
+	const [loaded, usesStorage] = await Promise.all([
+		loadPackageManifestBySourceId({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.ownerUserId,
+			sourceId: input.sourceId,
+		}),
+		publishedPackageUsesStorage({
+			env: input.env,
+			sourceId: input.sourceId,
+			publishedCommit: input.publishedCommit,
+		}),
+	])
+	if (usesStorage) {
+		input.entries.push({
+			kind: 'storage',
+			storageId: input.packageId,
+			hosts: [],
+			via: input.via,
+		})
+	}
 	const userMountNames = new Set<string>()
 	for (const mount of Object.values(loaded.manifest.kody.secretMounts ?? {})) {
 		const name = mount.name.trim()
@@ -330,12 +370,6 @@ async function appendPackageCapabilityEntries(input: {
 		}),
 	])
 
-	const hasImplicitRead = await packageHasImplicitUserSecretReadAccess({
-		env: input.env,
-		userId: input.ownerUserId,
-		packageId: input.packageId,
-	})
-
 	const seenCredentialIds = new Set<string>()
 	for (const secret of packageSecrets) {
 		if (seenCredentialIds.has(secret.credentialId)) continue
@@ -344,6 +378,7 @@ async function appendPackageCapabilityEntries(input: {
 			kind: 'credential',
 			credentialId: secret.credentialId,
 			name: secret.name,
+			source: 'package',
 			credentialKind: 'secret',
 			hosts: secret.allowedHosts,
 			placement: null,
@@ -352,19 +387,68 @@ async function appendPackageCapabilityEntries(input: {
 	}
 	for (const secret of userSecrets) {
 		if (seenCredentialIds.has(secret.credentialId)) continue
-		const granted =
-			secret.allowedPackages.includes(input.packageId) || hasImplicitRead
 		const mounted = userMountNames.has(secret.name)
+		const granted = secret.allowedPackages.includes(input.packageId)
 		if (!granted && !mounted) continue
 		seenCredentialIds.add(secret.credentialId)
 		input.entries.push({
 			kind: 'credential',
 			credentialId: secret.credentialId,
 			name: secret.name,
+			source: mounted ? 'mount' : 'grant',
 			credentialKind: 'secret',
 			hosts: secret.allowedHosts,
 			placement: null,
 			via: input.via,
 		})
+	}
+
+	const ownNeeds = ownCredentialNeeds(loaded.manifest.kody.credentials)
+	const needs = [
+		...(input.needs ?? []),
+		...ownNeeds.filter(
+			(need) => !input.needs?.some((closure) => closure.key === need.key),
+		),
+	]
+	if (needs.length === 0) return
+	const [reachableCredentials, mappings] = await Promise.all([
+		input.loadReachableCredentials(),
+		loadAllCredentialMappingsForPackage({
+			db: input.env.APP_DB,
+			orgId: input.ownerUserId,
+			packageId: input.packageId,
+		}),
+	])
+	const reachableById = new Map(
+		reachableCredentials.map((credential) => [credential.id, credential]),
+	)
+	for (const need of needs) {
+		// A stored mapping (any layer) can point the need at a credential the
+		// provider match would not pick, so list those too.
+		const mapped = mappings
+			.filter((row) => row.needKey === need.key)
+			.flatMap((row) => row.credentialIds)
+			.flatMap((id) => {
+				const credential = reachableById.get(id)
+				return credential ? [credential] : []
+			})
+		for (const candidate of [
+			...mapped,
+			...resolveNeedCandidates(need, reachableCredentials).candidates,
+		]) {
+			if (seenCredentialIds.has(candidate.id)) continue
+			seenCredentialIds.add(candidate.id)
+			input.entries.push({
+				kind: 'credential',
+				credentialId: candidate.id,
+				name: candidate.name,
+				source: 'need',
+				needKey: need.key,
+				credentialKind: candidate.kind,
+				hosts: candidate.hosts,
+				placement: null,
+				via: input.via,
+			})
+		}
 	}
 }

@@ -59,6 +59,8 @@ function createFlagMap(enabled: boolean): CallerFeatureFlags {
 		'mcp-skills-extension': false,
 		'mcp-events-extension': false,
 		'package-app-custom-domains': false,
+		'repo-push-queue': false,
+		'credential-need-enforcement': false,
 	}
 }
 

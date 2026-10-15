@@ -10,6 +10,7 @@ import { snakeCaseKodyMembersCodemod } from './codemods/0009-snake-case-kody-mem
 import { detectLegacyCredentialPatternsCodemod } from './codemods/0010-detect-legacy-credential-patterns.ts'
 import { ownerScopeFollowsRegistryCodemod } from './codemods/0011-owner-scope-follows-registry.ts'
 import { explicitWebhookUrlSecretVerificationCodemod } from './codemods/0012-explicit-webhook-url-secret-verification.ts'
+import { declareCredentialNeedsCodemod } from './codemods/0013-declare-credential-needs.ts'
 import { type PackageCodemod } from './types.ts'
 
 const packageCodemods: Array<PackageCodemod> = [
@@ -25,6 +26,7 @@ const packageCodemods: Array<PackageCodemod> = [
 	detectLegacyCredentialPatternsCodemod,
 	ownerScopeFollowsRegistryCodemod,
 	explicitWebhookUrlSecretVerificationCodemod,
+	declareCredentialNeedsCodemod,
 ]
 
 const packageCodemodsById = new Map(

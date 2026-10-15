@@ -17,28 +17,43 @@ import {
 } from './org-audit.ts'
 
 /**
- * True when a `users` row (live or soft-deleted) has this org id as its
- * personal org (`users.personal_org_id`, or legacy `stable_user_id` when the
- * column is blank / equal-id). Soft-delete purge processes orgs before users;
- * leaving owner-scoped inventory for that following user purge avoids
- * orphaning KV/R2 when org id == person id (#3121). Distinct signup org ids
- * (#3053) still count as personal so team-org purge does not race the person
- * purge.
+ * How this org relates to a person account for hard-purge inventory policy.
+ * Soft-delete purge processes orgs before users: leave owner-scoped inventory
+ * only when a soft-deleted person will purge next. A live matching person
+ * (legacy personal-org soft-delete without account deletion) must not lose
+ * owner inventory; block until the account is deleted or the org is repaired.
  */
-async function orgIdIsPersonAccountId(db: D1Database, orgId: OwnerId) {
+type PersonalOrgHardPurgeRelation =
+	| 'soft_deleted_person'
+	| 'live_person'
+	| 'none'
+
+export class PersonalOrgHardPurgeBlockedForLiveUserError extends Error {
+	constructor(orgId: OwnerId) {
+		super(`personal_org_hard_purge_blocked_live_user:${orgId}`)
+		this.name = 'PersonalOrgHardPurgeBlockedForLiveUserError'
+	}
+}
+
+async function personalOrgHardPurgeRelation(
+	db: D1Database,
+	orgId: OwnerId,
+): Promise<PersonalOrgHardPurgeRelation> {
 	const row = await runD1WithRetry(() =>
 		db
 			.prepare(
-				`SELECT 1 AS ok FROM users
+				`SELECT deleted_at FROM users
 				 WHERE (
 				 	(personal_org_id IS NOT NULL AND TRIM(personal_org_id) != '' AND personal_org_id = ?)
 				 	OR ((personal_org_id IS NULL OR TRIM(personal_org_id) = '') AND stable_user_id = ?)
-				 )`,
+				 )
+				 LIMIT 1`,
 			)
 			.bind(orgId, orgId)
-			.first<{ ok: number }>(),
+			.first<{ deleted_at: string | null }>(),
 	)
-	return Boolean(row)
+	if (!row) return 'none'
+	return row.deleted_at ? 'soft_deleted_person' : 'live_person'
 }
 
 export async function hardPurgeOrg(input: {
@@ -46,17 +61,24 @@ export async function hardPurgeOrg(input: {
 	orgId: OwnerId
 }): Promise<void> {
 	const db = input.env.APP_DB
-	const personal = await orgIdIsPersonAccountId(db, input.orgId)
-	if (!personal) {
-		// Team org: collect the same out-of-band keys account deletion collects
-		// for this owner id, delete those objects, then delete D1 rows
-		// (including owner-scoped inventory without deleted_at).
+	const relation = await personalOrgHardPurgeRelation(db, input.orgId)
+	if (relation === 'live_person') {
+		throw new PersonalOrgHardPurgeBlockedForLiveUserError(input.orgId)
+	}
+	const deferOwnerInventory = relation === 'soft_deleted_person'
+	if (!deferOwnerInventory) {
+		// Team org (no matching person): collect the same out-of-band keys
+		// account deletion collects for this owner id, delete those objects,
+		// then delete D1 rows (including owner-scoped inventory without
+		// deleted_at).
 		await purgeOwnerOutOfBandSurfaces({
 			env: input.env,
 			ownerId: input.orgId,
 		})
 	}
-	const targets = hardPurgeOrgDataTargets(personal ? 'personal' : 'team')
+	const targets = hardPurgeOrgDataTargets(
+		deferOwnerInventory ? 'personal' : 'team',
+	)
 	for (const target of targets) {
 		const match = buildUserScopedTargetMatch({
 			target,

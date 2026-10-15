@@ -5,8 +5,9 @@ Pages about the person, split from the org workspace:
 - `/account` (Profile): name, avatar, email, onboarding banner.
 - `/account/security`: password, links to two-factor and passkeys, sign-in
   providers (Connected accounts), former emails.
-- `/account/organizations`: every org you belong to (Current marks the one the
-  switcher is acting in), pending invites (`#invites`), and Create organization.
+- `/account/organizations`: every org you belong to (no "current" marker: an org
+  is current only when its slug is in the URL), pending invites (`#invites`),
+  and Create organization.
 - `/account/experiments`: experiments opt-in.
 - `/account/data`: export and delete account.
 
@@ -47,15 +48,16 @@ The site header has one session control, the account menu
 (`data-testid="account-menu"`, panel `account-menu-panel`): the person's avatar,
 name and `@username`, then a **Manage** group (`account-menu-manage-group`) with
 one `@<slug>` row per org (person icon for the signup org, people icon for
-teams), the current org first. Each row opens that org's workspace home (team
-`/@<slug>`, signup org `/@<slug>/-/overview`). Then Your profile, Account
-settings, Usage & credits (current org from the URL only, else the personal
-org), and Log out. So pages without a workspace rail (packages, org homes,
-account pages) still reach every org. Narrow viewports fold the account menu
-into the one menu panel (`site-menu-account`: Manage, then a "Your account"
-group). Own profile (`/@<username>`) also links **Workspace** (lands on
-`/@<slug>/-/repositories`) beside Edit profile. A team org home lists
-**Workspace** above its management links.
+teams). The URL's org leads when the page has one; otherwise the signup org
+does. Each row opens that org's workspace home (team `/@<slug>`, signup org
+`/@<slug>/-/overview`). Then Your profile, Account settings, Usage & credits
+(current org from the URL only, else the personal org), and Log out. So pages
+without a workspace rail (packages, org homes, account pages) still reach every
+org. Narrow viewports fold the account menu into the one menu panel
+(`site-menu-account`: Manage, then a "Your account" group). Own profile
+(`/@<username>`) also links **Workspace** (lands on `/@<slug>/-/repositories`)
+beside Edit profile. A team org home lists **Workspace** above its management
+links.
 
 ## How to get there
 
@@ -103,7 +105,7 @@ node tools/control-kody.ts request GET /account/connections.json
 ## APIs
 
 - `GET|POST /account/profile.json`
-- `GET /account/organizations.json` (orgs, last-used org, pending invites)
+- `GET /account/organizations.json` (orgs, pending invites)
 - `GET|POST /@<slug>/-/settings.json` (team org profile; personal orgs point at
   Account)
 - `POST /@<slug>/-/settings/avatar.json`

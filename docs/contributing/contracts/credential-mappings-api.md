@@ -2,8 +2,8 @@
 
 Contract between the non-UI half (data model, APIs, runtime errors) and the UI
 half (creation one-pager, credentials list, package Credentials / Default
-mappings / Triggers tabs, approval page) of the credentials UX build. It builds
-on [ADR 0068](../decisions/0068-credentials-own-placement-scoped-clients.md),
+mappings / Triggers tabs, approval page). It builds on
+[ADR 0068](../decisions/0068-credentials-own-placement-scoped-clients.md),
 including the 2026-10-12 amendments and the
 [credential mappings amendment](../decisions/0068-credentials-own-placement-scoped-clients.md#amendment-2026-10-13-credential-mappings).
 
@@ -717,21 +717,6 @@ Where they are wired:
   preserved. Org-less pages (`/connect/secrets`, `/connect/secret-set`) link
   back to it with `data-rmx-document`, because the client router would otherwise
   intercept the org-less path.
-- URLs the table returns null for keep the legacy page: approval links (`names`,
-  `hosts`, `package_id`, `capability`) and `package=` filters on the index
-  pages. The legacy pages and their add forms stay in place until the
-  Credentials pages are proven, and then they can be deleted.
-
-## Build order
-
-Each step is a small PR stacked on the previous one:
-
-1. This contract and the ADR amendment.
-2. `universal/credential-contracts.ts`: types and URL codecs, with tests.
-3. Runtime errors carry `createUrl`; `/connect/credential` redirects to the
-   creation one-pager.
-4. Credentials list API and `credentialList` (MCP servers included).
-5. Mapping storage (additive migration) and resolution in `credential()`.
-6. Package credentials API.
-7. Proposal capability and approval API.
-8. Redirect table.
+- URLs the table returns null for stay on the dedicated page: approval links
+  (`names`, `hosts`, `package_id`, `capability`) and `package=` filters on the
+  index pages. `/connect/secret-set` remains the Key intake.

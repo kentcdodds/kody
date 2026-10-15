@@ -46,8 +46,12 @@ vi.mock('#app/ssr-render.tsx', () => ({
 		mocks.renderAppPage(args[0] as { loaderData?: unknown; status?: number }),
 }))
 
-const { createOrgInviteJoinHandler, createOrgInviteJoinPostHandler } =
-	await import('./org-invite-join.ts')
+const {
+	createAccountInviteLinkAcceptPostHandler,
+	createAccountInviteLinkDeclinePostHandler,
+	createOrgInviteJoinHandler,
+	createOrgInviteJoinPostHandler,
+} = await import('./org-invite-join.ts')
 
 const owner = { id: 1, personId: 'a'.repeat(64) }
 const joiner = { id: 2, personId: 'b'.repeat(64) }
@@ -104,7 +108,7 @@ async function seed() {
 	await createOrgInviteLink({
 		db,
 		orgId,
-		role: 'member',
+		target: { kind: 'membership', role: 'member' },
 		createdByUserId: owner.personId,
 		tokenHash: await hashInviteLinkToken(token),
 		audit: createTestOrgAuditWriter({ db: auditDb }),
@@ -208,5 +212,247 @@ test('expired links show a clear error on the join page', async () => {
 			reason: 'expired',
 			error: 'This invite link has expired.',
 		},
+	})
+})
+
+async function createPackageLink(options: { maxUses?: number } = {}) {
+	sqlite.exec(
+		`CREATE TABLE IF NOT EXISTS saved_packages (
+			id TEXT PRIMARY KEY NOT NULL,
+			name TEXT,
+			kody_id TEXT,
+			user_id TEXT,
+			deleted_at TEXT
+		)`,
+	)
+	sqlite
+		.prepare(
+			`INSERT INTO saved_packages (id, name, kody_id, user_id)
+			 VALUES ('pkg-weather', 'Weather', 'weather', ?)`,
+		)
+		.run(owner.personId)
+	const packageToken = generateInviteLinkToken()
+	const created = await createOrgInviteLink({
+		db,
+		orgId: owner.personId,
+		target: {
+			kind: 'resource',
+			resourceType: 'package',
+			resourceId: 'pkg-weather',
+			preset: 'contribute',
+		},
+		createdByUserId: owner.personId,
+		tokenHash: await hashInviteLinkToken(packageToken),
+		maxUses: options.maxUses ?? null,
+		audit: createTestOrgAuditWriter({ db: auditDb }),
+	})
+	return { token: packageToken, id: created.id }
+}
+
+async function pendingRows() {
+	return (
+		await db
+			.prepare(`SELECT link_id FROM org_invite_link_pending WHERE user_id = ?`)
+			.bind(joiner.personId)
+			.all<{ link_id: string }>()
+	).results?.map((row) => row.link_id)
+}
+
+test('a package link page describes the access and waits for the viewer', async () => {
+	const link = await createPackageLink()
+	signInJoiner(true)
+	const response = await createOrgInviteJoinHandler(createEnv()).handler({
+		request: new Request(`https://kody.test/join/${link.token}`, {
+			headers: { Accept: 'application/json' },
+		}),
+		params: { token: link.token },
+	} as never)
+	expect(response.status).toBe(200)
+	const body = (await response.json()) as { orgInviteJoin: unknown }
+	expect(body.orgInviteJoin).toMatchObject({
+		ok: true,
+		org: { slug: 'ada', personal: true },
+		offer: {
+			kind: 'resource',
+			packageName: 'Weather',
+			packageHref: '/@ada/weather',
+			preset: 'contribute',
+			presetLabel: 'Contribute',
+			outsideCollaborator: true,
+		},
+		invitedBy: 'ada',
+		alreadyMember: false,
+		authenticated: true,
+	})
+	expect(JSON.stringify(body)).not.toContain('pkg-weather')
+	expect(await pendingRows()).toEqual([link.id])
+	const grantsBefore = await db
+		.prepare(`SELECT COUNT(*) AS count FROM grants WHERE subject_id = ?`)
+		.bind(joiner.personId)
+		.first<{ count: number }>()
+	expect(grantsBefore?.count).toBe(0)
+})
+
+test('accepting from the Organizations page grants the package and clears the wait', async () => {
+	const link = await createPackageLink()
+	signInJoiner(true)
+	await createOrgInviteJoinHandler(createEnv()).handler({
+		request: new Request(`https://kody.test/join/${link.token}`),
+		params: { token: link.token },
+	} as never)
+	const response = await createAccountInviteLinkAcceptPostHandler(
+		createEnv(),
+	).handler({
+		request: new Request(
+			`https://kody.test/account/organizations/invite-links/${link.id}/accept.json`,
+			{ method: 'POST' },
+		),
+		params: { linkId: link.id },
+	} as never)
+	expect(response.status).toBe(200)
+	expect(await response.json()).toMatchObject({
+		ok: true,
+		kind: 'resource',
+		redirectTo: '/@ada/weather',
+	})
+	const grant = await db
+		.prepare(
+			`SELECT preset FROM grants WHERE subject_id = ? AND resource_id = 'pkg-weather'`,
+		)
+		.bind(joiner.personId)
+		.first<{ preset: string }>()
+	expect(grant?.preset).toBe('contribute')
+	expect(await pendingRows()).toEqual([])
+})
+
+test('accepting by link id needs a pending row from opening the link', async () => {
+	const link = await createPackageLink()
+	signInJoiner(true)
+	const response = await createAccountInviteLinkAcceptPostHandler(
+		createEnv(),
+	).handler({
+		request: new Request(
+			`https://kody.test/account/organizations/invite-links/${link.id}/accept.json`,
+			{ method: 'POST' },
+		),
+		params: { linkId: link.id },
+	} as never)
+	expect(response.status).toBe(400)
+	expect(await response.json()).toMatchObject({ ok: false, reason: 'invalid' })
+})
+
+test('declining removes the waiting invite without using the link', async () => {
+	const link = await createPackageLink()
+	signInJoiner(true)
+	await createOrgInviteJoinHandler(createEnv()).handler({
+		request: new Request(`https://kody.test/join/${link.token}`),
+		params: { token: link.token },
+	} as never)
+	const response = await createAccountInviteLinkDeclinePostHandler(
+		createEnv(),
+	).handler({
+		request: new Request(
+			`https://kody.test/account/organizations/invite-links/${link.id}/decline.json`,
+			{ method: 'POST' },
+		),
+		params: { linkId: link.id },
+	} as never)
+	expect(response.status).toBe(200)
+	expect(await pendingRows()).toEqual([])
+	const used = await db
+		.prepare(`SELECT use_count FROM org_invite_links WHERE id = ?`)
+		.bind(link.id)
+		.first<{ use_count: number }>()
+	expect(used?.use_count).toBe(0)
+})
+
+test('a spent package link says so instead of offering it again', async () => {
+	const link = await createPackageLink()
+	signInJoiner(true)
+	await createOrgInviteJoinPostHandler(createEnv()).handler({
+		request: new Request(`https://kody.test/join/${link.token}`, {
+			method: 'POST',
+		}),
+		params: { token: link.token },
+	} as never)
+	sqlite
+		.prepare(`UPDATE grants SET deleted_at = ? WHERE subject_id = ?`)
+		.run('2026-02-01T00:00:00.000Z', joiner.personId)
+	const response = await createOrgInviteJoinHandler(createEnv()).handler({
+		request: new Request(`https://kody.test/join/${link.token}`),
+		params: { token: link.token },
+	} as never)
+	expect(response.status).toBe(400)
+	expect(await response.json()).toMatchObject({
+		orgInviteJoin: { ok: false, reason: 'already_used' },
+	})
+})
+
+test('reopening a used-up package link you accepted shows your access', async () => {
+	const link = await createPackageLink({ maxUses: 1 })
+	signInJoiner(true)
+	await createOrgInviteJoinPostHandler(createEnv()).handler({
+		request: new Request(`https://kody.test/join/${link.token}`, {
+			method: 'POST',
+		}),
+		params: { token: link.token },
+	} as never)
+	const reopen = () =>
+		createOrgInviteJoinHandler(createEnv()).handler({
+			request: new Request(`https://kody.test/join/${link.token}`),
+			params: { token: link.token },
+		} as never)
+	const accepted = await reopen()
+	expect(accepted.status).toBe(200)
+	expect(await accepted.json()).toMatchObject({
+		orgInviteJoin: { ok: true, alreadyMember: true },
+	})
+	expect(await pendingRows()).toEqual([])
+
+	sqlite
+		.prepare(`UPDATE grants SET deleted_at = ? WHERE subject_id = ?`)
+		.run('2026-02-01T00:00:00.000Z', joiner.personId)
+	const removed = await reopen()
+	expect(removed.status).toBe(400)
+	expect(await removed.json()).toMatchObject({
+		orgInviteJoin: { ok: false, reason: 'already_used' },
+	})
+
+	mocks.readAuthenticatedAppUser.mockResolvedValue(null)
+	const stranger = await reopen()
+	expect(await stranger.json()).toMatchObject({
+		orgInviteJoin: { ok: false, reason: 'exhausted' },
+	})
+})
+
+test('reopening an accepted link after its creator lost access shows your access', async () => {
+	const link = await createPackageLink()
+	signInJoiner(true)
+	await createOrgInviteJoinPostHandler(createEnv()).handler({
+		request: new Request(`https://kody.test/join/${link.token}`, {
+			method: 'POST',
+		}),
+		params: { token: link.token },
+	} as never)
+	sqlite
+		.prepare(
+			`UPDATE org_memberships SET role = 'member' WHERE org_id = ? AND user_id = ?`,
+		)
+		.run(owner.personId, owner.personId)
+	sqlite
+		.prepare(`UPDATE orgs SET access_epoch = access_epoch + 1 WHERE id = ?`)
+		.run(owner.personId)
+	const reopen = () =>
+		createOrgInviteJoinHandler(createEnv()).handler({
+			request: new Request(`https://kody.test/join/${link.token}`),
+			params: { token: link.token },
+		} as never)
+	expect(await (await reopen()).json()).toMatchObject({
+		orgInviteJoin: { ok: true, alreadyMember: true },
+	})
+
+	mocks.readAuthenticatedAppUser.mockResolvedValue(null)
+	expect(await (await reopen()).json()).toMatchObject({
+		orgInviteJoin: { ok: false, reason: 'inviter_gone' },
 	})
 })

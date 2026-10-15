@@ -15,6 +15,28 @@ const mockModule = vi.hoisted(() => ({
 	loadOrgBindingForOrg: vi.fn(),
 	approveCredentialNeedsRequest: vi.fn(),
 	approveWentPublicRequest: vi.fn(),
+	enqueueWentPublicApproval: vi.fn(),
+	getPendingWentPublicApproval: vi.fn(),
+	logOrgAuditEvent: vi.fn(),
+	loadCurrentPackageSecurityAudit: vi.fn(),
+}))
+
+vi.mock('#worker/package-capabilities/security-audit-state.ts', () => ({
+	loadCurrentPackageSecurityAudit: (...args: Array<unknown>) =>
+		mockModule.loadCurrentPackageSecurityAudit(...args),
+	loadPackageSecurityAuditState: vi.fn(),
+}))
+
+vi.mock('#worker/package-capabilities/went-public-approval.ts', () => ({
+	enqueueWentPublicApproval: (...args: Array<unknown>) =>
+		mockModule.enqueueWentPublicApproval(...args),
+	getPendingWentPublicApproval: (...args: Array<unknown>) =>
+		mockModule.getPendingWentPublicApproval(...args),
+}))
+
+vi.mock('#worker/orgs/org-audit.ts', () => ({
+	logOrgAuditEvent: (...args: Array<unknown>) =>
+		mockModule.logOrgAuditEvent(...args),
 }))
 
 vi.mock('#app/account-package-approval-requests.ts', () => ({
@@ -79,6 +101,8 @@ vi.mock('#worker/orgs/repo.ts', () => ({
 
 const { handleAccountPackageInternetVisibleAction } =
 	await import('./account-package-capability-approval.ts')
+const { CapabilityApprovalError } =
+	await import('#worker/package-capabilities/capability-approval-service.ts')
 
 beforeEach(() => {
 	mockModule.writablePackage = null
@@ -89,6 +113,15 @@ beforeEach(() => {
 	mockModule.loadOrgBindingForOrg.mockReset()
 	mockModule.approveCredentialNeedsRequest.mockReset()
 	mockModule.approveWentPublicRequest.mockReset()
+	mockModule.enqueueWentPublicApproval.mockReset()
+	mockModule.getPendingWentPublicApproval.mockReset()
+	mockModule.getPendingWentPublicApproval.mockResolvedValue({
+		id: 'request-went-public',
+	})
+	mockModule.logOrgAuditEvent.mockReset()
+	mockModule.logOrgAuditEvent.mockResolvedValue(undefined)
+	mockModule.loadCurrentPackageSecurityAudit.mockReset()
+	mockModule.loadCurrentPackageSecurityAudit.mockResolvedValue(null)
 })
 
 function createUser(): AuthenticatedAppUser {
@@ -134,7 +167,7 @@ function createSavedPackage(isInternetVisible: boolean) {
 	}
 }
 
-test('turning on internet-visible without approval returns approvalUrl', async () => {
+test('turning on internet-visible without approval records the ask and returns approvalUrl', async () => {
 	const env = { APP_DB: {} } as Env
 	const user = createUser()
 	const request = new Request('https://example.com/account/packages.json', {
@@ -166,10 +199,77 @@ test('turning on internet-visible without approval returns approvalUrl', async (
 	expect(response?.status).toBe(400)
 	await expect(response?.json()).resolves.toMatchObject({
 		ok: false,
-		error: expect.stringContaining('approve'),
-		approvalUrl: expect.stringContaining('/approve-capabilities'),
+		error: expect.stringContaining('No security audit is recorded'),
+		approvalUrl: 'https://example.com/@user/notes/approve-capabilities',
+		securityAudit: {
+			operation: 'packageSecurityAuditRecord',
+			httpRoute: 'POST /v1/packages/pkg-1/security-audits',
+			args: {
+				package_id: 'pkg-1',
+				published_commit: 'deadbeef',
+				fingerprint: 'abc',
+			},
+			nextStep: expect.stringContaining(
+				'then send the owner https://example.com/@user/notes/approve-capabilities',
+			),
+		},
 	})
 	expect(mockModule.approvePackageCapabilitySet).not.toHaveBeenCalled()
+	expect(mockModule.enqueueWentPublicApproval).toHaveBeenCalledWith(
+		expect.objectContaining({
+			publishedCommit: 'deadbeef',
+			fingerprint: 'abc',
+			requestedByUserId: personIdFromStored('stable-user-1'),
+		}),
+	)
+})
+
+test('turning on internet-visible on an audited version adds no audit step', async () => {
+	const env = { APP_DB: {} } as Env
+	mockModule.writablePackage = createSavedPackage(false)
+	mockModule.loadOrgBindingForOrg.mockResolvedValue(null)
+	mockModule.loadCapabilityApprovalSummary.mockResolvedValue({
+		capabilitySet: { entries: [], fingerprint: 'abc' },
+		dependencySnapshot: null,
+		publishedCommit: 'deadbeef',
+		latestApproval: null,
+		matchingApproval: null,
+		fingerprintMatchesApproval: false,
+		isInternetVisible: false,
+	})
+	mockModule.loadCurrentPackageSecurityAudit.mockResolvedValue({
+		verdict: 'pass',
+		summary: 'Checked',
+		auditor: 'Audit agent',
+		recordedBy: null,
+		recordedAt: '2026-10-15T00:00:00.000Z',
+	})
+
+	const response = await handleAccountPackageInternetVisibleAction({
+		env,
+		request: new Request('https://example.com/account/packages.json', {
+			method: 'POST',
+		}),
+		user: createUser(),
+		body: {
+			action: 'set-internet-visible',
+			packageId: 'pkg-1',
+			internetVisible: true,
+			confirmName: 'notes',
+		},
+	})
+	const body = (await response?.json()) as Record<string, unknown>
+	expect(body).toMatchObject({ ok: false, approvalUrl: expect.any(String) })
+	expect(body).not.toHaveProperty('securityAudit')
+	expect(body.error).not.toContain('security audit')
+	expect(mockModule.loadCurrentPackageSecurityAudit).toHaveBeenCalledWith(
+		{},
+		expect.objectContaining({
+			packageId: 'pkg-1',
+			publishedCommit: 'deadbeef',
+			fingerprint: 'abc',
+		}),
+	)
 })
 
 test('turning on internet-visible with matching approval refreshes pin and enqueues went_public', async () => {
@@ -391,4 +491,241 @@ test('approve-went-public approves the named request as the acting person', asyn
 			actorUserId: personIdFromStored('stable-user-1'),
 		}),
 	)
+})
+
+test('approve-capabilities-and-go-public records both decisions with one audit event each', async () => {
+	const env = { APP_DB: {} } as Env
+	const user = createUser()
+	const request = new Request('https://example.com/account/packages.json', {
+		method: 'POST',
+	})
+	mockModule.writablePackage = createSavedPackage(false)
+	mockModule.loadOrgBindingForOrg.mockResolvedValue(null)
+	mockModule.approvePackageCapabilitySet.mockResolvedValue({
+		approval: { id: 'approval-1', publishedCommit: 'deadbeef' },
+		capabilitySet: { entries: [], fingerprint: 'reviewed-fp' },
+		wentPublicRequest: { id: 'request-went-public' },
+	})
+	mockModule.approveWentPublicRequest.mockResolvedValue({ ok: true })
+	mockModule.reloadAccountPackagesAfterWrite.mockResolvedValue({ ok: true })
+
+	const response = await handleAccountPackageInternetVisibleAction({
+		env,
+		request,
+		user,
+		body: {
+			action: 'approve-capabilities-and-go-public',
+			packageId: 'pkg-1',
+			fingerprint: 'reviewed-fp',
+			requestId: 'request-went-public',
+		},
+	})
+
+	expect(response?.status).toBe(200)
+	expect(mockModule.approvePackageCapabilitySet).toHaveBeenCalledWith(
+		expect.objectContaining({
+			expectedFingerprint: 'reviewed-fp',
+			actorUserId: personIdFromStored('stable-user-1'),
+		}),
+	)
+	expect(mockModule.approveWentPublicRequest).toHaveBeenCalledWith(
+		expect.objectContaining({
+			requestId: 'request-went-public',
+			actorUserId: personIdFromStored('stable-user-1'),
+		}),
+	)
+	expect(
+		mockModule.approvePackageCapabilitySet.mock.invocationCallOrder[0],
+	).toBeLessThan(
+		mockModule.approveWentPublicRequest.mock.invocationCallOrder[0]!,
+	)
+	expect(
+		mockModule.logOrgAuditEvent.mock.calls.map(([event]) => event),
+	).toEqual([
+		expect.objectContaining({
+			orgId: ownerIdFromStored('stable-user-1'),
+			action: 'package.capabilities.approve',
+			result: 'success',
+			actorUserId: personIdFromStored('stable-user-1'),
+			resourceType: 'package',
+			resourceId: 'pkg-1',
+			details: expect.objectContaining({
+				fingerprint: 'reviewed-fp',
+				publishedCommit: 'deadbeef',
+				approvalId: 'approval-1',
+			}),
+		}),
+		expect.objectContaining({
+			action: 'package.went_public.approve',
+			result: 'success',
+			resourceId: 'pkg-1',
+			details: expect.objectContaining({
+				requestId: 'request-went-public',
+			}),
+		}),
+	])
+})
+
+test('approve-capabilities-and-go-public pins without enqueuing, so a request turned off meanwhile stays off', async () => {
+	const env = { APP_DB: {} } as Env
+	const user = createUser()
+	const request = new Request('https://example.com/account/packages.json', {
+		method: 'POST',
+	})
+	mockModule.writablePackage = createSavedPackage(false)
+	mockModule.loadOrgBindingForOrg.mockResolvedValue(null)
+	mockModule.approvePackageCapabilitySet.mockResolvedValue({
+		approval: { id: 'approval-1', publishedCommit: 'deadbeef' },
+		capabilitySet: { entries: [], fingerprint: 'reviewed-fp' },
+		wentPublicRequest: null,
+	})
+	mockModule.approveWentPublicRequest.mockResolvedValue({
+		ok: false,
+		status: 409,
+		error: 'This request was already resolved. Reload the page.',
+	})
+
+	const response = await handleAccountPackageInternetVisibleAction({
+		env,
+		request,
+		user,
+		body: {
+			action: 'approve-capabilities-and-go-public',
+			packageId: 'pkg-1',
+			fingerprint: 'reviewed-fp',
+			requestId: 'request-went-public',
+		},
+	})
+
+	expect(response?.status).toBe(409)
+	await expect(response?.json()).resolves.toMatchObject({
+		ok: false,
+		error: expect.stringContaining('Reload'),
+	})
+	expect(mockModule.approvePackageCapabilitySet).toHaveBeenCalledWith(
+		expect.objectContaining({ enqueueWentPublic: false }),
+	)
+	expect(mockModule.enqueueWentPublicApproval).not.toHaveBeenCalled()
+	expect(
+		mockModule.logOrgAuditEvent.mock.calls.map(([event]) => [
+			event.action,
+			event.result,
+		]),
+	).toEqual([
+		['package.capabilities.approve', 'success'],
+		['package.went_public.approve', 'failure'],
+	])
+})
+
+test('approve-capabilities-and-go-public does not go public when the capability approval fails', async () => {
+	const env = { APP_DB: {} } as Env
+	const user = createUser()
+	const request = new Request('https://example.com/account/packages.json', {
+		method: 'POST',
+	})
+	mockModule.writablePackage = createSavedPackage(false)
+	mockModule.loadOrgBindingForOrg.mockResolvedValue(null)
+	mockModule.approvePackageCapabilitySet.mockRejectedValue(
+		new CapabilityApprovalError('The capability set changed.'),
+	)
+
+	const missingRequest = await handleAccountPackageInternetVisibleAction({
+		env,
+		request,
+		user,
+		body: {
+			action: 'approve-capabilities-and-go-public',
+			packageId: 'pkg-1',
+			fingerprint: 'stale-fp',
+		},
+	})
+	expect(missingRequest?.status).toBe(400)
+	expect(mockModule.approvePackageCapabilitySet).not.toHaveBeenCalled()
+
+	const response = await handleAccountPackageInternetVisibleAction({
+		env,
+		request,
+		user,
+		body: {
+			action: 'approve-capabilities-and-go-public',
+			packageId: 'pkg-1',
+			fingerprint: 'stale-fp',
+			requestId: 'request-went-public',
+		},
+	})
+
+	expect(response?.status).toBe(400)
+	await expect(response?.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'The capability set changed.',
+	})
+	expect(mockModule.approveWentPublicRequest).not.toHaveBeenCalled()
+	expect(mockModule.logOrgAuditEvent).toHaveBeenCalledTimes(1)
+	expect(mockModule.logOrgAuditEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			action: 'package.capabilities.approve',
+			result: 'failure',
+			details: expect.objectContaining({
+				fingerprint: 'stale-fp',
+				error: 'The capability set changed.',
+			}),
+		}),
+	)
+})
+
+test('a failing audit write does not block the approval', async () => {
+	const env = { APP_DB: {} } as Env
+	const user = createUser()
+	const request = new Request('https://example.com/account/packages.json', {
+		method: 'POST',
+	})
+	mockModule.writablePackage = createSavedPackage(false)
+	mockModule.loadOrgBindingForOrg.mockResolvedValue(null)
+	mockModule.logOrgAuditEvent.mockRejectedValue(new Error('audit down'))
+	mockModule.approveWentPublicRequest.mockResolvedValue({ ok: true })
+	mockModule.reloadAccountPackagesAfterWrite.mockResolvedValue({ ok: true })
+	const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+	const response = await handleAccountPackageInternetVisibleAction({
+		env,
+		request,
+		user,
+		body: {
+			action: 'approve-went-public',
+			packageId: 'pkg-1',
+			requestId: 'request-went-public',
+		},
+	})
+
+	expect(response?.status).toBe(200)
+	expect(consoleError).toHaveBeenCalled()
+	consoleError.mockRestore()
+})
+
+test('approve-capabilities-and-go-public pins nothing when the went_public request is gone', async () => {
+	const env = { APP_DB: {} } as Env
+	const user = createUser()
+	const request = new Request('https://example.com/account/packages.json', {
+		method: 'POST',
+	})
+	mockModule.writablePackage = createSavedPackage(false)
+	mockModule.loadOrgBindingForOrg.mockResolvedValue(null)
+	mockModule.getPendingWentPublicApproval.mockResolvedValue(null)
+
+	const response = await handleAccountPackageInternetVisibleAction({
+		env,
+		request,
+		user,
+		body: {
+			action: 'approve-capabilities-and-go-public',
+			packageId: 'pkg-1',
+			fingerprint: 'reviewed-fp',
+			requestId: 'request-went-public',
+		},
+	})
+
+	expect(response?.status).toBe(409)
+	expect(mockModule.approvePackageCapabilitySet).not.toHaveBeenCalled()
+	expect(mockModule.approveWentPublicRequest).not.toHaveBeenCalled()
+	expect(mockModule.logOrgAuditEvent).not.toHaveBeenCalled()
 })

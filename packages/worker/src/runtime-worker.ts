@@ -71,9 +71,9 @@ export class RuntimeWorkerService
 		// Reuse the same Sentry wrap as the default export so wholesale
 		// runtime-owned traffic keeps exception capture via this named entrypoint.
 		return Sentry.withSentry((env: Env) => getWorkerSentryOptions(env), {
-			async fetch(request: Request, env: Env, _ctx: ExecutionContext) {
+			async fetch(request: Request, env: Env, ctx: ExecutionContext) {
 				return runWithDynamicWorkerEvaluationBudget(
-					async () => await fetchRuntimeWorkerRequest(request, env),
+					async () => await fetchRuntimeWorkerRequest(request, env, ctx),
 				)
 			},
 		}).fetch(request, this.env, this.ctx)
@@ -87,6 +87,7 @@ export class RuntimeWorkerService
 					env: this.env,
 					owner: input.owner,
 					visitor: input.visitor,
+					approvedPublishedCommit: input.approvedPublishedCommit,
 					packagePath: input.packagePath,
 					dispatch: input.dispatch,
 				}),
@@ -95,14 +96,18 @@ export class RuntimeWorkerService
 }
 
 const runtimeWorkerHandler = {
-	async fetch(request: Request, env: Env, _ctx: ExecutionContext) {
+	async fetch(request: Request, env: Env, ctx: ExecutionContext) {
 		return runWithDynamicWorkerEvaluationBudget(
-			async () => await fetchRuntimeWorkerRequest(request, env),
+			async () => await fetchRuntimeWorkerRequest(request, env, ctx),
 		)
 	},
 } satisfies ExportedHandler<Env>
 
-async function fetchRuntimeWorkerRequest(request: Request, env: Env) {
+async function fetchRuntimeWorkerRequest(
+	request: Request,
+	env: Env,
+	ctx: Pick<ExecutionContext, 'waitUntil'>,
+) {
 	const url = new URL(request.url)
 
 	if (
@@ -139,6 +144,7 @@ async function fetchRuntimeWorkerRequest(request: Request, env: Env) {
 	const packageAppOriginResponse = await handlePackageAppOriginRequest(
 		request,
 		env,
+		ctx,
 	)
 	if (packageAppOriginResponse) return packageAppOriginResponse
 

@@ -1,5 +1,4 @@
 import { type Action } from 'remix/router'
-import { isSecureRequest } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	orgHasPermission,
@@ -17,24 +16,7 @@ import {
 	type OrgCollaboratorsLoaderData,
 	type OrgGrantView,
 } from '#universal/loader-data.ts'
-import { serializeLastUsedOrgCookie } from '#universal/org-last-used-cookie.ts'
 import { type routes } from '#universal/routes.ts'
-
-function withLastUsedOrg(request: Request, slug: string, response: Response) {
-	const headers = new Headers(response.headers)
-	headers.append(
-		'Set-Cookie',
-		serializeLastUsedOrgCookie({
-			slug,
-			secure: isSecureRequest(request),
-		}),
-	)
-	return new Response(response.body, {
-		status: response.status,
-		statusText: response.statusText,
-		headers,
-	})
-}
 
 function renderDenied(
 	request: Request,
@@ -102,22 +84,18 @@ export function createOrgCollaboratorsHandler(env: Env) {
 				permission: 'member:read',
 			})
 			if (!access.ok) return renderDenied(request, env, access)
-			return withLastUsedOrg(
+			return await renderAppPage({
 				request,
-				access.org.slug,
-				await renderAppPage({
-					request,
-					env,
-					title: 'Collaborators',
-					loaderData: {
-						orgCollaborators: await loadOrgCollaboratorsData({
-							env,
-							user,
-							org: access.org,
-						}),
-					},
-				}),
-			)
+				env,
+				title: 'Collaborators',
+				loaderData: {
+					orgCollaborators: await loadOrgCollaboratorsData({
+						env,
+						user,
+						org: access.org,
+					}),
+				},
+			})
 		},
 	} satisfies Action<typeof routes.orgCollaborators>
 }

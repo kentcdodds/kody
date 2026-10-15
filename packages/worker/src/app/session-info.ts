@@ -21,7 +21,6 @@ export type SessionInfo = {
 	featureFlags: EvaluatedFeatureFlags
 	organizations: Array<AccountOrganizationSummary>
 	inviteCount: number
-	lastUsedOrganization: string | null
 }
 
 export type LoadedSessionResult = {
@@ -57,7 +56,6 @@ export async function loadSessionInfo(
 	const organizations = await loadAccountOrganizationSnapshot(
 		env,
 		resolved.user,
-		request,
 	)
 
 	return {
@@ -75,7 +73,6 @@ export async function loadSessionInfo(
 			featureFlags,
 			organizations: organizations.organizations,
 			inviteCount: organizations.inviteCount,
-			lastUsedOrganization: organizations.lastUsedOrganization,
 		},
 		setCookie: resolved.setCookie,
 	}

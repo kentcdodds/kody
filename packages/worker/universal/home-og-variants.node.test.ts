@@ -20,7 +20,7 @@ test('unknown homepage og keys stay off and known doors highlight the right orb'
 	expect(getHomeOgVariant('integrations')?.highlight).toBe('integrations')
 	expect(getHomeOgVariant('apps')?.highlight).toBe('apps')
 	expect(getHomeOgVariant('secrets')?.group).toBe('icp')
-	expect(getHomeOgVariant('secrets')?.highlight).toBe('secrets')
+	expect(getHomeOgVariant('secrets')?.highlight).toBe('integrations')
 	for (const id of [
 		'triggers',
 		'webhooks',

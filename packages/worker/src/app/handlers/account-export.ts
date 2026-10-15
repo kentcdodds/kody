@@ -27,7 +27,8 @@ export function createAccountExportHandler(env: Env) {
 			const manifest = await createAccountExportManifest({
 				env,
 				dbUserId: user.userId,
-				mcpUserId: personalOrgIdForPerson(user.mcpUser),
+				ownerUserId: personalOrgIdForPerson(user.mcpUser),
+				personUserId: user.mcpUser.userId,
 			})
 			const body = JSON.stringify(
 				{

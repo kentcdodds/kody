@@ -300,6 +300,12 @@
 					"binding": "HIGHLIGHT",
 					"service": "kody-highlight",
 				},
+				// Per-repo receive-pack write queue (repo-push-queue flag).
+				{
+					"binding": "REPO_PUSH_QUEUE",
+					"service": "kody-push-queue",
+					"entrypoint": "RepoPushQueueGateway",
+				},
 			],
 			"assets": {
 				// Static files in `public/` (styles, favicons). Vite copies this
@@ -790,6 +796,12 @@
 				{
 					"binding": "HIGHLIGHT",
 					"service": "kody-highlight",
+				},
+				// Per-repo receive-pack write queue (repo-push-queue flag).
+				{
+					"binding": "REPO_PUSH_QUEUE",
+					"service": "kody-push-queue",
+					"entrypoint": "RepoPushQueueGateway",
 				},
 			],
 			"assets": {

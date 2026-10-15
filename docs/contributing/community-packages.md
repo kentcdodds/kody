@@ -418,16 +418,13 @@ enqueue this topic. Enqueue failures are logged and never fail
 [the admin events guide](../guides/admin-events.md#communitylistingpublished-admins)
 for the handler payload.
 
-A republish whose pinned commit differs from the stored listing enqueues a
-`{ kind: 'fork_upstream_updated', eventId, listingId, previous, current, publishedAt }`
-message on the same queue. `previous` and `current` are
-`{ pinnedCommit, packageVersion }`. Change detection lives in
-`publishCommunityListing` (`hasCommunityListingReleaseChanged`); the consumer is
-`dispatchCommunityForkUpstreamUpdatedSubscriptionEvents`. It lists every
-`community_forks` row for the listing, skips forks already at the new pin, and
-invokes `community.fork.upstream_updated` on each forker's own subscribed
-packages, one event per fork. Forking is required: there is no listing watch.
-Payload:
+A republish whose pinned commit differs from the stored listing notifies follows
+of that package (`follow.published`) and emits `community.fork.upstream_updated`
+from that same pipeline, one event per fork still behind the new pin. The old
+`{ kind: 'fork_upstream_updated' }` queue message is no longer produced;
+in-flight copies are acknowledged without fan-out. Forking also creates a follow
+of the upstream. Watching without a fork is `followAdd`. The alias payload is
+unchanged. Payload:
 [Package subscriptions](../guides/package-subscriptions.md#communityforkupstream_updated).
 
 ## Inert fork mechanism

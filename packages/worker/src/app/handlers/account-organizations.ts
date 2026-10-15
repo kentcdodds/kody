@@ -116,10 +116,9 @@ function redirectWithError(
 async function loadAccountOrganizationsData(
 	env: Env,
 	user: AuthenticatedAppUser,
-	request: Request,
 ): Promise<AccountOrganizationsLoaderData> {
 	const [snapshot, profile] = await Promise.all([
-		loadAccountOrganizationSnapshot(env, user, request),
+		loadAccountOrganizationSnapshot(env, user),
 		loadAccountProfileData(user, env),
 	])
 	return {
@@ -127,8 +126,7 @@ async function loadAccountOrganizationsData(
 		username: profile.username,
 		viewer: { displayName: profile.displayName, avatarUrl: profile.avatarUrl },
 		organizations: snapshot.organizations,
-		lastUsedOrganization: snapshot.lastUsedOrganization,
-		invites: snapshot.invites,
+		pendingInvites: snapshot.pendingInvites,
 	}
 }
 
@@ -143,11 +141,7 @@ export function createAccountOrganizationsHandler(env: Env) {
 				env,
 				title: 'Organizations',
 				loaderData: {
-					accountOrganizations: await loadAccountOrganizationsData(
-						env,
-						user,
-						request,
-					),
+					accountOrganizations: await loadAccountOrganizationsData(env, user),
 				},
 			})
 		},
@@ -162,9 +156,7 @@ export function createAccountOrganizationsApiHandler(env: Env) {
 			if (!user) {
 				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
 			}
-			return jsonResponse(
-				await loadAccountOrganizationsData(env, user, request),
-			)
+			return jsonResponse(await loadAccountOrganizationsData(env, user))
 		},
 	} satisfies Action<typeof routes.accountOrganizationsApi>
 }

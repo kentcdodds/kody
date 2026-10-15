@@ -44,7 +44,8 @@ type HomeOgVariantEntry = {
 }
 
 /**
- * `secrets` is an ICP door that also highlights the secrets orb.
+ * `secrets` is an ICP door that highlights the credentials orb (secrets
+ * fold into credentials; there is no secrets orb).
  * `triggers` is the generic triggers door (same orb as the other doors).
  */
 const homeOgVariants = {
@@ -74,7 +75,7 @@ const homeOgVariants = {
 	},
 	secrets: {
 		group: 'icp',
-		highlight: 'secrets',
+		highlight: 'integrations',
 		imageTitle: '**Secrets**\nyour agents\ncan use, not read',
 		imageSubtitle: 'The vault stays yours across every host',
 	},

@@ -1,5 +1,6 @@
 import { acquisitionPageSummaries } from '#universal/acquisition/metadata.ts'
 import { publicOgPages } from '#universal/og-pages.ts'
+import { withAgentHref, withAgents } from '#universal/with-agents.ts'
 import { listBlogPosts } from '#worker/blog/catalog.ts'
 
 /** Public discovery excludes account access and recovery screens. */
@@ -19,6 +20,11 @@ export function listPublicWebsitePages() {
 				title: page.ogTitle,
 				description: page.ogDescription,
 			})),
+		...withAgents.map((agent) => ({
+			path: withAgentHref(agent.slug),
+			title: `Kody for ${agent.name}`,
+			description: agent.pitch,
+		})),
 		{
 			path: '/docs',
 			title: 'Documentation',

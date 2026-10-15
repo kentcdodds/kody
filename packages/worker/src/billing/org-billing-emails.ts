@@ -19,18 +19,19 @@ async function resolveBillingRecipientUserIds(
 ): Promise<Array<string>> {
 	const userIds = await listOrgBillingRecipientUserIds(db, orgId)
 	if (userIds.length > 0) return userIds
-	// Personal orgs always have an owner user id equal to org id; tests and
-	// pre-membership rows may omit org_memberships.
+	// Personal orgs: membership may be omitted in tests / pre-membership rows.
+	// Match equal-id (stable_user_id) or distinct personal_org_id; return the
+	// person id so the email lookup hits users.stable_user_id.
 	const personalOwner = await db
 		.prepare(
 			`SELECT stable_user_id
 			 FROM users
-			 WHERE stable_user_id = ?
+			 WHERE (stable_user_id = ? OR personal_org_id = ?)
 			   AND deleting_at IS NULL${andLiveDeletedAtSql()}`,
 		)
-		.bind(orgId)
+		.bind(orgId, orgId)
 		.first<{ stable_user_id: string }>()
-	return personalOwner ? [orgId] : []
+	return personalOwner ? [personalOwner.stable_user_id] : []
 }
 
 export async function loadOrgBillingRecipientEmails(

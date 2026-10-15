@@ -353,7 +353,7 @@ test('an organization handle is a home for everyone its switcher lists and a 404
 	expect(outsider.body).toMatchObject({ title: 'Profile unavailable' })
 })
 
-test('an organization home remembers the org as last used; a public profile does not', async () => {
+test('organization homes and public profiles never remember an org in a cookie', async () => {
 	setupPublicProfileMocks()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
 		userId: 1,
@@ -373,8 +373,6 @@ test('an organization home remembers the org as last used; a public profile does
 	expect((await render('alice')).headers.get('Set-Cookie')).toBeNull()
 
 	mockModule.getCommunityProfileByUsername.mockResolvedValue(null)
-	expect((await render('acme')).headers.get('Set-Cookie')).toContain(
-		'kody_last_org=acme',
-	)
+	expect((await render('acme')).headers.get('Set-Cookie')).toBeNull()
 	expect((await render('zeta')).headers.get('Set-Cookie')).toBeNull()
 })

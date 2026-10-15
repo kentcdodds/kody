@@ -22,6 +22,7 @@ import {
 import { resolveStripePriceCatalog } from '#worker/billing/stripe-price-catalog.ts'
 import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import { joinOrgsOnPersonalOrgIdSql } from '#worker/orgs/personal-org-sql.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export const adminUsageMetrics = [
@@ -53,6 +54,8 @@ type AdminUserUsageUserRow = UserEntitlementRow & {
 	email: string
 	stripe_price_id: string | null
 	stable_user_id: string
+	personal_org_id: string | null
+	org_id: string
 }
 
 type AdminUsageRollupRow = {
@@ -78,16 +81,24 @@ export async function loadAdminUserUsageData(
 	now: Date = new Date(),
 ): Promise<AdminUserUsageLoaderData | null> {
 	const row = await env.APP_DB.prepare(
-		`SELECT u.id, u.username, u.email, o.stripe_price_id, u.stable_user_id, ${userEntitlementColumnsSql('o')}
+		`SELECT u.id, u.username, u.email, o.stripe_price_id, u.stable_user_id,
+		        u.personal_org_id, o.id AS org_id, ${userEntitlementColumnsSql('o')}
 		 FROM users u
-		 INNER JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)
-		 WHERE u.stable_user_id = ?${andLiveDeletedAtSql('u')}${andLiveDeletedAtSql('o')}`,
+		 ${joinOrgsOnPersonalOrgIdSql}${andLiveDeletedAtSql('o')}
+		 WHERE u.stable_user_id = ?${andLiveDeletedAtSql('u')}`,
 	)
 		.bind(stableUserId)
 		.first<AdminUserUsageUserRow>()
 	if (!row) return null
 
-	const usageUserId = ownerIdFromStored(row.stable_user_id)
+	const orgId =
+		row.org_id?.trim() ||
+		row.personal_org_id?.trim() ||
+		row.stable_user_id.trim()
+	// Usage / wallets / meters are owner-keyed (personal org id). Admin role
+	// and the returned stableUserId stay person-scoped.
+	const usageUserId = ownerIdFromStored(orgId)
+	const personStableUserId = row.stable_user_id
 	const entitlement = await resolveUserEntitlementFromRow({
 		db: env.APP_DB,
 		stableUserId: usageUserId,
@@ -122,7 +133,7 @@ export async function loadAdminUserUsageData(
 				entitlement,
 				now,
 			}),
-			userHasAdminRole(env.APP_DB, usageUserId),
+			userHasAdminRole(env.APP_DB, personStableUserId),
 			loadMeasuredDurableObjectDuration({
 				db: env.APP_DB,
 				userId: usageUserId,
@@ -153,7 +164,7 @@ export async function loadAdminUserUsageData(
 
 	return {
 		ok: true,
-		stableUserId: usageUserId,
+		stableUserId: personStableUserId,
 		username: row.username,
 		plan,
 		currentMonth,

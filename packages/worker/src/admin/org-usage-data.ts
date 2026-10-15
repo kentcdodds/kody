@@ -12,14 +12,22 @@ import {
 	type AdminUsageRollup,
 	type AdminUserUsageLoaderData,
 } from '#universal/loader-data.ts'
-import { resolvePlanLimits } from '#universal/plans.ts'
+import {
+	parseEntitlementLadder,
+	parseStoredPlanName,
+	resolveEffectivePlan,
+	resolvePlanLimits,
+	type UserEntitlement,
+} from '#universal/plans.ts'
 import { toAdminCostVsPay } from '#worker/admin/cost-vs-pay.ts'
 import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consumption.ts'
 import {
+	AdminOrgLimitOverrideError,
 	resolveAdminOrgTarget,
 	type AdminOrgTarget,
 } from '#worker/admin/org-limit-overrides.ts'
 import { adminUsageMetrics } from '#worker/admin/user-usage-data.ts'
+import { isCreditsEligiblePriceId } from '#worker/billing/billing-config.ts'
 import { resolveStripePriceCatalog } from '#worker/billing/stripe-price-catalog.ts'
 import {
 	resolveUserEntitlementFromRow,
@@ -70,8 +78,11 @@ export async function loadAdminOrgUsageData(
 	let orgTarget
 	try {
 		orgTarget = await resolveAdminOrgTarget(env.APP_DB, target)
-	} catch {
-		return null
+	} catch (error) {
+		if (error instanceof AdminOrgLimitOverrideError && error.status === 404) {
+			return null
+		}
+		throw error
 	}
 
 	const row = await env.APP_DB.prepare(
@@ -115,6 +126,7 @@ export async function loadAdminOrgUsageData(
 				usageUserId,
 				entitlement,
 				now,
+				inboundReceive: inboundReceiveAgainstBasePlan(row, entitlement),
 			}),
 			loadMeasuredDurableObjectDuration({
 				db: env.APP_DB,
@@ -142,6 +154,11 @@ export async function loadAdminOrgUsageData(
 		username: row.slug,
 		isOperator: false,
 		includedPerAccountMonth: includedUniqueWorkerDays,
+		// Only purchasable seat prices track live seats in Stripe (seat-sync skips
+		// retired prices), so retired subscriptions keep the unit estimate.
+		quantity: isCreditsEligiblePriceId(env, row.stripe_price_id)
+			? (entitlement.seats ?? 1)
+			: 1,
 	})
 
 	return {
@@ -170,6 +187,29 @@ export async function loadAdminOrgUsageData(
 			measured: toAdminMeasuredDurableObjectDuration(measuredDuration),
 		},
 		costVsPay,
+	}
+}
+
+/**
+ * Inbound receives enforce the base (manual + Stripe) plan so a temporary Pro
+ * gift cannot inflate the receive cap. Overlays only raise Free → Pro, so when
+ * effective and base differ the base wallet is always `none` and we skip a
+ * second credit-wallet read. When they match, omit the override entirely.
+ */
+function inboundReceiveAgainstBasePlan(
+	row: Pick<UserEntitlementRow, 'plan' | 'stripe_plan' | 'entitlement_ladder'>,
+	effective: UserEntitlement,
+): UserEntitlement | undefined {
+	const basePlan = resolveEffectivePlan(
+		parseStoredPlanName(row.plan),
+		row.stripe_plan,
+	)
+	if (basePlan === effective.plan) return undefined
+	return {
+		plan: basePlan,
+		ladder: parseEntitlementLadder(row.entitlement_ladder),
+		creditWallet: 'none',
+		limitOverrides: effective.limitOverrides,
 	}
 }
 

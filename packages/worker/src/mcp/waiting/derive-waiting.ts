@@ -3,6 +3,7 @@ import {
 	type OwnerId,
 	type PersonId,
 } from '@kody-internal/shared/owner-person-ids.ts'
+import { loadPersonalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import {
 	deriveOnboardingChecklist,
 	readOnboardingChecklistDismissed,
@@ -95,8 +96,11 @@ export async function deriveWaitingItemsForStableUser(input: {
 				email_verified_at: string | null
 			}>()
 		if (!userRow) return []
+		// person-keyed (not personal org): agent OAuth grants and similar
 		const actorStableUserId = personalOrgId(input.personId)
-		const orgId = input.orgId ?? actorStableUserId
+		const orgId =
+			input.orgId ??
+			(await loadPersonalOrgIdForPerson(input.env.APP_DB, input.personId))
 		let orgSlug = userRow.username?.trim() ?? ''
 		try {
 			const org = await getOrgById(input.env.APP_DB, orgId)

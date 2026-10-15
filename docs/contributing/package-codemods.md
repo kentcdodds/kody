@@ -459,6 +459,43 @@ Findings are a recommendation for owners to declare a type, not a migration.
   the published-only lane. It keeps `applyMode: 'published-only'` so
   `adminPackageCodemodRevert` of those runs takes the same lane.
 
+### `0013-declare-credential-needs`
+
+Prepares for credential-need enforcement
+([#3822](https://github.com/kentcdodds/kody/issues/3822)). That enforcement
+limits a package that someone other than its author runs to the credentials it
+declares. The codemod adds a `kody.credentials` slot for each name the package
+fills through the fetch gateway by a literal name and does not declare yet:
+`{{secret:NAME}}`, `{{integration-token:NAME}}`,
+`createAuthenticatedFetch('NAME')`, and the secret fields of
+`secretHeaders.basic` and `oauthClientCredentials`. Names are resolved through
+module and imported constants, as in `0010`. A name that `kody.secretMounts`
+also mounts still gets a slot, because the stored needs closure reads only
+`kody.credentials`.
+
+Each new slot has no `kind` and a fixed description the owner can reword.
+Placeholders resolve by name whatever their slot says, so this changes nothing
+at run time. Helpers that resolve outside the gateway (`packageSecrets`,
+`secretJwtSign`, `integrationTokenRefresh`) get no slot.
+
+`credential('key')` / `credentials('key')` keys (aliased imports and
+`kody.credential(...)` included) get no slot. A slot's kind decides what
+`credential()` can resolve (a slot with no kind takes only secret, oauth, or
+login credentials), and the source cannot say which kind a key takes.
+
+The codemod adds no slot and reports `needs_manual` for an undeclared
+`credential()` key, a computed name or key, a vault ref, a name that is not a
+valid slot key, a declared slot whose kind cannot fill the use, and `credential`
+passed around instead of called. A package whose `package.json` does not parse
+is reported too. For a nested package it reads the manifest at the entity
+source's `manifest_path` and only the files under its `source_root`. It uses
+`applyMode: 'published-only'`, so drifted and locked packages are updated
+without moving default-branch HEAD. Publishing stores the new needs closure with
+the approval pause skipped, as for every codemod.
+
+Run it with `filters.scope: 'credential-need-enforcement'`. A rescan with the
+same filter must come back clean before the enforcement flag is turned on.
+
 ## Engine
 
 The engine entry point is `runPackageCodemodStep` in
@@ -536,8 +573,8 @@ Artifacts default-branch HEAD to equal `published_commit`, then writes through
 `syncArtifactSourceSnapshot` so HEAD and published stay aligned. Drifted
 packages are `skipped_drift`.
 
-Codemods that set `applyMode: 'published-only'` (today: `0012`) change only the
-**drifted** lane:
+Codemods that set `applyMode: 'published-only'` (today: `0012`, `0013`) change
+only the **drifted** lane:
 
 1. Load the published tree (same as today).
 2. Run the same transform + check gates.
@@ -635,6 +672,12 @@ Admin-gated operator fleet runs:
 - `adminPackageCodemodApply`
 - `adminPackageCodemodRevert`
 - `adminPackageCodemodOwnerNotice` (see [Owner notice](#owner-notice))
+
+Their `filters` take `userIds`, `packageIds`, and `scope`. Setting
+`scope: 'credential-need-enforcement'` keeps a run to packages someone other
+than their author may run (see
+[`0013-declare-credential-needs`](#0013-declare-credential-needs)). Reverts
+ignore `scope`; they only touch items an earlier run applied.
 
 Admin capabilities require `requiredRole: 'admin'` and follow the RBAC boundary
 in [Authorization](./architecture/authorization.md).

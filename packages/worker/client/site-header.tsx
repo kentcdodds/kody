@@ -22,7 +22,7 @@ import {
 	type SwitcherRow,
 } from '#client/switcher-menu.tsx'
 import {
-	currentSwitcherSlug,
+	urlOrgSlug,
 	orderOrganizations,
 	orgOverviewPath,
 	orgRoleManagesBilling,
@@ -57,7 +57,6 @@ export type SiteHeaderProps = {
 	loginHref: string
 	currentPathname: string
 	organizations?: Array<OrganizationSummary>
-	lastUsedOrganization?: string | null
 	/**
 	 * Single-decision pages (approvals): only the brand and the account menu,
 	 * at every width, so nothing pulls attention from the decision.
@@ -194,44 +193,45 @@ export type AccountMenuManageLink = {
 }
 
 /**
- * The account menu's Manage links: one `@slug` row per workspace, the current
- * one first, each opening that workspace's home. Each workspace rail lists
- * every section, so any section stays two clicks from the avatar. Unlike
- * switcher rows, which keep the current page, these always open a home.
+ * The account menu's Manage links: one `@slug` row per workspace, each opening
+ * that workspace's home. The URL's org (if any) leads; otherwise the signup org
+ * does. Each workspace rail lists every section, so any section stays two
+ * clicks from the avatar. Unlike switcher rows, which keep the current page,
+ * these always open a home.
  */
 export function accountMenuManageLinks(input: {
 	pathname: string
 	organizations: ReadonlyArray<OrganizationSummary>
-	lastUsedSlug: string | null
 }): Array<AccountMenuManageLink> {
-	const currentSlug = currentSwitcherSlug({
-		pathname: input.pathname,
-		organizations: input.organizations,
-		lastUsedSlug: input.lastUsedSlug,
-	})
-	if (!currentSlug) return []
-	const current = input.organizations.find((org) => org.slug === currentSlug)
+	const ordered = orderOrganizations(input.organizations)
+	const currentSlug = urlOrgSlug(input)
+	if (!currentSlug) return ordered.map(manageLink)
+	const current = ordered.find((org) => org.slug === currentSlug)
 	return [
-		{
-			key: `manage-${currentSlug}`,
-			// A URL org missing from a stale session list could be a renamed
-			// person's signup org, so its kind is unknown. `/-/overview` serves
-			// the signup org and redirects a team to its home.
-			href: current ? workspaceHomeHref(current) : orgOverviewPath(currentSlug),
-			label: `@${currentSlug}`,
-			detail: null,
-			icon: current ? (current.personal ? 'user' : 'users') : 'home',
-		},
-		...orderOrganizations(input.organizations)
-			.filter((org) => org.slug !== currentSlug)
-			.map((org): AccountMenuManageLink => ({
-				key: `manage-${org.slug}`,
-				href: workspaceHomeHref(org),
-				label: `@${org.slug}`,
-				detail: null,
-				icon: org.personal ? 'user' : 'users',
-			})),
+		current
+			? manageLink(current)
+			: {
+					key: `manage-${currentSlug}`,
+					// A URL org missing from a stale session list could be a renamed
+					// person's signup org, so its kind is unknown. `/-/overview`
+					// serves the signup org and redirects a team to its home.
+					href: orgOverviewPath(currentSlug),
+					label: `@${currentSlug}`,
+					detail: null,
+					icon: 'home',
+				},
+		...ordered.filter((org) => org.slug !== currentSlug).map(manageLink),
 	]
+}
+
+function manageLink(org: OrganizationSummary): AccountMenuManageLink {
+	return {
+		key: `manage-${org.slug}`,
+		href: workspaceHomeHref(org),
+		label: `@${org.slug}`,
+		detail: null,
+		icon: org.personal ? 'user' : 'users',
+	}
 }
 
 function renderManageGroup(input: {
@@ -293,7 +293,6 @@ function renderPhoneAccountGroups(input: {
 	username: string
 	currentPathname: string
 	organizations: ReadonlyArray<OrganizationSummary>
-	lastUsedOrganization: string | null
 }) {
 	const organizations = organizationsWithSignupFallback({
 		organizations: input.organizations,
@@ -302,7 +301,6 @@ function renderPhoneAccountGroups(input: {
 	const manageLinks = accountMenuManageLinks({
 		pathname: input.currentPathname,
 		organizations,
-		lastUsedSlug: input.lastUsedOrganization,
 	})
 	return (
 		<div
@@ -328,8 +326,8 @@ function renderPhoneAccountGroups(input: {
 
 /**
  * The person's own menu: their avatar. "Which workspace am I in" is the
- * workspace rail's switcher. Manage leads with the current workspace's
- * Overview, then every other workspace, so pages without a workspace rail
+ * workspace rail's switcher. Manage lists every workspace, the URL's org
+ * first, so pages without a workspace rail
  * (account, packages) still reach every organization from here.
  */
 function AccountMenu(
@@ -339,7 +337,6 @@ function AccountMenu(
 		avatarUrl: string | null
 		currentPathname: string
 		organizations?: Array<OrganizationSummary>
-		lastUsedOrganization?: string | null
 	}>,
 ) {
 	let open = false
@@ -360,7 +357,6 @@ function AccountMenu(
 		const manageLinks = accountMenuManageLinks({
 			pathname: handle.props.currentPathname,
 			organizations,
-			lastUsedSlug: handle.props.lastUsedOrganization ?? null,
 		})
 		return (
 			<div
@@ -461,9 +457,6 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 									avatarUrl={handle.props.avatarUrl}
 									currentPathname={handle.props.currentPathname}
 									organizations={handle.props.organizations ?? []}
-									lastUsedOrganization={
-										handle.props.lastUsedOrganization ?? null
-									}
 								/>
 							) : (
 								<a href={handle.props.loginHref} mix={css(navLoginCss)}>
@@ -517,9 +510,6 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 									avatarUrl={handle.props.avatarUrl}
 									currentPathname={handle.props.currentPathname}
 									organizations={handle.props.organizations ?? []}
-									lastUsedOrganization={
-										handle.props.lastUsedOrganization ?? null
-									}
 								/>
 								{handle.props.showDemoIndicator ? (
 									<span
@@ -589,8 +579,6 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 									username: handle.props.username,
 									currentPathname: handle.props.currentPathname,
 									organizations: handle.props.organizations ?? [],
-									lastUsedOrganization:
-										handle.props.lastUsedOrganization ?? null,
 								})
 							: null}
 						{handle.props.loggedIn ? null : (

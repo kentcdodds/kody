@@ -33,15 +33,21 @@ const now = '2026-01-02T00:00:00.000Z'
 
 async function seedUser(
 	db: D1Database,
-	input: { userId: string; email: string; deletingAt?: string | null },
+	input: {
+		userId: string
+		email: string
+		personalOrgId?: string | null
+		deletingAt?: string | null
+	},
 ) {
 	await db
 		.prepare(
-			`INSERT INTO users (stable_user_id, email, username, deleting_at)
-			 VALUES (?, ?, ?, ?)`,
+			`INSERT INTO users (stable_user_id, personal_org_id, email, username, deleting_at)
+			 VALUES (?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			input.userId,
+			input.personalOrgId ?? input.userId,
 			input.email,
 			input.email.split('@')[0] ?? 'user',
 			input.deletingAt ?? null,
@@ -127,4 +133,28 @@ test('sendToOrgBillingRecipients fans out and throws when no recipients', async 
 	})
 	expect(count).toBe(1)
 	expect(sent).toEqual(['fanout@example.com'])
+})
+
+test('personal org billing fallback resolves distinct personal_org_id to the person email', async () => {
+	const db = await createDb()
+	const personId = testStableUserIdFromEmail('distinct-owner@example.com')
+	const orgId = ownerIdFromStored('distinct-personal-org')
+	expect(personId).not.toBe(orgId)
+	await db
+		.prepare(
+			`INSERT INTO orgs (id, slug, plan, created_at, updated_at)
+			 VALUES (?, ?, 'free', ?, ?)`,
+		)
+		.bind(orgId, 'distinct', now, now)
+		.run()
+	await seedUser(db, {
+		userId: personId,
+		personalOrgId: orgId,
+		email: 'distinct-owner@example.com',
+	})
+
+	const recipients = await loadOrgBillingRecipientEmails(db, orgId)
+	expect(recipients).toEqual([
+		{ userId: personId, email: 'distinct-owner@example.com' },
+	])
 })

@@ -3,7 +3,10 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { emptyCapabilityInputSchema } from '#mcp/capabilities/types.ts'
 import { listEmailSenderRules } from '#worker/email/sender-rules.ts'
-import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
+import {
+	emailOwnerOrgId,
+	requireVerifiedEmailAccountUser,
+} from './require-verified-user.ts'
 import { emailSenderRuleSchema, toSenderRule } from './shared.ts'
 
 export const emailSenderRuleListCapability = defineDomainCapability(
@@ -33,7 +36,7 @@ export const emailSenderRuleListCapability = defineDomainCapability(
 			const user = await requireVerifiedEmailAccountUser(ctx)
 			const rules = await listEmailSenderRules({
 				db: ctx.env.APP_DB,
-				userId: user.userId,
+				userId: emailOwnerOrgId(ctx, user),
 			})
 			return { rules: rules.map(toSenderRule) }
 		},

@@ -52,6 +52,8 @@ export function buildPackageRepoActions(input: {
 	viewerCanManage: boolean
 	loggedIn: boolean
 	ownerPackage: PackageRepoOwnerPackageActions | null
+	/** Set when the page names a followable package or plain repo. */
+	follow?: { kind: 'package' | 'repo'; viewerFollowing: boolean } | null
 }): PackageRepoActions {
 	const { listing } = input
 	const repoHref = routes.communityPackage.href({
@@ -86,7 +88,18 @@ export function buildPackageRepoActions(input: {
 		input.viewerIsOwner && input.ownerPackage?.hasApp === true
 			? buildPackageAppPath({ username: input.username, kodyId: input.kodyId })
 			: null
-	return { fork, publishHref, packageAppHref }
+	const follow = input.follow
+		? {
+				kind: input.follow.kind,
+				loggedIn: input.loggedIn,
+				loginHref: routes.login.href(null, {
+					searchParams: { redirectTo: repoHref },
+				}),
+				repoHref,
+				following: input.loggedIn && input.follow.viewerFollowing,
+			}
+		: null
+	return { fork, publishHref, packageAppHref, follow }
 }
 
 function ownerPackageSourceAhead(ownerPackage: {
@@ -117,6 +130,12 @@ export function buildPackageRepoActionsForPage(
 					listingNeedsRepublish: owner.listingNeedsRepublish,
 					sourceAhead: ownerPackageSourceAhead(owner),
 					headCommit: owner.pendingCommit,
+				}
+			: null,
+		follow: page.followTarget
+			? {
+					kind: page.followTarget.kind,
+					viewerFollowing: page.viewerFollowing === true,
 				}
 			: null,
 	})

@@ -1036,6 +1036,7 @@ export function createCommunityReportApiPostHandler(env: Env) {
 			try {
 				await reportCommunityListing({
 					env,
+					// person-keyed (not personal org)
 					userId: personalOrgId(user.mcpUser.userId),
 					listingId: params.listingId,
 					reason: parsedReason.data,

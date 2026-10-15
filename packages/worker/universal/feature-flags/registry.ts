@@ -167,6 +167,23 @@ export const featureFlagDefinitions = [
 				'Users with a working custom-hostname package app keep executing against that package more than comparable flag-off users.',
 		},
 	},
+	{
+		key: 'repo-push-queue',
+		defaultEnabled: false,
+		defaultAudience: 'experiments_opt_in',
+		description:
+			'Per-repo Durable Object write queue for plain-repo git pushes (git-receive-pack): pushes land in the kody-push-queue Worker (RepoPushQueueV1) and reach Artifacts one at a time in FIFO order, with a 90s per-push budget and a clean 503 + Retry-After instead of a raw busy error. Evaluated per repo: repo allowlist (adminFeatureFlagRepoOverride), then the repo owner override, then the global switch with percentage rollout bucketed by repo, then the audience gate on the repo owner. Off repos keep the isolate-local wait-and-retry proxy. Delete the flag and gate sites when the queue ships to everyone.',
+		// Intentionally no successMetric: git pushes are not a metered usage
+		// event, so exposures would not join any readout.
+	},
+	{
+		key: 'credential-need-enforcement',
+		defaultEnabled: false,
+		description:
+			'Global switch (audience and rollout are ignored): when on, a package run by anyone but its author (a team-org package, a Use collaborator, an unadopted community fork, or any internet-visible package) may fill {{secret:…}}, {{integration-token:…}}, and vault placeholders and call credential(key) only for credentials its kody.credentials closure declares; anything else fails with credential_need_undeclared. Turn on only after a codemod 0013 rescan with scope credential-need-enforcement is clean (issue #3822). Self-publish auto-approval also waits for this flag. Delete the flag and keep enforcement on once it has soaked.',
+		// Intentionally no successMetric: a security boundary, not a product
+		// metric; the readout is the codemod rescan and credential_need_undeclared errors.
+	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
 export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']
@@ -187,6 +204,11 @@ export const mcpEventsExtensionFlagKey =
 
 export const packageAppCustomDomainsFlagKey =
 	'package-app-custom-domains' satisfies FeatureFlagKey
+
+export const repoPushQueueFlagKey = 'repo-push-queue' satisfies FeatureFlagKey
+
+export const credentialNeedEnforcementFlagKey =
+	'credential-need-enforcement' satisfies FeatureFlagKey
 
 export const featureFlagKeys: ReadonlyArray<FeatureFlagKey> =
 	featureFlagDefinitions.map((definition) => definition.key)

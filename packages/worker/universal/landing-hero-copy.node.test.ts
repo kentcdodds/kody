@@ -1,5 +1,4 @@
 import { expect, test } from 'vitest'
-import { landingHeroHeadline } from './landing-home-copy.ts'
 import { presentLandingHeroVideos } from './landing-hero-copy.ts'
 
 test('homepage carousel keeps playlist order and retitles leftover Stop Sweating copy', () => {
@@ -30,6 +29,12 @@ test('homepage carousel keeps playlist order and retitles leftover Stop Sweating
 		third.videoId,
 		'OZKDO9Pzmo0',
 	])
-	expect(presented[0]?.title).toBe(first.title)
-	expect(presented[3]?.title).toBe(landingHeroHeadline)
+	expect(presented[3]?.title).toBe('Your agents\u2019 cloud')
+})
+
+test('homepage carousel titles swap em dashes for colons', () => {
+	const [video] = presentLandingHeroVideos([
+		{ videoId: 'iGMkgjXc8Ho', title: 'Kody demo \u2014 shared memory ' },
+	])
+	expect(video?.title).toBe('Kody demo: shared memory')
 })
