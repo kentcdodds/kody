@@ -115,8 +115,18 @@ const orgStructuralHardPurgeTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'org_id', table: 'access_cache' },
 	{ kind: 'org_id', table: 'handles' },
 	{ kind: 'org_id', table: 'org_audit_outbox' },
+	// Follows are org-owned (`follower_org_id`), not `org_id` / `user_id`.
+	// Person deletion also clears rows by `creator_user_id` in account targets.
+	{
+		kind: 'user_columns',
+		table: 'follows',
+		columns: ['follower_org_id'],
+		includeInExport: false,
+		surface: 'follows_owned_by_org',
+		reason:
+			'Org hard purge deletes follows owned by the org. Account export uses creator_user_id so the creating person receives the row.',
+	},
 ]
-
 const orgOwnedUserIdSoftDeleteTableSet = new Set<string>(
 	orgOwnedUserIdSoftDeleteTables,
 )

@@ -575,6 +575,11 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		columns: ['forker_user_id'],
 	},
 	{
+		kind: 'user_columns',
+		table: 'follows',
+		columns: ['creator_user_id'],
+	},
+	{
 		kind: 'community_listing_child',
 		table: 'community_reports',
 		listingColumn: 'listing_id',
