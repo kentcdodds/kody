@@ -10,7 +10,11 @@
  * Durable Object CPU / isolate-reset failures (large prebuilt client assets)
  * are `deferred_scan_budget` — a known publish-path bug, not stop-and-notify.
  */
-import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import {
+	errorCauseChainIncludes,
+	getErrorMessage,
+} from '@kody-internal/shared/error-message.ts'
+import { isDurableObjectIsolateResetMessage } from '#worker/sentry-options.ts'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { listSavedPackagesPage } from '#worker/package-registry/repo.ts'
 import {
@@ -105,15 +109,28 @@ export type CredentialStampFleetResult = {
 }
 
 /**
+ * True when a single error message is a known Durable Object CPU / isolate
+ * reset (or BudgetLimitError name) from large-asset stamp seal. Walk the
+ * cause chain via {@link isCredentialStampScanBudgetFailure}.
+ */
+function isCredentialStampScanBudgetMessage(message: string): boolean {
+	if (isDurableObjectIsolateResetMessage(message)) return true
+	return (
+		/\bBudgetLimitError\b/.test(message) ||
+		/\bDurable Object reset because of CPU time limit\b/i.test(message) ||
+		/\bWorker exceeded CPU time limit\b/i.test(message) ||
+		/\bscript exceeded CPU time limit\b/i.test(message)
+	)
+}
+
+/**
  * True when the failure is the known Durable Object CPU blowup on large
  * prebuilt client assets (publish seal / fleet scan), not an unconvertible
- * credential pattern. Do not stop-and-notify Kent for these.
+ * credential pattern. Walks `error.cause` the same way load/store paths do.
+ * Do not stop-and-notify Kent for these.
  */
 export function isCredentialStampScanBudgetFailure(error: unknown): boolean {
-	const message = getErrorMessage(error)
-	return /BudgetLimitError|Durable Object reset|isolate reset|CPU time limit|Worker exceeded(?:[\s\S]*?)CPU|script exceeded(?:[\s\S]*?)cpu|overloaded CPU/i.test(
-		message,
-	)
+	return errorCauseChainIncludes(error, isCredentialStampScanBudgetMessage)
 }
 
 function isCredentialStamp(value: unknown): value is CredentialStamp {

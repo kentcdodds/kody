@@ -526,8 +526,8 @@ stop-and-notify Kent on #3836 if they still fail. It uses
 After apply (or for packages that were already seal-ready), run
 `adminCredentialStampBackfill` to restamp seal-ready packages that still lack a
 KV stamp at the current `published_commit`. Phase 3 must not start until that
-fleet report shows zero `missing_stamp` / `needs_manifest` / `unconvertible`
-packages among published packages that need stamps.
+fleet report shows zero `missing_stamp` / `needs_manifest` / `unconvertible` /
+`deferred_scan_budget` packages among published packages that need stamps.
 
 ## Engine
 

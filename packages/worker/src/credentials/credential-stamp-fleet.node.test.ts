@@ -346,9 +346,17 @@ test('isCredentialStampScanBudgetFailure recognizes Durable Object CPU resets', 
 	expect(
 		isCredentialStampScanBudgetFailure(new Error('BudgetLimitError: exceeded')),
 	).toBe(true)
+	const wrapped = new Error('failed to load package source')
+	wrapped.cause = new Error('Durable Object reset because of CPU time limit')
+	expect(isCredentialStampScanBudgetFailure(wrapped)).toBe(true)
 	expect(
 		isCredentialStampScanBudgetFailure(
 			new Error('credential("KEY") is non-literal'),
+		),
+	).toBe(false)
+	expect(
+		isCredentialStampScanBudgetFailure(
+			new Error('scheduler overloaded CPU queue for unrelated reason'),
 		),
 	).toBe(false)
 })
