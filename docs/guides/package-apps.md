@@ -134,8 +134,51 @@ into real network without real credentials. Ignored on `--target prod` and when
 the file is absent. See
 [Package lifecycle → Mock outbound fetch](./package-lifecycle.md#mock-outbound-fetch-with-.kody-mocks.ts).
 
+While it runs, `kody dev`:
+
+- rebuilds on save without dropping requests. A request that arrives during a
+  rebuild waits for it, so you never get a `503` or the previous build.
+- serves build errors (`file:line:col` plus a code frame) and uncaught handler
+  errors (stack mapped to your `.ts` sources) as dev-only `500` pages until they
+  are fixed.
+- streams the app's `console.*` output to the terminal, tagged by request.
+- reloads open HTML pages after each rebuild and shows build errors in an
+  overlay. There is no HMR; `--no-live-reload` turns this off.
+- serves `kody.app.client` at `<appBasePath>/_assets/client.<hash>.js`, files
+  from `kody.app.assets` under `/_assets/`, and `/_assets/__version.json`, at
+  the same URLs as a published app. `packageContext.clientModuleUrl` points at
+  the local client bundle.
+- uses a stable port per package and moves to the next free port when that one
+  is taken. `--port <n>` is used exactly.
+
+Local-only settings live in `package.json#kody.dev`. Publish ignores them.
+`prebuild` is a shell command run from the package root before every build (with
+`KODY_DEV=1`), for generated CSS, icons, or data files. `ignore` lists
+root-relative path prefixes the watcher skips:
+
+```json
+{
+	"kody": {
+		"app": {
+			"entry": "./app/router.ts",
+			"client": "./app/client.ts",
+			"assets": "./public"
+		},
+		"dev": {
+			"prebuild": "node scripts/build-css.mjs",
+			"ignore": ["public/generated"]
+		}
+	}
+}
+```
+
 Agents that can run the CLI but cannot drive a browser should use
-`kody dev fetch`. After local mock and prod both look right, publish, then use
+`kody dev fetch`. It attaches to a running `kody dev` for the same package and
+target, and boots a one-shot server otherwise. To drive a long-running server,
+start `kody dev --json --ready-file .kody-dev.json`. It prints one JSON event
+per line (`ready`, `rebuild_start`, `rebuild_ok`, `build_error`,
+`runtime_error`, `log`), and `GET /__kody/dev/status` returns the current build
+id and last error. After local mock and prod both look right, publish, then use
 `packageAppFetch` and the handed-off URL for the hosted proof.
 
 See also

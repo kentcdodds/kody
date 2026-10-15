@@ -218,7 +218,7 @@ for `kody dev`**, **`prod` for `execute` / `search`**).
 | Surface           | How to test locally                                                                                                                                      |
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Exports**       | `kody execute --target mock --invoke ./export --params '…'` (or `--file`) against the working tree; then `--target prod`                                 |
-| **Apps**          | `kody dev` / `kody dev fetch /path` — see [Package apps](./package-apps.md#local-testing-with-kody-dev)                                                  |
+| **Apps**          | `kody dev` / `kody dev fetch /path` (`--json` for agents) — see [Package apps](./package-apps.md#local-testing-with-kody-dev)                            |
 | **Schedules**     | `kody dev job <name>` — runs the job entry **once** with the scheduler’s no-arg contract; never schedules locally                                        |
 | **Webhooks**      | `kody dev webhook <name> --body fixture.json` — delivers the platform webhook envelope                                                                   |
 | **Subscriptions** | `kody dev emit <event> --body event.json` — delivers the platform subscription envelope (`synthetic: true`); on mock, any declared event type is allowed |
