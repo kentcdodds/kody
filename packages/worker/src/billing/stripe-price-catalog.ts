@@ -20,6 +20,12 @@ export type StripePriceCatalogEntry = {
 	interval: BillingInterval
 	/** Recurring list price in USD cents for `interval`. */
 	amountUsdCents: number
+	/**
+	 * True when Stripe subscription item quantity tracks live org seats
+	 * (purchasable Pro). Retired prices keep their historical quantity and
+	 * must not be multiplied by live member count for admin MRR.
+	 */
+	seatQuantityTracksMembers?: boolean
 }
 
 const proMonthlyUsdCents = 1_200
@@ -117,12 +123,14 @@ export function resolveStripePriceCatalog(
 		plan: 'pro',
 		interval: 'month',
 		amountUsdCents: proMonthlyUsdCents,
+		seatQuantityTracksMembers: true,
 	})
 	addCatalogEntry(byPriceId, {
 		priceId: getProYearlyPriceId(env) ?? '',
 		plan: 'pro',
 		interval: 'year',
 		amountUsdCents: proYearlyUsdCents,
+		seatQuantityTracksMembers: true,
 	})
 	return byPriceId
 }

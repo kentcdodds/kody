@@ -41,8 +41,9 @@ export function estimatePaidListMrrUsdCents(input: {
 	stripePriceId: string | null | undefined
 	catalog: Map<string, StripePriceCatalogEntry>
 	/**
-	 * Billed seat quantity (live owners + members). Defaults to 1 so personal
-	 * and single-seat estimates keep unit list MRR.
+	 * Live owner/member seat count. Applied only when the catalog entry has
+	 * `seatQuantityTracksMembers` (purchasable Pro). Retired prices keep unit
+	 * list MRR because seat sync does not update their Stripe quantity.
 	 */
 	quantity?: number
 }): { cents: number; source: AdminPaidSource } {
@@ -55,6 +56,7 @@ export function estimatePaidListMrrUsdCents(input: {
 	const entry = input.catalog.get(priceId)
 	if (!entry) return { cents: 0, source: 'none' }
 	const quantity =
+		entry.seatQuantityTracksMembers &&
 		typeof input.quantity === 'number' &&
 		Number.isSafeInteger(input.quantity) &&
 		input.quantity >= 1
@@ -124,7 +126,7 @@ export function toAdminCostVsPay(input: {
 	/** Plan include; omit for fleet estimates (Cloudflare account-wide 1,000). */
 	includedPerAccountMonth?: number
 	/**
-	 * Billed seat quantity for team org list MRR. Defaults to 1 (unit price).
+	 * Live seats for purchasable-Pro list MRR. Ignored for retired prices.
 	 */
 	quantity?: number
 }): AdminCostVsPay {
