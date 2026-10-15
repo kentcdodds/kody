@@ -72,7 +72,11 @@ export type RuntimePackageAppPath = {
 export type RuntimePackageAppServeInput = {
 	request: Request
 	owner: RuntimePackageAppServeOwner
-	visitor: RuntimePackageAppVisitor
+	/**
+	 * Null for an anonymous visitor of an internet-visible app. Bridge calls
+	 * that need an actor then fail closed.
+	 */
+	visitor: RuntimePackageAppVisitor | null
 	packagePath: RuntimePackageAppPath
 	dispatch?: { readonly synthetic: true }
 }

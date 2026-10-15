@@ -518,7 +518,8 @@ export async function servePackageAppRequest(input: {
 	request: Request
 	env: Env
 	owner: PackageAppServeOwner
-	visitor: RuntimePackageAppVisitor
+	/** Null for an anonymous visitor of an internet-visible app. */
+	visitor: RuntimePackageAppVisitor | null
 	packagePath: PackageAppPath
 	dispatch?: PackageAppTrustedDispatch
 	/**
