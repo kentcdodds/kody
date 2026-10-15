@@ -27,6 +27,7 @@ import {
 	type AdminOrgTarget,
 } from '#worker/admin/org-limit-overrides.ts'
 import { adminUsageMetrics } from '#worker/admin/user-usage-data.ts'
+import { isCreditsEligiblePriceId } from '#worker/billing/billing-config.ts'
 import { resolveStripePriceCatalog } from '#worker/billing/stripe-price-catalog.ts'
 import {
 	resolveUserEntitlementFromRow,
@@ -153,7 +154,11 @@ export async function loadAdminOrgUsageData(
 		username: row.slug,
 		isOperator: false,
 		includedPerAccountMonth: includedUniqueWorkerDays,
-		quantity: entitlement.seats ?? 1,
+		// Only purchasable seat prices track live seats in Stripe (seat-sync skips
+		// retired prices), so retired subscriptions keep the unit estimate.
+		quantity: isCreditsEligiblePriceId(env, row.stripe_price_id)
+			? (entitlement.seats ?? 1)
+			: 1,
 	})
 
 	return {

@@ -6,6 +6,7 @@ import { createInMemoryRepoSessionIndexEnv } from '#worker/test-support/repo-ses
 import { createInMemoryRunLogUsageEnv } from '#worker/test-support/run-log-usage.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import { retiredStandardPriceIds } from '#worker/billing/billing-config.ts'
 import { loadAdminOrgUsageData } from './org-usage-data.ts'
 
 const personId = testStableUserIdFromEmail('owner@acme.example')
@@ -154,4 +155,20 @@ test('loadAdminOrgUsageData scores inboundReceive against base plan under Pro ov
 	)
 	expect(receives?.limit).toBe(10)
 	expect(packages?.limit).toBe(200)
+})
+
+test('loadAdminOrgUsageData keeps unit list MRR for retired prices (seat-sync skips them)', async () => {
+	const { sqlite, db } = createDb()
+	sqlite
+		.prepare(
+			`UPDATE orgs SET stripe_plan = 'standard', stripe_price_id = ? WHERE id = ?`,
+		)
+		.run(retiredStandardPriceIds[0], teamOrgId)
+	const env = createUsageEnv(db)
+
+	const usage = await loadAdminOrgUsageData(env, { orgId: teamOrgId }, now)
+	expect(usage?.costVsPay).toMatchObject({
+		estimatedPaidUsdCents: 1_200,
+		paidSource: 'stripe_catalog',
+	})
 })
