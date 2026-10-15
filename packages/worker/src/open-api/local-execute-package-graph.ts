@@ -6,7 +6,7 @@ import {
 	LocalExecutePackageGraphError,
 	synthesizeLocalExecutePackageGraphEntry,
 } from '#worker/package-runtime/local-execute-package-graph.ts'
-import { ApiError } from './errors.ts'
+import { ApiError, invalidRequest } from './errors.ts'
 import {
 	parseNativeInput,
 	requireLocalExecuteHttpPrincipal,
@@ -39,6 +39,40 @@ const packageGraphConversationIdSchema = z.string().min(1).max(128).optional()
 
 const packageGraphCodeTextEncoder = new TextEncoder()
 
+/**
+ * Top-level API `error.message` when inline `code` exceeds the ceiling.
+ * Must include the actual size and the limit — callers (CLI / `kody dev`)
+ * surface this string directly; burying it under Zod `issues` left a bare
+ * "Invalid parameters." that Patch's TanStack retest hit.
+ */
+export function packageGraphCodeTooLargeMessage(byteLength: number): string {
+	return `code is ${byteLength} UTF-8 bytes; the maximum is ${maxLocalExecutePackageGraphCodeBytes} (Open API JSON body limit minus wrapper headroom). Pass imports instead of inlining a large bundle.`
+}
+
+/**
+ * Reject oversized `code` before `parseNativeInput` so the public message is
+ * the size text, not the generic "Invalid parameters." envelope.
+ */
+function assertPackageGraphCodeWithinLimit(params: unknown): void {
+	if (
+		params === null ||
+		typeof params !== 'object' ||
+		Array.isArray(params) ||
+		!('code' in params) ||
+		typeof (params as { code: unknown }).code !== 'string'
+	) {
+		return
+	}
+	const code = (params as { code: string }).code
+	const byteLength = packageGraphCodeTextEncoder.encode(code).byteLength
+	if (
+		byteLength > maxLocalExecutePackageGraphCodeBytes ||
+		code.length > maxLocalExecutePackageGraphCodeBytes
+	) {
+		throw invalidRequest(packageGraphCodeTooLargeMessage(byteLength))
+	}
+}
+
 const packageGraphCodeSchema = z
 	.string()
 	.min(1)
@@ -50,7 +84,7 @@ const packageGraphCodeSchema = z
 		if (byteLength > maxLocalExecutePackageGraphCodeBytes) {
 			ctx.addIssue({
 				code: 'custom',
-				message: `code is ${byteLength} UTF-8 bytes; the maximum is ${maxLocalExecutePackageGraphCodeBytes} (Open API JSON body limit minus wrapper headroom). Pass imports instead of inlining a large bundle.`,
+				message: packageGraphCodeTooLargeMessage(byteLength),
 			})
 		}
 	})
@@ -105,6 +139,7 @@ export const localExecutePackageGraphOperationDefinitions: Record<
 		readOnly: true,
 		async handler(params, ctx) {
 			requireLocalExecuteHttpPrincipal(ctx)
+			assertPackageGraphCodeWithinLimit(params)
 			const input = parseNativeInput(
 				localExecutePackageGraphInputSchema,
 				params,

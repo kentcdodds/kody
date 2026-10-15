@@ -39,6 +39,7 @@ import {
 	matchApiRoute,
 } from './operations.ts'
 import {
+	maxApiRequestBodyBytes,
 	mergeApiParams,
 	readJsonBody,
 	readQueryParams,
@@ -138,7 +139,7 @@ async function readOperationParams(input: {
 			throw new ApiError({
 				status: 413,
 				code: 'payload_too_large',
-				message: 'Request body is too large.',
+				message: `Request body is ${body.byteLength} bytes; the maximum is ${maxApiRequestBodyBytes} bytes.`,
 			})
 		case 'unsupported_media_type':
 			throw new ApiError({

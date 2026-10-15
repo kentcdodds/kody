@@ -769,31 +769,58 @@ test('package-graph accepts code over the old 512k char cap and imports-only pre
 	expect(neither.status).toBe(400)
 	expect(neither.body.error?.code).toBe('invalid_request')
 
-	// Over the shared JSON body / code ceiling: assert on the Zod schema so we
-	// do not also trip the HTTP body reader (same 5 MiB cap).
-	const { localExecutePackageGraphInputSchema } =
-		await import('./local-execute-package-graph.ts')
-	const overCeiling = localExecutePackageGraphInputSchema.safeParse({
-		code: 'x'.repeat(maxLocalExecutePackageGraphCodeBytes + 1),
-	})
-	expect(overCeiling.success).toBe(false)
-
-	// Multibyte source can stay under the character maxLength and still blow
-	// the UTF-8 byte budget (and thus the JSON body cap).
-	const multibyteNearCeiling = '€'.repeat(
-		Math.ceil(maxLocalExecutePackageGraphCodeBytes / 2),
+	// Over the shared JSON body / code ceiling: stay under the HTTP body reader
+	// (5 MiB) so the handler's size assert runs. Message must name actual size
+	// and limit — not a bare "Invalid parameters."
+	const [{ packageGraphCodeTooLargeMessage }, { maxApiRequestBodyBytes }] =
+		await Promise.all([
+			import('./local-execute-package-graph.ts'),
+			import('./request-params.ts'),
+		])
+	const overCeilingBytes = maxLocalExecutePackageGraphCodeBytes + 1
+	const overCeiling = await api.call(
+		'POST',
+		'/v1/local-execute/package-graph',
+		{
+			token,
+			body: { code: 'x'.repeat(overCeilingBytes) },
+		},
 	)
+	expect(overCeiling.status).toBe(400)
+	expect(overCeiling.body.error?.code).toBe('invalid_request')
+	expect(overCeiling.body.error?.message).toBe(
+		packageGraphCodeTooLargeMessage(overCeilingBytes),
+	)
+	expect(overCeiling.body.error?.message).toMatch(
+		new RegExp(
+			`code is ${overCeilingBytes} UTF-8 bytes; the maximum is ${maxLocalExecutePackageGraphCodeBytes}`,
+		),
+	)
+	expect(overCeiling.body.error?.message).not.toBe('Invalid parameters.')
+
+	// Multibyte source under the character maxLength can still blow the UTF-8
+	// byte budget. Keep the JSON body under 5 MiB so the handler assert runs
+	// (not the generic payload_too_large path).
+	const euroCount = Math.floor(maxLocalExecutePackageGraphCodeBytes / 3) + 1
+	const multibyteNearCeiling = '€'.repeat(euroCount)
+	const multibyteBytes = new TextEncoder().encode(
+		multibyteNearCeiling,
+	).byteLength
 	expect(multibyteNearCeiling.length).toBeLessThanOrEqual(
 		maxLocalExecutePackageGraphCodeBytes,
 	)
-	expect(
-		new TextEncoder().encode(multibyteNearCeiling).byteLength,
-	).toBeGreaterThan(maxLocalExecutePackageGraphCodeBytes)
-	expect(
-		localExecutePackageGraphInputSchema.safeParse({
-			code: multibyteNearCeiling,
-		}).success,
-	).toBe(false)
+	expect(multibyteBytes).toBeGreaterThan(maxLocalExecutePackageGraphCodeBytes)
+	expect(multibyteBytes).toBeLessThan(maxApiRequestBodyBytes)
+	const multibyte = await api.call('POST', '/v1/local-execute/package-graph', {
+		token,
+		body: { code: multibyteNearCeiling },
+	})
+	expect(multibyte.status).toBe(400)
+	expect(multibyte.body.error?.code).toBe('invalid_request')
+	expect(multibyte.body.error?.message).toBe(
+		packageGraphCodeTooLargeMessage(multibyteBytes),
+	)
+	expect(multibyte.body.error?.message).not.toBe('Invalid parameters.')
 })
 
 test('MCP OAuth Bearer authenticates CapabilityProxy and package-graph', async () => {
