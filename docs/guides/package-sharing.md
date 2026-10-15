@@ -88,32 +88,6 @@ package collaborator calls. Outside collaborators are listed and can be removed;
 their access is changed through `accessGrant`. Org owners always have full
 access and are not listed.
 
-## Share with a link
-
-The Collaborators tab also has **Share with a link**, in personal and team orgs
-alike. Pick a preset, how many people may use the link (1 by default; blank for
-anyone who has it), and how many days it lasts (7 by default, up to 365). The
-link is copied once; Kody keeps only its hash.
-
-Whoever opens the link sees what it gives: the package, the preset, and who
-shared it. They can create an account first if they do not have one. Opening the
-link changes nothing; they choose **Accept** or **Decline**. A signed-in person
-who opened it also finds it in the Invites panel on their Organizations page
-(`/account/organizations`) until they accept, decline, or the link stops
-working.
-
-Accepting grants the preset on that one package. Someone who is not a member of
-the owning org becomes an **outside collaborator**; the link never adds anyone
-to the org. Accepting never lowers access: a person who already has Manage keeps
-it when they accept a Use link, and an Owner already has everything.
-
-Each person can use a package link once. If you later remove them, the same link
-does not let them back in; send a new one. The tab lists active links with their
-uses and expiry, and **Revoke** stops one immediately. Links stop working when
-they expire, run out of uses, the package is deleted, or the person who made the
-link loses access. Creating, revoking, and accepting a link are in the org audit
-log (`invite_link.created`, `invite_link.revoked`, `invite_link.joined`).
-
 ## Open API
 
 The same calls are on the [Open API](/docs/open-api) (`/openapi.json`):
@@ -152,9 +126,9 @@ granted. Owners hold everything. Membership invites are refused on a personal
 (signup) org; create a team org to invite people.
 
 Personal orgs can still grant Use/Contribute/Manage on packages via
-`accessGrant` / `inviteCreate` `kind: "grant"` or a package invite link, and
-revoke with `accessRevoke`. The web Grants page is aimed at team orgs; manage
-personal-org grants through those capabilities.
+`accessGrant` / `inviteCreate` `kind: "grant"` and revoke with `accessRevoke`.
+The web Grants page is aimed at team orgs; manage personal-org grants through
+those capabilities.
 
 ## What a collaborator can do
 
@@ -218,6 +192,33 @@ their live access. If Jesse turns on the nightly job in `@acme/bot`, it runs as
 Jesse, with Jesse's grants, and pauses if he loses access. Usage still counts
 against `@acme`. See
 [Organizations](/docs/organizations#automation-runs-as-the-person-who-turned-it-on).
+
+## Share with a link
+
+The package's [Collaborators tab](#on-the-web) also has **Share with a link**,
+in personal and team orgs alike, for when you do not know the person's email or
+username. Pick a preset, how many people may use the link (1 by default; blank
+for anyone who has it), and how many days it lasts (7 by default, up to 365).
+The link is copied once; Kody keeps only its hash.
+
+Whoever opens the link sees what it gives: the package, the preset, and who
+shared it. They can create an account first if they do not have one. Opening the
+link changes nothing; they choose **Accept** or **Decline**. A signed-in person
+who opened it also finds it in the Invites panel on their Organizations page
+(`/account/organizations`) until they accept, decline, or the link stops
+working.
+
+Accepting grants the preset on that one package. Someone who is not a member of
+the owning org becomes an **outside collaborator**; the link never adds anyone
+to the org. Accepting never lowers access: a person who already has Manage keeps
+it when they accept a Use link, and an Owner already has everything.
+
+Each person can use a package link once. If you later remove them, the same link
+does not let them back in; send a new one. The tab lists active links with their
+uses and expiry, and **Revoke** stops one immediately. Links stop working when
+they expire, run out of uses, the package is deleted, or the person who made the
+link loses access. Creating, revoking, and accepting a link are in the org audit
+log (`invite_link.created`, `invite_link.revoked`, `invite_link.joined`).
 
 ## Cross-org imports
 
