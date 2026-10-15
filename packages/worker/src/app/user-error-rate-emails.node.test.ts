@@ -113,9 +113,19 @@ function createEnv(input: {
 					},
 					async all<T>() {
 						if (normalized.includes('from usage_rollups')) {
-							if (!normalized.includes('personal_org_id')) {
+							// Require the JOIN predicate, not only SELECT personal_org_id AS org_id.
+							const joinsOnPersonalOrg =
+								/inner join users u on coalesce\(nullif\(trim\(u\.personal_org_id\), ''\), u\.stable_user_id\) = r\.user_id/.test(
+									normalized,
+								)
+							if (
+								!joinsOnPersonalOrg ||
+								/inner join users u on u\.stable_user_id = r\.user_id/.test(
+									normalized,
+								)
+							) {
 								throw new Error(
-									`Error-rate sweep must join via personalOrgIdSql: ${query}`,
+									`Error-rate sweep must JOIN users on personalOrgIdSql = r.user_id: ${query}`,
 								)
 							}
 							input.onUsageRollupsQuery?.(query)
@@ -226,8 +236,11 @@ test('error-rate sweep joins usage rollups by personal org id when distinct from
 	})
 	expect(result).toEqual({ status: 'notified', emailedUsers: 1 })
 	expect(queries).toHaveLength(1)
-	expect(queries[0]).toContain(
-		"COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)",
+	expect(queries[0]).toMatch(
+		/INNER JOIN users u ON COALESCE\(NULLIF\(TRIM\(u\.personal_org_id\), ''\), u\.stable_user_id\) = r\.user_id/,
+	)
+	expect(queries[0]).not.toMatch(
+		/INNER JOIN users u ON u\.stable_user_id = r\.user_id/,
 	)
 	expect(sendCloudflareEmail.mock.calls[0]?.[1]).toMatchObject({
 		to: 'ada@example.com',
