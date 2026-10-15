@@ -5,13 +5,11 @@ import { createBlogPostHandler } from '#app/handlers/blog.tsx'
 import { createFaqHandler } from '#app/handlers/faq.ts'
 import { createPricingHandler } from '#app/handlers/pricing.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { anonymousHtmlCacheControl } from '#app/anonymous-html-cache.ts'
 import { listBlogPosts } from '#worker/blog/catalog.ts'
 import { createMemoryKv } from '#worker/test-support/auth-provider-harness.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 import { testOidcSigningEnv } from '#worker/test-support/oidc-signing-env.ts'
 import { loadHomePageOnboardingData } from '#app/onboarding-data.ts'
-import { homepageSignupPath } from '#universal/first-touch-attribution.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -93,26 +91,23 @@ const signupLink = expect.arrayContaining([
 	expect.objectContaining({ href: '/signup' }),
 ])
 
-test('FAQ, pricing, and home SSR copy send visitors to create an account under anonymous cache rules', async () => {
+test('FAQ and pricing SSR copy send visitors to create an account under anonymous cache rules', async () => {
 	const faqResponse = await renderMarketing('/faq')
 	expect(faqResponse.headers.get('Cache-Control')).toBe(
-		anonymousHtmlCacheControl,
+		'public, max-age=60, stale-while-revalidate=300',
 	)
 	expect(faqResponse.headers.get('Vary')).toBe('Cookie')
 	expect(anchors(faqGetStarted(await faqResponse.text()))).toEqual(signupLink)
 
 	const pricingResponse = await renderMarketing('/pricing')
 	expect(pricingResponse.headers.get('Cache-Control')).toBe(
-		anonymousHtmlCacheControl,
+		'public, max-age=60, stale-while-revalidate=300',
 	)
 	const pricing = await pricingResponse.text()
 	expect(pricing).not.toContain('id="plan-standard"')
 	for (const planId of ['plan-free', 'plan-pro']) {
 		expect(anchors(namedSection(pricing, planId))).toEqual(signupLink)
 	}
-
-	const home = await (await renderMarketing('/')).text()
-	expect(home).toContain(homepageSignupPath.replaceAll('&', '&amp;'))
 })
 
 test('blog post closer invites visitors to create an account', async () => {

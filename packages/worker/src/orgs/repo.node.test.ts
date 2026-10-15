@@ -22,6 +22,15 @@ async function createDb(options?: { queries?: Array<string> }) {
 	const db = createD1FromSqlite(sqlite, options)
 	await ensureUsersTestSchema({ db })
 	await ensureOrgsTestSchema(db)
+	sqlite.exec(
+		`CREATE TABLE saved_packages (
+			id TEXT PRIMARY KEY NOT NULL,
+			name TEXT,
+			kody_id TEXT,
+			user_id TEXT,
+			deleted_at TEXT
+		)`,
+	)
 	return db
 }
 
@@ -314,8 +323,12 @@ test('listOrganizationsForPerson puts the signup organization first and includes
 			id: 'invite-1',
 			orgSlug: 'zeta',
 			orgDisplayName: 'Zeta',
+			orgPersonal: false,
 			kind: 'membership',
 			role: null,
+			resourceType: null,
+			preset: null,
+			packageName: null,
 			expiresAt: '2099-01-01T00:00:00.000Z',
 		},
 	])

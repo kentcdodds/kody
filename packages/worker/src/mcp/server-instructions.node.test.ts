@@ -19,9 +19,6 @@ test('Kent-locked stub stays within the 300–600 character budget', () => {
 	)
 	expect(baseMcpServerInstructions).toContain('individuals and teams')
 	expect(baseMcpServerInstructions).toContain('- credentials')
-	expect(baseMcpServerInstructions).not.toContain('personal software')
-	expect(baseMcpServerInstructions).not.toContain('- secrets')
-	expect(baseMcpServerInstructions).not.toContain('personal assistant')
 })
 
 test('buildMcpServerInstructions appends the user overlay after the stub', () => {

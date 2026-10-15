@@ -1,5 +1,6 @@
 import { env, exports } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
+import { ensureAuditEventsTestSchema } from '#worker/test-support/audit-events-test-schema.ts'
 import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
 import {
 	createPackageCodeRequest,
@@ -13,8 +14,16 @@ import {
 } from '#worker/package-runtime/package-app-synthetic.ts'
 import {
 	consoleError,
+	silenceExpectedConsoleErrors,
 	silenceExpectedConsoleWarns,
 } from '#worker/test-support/console-spies.ts'
+import { createPackageAppSessionCookie } from '#app/package-app-session.ts'
+import {
+	accessFixture,
+	accessFixtureOrigin,
+	packageAppSessionCookieFor,
+	seedPackageAppAccessFixture,
+} from '#worker/test-support/package-app-access-fixture.ts'
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import {
 	ensurePackageSubscriptionTestSchema,
@@ -59,6 +68,7 @@ async function workerFetch(
 }
 
 async function seedOwnerSessionCookie() {
+	await ensureAuditEventsTestSchema(env.AUDIT_DB)
 	await ensureRbacTestSchema(env.APP_DB)
 	await ensurePackageSubscriptionTestSchema(env.APP_DB)
 	// Session resolution joins the permission tables; without them every request
@@ -125,6 +135,7 @@ async function sessionCookieFor(email: string) {
 }
 
 async function seedTeamOrgPackageAppFixture() {
+	await ensureAuditEventsTestSchema(env.AUDIT_DB)
 	await ensureRbacTestSchema(env.APP_DB)
 	await ensurePackageSubscriptionTestSchema(env.APP_DB)
 	await ensureOrgsTestSchema(env.APP_DB)
@@ -628,3 +639,128 @@ test('denied handoff for a real private package still redirects to the package p
 		packageAppHandoffQueryParam,
 	)
 })
+
+test('internet-visible apps serve signed-out visitors anonymously; private apps stay gated', async () => {
+	silenceExpectedConsoleErrors([
+		'Package app handler failed:',
+		'Package app asset handler failed:',
+		'package-app-http-error',
+	])
+	configureOrigins({
+		packageAppBaseUrl: packageAppOrigin,
+		runtime: 'production',
+	})
+	await seedPackageAppAccessFixture()
+	const { orgSlug, privateApp, publicApp } = accessFixture
+
+	// App origin: a signed-out visitor of an internet-visible app goes straight
+	// to the package-app origin (no handoff token); a private app still asks
+	// for login.
+	const publicEntry = await workerFetch(
+		`${appOrigin}/@${orgSlug}/packages/${publicApp.slug}?tab=1`,
+	)
+	expect(publicEntry.status).toBe(302)
+	const publicLocation = new URL(publicEntry.headers.get('Location') ?? '')
+	expect(publicLocation.origin).toBe(accessFixtureOrigin)
+	expect(publicLocation.pathname).toBe(`/packages/${publicApp.slug}`)
+	expect(publicLocation.searchParams.get('tab')).toBe('1')
+	expect(publicLocation.searchParams.has(packageAppHandoffQueryParam)).toBe(
+		false,
+	)
+	const privateEntry = await workerFetch(
+		`${appOrigin}/@${orgSlug}/packages/${privateApp.slug}`,
+	)
+	expect(privateEntry.status).toBe(302)
+	expect(new URL(privateEntry.headers.get('Location') ?? '').pathname).toBe(
+		'/login',
+	)
+
+	// Package-app origin: anonymous requests to the internet-visible app clear
+	// the gate and reach serve (500: the fixture has no published source).
+	// Responses vary on Cookie so a cache never mixes anonymous and signed-in
+	// variants.
+	for (const path of [
+		`/packages/${publicApp.slug}`,
+		`/packages/${publicApp.slug}/_assets/app.js`,
+	]) {
+		const response = await workerFetch(`${accessFixtureOrigin}${path}`, {
+			headers: { Accept: 'application/json' },
+		})
+		expect({ path, status: response.status }).toEqual({ path, status: 500 })
+		expect(response.headers.get('Vary')).toContain('Cookie')
+		await expect(response.json()).resolves.toMatchObject({
+			error: 'Package app could not be prepared',
+		})
+	}
+	const privateAnonymous = await workerFetch(
+		`${accessFixtureOrigin}/packages/${privateApp.slug}`,
+	)
+	expect(privateAnonymous.status).toBe(403)
+	expect(privateAnonymous.headers.get('X-Kody-Handoff')).toBe('required')
+
+	// Internet-visible without an approved capability set stays gated.
+	const unapprovedEntry = await workerFetch(
+		`${appOrigin}/@${orgSlug}/packages/${accessFixture.unapprovedPublicApp.slug}`,
+	)
+	expect(new URL(unapprovedEntry.headers.get('Location') ?? '').pathname).toBe(
+		'/login',
+	)
+	const unapprovedAnonymous = await workerFetch(
+		`${accessFixtureOrigin}/packages/${accessFixture.unapprovedPublicApp.slug}`,
+	)
+	expect(unapprovedAnonymous.status).toBe(403)
+	expect(unapprovedAnonymous.headers.get('X-Kody-Handoff')).toBe('required')
+
+	// Realtime hooks run as the owner, so anonymous visitors never reach them.
+	const anonymousRealtime = await workerFetch(
+		`${accessFixtureOrigin}/packages/${publicApp.slug}/ws`,
+		{ headers: { Upgrade: 'websocket' } },
+	)
+	expect(anonymousRealtime.status).toBe(403)
+	await expect(anonymousRealtime.text()).resolves.toBe(
+		'Sign in to use realtime features of this app.',
+	)
+
+	// A session that cannot run the public app is served anonymously instead
+	// of being bounced to the package page.
+	const outsider = await sessionCookieForFixtureOutsider()
+	const outsiderOnPublic = await workerFetch(
+		`${accessFixtureOrigin}/packages/${publicApp.slug}`,
+		{ headers: { Cookie: outsider, Accept: 'application/json' } },
+	)
+	expect(outsiderOnPublic.status).toBe(500)
+	const outsiderOnPrivate = await workerFetch(
+		`${accessFixtureOrigin}/packages/${privateApp.slug}`,
+		{ headers: { Cookie: outsider } },
+	)
+	expect(outsiderOnPrivate.status).toBe(302)
+
+	// A signed-in visitor's response is forced private.
+	const member = await workerFetch(
+		`${accessFixtureOrigin}/packages/${privateApp.slug}`,
+		{
+			headers: {
+				Cookie: await packageAppSessionCookieFor('member'),
+				Accept: 'application/json',
+			},
+		},
+	)
+	expect(member.status).toBe(500)
+	expect(member.headers.get('Cache-Control')).toBe('private')
+	expect(member.headers.get('Vary')).toContain('Cookie')
+})
+
+async function sessionCookieForFixtureOutsider() {
+	const email = 'cost-outsider@example.com'
+	await seedAccount({ db: env.APP_DB, email, username: 'cost-outsider' })
+	const setCookie = await createPackageAppSessionCookie({
+		env,
+		session: {
+			stableUserId: testStableUserIdFromEmail(email),
+			username: accessFixture.orgSlug,
+		},
+		secure: true,
+		expiresAt: Date.now() + 60 * 60 * 1000,
+	})
+	return setCookie.split(';')[0] ?? ''
+}

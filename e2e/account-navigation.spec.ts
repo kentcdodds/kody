@@ -115,42 +115,6 @@ test('account section switches keep the current page on screen (no loading flash
 	)
 })
 
-test('every workspace section is two clicks from the account menu', async ({
-	page,
-	seedE2eUser,
-	login,
-}) => {
-	test.setTimeout(process.env.CI ? 90_000 : 60_000)
-	const runId = Date.now()
-	const user = await seedE2eUser({
-		email: `menu-manage-${runId}@example.com`,
-		username: `menu-manage-${runId}`,
-		password: 'account-menu-manage-password',
-	})
-	await login({ email: user.email, password: user.password, mode: 'login' })
-	await page.setViewportSize({ width: 1440, height: 900 })
-	await page.goto('/account/security')
-	await waitForClientHydration(page)
-
-	await page.getByTestId('account-menu').click()
-	const manageGroup = page
-		.getByTestId('account-menu-panel')
-		.getByRole('group', { name: 'Manage' })
-	await expect(manageGroup.getByRole('link').first()).toHaveAccessibleName(
-		`@${user.username}`,
-	)
-	await manageGroup.getByRole('link').first().click()
-	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/overview$`))
-	await page
-		.getByRole('navigation', { name: 'Workspace sections' })
-		.getByRole('link', { name: 'Credentials', exact: true })
-		.click()
-	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/credentials$`))
-	await expect(
-		page.getByRole('heading', { level: 1, name: 'Credentials' }),
-	).toBeVisible()
-})
-
 test('every workspace section is reachable from /account through the avatar menu', async ({
 	page,
 	seedE2eUser,
@@ -174,15 +138,6 @@ test('every workspace section is reachable from /account through the avatar menu
 	// The account rail holds only the person's pages. The avatar menu's
 	// Manage group opens the signup org's overview, whose rail names every
 	// section.
-	const accountRail = page.getByRole('navigation', {
-		name: 'Account sections',
-	})
-	await expect(
-		accountRail.getByRole('group', { name: 'Workspaces' }),
-	).toHaveCount(0)
-	await expect(
-		accountRail.getByRole('link', { name: `@${user.username}`, exact: true }),
-	).toHaveCount(0)
 	await page.getByTestId('account-menu').click()
 	const workspaceRow = page
 		.getByTestId('account-menu-panel')

@@ -85,15 +85,16 @@ function isRedesignedMarketingPath(pathname: string) {
 		pathname === '/' ||
 		pathname === '/features' ||
 		pathname === '/features/memory' ||
-		pathname === '/features/secrets' ||
 		pathname === '/features/packages' ||
 		pathname === '/features/triggers' ||
-		pathname === '/features/integrations' ||
+		pathname === '/features/credentials' ||
 		pathname === '/features/apps' ||
 		pathname === '/for/business' ||
 		pathname === '/pricing' ||
 		pathname === '/faq' ||
 		pathname === '/case-studies' ||
+		pathname === '/believe' ||
+		pathname.startsWith('/with/') ||
 		pathname === '/blog' ||
 		pathname === '/community' ||
 		pathname === '/onboarding' ||
@@ -369,7 +370,6 @@ export function App(handle: Handle<AppProps>) {
 								loginHref={loginHref}
 								currentPathname={currentPathname}
 								organizations={session?.organizations}
-								lastUsedOrganization={session?.lastUsedOrganization}
 								focused={isFocusedPage}
 							/>
 						)}

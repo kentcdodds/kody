@@ -502,6 +502,53 @@ test('exporter resumes from progress cursor across ticks when budget is exhauste
 	).toBe(true)
 })
 
+test('nightly ticks prefer the oldest stranded day before today', async () => {
+	const { client } = createMemoryS3()
+	const env = createEnv()
+	const strandedDay = '2026-07-22'
+	await client.put(
+		`staging/${strandedDay}/exporter/progress.json`,
+		JSON.stringify(__testOnlyCreateInitialProgress(strandedDay, at('02:00'))),
+	)
+
+	const resumed = await runDrExportTick({
+		env,
+		now: at('02:00'),
+		timeBudgetMs: 60_000,
+		s3: client,
+	})
+	expect(resumed).toMatchObject({
+		day: strandedDay,
+		mode: 'nightly',
+		skipped: false,
+	})
+	expect(resumed.day).not.toBe(day)
+	const todayProgress = await client.getText(progressKey)
+	expect(todayProgress).not.toBeNull()
+	expect(
+		__testOnlyParseProgress(JSON.parse(todayProgress!.text)),
+	).toMatchObject({
+		day,
+		phase: 'mailbox',
+	})
+	expect(await client.getText(stagingSummaryKey(day))).toBeNull()
+})
+
+test('nightly ticks target today when no stranded days exist', async () => {
+	const { client } = createMemoryS3()
+	const env = createEnv()
+	const result = await runDrExportTick({
+		env,
+		now: at('02:00'),
+		timeBudgetMs: 60_000,
+		s3: client,
+	})
+	expect(result).toMatchObject({
+		day,
+		mode: 'nightly',
+	})
+})
+
 test('daytime catch-up resumes a stranded previous day until its summary is written', async () => {
 	mockStorageEntries([{ key: 'k', value: 1 }])
 	const { client, readText } = createMemoryS3()
@@ -1156,12 +1203,57 @@ test('watchdog passes on a written summary and fails loudly on incomplete or str
 		/summary missing for 2026-07-23.*phase=artifacts/,
 	)
 
+	// Backlog drain: tonight has no summary yet but an older day recently
+	// advanced (lease cleared after a successful tick) — defer the page.
+	const deferred = createMemoryS3()
+	const activeOlder = {
+		...__testOnlyCreateInitialProgress('2026-07-22', at('00:30')),
+		leaseExpiresAt: null,
+		advancedAt: new Date(now.getTime() - 5 * 60_000).toISOString(),
+		revision: 12,
+	}
+	await deferred.client.put(
+		'staging/2026-07-22/exporter/progress.json',
+		JSON.stringify(activeOlder),
+	)
+	expect(await watchdog(deferred.client)).toMatchObject({
+		day,
+		skipped: false,
+		summaryPresent: false,
+		reason: 'deferred-for-older-stranded',
+	})
+
+	// Older stranded day with a cold advancedAt: page as catch-up stuck.
+	const staleOlder = createMemoryS3()
+	const staleProgress = {
+		...__testOnlyCreateInitialProgress('2026-07-22', at('00:30')),
+		leaseExpiresAt: null,
+		advancedAt: new Date(now.getTime() - 3 * 60 * 60_000).toISOString(),
+		revision: 3,
+	}
+	await staleOlder.client.put(
+		'staging/2026-07-22/exporter/progress.json',
+		JSON.stringify(staleProgress),
+	)
+	await expect(watchdog(staleOlder.client)).rejects.toThrow(
+		/catch-up is stuck.*2026-07-22/,
+	)
+
 	// Tonight finished, but earlier days are still progress-without-summary.
 	// The page lists oldest first — the same order catch-up resumes.
 	const stranded = createMemoryS3()
 	await stranded.client.put(stagingSummaryKey(day), '{}')
-	await stranded.client.put('staging/2026-07-22/exporter/progress.json', '{}')
-	await stranded.client.put('staging/2026-07-21/exporter/progress.json', '{}')
+	await stranded.client.put(
+		'staging/2026-07-22/exporter/progress.json',
+		JSON.stringify(staleProgress),
+	)
+	await stranded.client.put(
+		'staging/2026-07-21/exporter/progress.json',
+		JSON.stringify({
+			...staleProgress,
+			day: '2026-07-21',
+		}),
+	)
 	await expect(watchdog(stranded.client)).rejects.toThrow(
 		/catch-up is stuck.*2026-07-21, 2026-07-22/,
 	)

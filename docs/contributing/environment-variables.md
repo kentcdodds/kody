@@ -220,6 +220,30 @@ confirmed non-production runtimes; see `packages/worker/src/app-base-url.ts` and
   this GitHub Actions repository variable to `true` only when enabling those
   GET/HEAD redirects. Production leaves this unset.
 
+Worker secret (optional; see `packages/worker/src/app/package-app-ticket.ts`):
+
+- `PACKAGE_APP_TICKET_KEYS` — comma-separated HMAC keys (each at least 32
+  characters) for package-app access tickets: the short-lived (90 s) host-only
+  cookie that lets repeat requests skip the access check. Every listed key
+  verifies a ticket and the first one signs new tickets. Synced to the origin
+  and runtime Workers by `deploy.yml`. When unset, a key is derived from
+  `COOKIE_SECRET` under a purpose label, which is what preview, tests, and E2E
+  use. Rotation:
+  [secret-rotation.md](./secret-rotation.md#rotating-package_app_ticket_keys).
+
+Worker variable (optional; see
+`packages/worker/src/package-runtime/package-app-usage-breaker.ts`):
+
+- `PACKAGE_APP_USAGE_BREAKER_LIMIT_PERCENT` — positive number: the percent of
+  the existing usage limit (monthly include stop or org budget) at which the
+  package-app usage circuit breaker opens. Unset means `100`, which trips
+  exactly when the usage check denies. The check only denies past the limit, so
+  values below `100` behave like `100`. Values above `100` keep serving through
+  a grace margin. Set it as a JSON number in the production `vars` blocks of
+  both `packages/worker/wrangler.jsonc` and
+  `packages/runtime-worker/wrangler.jsonc`, because both Workers serve package
+  apps.
+
 ## MCP `execute` and outbound HTTP
 
 MCP `execute` runs sandboxed JavaScript with a global `fetch`. Calls to
@@ -566,6 +590,12 @@ evidence):
 - `RESTORE_CONFIRM_SECRET` — HMAC secret for the 10-minute prepare→execute
   production-restore token.
 - `DR_RESTORE_SECRET` — bearer shared with the production Worker.
+- `DR_OPS_SECRET` — optional bearer for agent-only seal enqueue/status on
+  `POST /__maintenance/dr-seal` and `GET /__maintenance/seal-status` on the DR
+  control plane. Does not grant restore, drill, or purge. Unset → `503` on those
+  routes. Edge Access on `kody-dr.kentcdodds.com` is still required unless a
+  service token or `/__maintenance/*` bypass is configured (see
+  disaster-recovery runbook).
 
 GitHub Actions `workflow_dispatch` escrow (`.github/workflows/dr-escrow.yml`)
 also needs `SECRET_STORE_KEY`, `SECRET_ESCROW_PASSPHRASE`, and the DR S3

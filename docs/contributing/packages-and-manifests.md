@@ -496,11 +496,12 @@ topic. Payload shape, admin gating, and delivery semantics match
 [the admin events guide](../guides/admin-events.md#communitylistingpublished-admins);
 enqueue failures are logged and never fail `communityPublish`.
 
-A republish that moves the pinned commit enqueues
-`community.fork.upstream_updated` on the same queue. That topic is not
-admin-only. It reaches each forking account's own subscribed packages, one event
-per fork. See
-[Package subscriptions](../guides/package-subscriptions.md#communityforkupstream_updated).
+A republish that moves the pinned commit delivers `follow.published` and emits
+`community.fork.upstream_updated` from the follow pipeline (not the old
+fork-only queue). That alias is not admin-only. It reaches each forking
+account's own subscribed packages, one event per fork, with the historical
+payload. Watching without a fork uses `follow.published` / `follow.pushed`. See
+[Package subscriptions](../guides/package-subscriptions.md#followpublished).
 
 Status-page incident open/resolve is a separate admin-only, best-effort path.
 The isolated status worker POSTs metadata to

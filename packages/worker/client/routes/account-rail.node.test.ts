@@ -52,16 +52,8 @@ test('account rail holds the person: profile, security, organizations, experimen
 	]) {
 		expect(isAccountRailPath(path), path).toBe(false)
 	}
-})
-
-test('account rail has no workspaces group; orgs live in the avatar menu', () => {
-	const groups = accountRailGroups()
-	expect(groups.map((group) => group.label)).toEqual([null])
-	expect(
-		groups
-			.flatMap((group) => group.items)
-			.some((item) => item.label.startsWith('@')),
-	).toBe(false)
+	expect(accountRailGroups().map((group) => group.label)).toEqual([null])
+	expect(items.some((item) => item.label.startsWith('@'))).toBe(false)
 })
 
 test('workspace home is the overview for the signup org and /@slug for a team', () => {
@@ -109,7 +101,15 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 		groups.map((group) => [group.label, group.items.map((item) => item.href)]),
 	).toEqual([
 		[null, ['/@jane/-/overview']],
-		['Build', ['/@jane/-/repositories', '/@jane/-/jobs', '/@jane/-/webhooks']],
+		[
+			'Build',
+			[
+				'/@jane/-/repositories',
+				'/@jane/-/jobs',
+				'/@jane/-/webhooks',
+				'/@jane/-/follows',
+			],
+		],
 		['Credentials', ['/@jane/-/credentials', '/@jane/-/secret-providers']],
 		[
 			'Agents & data',
@@ -198,6 +198,7 @@ test('team organization rail shares the sections and keeps members, settings, an
 		'Repositories',
 		'Jobs',
 		'Webhooks',
+		'Follows',
 		'Credentials',
 		'Secret providers',
 		'Agents',
@@ -209,9 +210,6 @@ test('team organization rail shares the sections and keeps members, settings, an
 		'Credits',
 		'Billing',
 	])
-	expect(
-		teamOwner.flatMap((group) => group.items).map((item) => item.label),
-	).not.toContain('Memories')
 	expect(teamOwner.at(-1)?.items.map((item) => item.href)).toEqual([
 		'/@acme/-/members',
 		'/@acme/-/settings',
@@ -269,14 +267,14 @@ test('personal rail includes Memories; team rail hides it (ADR 0072)', () => {
 			.map((group) => [group.label, group.items.map((item) => item.label)])
 	expect(sections(true)).toEqual([
 		[null, ['Overview']],
-		['Build', ['Repositories', 'Jobs', 'Webhooks']],
+		['Build', ['Repositories', 'Jobs', 'Webhooks', 'Follows']],
 		['Credentials', ['Credentials', 'Secret providers']],
 		['Agents & data', ['Agents', 'Memories', 'Email']],
 		['Activity', ['Activity']],
 	])
 	expect(sections(false)).toEqual([
 		[null, ['Overview']],
-		['Build', ['Repositories', 'Jobs', 'Webhooks']],
+		['Build', ['Repositories', 'Jobs', 'Webhooks', 'Follows']],
 		['Credentials', ['Credentials', 'Secret providers']],
 		['Agents & data', ['Agents', 'Email']],
 		['Activity', ['Activity']],

@@ -2,7 +2,10 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { deleteEmailSenderRule } from '#worker/email/sender-rules.ts'
-import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
+import {
+	emailOwnerOrgId,
+	requireVerifiedEmailAccountUser,
+} from './require-verified-user.ts'
 
 export const emailSenderRuleDeleteCapability = defineDomainCapability(
 	capabilityDomainNames.email,
@@ -25,7 +28,7 @@ export const emailSenderRuleDeleteCapability = defineDomainCapability(
 			const user = await requireVerifiedEmailAccountUser(ctx)
 			const deleted = await deleteEmailSenderRule({
 				db: ctx.env.APP_DB,
-				userId: user.userId,
+				userId: emailOwnerOrgId(ctx, user),
 				ruleId: args.rule_id,
 			})
 			if (!deleted) {

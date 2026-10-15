@@ -32,6 +32,7 @@ vi.mock('#worker/repo/artifacts.ts', () => ({
 
 const {
 	artifactsGitReceivePackBusyCode,
+	artifactsReceivePackWaitBudgetMs,
 	buildPlainRepoGitHttpRemote,
 	extractArtifactsTokenFromRequest,
 	handlePlainRepoGitHttpRequest,
@@ -177,15 +178,28 @@ test('extractArtifactsTokenFromRequest accepts Bearer and Basic', () => {
 	).toBeNull()
 })
 
-test('proxy translates Artifacts receive-pack busy into 503 Retry-After', async () => {
+test('proxy waits through Artifacts receive-pack busy then succeeds', async () => {
 	resetMocks()
 	seedPlainRepo()
+	let attempts = 0
+	const packResult = '000eunpack ok\n0000'
 	using _server = createMswNodeServer([
-		http.post(`${artifactsRemote}/git-receive-pack`, () =>
-			HttpResponse.text(`remote: ${artifactsGitReceivePackBusyCode}\n`, {
-				status: 500,
-			}),
-		),
+		http.post(`${artifactsRemote}/git-receive-pack`, async ({ request }) => {
+			attempts += 1
+			expect(await request.text()).toBe('PACK-RETRY')
+			if (attempts === 1) {
+				return HttpResponse.text(
+					`remote: ${artifactsGitReceivePackBusyCode}\n`,
+					{ status: 500 },
+				)
+			}
+			return HttpResponse.text(packResult, {
+				status: 200,
+				headers: {
+					'Content-Type': 'application/x-git-receive-pack-result',
+				},
+			})
+		}),
 	])
 	const response = await handlePlainRepoGitHttpRequest(
 		new Request(
@@ -196,15 +210,92 @@ test('proxy translates Artifacts receive-pack busy into 503 Retry-After', async 
 					Authorization: `Bearer ${artifactToken}`,
 					'Content-Type': 'application/x-git-receive-pack-request',
 				},
-				body: 'PACK',
+				body: 'PACK-RETRY',
 			},
 		),
 		{ APP_DB: {} } as Env,
 	)
 	expect(response).not.toBeNull()
-	expect(response!.status).toBe(503)
-	expect(response!.headers.get('Retry-After')).toBe('5')
-	expect(await response!.text()).toBe('repository busy, retry')
+	expect(response!.status).toBe(200)
+	expect(await response!.text()).toBe(packResult)
+	expect(attempts).toBe(2)
+})
+
+test('proxy waits through in-band HTTP 200 busy (sideband fatal) then succeeds', async () => {
+	resetMocks()
+	seedPlainRepo()
+	let attempts = 0
+	const packResult = '000eunpack ok\n0000'
+	using _server = createMswNodeServer([
+		http.post(`${artifactsRemote}/git-receive-pack`, async () => {
+			attempts += 1
+			const body =
+				attempts < 3
+					? `0025\x03${artifactsGitReceivePackBusyCode}\n`
+					: packResult
+			return HttpResponse.text(body, {
+				status: 200,
+				headers: {
+					'Content-Type': 'application/x-git-receive-pack-result',
+				},
+			})
+		}),
+	])
+	const response = await handlePlainRepoGitHttpRequest(
+		new Request(
+			`https://kody.codes/git/sources/${sourceId}.git/git-receive-pack`,
+			{
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${artifactToken}`,
+					'Content-Type': 'application/x-git-receive-pack-request',
+				},
+				body: 'PACK-IN-BAND',
+			},
+		),
+		{ APP_DB: {} } as Env,
+	)
+	expect(response).not.toBeNull()
+	expect(response!.status).toBe(200)
+	expect(await response!.text()).toBe(packResult)
+	expect(attempts).toBe(3)
+})
+
+test('proxy returns 503 Retry-After after the receive-pack wait budget', async () => {
+	resetMocks()
+	seedPlainRepo()
+	vi.useFakeTimers()
+	using _server = createMswNodeServer([
+		http.post(`${artifactsRemote}/git-receive-pack`, () =>
+			HttpResponse.text(`remote: ${artifactsGitReceivePackBusyCode}\n`, {
+				status: 500,
+			}),
+		),
+	])
+	try {
+		const responsePromise = handlePlainRepoGitHttpRequest(
+			new Request(
+				`https://kody.codes/git/sources/${sourceId}.git/git-receive-pack`,
+				{
+					method: 'POST',
+					headers: {
+						Authorization: `Bearer ${artifactToken}`,
+						'Content-Type': 'application/x-git-receive-pack-request',
+					},
+					body: 'PACK',
+				},
+			),
+			{ APP_DB: {} } as Env,
+		)
+		await vi.advanceTimersByTimeAsync(artifactsReceivePackWaitBudgetMs + 1_000)
+		const response = await responsePromise
+		expect(response).not.toBeNull()
+		expect(response!.status).toBe(503)
+		expect(response!.headers.get('Retry-After')).toBe('5')
+		expect(await response!.text()).toBe('repository busy, retry')
+	} finally {
+		vi.useRealTimers()
+	}
 })
 
 test('proxy streams successful receive-pack unchanged', async () => {
@@ -245,6 +336,110 @@ test('proxy streams successful receive-pack unchanged', async () => {
 	expect(response!.headers.get('Content-Type')).toBe(
 		'application/x-git-receive-pack-result',
 	)
+})
+
+test('proxy forwards gzip-encoded upload-pack requests to Artifacts decoded', async () => {
+	resetMocks()
+	seedPlainRepo()
+	const fetchRequest =
+		'0014command=fetch\n0001' +
+		Array.from(
+			{ length: 21 },
+			(_, index) => `0032want ${index.toString(16).padStart(40, '0')}\n`,
+		).join('') +
+		'0009done\n0000'
+	const seen: Array<{ encoding: string | null; body: string }> = []
+	using _server = createMswNodeServer([
+		http.post(`${artifactsRemote}/git-upload-pack`, async ({ request }) => {
+			seen.push({
+				encoding: request.headers.get('Content-Encoding'),
+				body: await request.text(),
+			})
+			return HttpResponse.text('000dpackfile\n0000', {
+				status: 200,
+				headers: { 'Content-Type': 'application/x-git-upload-pack-result' },
+			})
+		}),
+	])
+	const gzipped = await new Response(
+		new Blob([fetchRequest])
+			.stream()
+			.pipeThrough(new CompressionStream('gzip')),
+	).arrayBuffer()
+	const response = await handlePlainRepoGitHttpRequest(
+		new Request(
+			`https://kody.codes/git/sources/${sourceId}.git/git-upload-pack`,
+			{
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${artifactToken}`,
+					'Content-Type': 'application/x-git-upload-pack-request',
+					'Content-Encoding': 'gzip',
+					'Git-Protocol': 'version=2',
+				},
+				body: gzipped,
+			},
+		),
+		{ APP_DB: {} } as Env,
+	)
+	expect(response!.status).toBe(200)
+	expect(await response!.text()).toBe('000dpackfile\n0000')
+	expect(seen).toEqual([{ encoding: null, body: fetchRequest }])
+
+	const rejected = await handlePlainRepoGitHttpRequest(
+		new Request(
+			`https://kody.codes/git/sources/${sourceId}.git/git-upload-pack`,
+			{
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${artifactToken}`,
+					'Content-Encoding': 'br',
+				},
+				body: 'x',
+			},
+		),
+		{ APP_DB: {} } as Env,
+	)
+	expect(rejected!.status).toBe(415)
+	expect(seen).toHaveLength(1)
+})
+
+test('proxy forwards a gzip-encoded receive-pack body decoded', async () => {
+	resetMocks()
+	seedPlainRepo()
+	const packResult = '000eunpack ok\n0000'
+	const received: Array<string> = []
+	using _server = createMswNodeServer([
+		http.post(`${artifactsRemote}/git-receive-pack`, async ({ request }) => {
+			expect(request.headers.get('Content-Encoding')).toBeNull()
+			received.push(await request.text())
+			return HttpResponse.text(packResult, {
+				status: 200,
+				headers: { 'Content-Type': 'application/x-git-receive-pack-result' },
+			})
+		}),
+	])
+	const gzipped = await new Response(
+		new Blob(['PACK-OK']).stream().pipeThrough(new CompressionStream('gzip')),
+	).arrayBuffer()
+	const response = await handlePlainRepoGitHttpRequest(
+		new Request(
+			`https://kody.codes/git/sources/${sourceId}.git/git-receive-pack`,
+			{
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${artifactToken}`,
+					'Content-Type': 'application/x-git-receive-pack-request',
+					'Content-Encoding': 'gzip',
+				},
+				body: gzipped,
+			},
+		),
+		{ APP_DB: {} } as Env,
+	)
+	expect(response!.status).toBe(200)
+	expect(await response!.text()).toBe(packResult)
+	expect(received).toEqual(['PACK-OK'])
 })
 
 test('proxy does not claim busy for unrelated upstream errors', async () => {

@@ -19,7 +19,10 @@
   [Amendment 2026-10-13](#amendment-2026-10-13-credential-mappings)); 2026-10-13
   (Kent: creation pages carry org as a URL segment with no org picker; Secret
   providers stay separate from the Credentials list — see
-  [Amendment 2026-10-12](#amendment-2026-10-12))
+  [Amendment 2026-10-12](#amendment-2026-10-12)); 2026-10-15 (Kent, approved
+  2026-10-14: a package run by anyone but its author uses only declared
+  credentials, behind a flag — see
+  [Amendment 2026-10-15](#amendment-2026-10-15-credential-need-enforcement))
 - **Supersedes in part:** [0021](./0021-publish-gated-package-composition.md)
   (credential authority for the opt-in types used through scoped clients), and
   credentials plan v4 section 3.3 (assignments) and section 3.4 (placeholder
@@ -302,6 +305,7 @@ Every error is structured and includes `retryWith`.
 | `credential_ambiguous{ options }`       | More than one candidate.                                                                                                    |
 | `credential_not_found`                  | Missing or not usable by the actor; one error for both so it reveals neither.                                               |
 | `credential_need_unknown`               | The map names a key the package does not declare.                                                                           |
+| `credential_need_undeclared`            | A package run by anyone but its author uses a credential it does not declare (see the 2026-10-15 amendment).                |
 | `credential_denied`                     | Authorization failed.                                                                                                       |
 | `host_not_allowed`                      | The host is not in the credential's `hosts`.                                                                                |
 | `insecure_transport`                    | The request is not HTTPS.                                                                                                   |
@@ -633,3 +637,53 @@ Cole and Kent decided how decision 2's pause works.
   the need changes. Codemods and promote-to-package first publishes skip the
   pause. If the needs cannot be computed, the publish proceeds and the failure
   is reported.
+
+## Amendment 2026-10-15: credential-need enforcement
+
+Kent approved this on 2026-10-14
+([#3822](https://github.com/kentcdodds/kody/issues/3822)). Declaring needs
+becomes a limit, not only a hint, for packages that someone other than their
+author runs.
+
+- **Who is limited.** A run whose package stamp names a package that is not the
+  acting person's own. "Own" means all three: the package is in the actor's
+  personal org, it is not an unadopted community fork, and it is not
+  internet-visible. Team-org packages, runs by Use collaborators, unadopted
+  forks, and every internet-visible package are limited. Ad hoc code (no stamp)
+  is never limited. A stamped run with no acting person is limited.
+- **What counts as declared.** The stamped package's needs closure. A
+  `kody.secretMounts` entry does not count; codemod 0013 declares mounted names
+  that placeholders fill. `{{secret:NAME}}` and `{{secret-basic:…}}` need a slot
+  keyed `NAME` with no kind or kind `secret`. `{{integration-token:NAME}}` needs
+  a slot keyed `NAME` with no kind or kind `oauth`. A vault ref
+  `{{secret/<provider>:<ref>}}` needs a slot keyed `<provider>` with no kind or
+  kind `secret`. Package- and session-scoped placeholders are bound to the
+  package already and always count. `credential(key)` / `credentials(key)` need
+  `key` in the calling package's own closure; another entry package in the same
+  run declaring it does not count. When the stored closure misses, a closure
+  recomputed from the package's imports is checked too, so a dependency that
+  declared a need after its dependent published still counts (imports resolve
+  only within the package's org, and the dependency's new need passed its own
+  owner's approval pause). `credential.named` is refused in a limited package.
+- **Failure.** An undeclared use fails that fetch or call with
+  `credential_need_undeclared`, naming the package by its registry name and the
+  key to add. The undeclared credential is never resolved. As with a missing
+  secret, a placeholder found in a later chunk of a streamed body fails the
+  fetch after earlier chunks were sent.
+- **Unchanged.** Placement stays fill-anywhere (a header, the URL, or the body,
+  on HTTPS, to a host the credential allows). Use grants, host rules, and the
+  publish pause are unchanged. Helpers that resolve a name outside the fetch
+  gateway (`secretJwtSign`, `integrationTokenRefresh`, `kody.mcp`, and a webhook
+  `secretName`) are not limited yet.
+- **Rollout.** The check sits behind the global `credential-need-enforcement`
+  flag, off by default. Codemod `0013-declare-credential-needs` declares what
+  published packages already use. The flag turns on only after a rescan with
+  `scope: 'credential-need-enforcement'` is clean. A package the codemod cannot
+  convert is reported instead of being enforced.
+- **Self-publish.** With the flag on, an agent's `packageUpdate`
+  (`internet_visible: true`) goes public without the owner's click when the
+  package and its whole resolved dependency tree declare no credential and no
+  other capability. It is recorded as the `package.went_public.self_publish` org
+  audit event. The credential door then refuses every credential to that
+  package, by any helper, until the owner approves going public again. See
+  [internet-visible packages](../internet-visible-packages.md#self-publish).

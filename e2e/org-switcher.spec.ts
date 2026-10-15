@@ -178,9 +178,6 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 		).toBeVisible()
 	}
 	await expect(
-		teamRail.getByRole('link', { name: 'Memories', exact: true }),
-	).toHaveCount(0)
-	await expect(
 		teamRail.getByRole('link', { name: 'Overview', exact: true }),
 	).toHaveAttribute('href', `/@pinned-${runId}`)
 	await expect(

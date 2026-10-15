@@ -29,6 +29,7 @@ export const scheduledLaneNames = [
 	'job_schedule_watchdog',
 	'org_audit_outbox',
 	'package_app_custom_hostnames_reconcile',
+	'follow_maintenance',
 ] as const
 
 export type ScheduledLaneName = (typeof scheduledLaneNames)[number]
@@ -195,8 +196,9 @@ export function shouldRunKitSubscriberSyncCron(now: Date) {
  * Nightly DR export window: roughly 00:30–06:10 UTC on the worker's
  * every-5-minute cron (~68 ticks × 20 s ≈ 22 minutes of staging work).
  * Ticks outside this window are skipped so daytime traffic is not competing
- * with a full-platform export. Completed days exit cheaply through the
- * summary-object check.
+ * with a full-platform export. Inside the window, each tick prefers the
+ * oldest stranded day in the lookback (progress without summary), then today.
+ * Completed days exit cheaply through the summary-object check.
  */
 export function shouldRunDrExportCron(now: Date) {
 	const minutes = now.getUTCHours() * 60 + now.getUTCMinutes()
@@ -253,6 +255,7 @@ export function getScheduledLaneCadence(
 		'oauth_purge_expired',
 		'org_audit_outbox',
 		'package_app_custom_hostnames_reconcile',
+		'follow_maintenance',
 	]
 	if (shouldRunRetentionCron(scheduledAt)) {
 		lanes.push('retention', 'unverified_account_purge', 'soft_delete_purge')

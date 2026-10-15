@@ -1,6 +1,6 @@
 import { type Handle, on, type RemixNode } from 'remix/component'
 import { primitiveWidgetMotion } from '#client/primitive-widget-motion.ts'
-import { type LandingPrimitiveId } from '#universal/landing-lantern.ts'
+import { type PrimitiveWidgetId } from '#universal/primitive-cards.ts'
 
 /**
  * Building blocks for primitive widget scenes: the homepage and `/features`
@@ -25,7 +25,7 @@ const stageWidth = 360
 
 export function PrimitiveWidgetFrame(
 	handle: Handle<{
-		id: LandingPrimitiveId
+		id: PrimitiveWidgetId
 		size: PrimitiveWidgetSize
 		/** Stage height in stage units; the width is always 360. */
 		height?: number

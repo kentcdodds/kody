@@ -59,6 +59,7 @@ export function createAccountResendVerificationHandler(env: Env) {
 			try {
 				await assertAccountWritableDb(
 					env.APP_DB,
+					// person-keyed (not personal org)
 					personalOrgId(user.mcpUser.userId),
 				)
 			} catch (error) {

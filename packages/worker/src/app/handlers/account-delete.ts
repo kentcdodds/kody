@@ -117,6 +117,7 @@ export function createAccountDeleteHandler(env: Env) {
 			try {
 				result = await softDeleteUserAccount({
 					env,
+					// person-keyed (not personal org)
 					userId: personalOrgId(user.mcpUser.userId),
 					actorUserId: personalOrgId(user.mcpUser.userId),
 					actorUsername: user.username,

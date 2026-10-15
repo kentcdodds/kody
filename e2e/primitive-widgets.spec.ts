@@ -7,7 +7,7 @@ test('primitive widgets animate in view, answer clicks, and hold still for reduc
 	await waitForClientHydration(page)
 	const cards = page.locator('.landing-pcards')
 	await cards.scrollIntoViewIfNeeded()
-	await expect(cards.getByRole('link')).toHaveCount(7)
+	await expect(cards.getByRole('link')).toHaveCount(6)
 	const memoryCard = cards.getByRole('link', { name: /Memory/ })
 	await expect(memoryCard).toHaveAttribute('href', '/features/memory')
 	await expect(memoryCard.locator('.pw')).toHaveAttribute('data-motion', '')
@@ -24,7 +24,7 @@ test('primitive widgets animate in view, answer clicks, and hold still for reduc
 	await expect(triggers.locator('.receipt')).toBeVisible()
 	await expect(page).toHaveURL(/\/features$/)
 
-	const integrations = page.getByRole('group', { name: 'Integrations example' })
+	const integrations = page.getByRole('group', { name: 'Credentials example' })
 	await integrations.getByRole('button', { name: 'Book Wed 2:30' }).click()
 	await expect(integrations.locator('.pw-cal-open[data-on]')).toHaveCount(1)
 

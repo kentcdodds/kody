@@ -222,6 +222,16 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		],
 	},
 	{
+		id: 'follows',
+		title: 'Follows',
+		file: 'follows.md',
+		paths: ['/@:username/:kodyId', '/@:orgSlug/-/follows'],
+		apis: [
+			'/profiles/:username/packages/:kodyId/follow.json',
+			'/@:orgSlug/-/follows.json',
+		],
+	},
+	{
 		id: 'activity',
 		title: 'Activity',
 		file: 'activity.md',
@@ -335,6 +345,8 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 			'/for/business',
 			'/faq',
 			'/case-studies',
+			'/believe',
+			'/with/:agent',
 			'/compare/n8n-alternatives',
 			'/compare/composio-alternatives',
 			'/use-cases',

@@ -10,6 +10,11 @@ import {
 } from '#client/route-loader.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
+	IdValue,
+	MetadataGrid,
+	accountDisclosureCss,
+} from '#client/routes/account-management-components.tsx'
+import {
 	approvalBundleApiPath,
 	approvalItemsAwaitingDecision,
 	approvalItemsReadyToApprove,
@@ -20,10 +25,13 @@ import {
 	type ApprovalBundlePackageGroup,
 	type ApprovalBundleView,
 	type ApprovalGrantLine,
+	type ApprovalItemSecurityAudit,
 	type ApprovalItemStatus,
 	type ApprovalItemView,
 } from '#universal/approval-bundles.ts'
 import { parseOrgApprovalBundlePath } from '#universal/org-pages.ts'
+import { packageSecurityAuditAnchor } from '#universal/package-security-audit-prompt.ts'
+import { auditedLabel } from '#client/routes/package-security-audit-field.tsx'
 import {
 	cardCss,
 	cardTitleCss,
@@ -52,6 +60,11 @@ const approveButtonCss = getPrimaryButtonCss({ size: 'md' })
 const denyButtonCss = getSecondaryButtonCss({ size: 'md' })
 const denyConfirmButtonCss = getDangerButtonCss({ size: 'md' })
 const mutedCss = { margin: 0, color: colors.textMuted }
+
+function securityAuditText(audit: ApprovalItemSecurityAudit) {
+	if (audit.status === 'not_audited') return 'No security audit performed'
+	return `${auditedLabel(audit)} · ${audit.verdict === 'pass' ? 'Pass' : 'Concerns'}`
+}
 const smallMutedCss = { ...mutedCss, fontSize: typography.fontSize.sm }
 const listCss = {
 	margin: 0,
@@ -149,6 +162,10 @@ function changeLabel(change: ApprovalGrantLine['change']) {
 			throw new Error(`Unknown grant change: ${String(exhaustive)}`)
 		}
 	}
+}
+
+function itemDetailCopyLabel(label: string) {
+	return label.toLowerCase()
 }
 
 function renderGrant(grant: ApprovalGrantLine, index: number) {
@@ -394,8 +411,41 @@ export function ApprovalBundleRoute(handle: Handle) {
 				{item.grants.length > 0 ? (
 					<ul mix={css(listCss)}>{item.grants.map(renderGrant)}</ul>
 				) : null}
+				{item.fingerprint && item.detailLabel ? (
+					<details
+						data-testid="approval-bundle-item-details"
+						mix={css(accountDisclosureCss)}
+					>
+						<summary>Details</summary>
+						<MetadataGrid
+							items={[
+								{
+									key: 'id',
+									label: item.detailLabel,
+									value: (
+										<IdValue
+											value={item.fingerprint}
+											label={itemDetailCopyLabel(item.detailLabel)}
+										/>
+									),
+								},
+							]}
+						/>
+					</details>
+				) : null}
 				{item.statusMessage ? (
 					<p mix={css(mutedCss)}>{item.statusMessage}</p>
+				) : null}
+				{item.securityAudit && item.reviewHref ? (
+					<p
+						data-testid="approval-bundle-security-audit"
+						mix={css(smallMutedCss)}
+					>
+						Security audit:{' '}
+						<a href={`${item.reviewHref}#${packageSecurityAuditAnchor}`}>
+							{securityAuditText(item.securityAudit)}
+						</a>
+					</p>
 				) : null}
 				{error ? (
 					<p

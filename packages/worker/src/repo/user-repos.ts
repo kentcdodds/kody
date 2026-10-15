@@ -110,6 +110,25 @@ export async function getUserRepoById(
 	return row ? mapUserRepoRow(row) : null
 }
 
+/**
+ * A live repo by id in whichever org owns it. Only for facts that belong
+ * to the repo itself (its name and visibility), never as an access decision.
+ */
+export async function getUserRepoByIdInAnyOrg(
+	db: D1Database,
+	repoId: string,
+): Promise<UserRepoRecord | null> {
+	const row = await db
+		.prepare(
+			`SELECT ${userRepoSelectColumns}
+			FROM user_repos
+			WHERE id = ?${andLiveDeletedAtSql()}`,
+		)
+		.bind(repoId)
+		.first<Record<string, unknown>>()
+	return row ? mapUserRepoRow(row) : null
+}
+
 export async function getUserRepoByName(
 	db: D1Database,
 	input: { userId: string; name: string },

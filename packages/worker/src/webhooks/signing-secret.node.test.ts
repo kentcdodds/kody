@@ -39,6 +39,10 @@ async function resolveSecrets(
 	return (await resolveWebhookHmacVerificationSecrets(...args)).secrets
 }
 
+vi.mock('#worker/credentials/self-published-package-guard.ts', () => ({
+	assertSelfPublishedPackageResolvesNothing: async () => {},
+}))
+
 vi.mock('#mcp/secrets/service.ts', () => {
 	const resolveSecret = vi.fn(async (_input: unknown) => ({
 		found: true,

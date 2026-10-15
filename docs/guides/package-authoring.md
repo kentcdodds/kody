@@ -131,8 +131,9 @@ import main from 'kody:@scope/id'
 
 ## Smoke tests
 
-Before publish (every agent): `repoRunChecks` on the repo session
-(`guide:package_lifecycle`). After publish, when Node ≥22 and the CLI are
+Before publish (`guide:package_lifecycle`): session lane — `repoRunChecks` then
+`repoPublishSession`; git lane — local checks then `packagePublishExternalPush`
+(sessions refuse unpublished HEAD). After publish, when Node ≥22 and the CLI are
 available, prefer local CLI execute (`guide:local_execute`). MCP-only hosts
 smoke with the matching post-publish surface (`packageAppFetch`,
 `packageSubscriptionDispatch`, webhook synthetic dispatch) or a static `kody:@…`

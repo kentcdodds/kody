@@ -2,6 +2,7 @@ import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { refreshCommunityIconForPackagePublish } from '#worker/community/community-icon.ts'
 import { syncActiveCommunityListingToPublishedCommit } from '#worker/community/sync-active-community-listing.ts'
+import { notifyFollowsOfPublishedPackage } from '#worker/follow/notify.ts'
 import { refreshIdentityIconForSource } from '#worker/repo/identity-icon.ts'
 import {
 	createPackagePublishLockedError,
@@ -211,8 +212,9 @@ export async function finalizePublishedEntitySource(
 	// Best-effort: an active community listing must follow the runtime pin.
 	// Failures must not unwind an otherwise successful publish — the scheduled
 	// listing-behind backfill retries stuck rows.
+	let listingSynced = false
 	try {
-		await syncActiveCommunityListingToPublishedCommit({
+		const syncResult = await syncActiveCommunityListingToPublishedCommit({
 			env: input.env,
 			baseUrl: listingBaseUrl,
 			ownerUserId: input.source.user_id,
@@ -220,12 +222,26 @@ export async function finalizePublishedEntitySource(
 			publishedCommit: input.publishedCommit,
 			actorUserId: input.actorUserId,
 		})
+		listingSynced = syncResult === 'synced'
 	} catch (error) {
 		console.error(
 			'community-listing-publish-sync-failed',
 			input.source.entity_id,
 			error,
 		)
+	}
+	// A synced listing republish already notified follows (and the fork
+	// alias) from publishCommunityListing. Otherwise the published commit
+	// itself is the version move.
+	if (previousPublishedCommit !== input.publishedCommit && !listingSynced) {
+		await notifyFollowsOfPublishedPackage({
+			env: input.env,
+			ownerId: input.source.user_id,
+			packageId: input.source.entity_id,
+			previousCommit: previousPublishedCommit,
+			publishedCommit: input.publishedCommit,
+			publishedAt: new Date().toISOString(),
+		})
 	}
 	// Best-effort: an active community listing derives its public icon from
 	// the package's published commit, so superseded cached icon revisions are

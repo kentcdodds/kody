@@ -62,6 +62,10 @@ export const orgAccountClientLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(module) => module.accountEmailRouteLoader,
 	),
+	[routePattern(routes.orgFollows)]: lazyRouteLoader(
+		accountArea,
+		(module) => module.orgFollowsRouteLoader,
+	),
 	[routePattern(routes.orgIntegrations)]: withCredentialRedirectLoader(
 		lazyRouteLoader(
 			accountArea,
@@ -176,6 +180,9 @@ export const orgAccountClientRoutes = {
 	),
 	[routePattern(routes.orgEmail)]: (
 		<LazyAccountRoute render={(module) => <module.AccountEmailRoute />} />
+	),
+	[routePattern(routes.orgFollows)]: (
+		<LazyAccountRoute render={(module) => <module.OrgFollowsRoute />} />
 	),
 	[routePattern(routes.orgIntegrations)]: (
 		<LazyAccountRoute

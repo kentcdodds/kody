@@ -302,7 +302,7 @@ export function TriggersFeature(handle: Handle) {
 					links={[
 						{ href: '/features/packages', label: 'Reusable packages' },
 						{ href: '/features/apps', label: 'Package apps' },
-						{ href: '/features/secrets', label: 'API secrets' },
+						{ href: '/features/credentials', label: 'Credentials' },
 					]}
 				/>
 				<div class="feature-start">

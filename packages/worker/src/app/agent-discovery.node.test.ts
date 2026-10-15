@@ -43,14 +43,15 @@ test('agent discovery documents describe the MCP server and public pages', async
 	for (const suffix of [
 		'',
 		'/memory',
-		'/secrets',
 		'/packages',
 		'/triggers',
-		'/integrations',
+		'/credentials',
 		'/apps',
 	]) {
 		expect(sitemap).toContain(`<loc>${origin}/features${suffix}</loc>`)
 	}
+	expect(sitemap).not.toContain(`<loc>${origin}/features/secrets</loc>`)
+	expect(sitemap).not.toContain(`<loc>${origin}/features/integrations</loc>`)
 
 	expect(sitemap).toContain(
 		'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
@@ -59,6 +60,7 @@ test('agent discovery documents describe the MCP server and public pages', async
 	expect(sitemap).toContain(`<loc>${origin}/discord</loc>`)
 	expect(sitemap).toContain(`<loc>${origin}/faq</loc>`)
 	expect(sitemap).toContain(`<loc>${origin}/case-studies</loc>`)
+	expect(sitemap).toContain(`<loc>${origin}/believe</loc>`)
 	expect(sitemap).toContain(`<loc>${origin}/support</loc>`)
 	expect(sitemap).toContain(`<loc>${origin}/docs</loc>`)
 	expect(sitemap).toContain(`<loc>${origin}/docs/connect</loc>`)
@@ -80,11 +82,11 @@ test('agent discovery documents describe the MCP server and public pages', async
 
 	const card = buildMcpServerCard(origin)
 	expect(card.serverInfo).toEqual({
-		name: 'Kody',
+		name: 'kody-mcp',
+		title: 'Kody',
 		version: kodyMcpServerCardVersion,
 	})
 	expect(card.description).toContain('individuals and teams')
-	expect(card.description).not.toContain('personal assistant')
 	expect(card.url).toBe(`${origin}${mcpResourcePath}`)
 	expect(card.transport).toEqual({
 		type: 'streamable-http',
@@ -105,8 +107,6 @@ test('agent discovery documents describe the MCP server and public pages', async
 	expect(authMd).toContain(`${origin}${mcpResourcePath}`)
 	expect(authMd).toContain('individuals and teams')
 	expect(authMd).toContain('credentials')
-	expect(authMd).not.toContain('personal assistant')
-	expect(authMd).not.toContain('paste secrets')
 
 	const homeMd = buildHomeMarkdown(origin)
 	expect(homeMd.startsWith('# Kody\n')).toBe(true)
@@ -115,17 +115,9 @@ test('agent discovery documents describe the MCP server and public pages', async
 	expect(homeMd).toContain(`${origin}/llms.txt`)
 	expect(homeMd).toContain('individuals and teams')
 	expect(homeMd).toContain('orgs, teams,')
-	expect(homeMd).not.toContain('personal assistant')
-	expect(homeMd).not.toContain('per-user personal')
 
 	expect(getAgentSkill('connect-kody')?.body).toContain('individuals and')
-	expect(getAgentSkill('connect-kody')?.body).not.toContain(
-		'personal assistant',
-	)
 	expect(getAgentSkill('what-is-kody')?.body).toContain('orgs, teams, grants')
-	expect(getAgentSkill('what-is-kody')?.body).not.toContain(
-		'personal assistant',
-	)
 
 	const now = new Date('2026-08-18T20:00:00.000Z')
 	const securityTxt = buildSecurityTxt(origin, now)

@@ -7,10 +7,8 @@
  * checked before any value is read.
  */
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
-import {
-	personalOrgId,
-	type OwnerId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { loadPersonalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import {
 	createMissingIntegrationAccessTokenMessage,
 	findIntegrationCredentialId,
@@ -191,7 +189,7 @@ async function findOauthConnection(
 	if (org) return { owner: input.orgId, connection: org }
 	const person = input.actor?.actor?.userId
 	if (!person) return null
-	const owner = personalOrgId(person)
+	const owner = await loadPersonalOrgIdForPerson(input.env.APP_DB, person)
 	const personal = await findCredentialById({
 		db: input.env.APP_DB,
 		ownerId: owner,

@@ -29,6 +29,10 @@ const secretMocks = vi.hoisted(() => ({
 	resolveSecret: vi.fn(),
 }))
 
+vi.mock('#worker/credentials/self-published-package-guard.ts', () => ({
+	assertSelfPublishedPackageResolvesNothing: async () => {},
+}))
+
 vi.mock('#worker/integrations/service.ts', () => ({
 	getJoinedIntegration: (...args: Array<unknown>) =>
 		integrationMocks.getJoinedIntegration(...args),

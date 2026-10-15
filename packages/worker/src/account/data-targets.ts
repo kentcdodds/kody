@@ -378,6 +378,20 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		setColumn: 'approved_by_user_id',
 		value: 'deleted-user',
 	},
+	// Security audits are informational records on the owner's package. The
+	// teammate who recorded one is attribution only.
+	{
+		kind: 'user_columns',
+		table: 'package_security_audits',
+		columns: ['owner_user_id'],
+	},
+	{
+		kind: 'replace_user_column',
+		table: 'package_security_audits',
+		matchColumn: 'recorded_by_user_id',
+		setColumn: 'recorded_by_user_id',
+		value: 'deleted-user',
+	},
 	// Custom hostname rows are owned by package_id / org_id (FK cascade). The
 	// creator is attribution only: deleting that person anonymizes the column
 	// without dropping a still-bound hostname.
@@ -560,6 +574,24 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		table: 'community_forks',
 		columns: ['forker_user_id'],
 	},
+	// Follows belong to the follower org. Deleting the person who created one
+	// anonymizes attribution and leaves the row for the rest of the org.
+	{
+		kind: 'replace_user_column',
+		table: 'follows',
+		matchColumn: 'creator_user_id',
+		setColumn: 'creator_user_id',
+		value: 'deleted-user',
+	},
+	{
+		kind: 'user_columns',
+		table: 'follows',
+		columns: ['follower_org_id'],
+		includeInExport: false,
+		surface: 'follows_owned_by_org',
+		reason:
+			'Org hard purge deletes follows owned by the org. Account export uses creator_user_id so the creating person receives the row. Deleting a member anonymizes creator_user_id and leaves the org follow in place.',
+	},
 	{
 		kind: 'community_listing_child',
 		table: 'community_reports',
@@ -679,6 +711,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		value: 'deleted-user',
 	},
 	{ kind: 'user_id', table: 'org_invite_link_redemptions' },
+	{ kind: 'user_id', table: 'org_invite_link_pending' },
 	{
 		kind: 'replace_user_column',
 		table: 'teams',
@@ -720,7 +753,12 @@ export function getAccountD1UserColumnCoverage() {
 			}
 			case 'user_columns': {
 				for (const column of target.columns) {
-					covered.add(`${target.table}.${column}`)
+					// Inventory guards scan `user_id` / `*_user_id` only. Org
+					// owner columns such as `follower_org_id` stay on the target
+					// for purge but are not part of that coverage set.
+					if (column === 'user_id' || column.endsWith('_user_id')) {
+						covered.add(`${target.table}.${column}`)
+					}
 				}
 				break
 			}

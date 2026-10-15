@@ -398,7 +398,7 @@ async function queryDynamicWorkerCost(
 					o.stripe_price_id, r.event_count
 				 FROM usage_rollups r
 				 INNER JOIN orgs o ON o.id = r.user_id${andLiveDeletedAtSql('o')}
-				 INNER JOIN users u ON u.stable_user_id = o.id
+				 INNER JOIN users u ON COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id) = o.id
 				 WHERE r.month = ?
 					AND r.metric = 'dynamic_worker_day'
 					AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}

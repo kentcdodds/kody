@@ -27,6 +27,7 @@
 			"{workspaceRoot}/packages/mock-servers/**/*",
 			"{workspaceRoot}/packages/jobs-worker/**/*",
 			"{workspaceRoot}/packages/highlight-worker/**/*",
+			"{workspaceRoot}/packages/push-queue-worker/**/*",
 			"{workspaceRoot}/packages/shared/**/*",
 			"{workspaceRoot}/skills-lock.json",
 			"{workspaceRoot}/.agents/**/*"

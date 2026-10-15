@@ -150,6 +150,42 @@ export async function loadCredentialMappings(input: {
 	})
 }
 
+/**
+ * Every stored mapping on the package, on every target (org default, each
+ * member's default, each trigger override). For listing what the package can
+ * reach, not for resolving one actor's run.
+ */
+export async function loadAllCredentialMappingsForPackage(input: {
+	db: D1Database
+	orgId: string
+	packageId: string
+}): Promise<Array<CredentialMappingRow>> {
+	const result = await input.db
+		.prepare(
+			`SELECT need_key, target, person_user_id, enablement_id,
+				credential_ids_json, updated_by_user_id, updated_at
+			FROM credential_mappings
+			WHERE org_id = ? AND package_id = ?
+			ORDER BY need_key, target, person_user_id, enablement_id`,
+		)
+		.bind(input.orgId, input.packageId)
+		.all<Row>()
+	return (result.results ?? []).flatMap((row): Array<CredentialMappingRow> => {
+		const target = toTarget(row)
+		const credentialIds = parseIds(row.credential_ids_json)
+		if (!target || !credentialIds) return []
+		return [
+			{
+				needKey: row.need_key,
+				target,
+				credentialIds,
+				updatedByUserId: row.updated_by_user_id,
+				updatedAt: row.updated_at,
+			},
+		]
+	})
+}
+
 /** Sets one need's mapping on one target; `null` clears it (inherit). */
 export function buildWriteCredentialMappingStatement(input: {
 	db: D1Database

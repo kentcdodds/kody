@@ -1,7 +1,6 @@
 import { type Action } from 'remix/router'
 import { authorizeGrantRevoke } from '#mcp/capabilities/access/shared.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
-import { isSecureRequest } from '#app/auth-session.ts'
 import {
 	readAuthenticatedAppUser,
 	type AuthenticatedAppUser,
@@ -23,24 +22,7 @@ import {
 import { orgAuditWriterFromRequest } from '#worker/orgs/org-audit.ts'
 import { listOrgGrantsForView } from '#worker/orgs/org-grants-view.ts'
 import { type OrgGrantsLoaderData } from '#universal/loader-data.ts'
-import { serializeLastUsedOrgCookie } from '#universal/org-last-used-cookie.ts'
 import { type routes } from '#universal/routes.ts'
-
-function withLastUsedOrg(request: Request, slug: string, response: Response) {
-	const headers = new Headers(response.headers)
-	headers.append(
-		'Set-Cookie',
-		serializeLastUsedOrgCookie({
-			slug,
-			secure: isSecureRequest(request),
-		}),
-	)
-	return new Response(response.body, {
-		status: response.status,
-		statusText: response.statusText,
-		headers,
-	})
-}
 
 function renderDenied(
 	request: Request,
@@ -129,22 +111,18 @@ export function createOrgGrantsHandler(env: Env) {
 				permission: 'member:read',
 			})
 			if (!access.ok) return renderDenied(request, env, access)
-			return withLastUsedOrg(
+			return await renderAppPage({
 				request,
-				access.org.slug,
-				await renderAppPage({
-					request,
-					env,
-					title: 'Grants',
-					loaderData: {
-						orgGrants: await loadOrgGrantsData({
-							env,
-							user,
-							org: access.org,
-						}),
-					},
-				}),
-			)
+				env,
+				title: 'Grants',
+				loaderData: {
+					orgGrants: await loadOrgGrantsData({
+						env,
+						user,
+						org: access.org,
+					}),
+				},
+			})
 		},
 	} satisfies Action<typeof routes.orgGrants>
 }

@@ -71,6 +71,7 @@ const previewDerivedNameSuffixes = [
 	'-repo-session-blobs',
 	'-operator-backups',
 	'-email-blobs',
+	'-push-queue',
 	'-highlight',
 	'-platform',
 	'-runtime',

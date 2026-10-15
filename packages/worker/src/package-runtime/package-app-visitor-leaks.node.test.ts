@@ -112,7 +112,7 @@ async function setup() {
 		bea: { userId: beaId, username: 'bea', role: 'member' },
 	} satisfies Record<string, RuntimePackageAppVisitor>
 
-	const bridgeFor = (visitor: RuntimePackageAppVisitor) =>
+	const bridgeFor = (visitor: RuntimePackageAppVisitor | null) =>
 		new PackageAppRuntimeBridge(
 			{
 				props: {
@@ -186,5 +186,23 @@ test("a member's package app acts as its visitor, so it cannot make them Owner",
 	await expect(
 		t.bridgeFor(t.visitors.owner).callCapability(promoteBea),
 	).rejects.toThrow('"orgMemberUpdate" needs a live person')
+	expect(await t.beasRole()).toBe('member')
+})
+
+test('an anonymous visitor of an internet-visible app acts as no one', async () => {
+	const t = await setup()
+
+	const callerContext: McpCallerContext = await createPackageAppCallerContext({
+		baseUrl,
+		owner: t.owner,
+		visitor: null,
+		packageId: 'pkg-app',
+	})
+	expect(callerContext.user).toBeNull()
+	expect(callerContext.request).toBeNull()
+
+	await expect(t.bridgeFor(null).callCapability(promoteBea)).rejects.toThrow(
+		'"orgMemberUpdate" needs a live person',
+	)
 	expect(await t.beasRole()).toBe('member')
 })

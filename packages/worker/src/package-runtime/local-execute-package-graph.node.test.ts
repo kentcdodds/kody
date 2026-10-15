@@ -9,6 +9,7 @@ import {
 	buildLocalExecutePackageGraph,
 	localExecuteHostRuntimeModuleName,
 	pickLocalExecutePrimaryRuntimePath,
+	synthesizeLocalExecutePackageGraphEntry,
 	type LocalExecutePackageGraphError,
 } from './local-execute-package-graph.ts'
 import {
@@ -116,6 +117,21 @@ function makeArtifactHit(input: {
 		},
 	}
 }
+
+test('synthesizeLocalExecutePackageGraphEntry builds a scannable stub from imports', () => {
+	expect(synthesizeLocalExecutePackageGraphEntry([])).toBe(
+		'export default async function main() {}\n',
+	)
+	expect(
+		synthesizeLocalExecutePackageGraphEntry([
+			'kody:@b/pkg/export',
+			'kody:@a/pkg/export',
+			'kody:@b/pkg/export',
+		]),
+	).toBe(
+		`import "kody:@a/pkg/export"\nimport "kody:@b/pkg/export"\nexport default async function main() {}\n`,
+	)
+})
 
 test('buildLocalExecutePackageGraph returns embeddable kody:@ modules from published artifacts', async () => {
 	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())

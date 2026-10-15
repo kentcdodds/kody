@@ -231,7 +231,6 @@ test('team settings rail names the URL org when the session list is personal-onl
 				personal: true,
 			},
 		],
-		lastUsedOrganization: 'ada',
 	}
 	const html = await renderToString(
 		jsx(RouterLocationProvider, {
@@ -260,7 +259,6 @@ test('team settings rail names the URL org when the session list is personal-onl
 	expect(html).toContain('href="/@acme/-/agents"')
 	expect(html).toContain('href="/@acme/-/credentials"')
 	expect(html).toContain('href="/@acme/-/secret-providers"')
-	expect(html).not.toContain('href="/@acme/-/memories"')
 	expect(html).toContain('href="/@acme/-/email"')
 	expect(html).toContain('href="/@acme/-/activity"')
 	// Workflows and Waiting are tabs on the Activity page, and usage is the
@@ -349,7 +347,6 @@ test('workspace rail heading is the org switcher on desktop and in the phone dra
 	const account = await render('/account/security')
 	expect(account).toContain('aria-label="Account sections"')
 	expect(account).not.toContain('switch organization')
-	expect(account).not.toContain('aria-label="Workspaces"')
 	expect(account).not.toContain('href="/@acme"')
 	expect(account).not.toContain('href="/@ada/-/overview"')
 })

@@ -868,6 +868,7 @@ async function fetchWithDynamicWorkerBudget(
 	const packageAppOriginResponse = await handlePackageAppOriginRequest(
 		request,
 		env,
+		ctx,
 	)
 	if (packageAppOriginResponse) return packageAppOriginResponse
 
@@ -883,8 +884,8 @@ async function fetchWithDynamicWorkerBudget(
 		if (gitResponse) return gitResponse
 	}
 
-	// Plain-repo Artifacts git proxy (repoGetGitRemote remotes). Translates
-	// receive-pack lock contention into a clean 503 + Retry-After.
+	// Plain-repo Artifacts git proxy (repoGetGitRemote remotes). Waits out
+	// receive-pack lock contention (bounded) before 503 + Retry-After.
 	if (isPlainRepoGitHttpRequest(url.pathname)) {
 		const gitResponse = await handlePlainRepoGitHttpRequest(request, env)
 		if (gitResponse) return gitResponse
@@ -907,6 +908,7 @@ async function handleOriginAppFetch(
 	const packageAppOriginResponse = await handlePackageAppOriginRequest(
 		request,
 		env,
+		ctx,
 	)
 	if (packageAppOriginResponse) return packageAppOriginResponse
 

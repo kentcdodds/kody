@@ -58,6 +58,11 @@ export const parallelValidateLegs = [
 		command: 'npm run highlight:build',
 		weight: 'build',
 	},
+	{
+		name: 'push-queue-build',
+		command: 'npm run push-queue:build',
+		weight: 'build',
+	},
 	{ name: 'api-build', command: 'npm run api:build', weight: 'build' },
 	{
 		name: 'api-docs-build',

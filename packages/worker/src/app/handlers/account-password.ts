@@ -225,6 +225,7 @@ export function createAccountPasswordHandler(env: Env) {
 				d1: env.APP_DB,
 				helpers,
 				userId: user.userId,
+				// person-keyed (not personal org)
 				stableUserId: personalOrgId(
 					personIdFromStored(userRecord.stable_user_id),
 				),

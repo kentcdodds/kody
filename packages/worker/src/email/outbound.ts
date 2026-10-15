@@ -1,5 +1,9 @@
 import { base64ToBytes } from '@kody-internal/shared/base64.ts'
-import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personIdFromStored,
+	type OwnerId,
+	type PersonId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	accountSuspendedMessage,
@@ -90,13 +94,23 @@ export type OutboundEmailAttachmentInput = {
 
 export type EmailSendInput = {
 	env: SendEmailEnv
+	/**
+	 * Mailbox / personal-org owner: Durable Object names, sender-identity and
+	 * inbox rows, UserMeter, and other org-keyed storage.
+	 */
 	userId: OwnerId
+	/**
+	 * Acting person for platform-sender resolution, email verification, and
+	 * account restriction lookups (`users.stable_user_id`). Defaults to the
+	 * same bytes as {@link userId} for legacy equal-id personal orgs.
+	 */
+	actorPersonId?: PersonId
 	/** MCP / Open API caller context when the send is user-initiated. */
 	request?: RequestContext | null
 	/**
 	 * Acting user's account email (not the message from/to) when the caller
 	 * context has one. Package runtime contexts may pass an empty string;
-	 * the account is then resolved from the stable userId so the
+	 * the account is then resolved from the person stable id so the
 	 * verified-account gate and entitlement plan lookup still bind.
 	 */
 	accountEmail: string
@@ -459,8 +473,12 @@ export async function sendOutboundEmail(
 	if (unsafeInput.userId === systemEmailOwnerId) {
 		throw new Error('System outbound email is unsupported.')
 	}
+	const actorPersonId =
+		unsafeInput.actorPersonId ??
+		personIdFromStored(unsafeInput.userId as string)
 	const input: EmailSendInput = {
 		...unsafeInput,
+		actorPersonId,
 		env: {
 			...unsafeInput.env,
 			APP_DB: unsafeInput.env.APP_DB,
@@ -474,7 +492,7 @@ export async function sendOutboundEmail(
 		const mailbox = mailboxRpc({ env: input.env, userId: input.userId })
 		// The from address is always platform-assigned: {username}@<platform
 		// domain>. There is no self-service sender verification. The resolved
-		// account email (recovered from the stable userId when the caller
+		// account email (recovered from the person stable id when the caller
 		// context carried none, e.g. package subscription handlers) backs the
 		// verified-account gate and the entitlement plan lookup so plan limits
 		// can never be bypassed by an empty context email.
@@ -482,13 +500,13 @@ export async function sendOutboundEmail(
 			db: input.env.APP_DB,
 			env: input.env,
 			accountEmail: input.accountEmail,
-			userId: input.userId,
+			userId: actorPersonId,
 		})
 		const from = sender.from
 		const accountEmailVerified = await isAccountEmailVerified({
 			db: input.env.APP_DB,
 			email: sender.accountEmail,
-			stableUserId: input.userId,
+			stableUserId: actorPersonId,
 		})
 		if (!accountEmailVerified) {
 			throw new Error('Account email must be verified before sending email.')
@@ -500,7 +518,7 @@ export async function sendOutboundEmail(
 		// domain's reputation.
 		const restrictions = await getAccountRestrictionsByStableUserId({
 			db: input.env.APP_DB,
-			stableUserId: input.userId,
+			stableUserId: actorPersonId,
 		})
 		if (restrictions?.suspendedAt) {
 			throw new Error(accountSuspendedMessage)
@@ -550,7 +568,7 @@ export async function sendOutboundEmail(
 			}
 			to = await resolveSelfRecipients({
 				db: input.env.APP_DB,
-				stableUserId: input.userId,
+				stableUserId: actorPersonId,
 				to: input.to,
 				accountEmail: sender.accountEmail,
 			})

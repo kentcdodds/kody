@@ -721,6 +721,45 @@ test('omitted continuation filters keep a canary fleet apply on the stored packa
 	expect(continued.nextCursor).toBeNull()
 })
 
+test('credential-need enforcement scope keeps a fleet run off unshared personal packages', async () => {
+	setupMocks()
+	const { env } = createEnv()
+	await env.APP_DB.prepare(
+		`INSERT INTO users (username, email, password_hash, stable_user_id)
+		VALUES ('solo', 'solo@example.com', 'hash', 'solo')`,
+	).run()
+	const fleet = [
+		savedPackage('pkg-a-solo', { userId: 'solo' }),
+		{
+			...savedPackage('pkg-b-public', { userId: 'solo' }),
+			isInternetVisible: true,
+		},
+		savedPackage('pkg-c-team', { userId: 'team-org' }),
+	]
+	mocks.listSavedPackagesPage.mockImplementation(
+		async (_db: D1Database, input: { afterId: string | null }) =>
+			fleet.filter(
+				(pkg) =>
+					input.afterId == null || pkg.id.localeCompare(input.afterId) > 0,
+			),
+	)
+	mockSourcesByIdWith(cleanFiles)
+
+	const result = await step(env, {
+		initiatedByUserId: 'admin-1',
+		scope: fleetScope,
+		filters: { scope: 'credential-need-enforcement' },
+	})
+	expect(result.items.map((item) => item.packageId)).toEqual([
+		'pkg-b-public',
+		'pkg-c-team',
+	])
+	const run = await getPackageCodemodRunById(env.APP_DB, result.runId)
+	expect(JSON.parse(run!.filtersJson)).toEqual({
+		scope: 'credential-need-enforcement',
+	})
+})
+
 test('package codemod revert page ceiling and user-scoped SQL filter for sparse ownership', async () => {
 	setupMocks()
 	const { env } = createEnv()

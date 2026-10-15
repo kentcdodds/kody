@@ -208,6 +208,12 @@ export type ResolveCredentialInput<T extends CredentialTarget> = {
 	 */
 	actor: RequestContext | null
 	packageStamp?: PackageStamp | null
+	/**
+	 * The package the run belongs to when the door is not stamped (the
+	 * credential client). Only the self-publish guard reads it; it never binds
+	 * package buckets or rules.
+	 */
+	runPackageId?: string | null
 	/** App origin for approval links in denial messages. */
 	baseUrl: string
 	credential: T

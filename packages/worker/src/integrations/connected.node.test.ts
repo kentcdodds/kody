@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest'
 import {
-	integrationConnectedSql,
 	isIntegrationConnected,
 	oauthCredentialListStatus,
 } from './connected.ts'
@@ -8,9 +7,6 @@ import {
 test('connected means connected_at is set; auth failure is a status overlay', () => {
 	expect(isIntegrationConnected(null)).toBe(false)
 	expect(isIntegrationConnected('2026-10-14T00:00:00.000Z')).toBe(true)
-	expect(integrationConnectedSql('i.connected_at')).toBe(
-		'i.connected_at IS NOT NULL',
-	)
 	expect(
 		oauthCredentialListStatus({
 			connectedAt: null,

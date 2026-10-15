@@ -28,6 +28,7 @@ import {
 	createTestOrgAuditWriter,
 } from './create-audit-db.ts'
 import { createD1FromSqlite } from './create-d1-from-sqlite.ts'
+import { createMemoryKvNamespace } from './memory-kv.ts'
 import { testStableUserIdFromEmail } from './stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from './user-meter.ts'
 import { type CredentialMappingChange } from '#universal/credential-contracts.ts'
@@ -78,6 +79,7 @@ export async function setupPackageCredentialMappingFixture(input: {
 	const env = {
 		APP_DB: db,
 		AUDIT_DB: createAuditTestDb(),
+		BUNDLE_ARTIFACTS_KV: createMemoryKvNamespace().kv,
 		...createInMemoryUserMeterEnv().env,
 		COOKIE_SECRET: 'test-cookie-secret',
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',

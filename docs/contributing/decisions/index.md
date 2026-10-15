@@ -197,6 +197,10 @@ Open these before proposing a new primitive, surface, or storage home.
   — `{slug}@inbox.kody.codes`; Mailbox keyed by org id; per-sender enablement
   rows; inbox-owner fallback retired; migrated personal catch-alls tagged
   `any_authenticated`
+- [0075 — Repo pushes serialize through a per-repo Durable Object in a dedicated worker](./0075-repo-push-queue-worker.md)
+  — `kody-push-queue` owns `RepoPushQueueV1`; pack lands before enqueue; FIFO
+  one push at a time; 90s budget then 503 `Retry-After: 2`; no fallback; gated
+  by the repo-scoped `repo-push-queue` flag
 
 ## Historical / UI / implementation
 

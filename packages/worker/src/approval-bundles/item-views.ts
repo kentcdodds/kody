@@ -5,6 +5,7 @@
  * come back `unavailable` without saying why, so a bundle never leaks which
  * packages exist.
  */
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import {
@@ -29,6 +30,7 @@ import {
 	type PackageApprovalRequest,
 } from '#worker/package-capabilities/approval-requests-repo.ts'
 import { loadCapabilityApprovalSummary } from '#worker/package-capabilities/capability-approval-service.ts'
+import { loadCurrentPackageSecurityAudit } from '#worker/package-capabilities/security-audit-state.ts'
 import { type CapabilitySetEntry } from '#worker/package-capabilities/capability-set.ts'
 import { readWentPublicSummary } from '#worker/package-capabilities/went-public-approval.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
@@ -39,6 +41,7 @@ import {
 	type ApprovalGrantLine,
 	type ApprovalItemPackage,
 	type ApprovalItemRef,
+	type ApprovalItemSecurityAudit,
 	type ApprovalItemView,
 } from '#universal/approval-bundles.ts'
 import {
@@ -149,6 +152,7 @@ function unavailable(
 		canApprove: false,
 		canDeny: false,
 		fingerprint: null,
+		detailLabel: null,
 		grants: [],
 		reviewHref: null,
 		decision: decisionView(decision),
@@ -293,15 +297,16 @@ async function publishItemView(
 		decision: decisionView(decision),
 	}
 	const state = publishItemState(request, publishedCommit, decision)
-	const shortCommit = request.pendingCommit.slice(0, 7)
 	switch (request.reason) {
 		case 'credential_needs_changed': {
 			const changes = readCredentialNeedChanges(request.details)
 			return {
 				...base,
 				...state,
+				detailLabel: 'Paused commit',
 				title: 'Publish with changed credential needs',
-				summary: `Approving publishes commit ${shortCommit}, which asks for the credentials below. The previously published version keeps serving until you approve. Denying drops this paused publish.`,
+				summary:
+					'Approving publishes this version, which asks for the credentials below. The previously published version keeps serving until you approve. Denying drops this paused publish.',
 				grants: await Promise.all(
 					changes.map((change) => credentialNeedGrant(viewer, change)),
 				),
@@ -310,9 +315,18 @@ async function publishItemView(
 		case 'went_public':
 			return {
 				...base,
-				...state,
+				...(state.canApprove &&
+				!(await wentPublicCapabilitiesApproved(viewer, savedPackage))
+					? {
+							...state,
+							canApprove: false,
+							statusMessage:
+								'Its credentials and capabilities are not approved yet. Review them on the package’s approval page, where one Approve also turns on internet-visible serving.',
+						}
+					: state),
+				detailLabel: 'Published commit',
 				title: 'Serve on the public internet',
-				summary: `${readWentPublicSummary(request.details)} Approving turns on internet-visible serving for commit ${shortCommit}. Denying leaves it off.`,
+				summary: `${readWentPublicSummary(request.details)} Approving turns on internet-visible serving for this version. Denying leaves it off.`,
 				grants: [
 					{
 						change: 'added',
@@ -331,6 +345,29 @@ async function publishItemView(
 			const exhaustive: never = request.reason
 			throw new Error(`Unknown approval reason: ${String(exhaustive)}`)
 		}
+	}
+}
+
+/** Going public needs the live capability set approved first. */
+async function wentPublicCapabilitiesApproved(
+	viewer: ApprovalViewer,
+	savedPackage: SavedPackageRecord,
+) {
+	try {
+		const summary = await loadCapabilityApprovalSummary({
+			env: viewer.env,
+			ownerUserId: viewer.request.org.id as OwnerId,
+			savedPackage,
+			requestUrl: viewer.baseUrl,
+		})
+		return summary.fingerprintMatchesApproval
+	} catch (error) {
+		// One unreadable package must not break the bundle; it can still be denied.
+		console.error('Failed to load capability summary for went_public item:', {
+			packageId: savedPackage.id,
+			error: getErrorMessage(error),
+		})
+		return false
 	}
 }
 
@@ -468,6 +505,31 @@ export function capabilityGrantLines(
 	return lines
 }
 
+async function capabilitiesSecurityAudit(
+	viewer: ApprovalViewer,
+	input: {
+		packageId: string
+		publishedCommit: string | null
+		fingerprint: string
+	},
+): Promise<ApprovalItemSecurityAudit | null> {
+	if (!input.publishedCommit) return null
+	const audit = await loadCurrentPackageSecurityAudit(viewer.env.APP_DB, {
+		ownerUserId: viewer.request.org.id,
+		packageId: input.packageId,
+		publishedCommit: input.publishedCommit,
+		fingerprint: input.fingerprint,
+	})
+	return audit
+		? {
+				status: 'audited',
+				verdict: audit.verdict,
+				auditor: audit.auditor,
+				recordedAt: audit.recordedAt,
+			}
+		: { status: 'not_audited' }
+}
+
 async function capabilitiesItemView(
 	viewer: ApprovalViewer,
 	ref: Extract<ApprovalItemRef, { type: 'capabilities' }>,
@@ -485,6 +547,11 @@ async function capabilitiesItemView(
 		readApprovedEntries(summary.latestApproval?.capabilitySetJson ?? null),
 		summary.capabilitySet.entries,
 	)
+	const securityAudit = await capabilitiesSecurityAudit(viewer, {
+		packageId: savedPackage.id,
+		publishedCommit: summary.publishedCommit,
+		fingerprint: summary.capabilitySet.fingerprint,
+	})
 	const base = {
 		key: approvalItemKey(ref),
 		type: ref.type,
@@ -493,11 +560,13 @@ async function capabilitiesItemView(
 			'This internet-visible package now reaches different credentials or storage than you approved. Approving pins the current set for public serving. Denying leaves it unapproved.',
 		package: packageView(viewer, savedPackage),
 		fingerprint: summary.capabilitySet.fingerprint,
+		detailLabel: 'Capability fingerprint',
 		grants,
 		reviewHref: routes.communityPackageApproveCapabilities.href({
 			username: orgSlug(viewer),
 			kodyId: savedPackage.kodyId,
 		}),
+		...(securityAudit ? { securityAudit } : {}),
 		decision: decisionView(decision),
 	}
 	const decided = decidedState(decision)
@@ -634,6 +703,7 @@ async function credentialPicksItemView(
 		summary: `Approving saves these credential mappings for ${scope.savedPackage.kodyId} and turns on any trigger listed. Denying changes nothing.${reason ? ` Agent note (not written by Kody): ${reason}` : ''}`,
 		package: packageView(viewer, scope.savedPackage),
 		fingerprint: view.fingerprint,
+		detailLabel: 'Approval fingerprint',
 		grants,
 		reviewHref: buildCredentialApprovalHref({
 			username: orgSlug(viewer),

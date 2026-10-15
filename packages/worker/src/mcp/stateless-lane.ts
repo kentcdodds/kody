@@ -33,11 +33,7 @@ import {
 } from './mcp-registration-agent.ts'
 import { runWithDynamicWorkerEvaluationBudget } from '#worker/dynamic-worker-evaluation-budget.ts'
 import { runWithInboundRequestSignal } from './inbound-request-signal.ts'
-
-const kodyMcpServerInfo = {
-	name: 'kody-mcp',
-	version: '1.0.0',
-} as const
+import { buildKodyMcpServerInfo } from './kody-mcp-server-info.ts'
 
 /**
  * Serve one modern-era `/mcp` request. Called after `handleMcpRequest` has
@@ -68,7 +64,7 @@ export async function handleStatelessMcpRequest(input: {
 							callerContext,
 						})
 					: undefined
-			const server = new McpServer(kodyMcpServerInfo, {
+			const server = new McpServer(buildKodyMcpServerInfo(), {
 				...(instructions ? { instructions } : {}),
 				jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
 			})

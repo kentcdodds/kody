@@ -1,5 +1,5 @@
 /**
- * Motion for the six homepage lantern orbs.
+ * Motion for the five lantern orbs.
  *
  * Coordinates are fractions of the lantern width, including y, so a circle
  * in this space is a circle in pixels (the still is taller than it is wide).
@@ -83,7 +83,6 @@ const wallSkin = 0.008
 
 const phases: Record<LandingPrimitiveId, number> = {
 	memory: 0.5,
-	secrets: 2.05,
 	packages: 3.7,
 	triggers: 5.15,
 	integrations: 1.15,

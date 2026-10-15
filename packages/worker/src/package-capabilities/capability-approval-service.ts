@@ -66,18 +66,11 @@ export async function loadCapabilityApprovalSummary(input: {
 		},
 	)
 
-	// Unpublished packages cannot load a published manifest. Return a
-	// storage-only placeholder so the approval page / toggle can show
-	// "publish first" instead of throwing.
+	// Unpublished packages cannot load a published manifest. Return an empty
+	// placeholder so the approval page / toggle can show "publish first"
+	// instead of throwing.
 	if (!publishedCommit) {
-		const capabilitySet = await buildCapabilitySet([
-			{
-				kind: 'storage',
-				storageId: input.savedPackage.id,
-				hosts: [],
-				via: [input.savedPackage.kodyId],
-			},
-		])
+		const capabilitySet = await buildCapabilitySet([])
 		return {
 			capabilitySet,
 			dependencySnapshot: null,
@@ -127,6 +120,11 @@ export async function approvePackageCapabilitySet(input: {
 	requestUrl: string
 	/** Fingerprint the owner reviewed; must match the live set. */
 	expectedFingerprint: string
+	/**
+	 * False when the caller approves an existing `went_public` request itself,
+	 * so a request turned off meanwhile is not enqueued again.
+	 */
+	enqueueWentPublic?: boolean
 }): Promise<{
 	approval: PackageCapabilityApprovalRecord
 	capabilitySet: CapabilitySet
@@ -221,7 +219,10 @@ export async function approvePackageCapabilitySet(input: {
 	// already-public package only refreshes the capability pin (storage-change
 	// trigger stays on the fingerprint match, not the queue).
 	let wentPublicRequest: PackageApprovalRequest | null = null
-	if (!input.savedPackage.isInternetVisible) {
+	if (
+		!input.savedPackage.isInternetVisible &&
+		input.enqueueWentPublic !== false
+	) {
 		wentPublicRequest = await enqueueWentPublicApproval({
 			env: input.env,
 			ownerUserId: input.ownerUserId,

@@ -1,20 +1,18 @@
 /**
  * Locked kody.codes homepage copy (hero plus the early-scroll sections).
  * Keep these strings exact. Do not invent positioning or swap in synonyms.
+ * Homepage SSR tests pin independent literals of this copy, not this module.
  */
 
-export const landingHeroHeadlineLead = 'Your agents\u2019 '
-export const landingHeroHeadlineEmphasis = 'cloud'
-export const landingHeroHeadline = `${landingHeroHeadlineLead}${landingHeroHeadlineEmphasis}`
+export const landingHeroHeadlineLead = 'The '
+export const landingHeroHeadlineEmphasis = 'shared cloud'
+export const landingHeroHeadlineTail = ' for your team\u2019s agents'
 
-export const landingHeroSubheadLead =
-	'You shouldn\u2019t have to start over in '
-export const landingHeroSubheadEmphasis = 'every agent.'
-export const landingHeroSubheadTail = ''
-export const landingHeroLead =
-	'One home for packages, secrets, memory, and jobs, so what you build in Cursor still runs in Claude.'
+export const landingHeroSubhead =
+	'One place for the credentials, tools, and workflows for every agent your team members use.'
 export const landingHeroPrimaryCta = 'Connect your agent'
-export const landingHeroSecondaryCta = 'See how it works'
+export const landingHeroPlugLine =
+	'Keep your agent. Kody is what it plugs into.'
 
 export const landingPrimitivesIntroLead =
 	'Kody gives your agents a shared set of primitives.'
@@ -25,12 +23,7 @@ export const landingHomePrimitives = [
 	{
 		id: 'memory',
 		word: 'memory',
-		body: 'Facts without a better home, like project nicknames or personal context, that your connected agents can retrieve.',
-	},
-	{
-		id: 'secrets',
-		word: 'secrets',
-		body: 'Keys and tokens the model never sees. Your agent can use a connection without reading the credential.',
+		body: 'Facts without a better home, like project nicknames or team context, that your connected agents can retrieve.',
 	},
 	{
 		id: 'packages',
@@ -40,12 +33,12 @@ export const landingHomePrimitives = [
 	{
 		id: 'triggers',
 		word: 'triggers',
-		body: 'Subscriptions, emails, webhooks, and schedules that wake packages you own — no chat left open.',
+		body: 'Subscriptions, emails, webhooks, and schedules that wake packages you own, with no chat left open.',
 	},
 	{
 		id: 'integrations',
-		word: 'integrations',
-		body: 'Signed-in connections to the tools you already use (GitHub, Discord, Google, and more), reusable from any agent.',
+		word: 'credentials',
+		body: 'API keys, OAuth connections, and MCP servers your agents use but never see.',
 	},
 	{
 		id: 'apps',
@@ -56,22 +49,30 @@ export const landingHomePrimitives = [
 
 export type LandingHomePrimitive = (typeof landingHomePrimitives)[number]
 
-export const landingVsHeading = 'Not another chat. Not another gateway.'
+export const landingIsHeadingLead = 'What Kody '
+export const landingIsHeadingIs = 'is'
+export const landingIsHeadingJoin = ' and '
+export const landingIsHeadingIsNot = 'is not'
 
-export const landingVsItems = [
+export const landingIsNotItems = [
 	{
-		kicker: 'Skills files and copy-paste.',
-		body: 'A skill in one agent stays stuck there. On Kody it becomes a package you run from Cursor, Claude, Codex, or ChatGPT.',
+		kicker: 'Not an agent.',
+		body: 'Kody does not reason, chat, or decide. Your agent does the thinking. Kody keeps what it needs between conversations.',
 	},
 	{
-		kicker: 'Multi-model tabs and routers.',
-		body: 'Switching models is not the same as keeping the work. Kody holds the memory, secrets, and packages those models call.',
+		kicker: 'Not a chat app.',
+		body: 'There is no Kody chat window to learn. Your team keeps working in the agents they already use.',
 	},
 	{
-		kicker: 'MCP gateways.',
-		body: 'Great at connecting tools. Kody is where the useful work becomes software you own, schedule, and reuse.',
+		kicker: 'Not tied to one agent.',
+		body: 'Cursor, Claude, ChatGPT, Codex, or any agent that speaks MCP. They all reach the same account.',
 	},
 ] as const
+
+export const landingIsItem = {
+	kicker: 'Kody is the shared layer behind them.',
+	body: 'The shared credentials, tools, and workflows behind every agent your team uses.',
+} as const
 
 export const landingCompareWithoutTitle = 'Without Kody'
 export const landingCompareWithTitle = 'With Kody'
@@ -89,9 +90,8 @@ export const landingCompareWithItems = [
 	'Trigger the same package from cron, webhook, email, or any connected agent',
 ] as const
 
-export const landingInviteHeadingLead = 'Give your services a '
-export const landingInviteHeadingEmphasis = 'home'
-export const landingInviteGuestLead =
-	'Create a free account and connect a service you already use.'
-export const landingInviteSignedInLead =
-	'You\u2019re in. Connect a service you already use and start saving packages.'
+export const landingClosingHeadingLead = 'Invisible '
+export const landingClosingHeadingEmphasis = 'software'
+export const landingClosingLead =
+	'People want problems solved, not another app. Kody stays out of sight, behind the agents your team already uses.'
+export const landingClosingBelieveLink = 'What we believe'

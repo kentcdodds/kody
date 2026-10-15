@@ -2,11 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import {
-	buildCreditAutoRefillIdempotencyKey,
-	creditAutoRefillMetadataKey,
-	runCreditAutoRefill,
-} from './credit-auto-refill.ts'
+import { runCreditAutoRefill } from './credit-auto-refill.ts'
 import { updateCreditWalletSettings } from './credit-wallet.ts'
 import { KODY_STABLE_USER_ID_METADATA_KEY } from './org-stripe-metadata.ts'
 
@@ -15,6 +11,9 @@ const userId = 'user-refill-test'
 const customerId = 'cus_refill_test'
 const paymentMethodId = 'pm_refill_test'
 const amountCents = 1_000
+const refillIdempotencyKey =
+	'kody-credit-auto-refill:user-refill-test:2026-09:1'
+const refillMetadataKey = 'kody_credit_auto_refill'
 
 function jsonResponse(body: unknown, status = 200) {
 	return new Response(JSON.stringify(body), {
@@ -94,11 +93,6 @@ test('runCreditAutoRefill heals idempotency mismatch via legacy metadata replay'
 		amount: amountCents,
 		currency: 'usd',
 	}
-	const expectedKey = buildCreditAutoRefillIdempotencyKey({
-		userId,
-		month: '2026-09',
-		refillNumber: 1,
-	})
 	let postCount = 0
 	const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
 		const method = init?.method ?? 'GET'
@@ -108,18 +102,18 @@ test('runCreditAutoRefill heals idempotency mismatch via legacy metadata replay'
 		if (method === 'POST' && url.includes('/v1/payment_intents')) {
 			postCount += 1
 			const key = (init?.headers as Record<string, string>)?.['idempotency-key']
-			expect(key).toBe(expectedKey)
+			expect(key).toBe(refillIdempotencyKey)
 			const form = formOf(init)
 			if (postCount === 1) {
 				expect(form).toMatchObject({
-					[`metadata[${creditAutoRefillMetadataKey}]`]: '1',
+					[`metadata[${refillMetadataKey}]`]: '1',
 					[`metadata[kody_org_id]`]: userId,
 					[`metadata[${KODY_STABLE_USER_ID_METADATA_KEY}]`]: userId,
 				})
 				return idempotencyMismatchResponse()
 			}
 			expect(form).toMatchObject({
-				[`metadata[${creditAutoRefillMetadataKey}]`]: '1',
+				[`metadata[${refillMetadataKey}]`]: '1',
 				[`metadata[${KODY_STABLE_USER_ID_METADATA_KEY}]`]: userId,
 			})
 			expect(form[`metadata[kody_org_id]`]).toBeUndefined()
@@ -164,7 +158,7 @@ test('runCreditAutoRefill applies an unledgered succeeded PaymentIntent from lis
 		amount: amountCents,
 		currency: 'usd',
 		metadata: {
-			[creditAutoRefillMetadataKey]: '1',
+			[refillMetadataKey]: '1',
 			kody_org_id: userId,
 			[KODY_STABLE_USER_ID_METADATA_KEY]: userId,
 		},
@@ -219,7 +213,7 @@ test('runCreditAutoRefill heals an orphan whose amount differs from current sett
 		amount: 500,
 		currency: 'usd',
 		metadata: {
-			[creditAutoRefillMetadataKey]: '1',
+			[refillMetadataKey]: '1',
 			kody_org_id: userId,
 			[KODY_STABLE_USER_ID_METADATA_KEY]: userId,
 		},
@@ -312,15 +306,9 @@ test('runCreditAutoRefill lists then creates with dual-write metadata when no or
 		}
 		if (method === 'POST' && url.includes('/v1/payment_intents')) {
 			const key = (init?.headers as Record<string, string>)?.['idempotency-key']
-			expect(key).toBe(
-				buildCreditAutoRefillIdempotencyKey({
-					userId,
-					month: '2026-09',
-					refillNumber: 1,
-				}),
-			)
+			expect(key).toBe(refillIdempotencyKey)
 			expect(formOf(init)).toMatchObject({
-				[`metadata[${creditAutoRefillMetadataKey}]`]: '1',
+				[`metadata[${refillMetadataKey}]`]: '1',
 				[`metadata[kody_org_id]`]: userId,
 				[`metadata[${KODY_STABLE_USER_ID_METADATA_KEY}]`]: userId,
 			})

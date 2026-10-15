@@ -24,6 +24,7 @@ import { saveSecret } from '#mcp/secrets/service.ts'
 import { persistIntegrationTokens } from '#worker/integrations/credentials.ts'
 import { upsertIntegration } from '#worker/integrations/service.ts'
 import {
+	listOrgReachableCredentials,
 	listUsableCredentials,
 	resolveNeedCandidates,
 } from './credential-candidates.ts'
@@ -478,6 +479,43 @@ test('a member sees only org credentials they can Use, plus their own granted pe
 	expect(
 		(await t.usableAs('bea', 'owner')).map((credential) => credential.name),
 	).toEqual(['gh-pat'])
+})
+
+test('org-reachable credentials include each member personal credential granted to the org', async () => {
+	const t = await setup()
+	await t.storeSecret({ ownerId: t.acmeId, name: 'gh-pat', provider: 'github' })
+	const personal = await t.storeSecret({
+		ownerId: personalOrgId(t.people.ann.personId),
+		name: 'ann-gh',
+		provider: 'github',
+		hosts: ['api.github.com'],
+	})
+	await t.storeSecret({
+		ownerId: personalOrgId(t.people.ann.personId),
+		name: 'ann-ungranted',
+		provider: 'github',
+	})
+	expect(
+		(await listOrgReachableCredentials({ db: t.db, orgId: t.acmeId })).map(
+			({ name, scope }) => ({ name, scope }),
+		),
+	).toEqual([{ name: 'gh-pat', scope: 'org' }])
+
+	await grantPersonalCredentialToOrg({
+		db: t.db,
+		ownerPersonId: t.people.ann.personId,
+		credentialId: personal,
+		orgId: t.acmeId,
+	})
+
+	expect(
+		(await listOrgReachableCredentials({ db: t.db, orgId: t.acmeId })).map(
+			({ name, scope, hosts }) => ({ name, scope, hosts }),
+		),
+	).toEqual([
+		{ name: 'gh-pat', scope: 'org', hosts: [] },
+		{ name: 'ann-gh', scope: 'personal', hosts: ['api.github.com'] },
+	])
 })
 
 test('an OAuth connection lists the hosts the runtime allows, including its API base URL', async () => {

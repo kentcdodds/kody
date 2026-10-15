@@ -71,6 +71,7 @@ import {
 	type PackageStamp,
 } from '#worker/credentials/package-stamp.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
+import { assertCredentialUsesDeclared } from '#worker/credentials/credential-need-enforcement.ts'
 import { credentialClientHeaderName } from '#worker/credentials/credential-client-header.ts'
 import {
 	applyCredentialClientPlacement,
@@ -526,6 +527,27 @@ export async function expandSecretPlaceholders(input: {
 		referencedAnyCredential = true
 		assertSecretPlacement({ url: requestUrl, values: sources })
 		const callerUserId = requireFetchUserId(input.props)
+		await assertCredentialUsesDeclared({
+			env: input.env as Env,
+			request: input.props.request,
+			orgId: callerUserId,
+			packageId: packageStamp?.packageId ?? null,
+			references: [
+				...referencedSecrets.map((referenced) => ({
+					use: 'secret' as const,
+					name: referenced.name,
+					scope: referenced.scope,
+				})),
+				...referencedIntegrationTokens.map((name) => ({
+					use: 'integration' as const,
+					name,
+				})),
+				...referencedProviderSecrets.map((referenced) => ({
+					use: 'provider' as const,
+					provider: referenced.provider,
+				})),
+			],
+		})
 		const settledSecretResults = await Promise.allSettled(
 			referencedSecrets.map(async (referenced) => {
 				const resolved = await resolveCredential({

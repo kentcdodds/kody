@@ -53,6 +53,69 @@ export const orgTransferRewrittenTables = [
 	'value_entries',
 ] as const satisfies ReadonlyArray<OrgTransferMovedTable>
 
+function cell(row: OrgTransferRow, column: string) {
+	const value = row[column]
+	return value == null ? '' : String(value)
+}
+
+/**
+ * Rewrites denormalized follow target columns after the source row has moved.
+ * `follower_org_id` stays put. The EXISTS guard skips the rewrite when the
+ * source row did not actually change owner in this batch.
+ */
+function retargetFollowSql(sourceTable: 'saved_packages' | 'user_repos') {
+	switch (sourceTable) {
+		case 'saved_packages':
+			return `UPDATE follows
+			 SET target_owner_id = ?, target_name = ?, updated_at = ?
+			 WHERE target_kind = ? AND target_id = ? AND target_owner_id = ?
+			 AND EXISTS (
+			 	SELECT 1 FROM saved_packages
+			 	WHERE id = ? AND user_id = ? AND rowid = ?
+			 )`
+		case 'user_repos':
+			return `UPDATE follows
+			 SET target_owner_id = ?, target_name = ?, updated_at = ?
+			 WHERE target_kind = ? AND target_id = ? AND target_owner_id = ?
+			 AND EXISTS (
+			 	SELECT 1 FROM user_repos
+			 	WHERE id = ? AND user_id = ? AND rowid = ?
+			 )`
+		default: {
+			const exhaustive: never = sourceTable
+			throw new Error(`Unsupported follow retarget table: ${exhaustive}`)
+		}
+	}
+}
+
+function retargetFollowStatement(
+	db: D1Database,
+	input: {
+		toId: string
+		fromId: string
+		now: string
+		targetKind: 'package' | 'repo'
+		targetId: string
+		targetName: string
+		sourceTable: 'saved_packages' | 'user_repos'
+		sourceRowid: number
+	},
+) {
+	return db
+		.prepare(retargetFollowSql(input.sourceTable))
+		.bind(
+			input.toId,
+			input.targetName,
+			input.now,
+			input.targetKind,
+			input.targetId,
+			input.fromId,
+			input.targetId,
+			input.toId,
+			input.sourceRowid,
+		)
+}
+
 function chunks<T>(items: Array<T>, size: number) {
 	const out: Array<Array<T>> = []
 	for (let index = 0; index < items.length; index += size) {
@@ -103,6 +166,8 @@ export function buildOrgTransferStatements(input: {
 	}
 
 	for (const row of plan.moves.saved_packages) {
+		const packageId = cell(row, 'id')
+		const packageName = transferredPackageName(row, plan.to.slug)
 		statements.push(
 			db
 				.prepare(
@@ -110,13 +175,33 @@ export function buildOrgTransferStatements(input: {
 					 SET user_id = ?, name = ?, is_internet_visible = 0, updated_at = ?
 					 WHERE rowid = ? AND user_id = ?`,
 				)
-				.bind(
-					toId,
-					transferredPackageName(row, plan.to.slug),
-					now,
-					row.__rowid,
-					fromId,
-				),
+				.bind(toId, packageName, now, row.__rowid, fromId),
+		)
+		statements.push(
+			retargetFollowStatement(db, {
+				toId,
+				fromId,
+				now,
+				targetKind: 'package',
+				targetId: packageId,
+				targetName: packageName,
+				sourceTable: 'saved_packages',
+				sourceRowid: row.__rowid,
+			}),
+		)
+	}
+	for (const row of plan.moves.user_repos) {
+		statements.push(
+			retargetFollowStatement(db, {
+				toId,
+				fromId,
+				now,
+				targetKind: 'repo',
+				targetId: cell(row, 'id'),
+				targetName: `@${plan.to.slug}/${cell(row, 'name')}`,
+				sourceTable: 'user_repos',
+				sourceRowid: row.__rowid,
+			}),
 		)
 	}
 	for (const row of plan.moves.community_listings) {

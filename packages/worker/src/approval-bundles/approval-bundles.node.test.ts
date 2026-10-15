@@ -19,7 +19,14 @@ import {
 	type ApprovalBundleView,
 	type ApprovalItemView,
 } from '#universal/approval-bundles.ts'
-import { type ApprovalViewer, capabilityGrantLines } from './item-views.ts'
+import { insertPackageSecurityAudit } from '#worker/package-capabilities/security-audits-repo.ts'
+import { approvePackageCapabilitySet } from '#worker/package-capabilities/capability-approval-service.ts'
+import { enqueueWentPublicApproval } from '#worker/package-capabilities/went-public-approval.ts'
+import {
+	type ApprovalViewer,
+	capabilityGrantLines,
+	loadApprovalItemView,
+} from './item-views.ts'
 import {
 	approvalBundleClaimLeaseMs,
 	deleteApprovalBundlesForMember,
@@ -538,6 +545,7 @@ test('pending items that cannot be approved yet still count as waiting', () => {
 		canApprove,
 		canDeny: true,
 		fingerprint: key,
+		detailLabel: 'Approval fingerprint',
 		grants: [],
 		reviewHref: null,
 		decision: null,
@@ -677,4 +685,77 @@ test('a capability that only moved to another dependency still shows a change', 
 	expect(
 		capabilityGrantLines([entry], [{ ...entry, name: 'renamed-slack' }]),
 	).toEqual([])
+})
+
+test('a capabilities item shows the security audit for the current version only', async () => {
+	const t = await setup()
+	const ref = { type: 'capabilities' as const, packageId: t.savedPackage.id }
+
+	const before = await loadApprovalItemView(t.viewerFor('bea'), ref)
+	expect(before.securityAudit).toEqual({ status: 'not_audited' })
+	expect(before.fingerprint).toEqual(expect.any(String))
+
+	await insertPackageSecurityAudit(t.db, {
+		id: 'audit-1',
+		packageId: t.savedPackage.id,
+		ownerUserId: t.acmeId,
+		publishedCommit: 'commit-1',
+		fingerprint: before.fingerprint!,
+		verdict: 'concerns',
+		summary: 'Slack webhook host is broader than needed.',
+		auditorLabel: 'Audit Agent',
+		recordedByUserId: t.people.bea.personId,
+		recordedAt: '2026-10-14T15:30:00.000Z',
+	})
+	const after = await loadApprovalItemView(t.viewerFor('bea'), ref)
+	expect(after.securityAudit).toEqual({
+		status: 'audited',
+		verdict: 'concerns',
+		auditor: 'Audit Agent',
+		recordedAt: '2026-10-14T15:30:00.000Z',
+	})
+	expect(after.canApprove).toBe(before.canApprove)
+})
+
+test('a went-public item waits for the capability set, which the package page approves with it', async () => {
+	const t = await setup()
+	const viewer = t.viewerFor('bea')
+	const capabilities = await loadApprovalItemView(viewer, {
+		type: 'capabilities',
+		packageId: t.savedPackage.id,
+	})
+	const request = await enqueueWentPublicApproval({
+		env: t.env,
+		ownerUserId: t.acmeId,
+		savedPackage: t.savedPackage,
+		publishedCommit: 'commit-1',
+		fingerprint: capabilities.fingerprint!,
+		requestedByUserId: t.people.bea.stableUserId,
+	})
+	const ref = { type: 'publish' as const, requestId: request.id }
+
+	const waiting = await loadApprovalItemView(viewer, ref)
+	expect(waiting).toMatchObject({
+		title: 'Serve on the public internet',
+		status: 'pending',
+		canApprove: false,
+		canDeny: true,
+		statusMessage: expect.stringContaining('one Approve also turns on'),
+	})
+	expect(waiting.reviewHref).toContain('/approve-capabilities')
+
+	const approved = await approvePackageCapabilitySet({
+		env: t.env,
+		ownerUserId: t.acmeId,
+		actorUserId: t.people.bea.stableUserId,
+		savedPackage: t.savedPackage,
+		requestUrl: mappingFixtureBaseUrl,
+		expectedFingerprint: capabilities.fingerprint!,
+	})
+	expect(approved.wentPublicRequest?.id).toBe(request.id)
+	expect(await loadApprovalItemView(viewer, ref)).toMatchObject({
+		status: 'pending',
+		canApprove: true,
+		statusMessage: null,
+	})
 })

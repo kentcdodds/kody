@@ -92,10 +92,8 @@ const response = await fetch('https://api.github.com/user/repos', {
 - `{{integration-token:name}}` works the same way for an OAuth connection, on
   the integration's own hosts.
 
-Keys and placeholders work this way permanently. Every other approach on this
-page is an optional, more secure path you can adopt when it fits, with no forced
-migration. Full placeholder rules (encodings, multipart, the
-`x-kody-secret-resolution` header):
+Full placeholder rules (encodings, multipart, the `x-kody-secret-resolution`
+header):
 [Secrets and host approval](../use/secrets-and-values.md#placeholders-in-fetch).
 
 ## Scoped clients: `credential(key)`
@@ -228,7 +226,7 @@ const response = await github.fetch('https://api.github.com/user')
 
 On a 401 the client refreshes the token and retries once. OAuth connections
 always use `Authorization: Bearer`. `createAuthenticatedFetch` and
-`{{integration-token:name}}` keep working beside the client.
+`{{integration-token:name}}` also resolve the same OAuth connection.
 
 ### MCP server
 
@@ -384,15 +382,16 @@ or its **Credentials** tab.
 Every credential error is structured: it has a `code`, a message, and
 `retryWith`, a list of ready-to-retry picks.
 
-| Code                      | Meaning                                                    |
-| ------------------------- | ---------------------------------------------------------- |
-| `credential_unbound`      | No credential you can use matches the need                 |
-| `credential_ambiguous`    | More than one matches; `options` lists them by name/scope  |
-| `credential_not_found`    | The named credential is missing or not usable by you       |
-| `credential_need_unknown` | The map names a key no package in the invoked run declares |
-| `credential_denied`       | Authorization failed                                       |
-| `host_not_allowed`        | The request's host is not one of the credential's hosts    |
-| `insecure_transport`      | The request is not HTTPS                                   |
+| Code                         | Meaning                                                                                 |
+| ---------------------------- | --------------------------------------------------------------------------------------- |
+| `credential_unbound`         | No credential you can use matches the need                                              |
+| `credential_ambiguous`       | More than one matches; `options` lists them by name/scope                               |
+| `credential_not_found`       | The named credential is missing or not usable by you                                    |
+| `credential_need_unknown`    | The map names a key no package in the invoked run declares                              |
+| `credential_need_undeclared` | A package someone else runs uses a credential it does not declare in `kody.credentials` |
+| `credential_denied`          | Authorization failed                                                                    |
+| `host_not_allowed`           | The request's host is not one of the credential's hosts                                 |
+| `insecure_transport`         | The request is not HTTPS                                                                |
 
 When a need has no usable credential, or more than one, the error carries
 `createUrl`: a link to the creation page prefilled for that need, so an agent

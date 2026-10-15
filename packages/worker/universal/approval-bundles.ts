@@ -112,6 +112,15 @@ export type ApprovalItemPackage = {
 	href: string
 }
 
+export type ApprovalItemSecurityAudit =
+	| { status: 'not_audited' }
+	| {
+			status: 'audited'
+			verdict: 'pass' | 'concerns'
+			auditor: string
+			recordedAt: string
+	  }
+
 export type ApprovalItemView = {
 	key: string
 	type: ApprovalItemType
@@ -127,9 +136,19 @@ export type ApprovalItemView = {
 	canDeny: boolean
 	/** Pins what was reviewed; a decision sends it back. */
 	fingerprint: string | null
+	/**
+	 * Human label for the fingerprint in Details (paused commit, published
+	 * commit, capability fingerprint, or approval fingerprint).
+	 */
+	detailLabel: string | null
 	grants: Array<ApprovalGrantLine>
 	/** The item's own approval page. */
 	reviewHref: string | null
+	/**
+	 * Capability items only: the informational security audit for the current
+	 * published commit + capability set. It never approves anything.
+	 */
+	securityAudit?: ApprovalItemSecurityAudit
 	decision: {
 		decision: 'approved' | 'denied'
 		decidedAt: string

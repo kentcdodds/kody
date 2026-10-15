@@ -16,6 +16,7 @@ export const apiOperationTags = [
 	'memories',
 	'secrets',
 	'packages',
+	'follows',
 	'repos',
 	'jobs',
 	'webhooks',
@@ -256,6 +257,11 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		['POST', '/v1/packages/{package_id}/git-remote', 'packageGetGitRemote'],
 		[
 			'POST',
+			'/v1/packages/{package_id}/security-audits',
+			'packageSecurityAuditRecord',
+		],
+		[
+			'POST',
 			'/v1/packages/{package_id}/external-push',
 			'packagePublishExternalPush',
 		],
@@ -265,6 +271,11 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		['POST', '/v1/enablements/{enablementId}/disable', 'enablementDisable'],
 		['GET', '/v1/approvals', 'approvalPendingList'],
 		['POST', '/v1/approval-bundles', 'approvalBundleCreate'],
+	]),
+	...capabilityRoutes('follows', [
+		['GET', '/v1/follows', 'followList'],
+		['POST', '/v1/follows', 'followAdd'],
+		['DELETE', '/v1/follows', 'followRemove'],
 	]),
 	...capabilityRoutes('repos', [
 		['GET', '/v1/repos', 'repoList'],
