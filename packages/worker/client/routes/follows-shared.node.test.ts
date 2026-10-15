@@ -80,6 +80,30 @@ test('initialFollowEventChoice keeps an existing choice and defaults to what is 
 			},
 		),
 	).toEqual(['pushed'])
+	expect(
+		initialFollowEventChoice(
+			{ availableEvents: ['published', 'pushed'], canPush: false },
+			{
+				status: 'active',
+				events: ['published', 'pushed'],
+				pausedAt: null,
+				pausedReason: null,
+				lastDeliverySkipReason: null,
+			},
+		),
+	).toEqual(['published'])
+	expect(
+		initialFollowEventChoice(
+			{ availableEvents: ['published', 'pushed'], canPush: false },
+			{
+				status: 'active',
+				events: ['pushed'],
+				pausedAt: null,
+				pausedReason: null,
+				lastDeliverySkipReason: null,
+			},
+		),
+	).toEqual([])
 })
 
 test('rate-limit errors name the workspace limit', () => {

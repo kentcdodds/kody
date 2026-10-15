@@ -237,6 +237,7 @@ export function createPackageFollowController(
 
 		/** The page changed: close and forget the previous target. */
 		navigated(pathname: string | null) {
+			if (pathname !== autoOpenedFor) autoOpenedFor = null
 			if (pathname !== null && pathname === loadedFor) return
 			open = false
 			loadRequestId++
@@ -249,10 +250,13 @@ export function createPackageFollowController(
 			unfollowCheck.reset()
 		},
 
-		/** Opens the panel once per page when the URL asks for it (`#follow`). */
+		/** Opens the panel once per visit when the URL asks for it (`#follow`). */
 		maybeAutoOpen(pathname: string) {
 			if (typeof window === 'undefined') return
-			if (window.location.hash !== PACKAGE_FOLLOW_HASH) return
+			if (window.location.hash !== PACKAGE_FOLLOW_HASH) {
+				autoOpenedFor = null
+				return
+			}
 			if (autoOpenedFor === pathname) return
 			autoOpenedFor = pathname
 			handle.queueTask(() => setOpen(true))

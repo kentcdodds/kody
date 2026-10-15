@@ -165,6 +165,8 @@ export type OrgFollowsPostBody =
 			/** Omit to keep the current choice (both events for a new follow). */
 			events?: Array<FollowEvent>
 	  }
+	/** Resume a listed follow by id; the name it was stored under may be stale. */
+	| { intent: 'follow'; id: string }
 	| { intent: 'unfollow'; id: string }
 	| { intent: 'unfollow'; name: string; kind: FollowTargetKindName }
 

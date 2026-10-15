@@ -25,6 +25,7 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 const mocks = vi.hoisted(() => ({
 	getOrgBySlug: vi.fn(),
 	getSavedPackageByName: vi.fn(),
+	getSavedPackageByIdInAnyOrg: vi.fn(),
 	getUserRepoByName: vi.fn(),
 	loadFollowTargetPermissions: vi.fn(),
 	listOrgsForPerson: vi.fn(),
@@ -41,7 +42,11 @@ vi.mock('#worker/orgs/repo.ts', async (importOriginal) => {
 
 vi.mock('#worker/package-registry/repo.ts', async (importOriginal) => {
 	const actual = (await importOriginal()) as Record<string, unknown>
-	return { ...actual, getSavedPackageByName: mocks.getSavedPackageByName }
+	return {
+		...actual,
+		getSavedPackageByName: mocks.getSavedPackageByName,
+		getSavedPackageByIdInAnyOrg: mocks.getSavedPackageByIdInAnyOrg,
+	}
 })
 
 vi.mock('#worker/repo/user-repos.ts', async (importOriginal) => {
@@ -121,6 +126,13 @@ test('parseOrgFollowsPostBody accepts follow and unfollow shapes only', () => {
 			kind: 'package',
 		}),
 	).toEqual({ intent: 'follow', name: '@ada/notes', kind: 'package' })
+	expect(parseOrgFollowsPostBody({ intent: 'follow', id: ' f-1 ' })).toEqual({
+		intent: 'follow',
+		id: 'f-1',
+	})
+	expect(
+		parseOrgFollowsPostBody({ intent: 'follow', id: 'f-1', events: [] }),
+	).toBeNull()
 	expect(parseOrgFollowsPostBody({ intent: 'unfollow', id: 'f-1' })).toEqual({
 		intent: 'unfollow',
 		id: 'f-1',
@@ -306,6 +318,70 @@ test('applyOrgFollowsPost follows with chosen events, explains push gating, and 
 			targetId: 'pkg-notes',
 		}),
 	).toBeNull()
+})
+
+test('applyOrgFollowsPost resumes a listed follow by id after its target is renamed', async () => {
+	const { db, env } = await setup()
+	const renamed = {
+		userId: ownerId,
+		id: 'pkg-notes',
+		name: '@ada/journal',
+		isPrivate: false,
+	}
+	mocks.getSavedPackageByName.mockResolvedValue(renamed)
+	mocks.getSavedPackageByIdInAnyOrg.mockResolvedValue(renamed)
+	mocks.loadFollowTargetPermissions.mockResolvedValue(access(['package:read']))
+	await insertFollow(db, {
+		id: 'follow-renamed',
+		followerOrgId: 'org-team',
+		creatorUserId: personId,
+		targetKind: 'package',
+		targetOwnerId: ownerId,
+		targetId: 'pkg-notes',
+		targetName: '@ada/notes',
+		createdAt: '2026-09-01T00:00:00.000Z',
+	})
+	await pauseFollow(db, {
+		id: 'follow-renamed',
+		pausedAt: '2026-10-01T00:00:00.000Z',
+		reason: 'access_lost',
+	})
+
+	expect(
+		await applyOrgFollowsPost({
+			env,
+			user,
+			org: { id: 'org-other' },
+			body: { intent: 'follow', id: 'follow-renamed' },
+		}),
+	).toMatchObject({ ok: false, code: 'not_found' })
+
+	const resumed = await applyOrgFollowsPost({
+		env,
+		user,
+		org: { id: 'org-team' },
+		body: { intent: 'follow', id: 'follow-renamed' },
+	})
+	expect(resumed).toMatchObject({
+		ok: true,
+		intent: 'follow',
+		follow: { status: 'active' },
+	})
+
+	mocks.getSavedPackageByIdInAnyOrg.mockResolvedValue(null)
+	await pauseFollow(db, {
+		id: 'follow-renamed',
+		pausedAt: '2026-10-02T00:00:00.000Z',
+		reason: 'target_missing',
+	})
+	const gone = await applyOrgFollowsPost({
+		env,
+		user,
+		org: { id: 'org-team' },
+		body: { intent: 'follow', id: 'follow-renamed' },
+	})
+	expect(gone).toMatchObject({ ok: false, code: 'not_found' })
+	expect(gone.ok ? '' : gone.error).toMatch(/no longer exists/)
 })
 
 test('applyOrgFollowsPost reports the hourly new-follow limit', async () => {

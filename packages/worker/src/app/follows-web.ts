@@ -3,6 +3,7 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	followAccessFromPermissions,
 	loadFollowTargetPermissions,
+	loadFollowTargetSnapshot,
 } from '#worker/follow/access.ts'
 import {
 	deleteFollowForOrg,
@@ -162,8 +163,12 @@ export function parseOrgFollowsPostBody(
 			? record['kind']
 			: null
 	const name = typeof record['name'] === 'string' ? record['name'].trim() : ''
+	const id = typeof record['id'] === 'string' ? record['id'].trim() : ''
 	switch (record['intent']) {
 		case 'follow': {
+			if (id && !name && record['events'] === undefined) {
+				return { intent: 'follow', id }
+			}
 			if (!name || !kind) return null
 			const events = record['events']
 			if (events === undefined) return { intent: 'follow', name, kind }
@@ -171,7 +176,6 @@ export function parseOrgFollowsPostBody(
 			return { intent: 'follow', name, kind, events }
 		}
 		case 'unfollow': {
-			const id = typeof record['id'] === 'string' ? record['id'].trim() : ''
 			if (id) return { intent: 'unfollow', id }
 			if (!name || !kind) return null
 			return { intent: 'unfollow', name, kind }
@@ -217,13 +221,31 @@ export async function applyOrgFollowsPost(input: {
 	try {
 		switch (body.intent) {
 			case 'follow': {
+				let target: { name: string; kind: FollowTargetKindName } = body
+				if ('id' in body) {
+					const record = await getFollowForOrg(input.env.APP_DB, {
+						followerOrgId: input.org.id,
+						id: body.id,
+					})
+					if (!record) {
+						return postError('not_found', 'This follow is already gone.')
+					}
+					const live = await loadFollowTargetSnapshot(input.env.APP_DB, record)
+					if (!live) {
+						return postError(
+							'not_found',
+							`${record.targetName} no longer exists, so this follow can’t resume. Unfollow to remove it.`,
+						)
+					}
+					target = live
+				}
 				const follow = await addFollow({
 					env: input.env,
 					followerOrgId: input.org.id,
 					creatorUserId: input.user.mcpUser.userId,
-					name: body.name,
-					kind: body.kind,
-					events: body.events,
+					name: target.name,
+					kind: target.kind,
+					events: 'events' in body ? body.events : undefined,
 				})
 				return {
 					ok: true,

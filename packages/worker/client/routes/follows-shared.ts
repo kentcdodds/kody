@@ -55,14 +55,20 @@ export function followEventOptions(
 	}))
 }
 
-/** Events checked when the panel opens for one workspace. */
+/**
+ * Events checked when the panel opens for one workspace. Stored events the
+ * viewer can no longer turn on are dropped so Save never resends them.
+ */
 export function initialFollowEventChoice(
 	state: Pick<PackageFollowStatePayload, 'availableEvents' | 'canPush'>,
 	follow: FollowSummary | null,
 ): Array<FollowEvent> {
-	if (follow) return normalizeFollowEvents(follow.events)
-	return state.availableEvents.filter(
+	const offerable = state.availableEvents.filter(
 		(event) => event !== 'pushed' || state.canPush,
+	)
+	if (!follow) return offerable
+	return normalizeFollowEvents(follow.events).filter((event) =>
+		offerable.includes(event),
 	)
 }
 

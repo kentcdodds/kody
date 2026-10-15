@@ -127,10 +127,11 @@ export function OrgFollowsRoute(handle: Handle) {
 			data.orgSlug,
 			intent === 'unfollow'
 				? { intent: 'unfollow', id: follow.id }
-				: { intent: 'follow', name: follow.name, kind: follow.kind },
+				: { intent: 'follow', id: follow.id },
 		).catch(() => null)
 		busyFollowId = null
 		if (payload?.ok) {
+			if (intent === 'unfollow') unfollowChecks.delete(follow.id)
 			message =
 				intent === 'unfollow'
 					? `Unfollowed ${follow.name}.`
