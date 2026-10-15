@@ -106,11 +106,12 @@ administered **DR (“KCD”) Cloudflare account**:
 Production worker (source account)          Backup control plane (DR account)
 ───────────────────────────────             ────────────────────────────────
 Nightly */5 ticks 00:30–06:10 UTC           02:15 UTC: D1 export Workflow
-  stage Mailbox / selected RunLog state       (one instance per configured D1:
-  / StorageRunner / R2 / artifacts      →    APP_DB and JOBS_DB)
-  into staging/{day}/...                    Hourly: D1 freshness + catch-up
-Daytime */15 ticks: staging catch-up        Hourly: seal complete days
-  resume oldest stranded day (≤14 days)     Admin UI: drill / production restore
+  prefer oldest stranded day (≤14 days),     (one instance per configured D1:
+  else stage today: Mailbox / RunLog /        APP_DB and JOBS_DB)
+  StorageRunner / R2 / artifacts        →    Hourly: D1 freshness + catch-up
+  into staging/{day}/...                    Hourly: seal complete days
+Daytime */5 ticks: staging catch-up         Admin UI: drill / production restore
+  resume oldest stranded day (≤14 days)     Agent seal API: `/__maintenance/dr-seal`
 06:15 UTC: staging watchdog → Sentry
 ```
 
@@ -208,16 +209,17 @@ Contract: `packages/shared/src/backup-staging.ts`.
      full download and hash path.
    - **Published artifacts** — `BUNDLE_ARTIFACTS_KV` published source snapshots
      for rows in `entity_sources` with a `published_commit`
-   - **Stranded-day catch-up** — a night with more staging work than the
+   - **Stranded-day drain** — a night with more staging work than the
      00:30–06:10 window can hold ends with `exporter/progress.json` but no
      `exporter/summary.json` (a _stranded day_; first hit live on 2026-08-07).
-     Outside the nightly window, every 5-minute worker cron tick scans today
+     Every worker cron tick (nightly window and daytime catch-up) scans today
      plus the previous 14 days for progress-without-summary and resumes the
      oldest stranded day under the normal ~20 s budget and progress lease until
-     its summary is written, so earlier days finish and seal before today's
-     catch-up consumes the daytime budget. The 14-day lookback is sized above
-     the observed ~2.5–3 day finish time for ~500 Mailbox owners so a day cannot
-     age out mid-phase (live failure: 2026-09-12..2026-09-22 under the old 2-day
+     its summary is written; when none are stranded, nightly ticks stage today.
+     Catch-up is disabled during the nightly window so the two lanes do not
+     double-run the same tick. The 14-day lookback is sized above the observed
+     ~2.5–3 day finish time for ~500 Mailbox owners so a day cannot age out
+     mid-phase (live failure: 2026-09-12..2026-09-22 under the old 2-day
      lookback). Catch-up is resume-only: a day that never staged progress is not
      started fresh (its dumps would contain current data, not that day's). Data
      staged during catch-up is read at resume time; a slightly newer dump is
@@ -441,6 +443,26 @@ Routes (all require Access JWT):
 | `POST` | `/actions/restore/execute` | Require typed exact `SOURCE_DATABASE_NAME` + valid token; start restore Workflow                                                   |
 | `GET`  | `/seal-status?id=...`      | Poll seal Workflow status (in progress, sealed, already sealed, or incomplete reason)                                              |
 | `GET`  | `/restore-status?id=...`   | Poll restore Workflow status                                                                                                       |
+
+### Agent seal API (`DR_OPS_SECRET`)
+
+Headless agents enqueue seal workflows without the Access-protected HTML UI.
+These routes live on the DR control plane origin (for example
+`https://kody-dr.kentcdodds.com`) and authenticate with
+`Authorization: Bearer $DR_OPS_SECRET` only. They do **not** accept
+`DR_RESTORE_SECRET` and expose no restore, drill, or purge actions.
+
+Reachability is separate from bearer auth: Cloudflare Access on
+`kody-dr.kentcdodds.com` still applies unless the request includes a valid
+Access service-token (`CF-Access-Client-Id` / `CF-Access-Client-Secret`) or Kent
+excludes `/__maintenance/*` from the Access application
+([#2477](https://github.com/kentcdodds/kody/issues/2477)). The bearer alone
+cannot bypass edge Access.
+
+| Method | Path                             | Action                                                                                 |
+| ------ | -------------------------------- | -------------------------------------------------------------------------------------- |
+| `POST` | `/__maintenance/dr-seal`         | JSON `{ "day": "YYYY-MM-DD" }` — enqueue `kody-production-seal-day` (`seal-day-<day>`) |
+| `GET`  | `/__maintenance/seal-status?id=` | JSON seal workflow status (`describeSealStatus` view) for `seal-day-YYYY-MM-DD` ids    |
 
 ### Isolated restore drill
 
@@ -680,24 +702,24 @@ the correctness spec and incident-only fallback:
 
 ## Schedules and freshness
 
-| When (UTC)                      | Who               | What                                                                                                                           |
-| ------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `*/5` during 00:30–06:10        | Production worker | Stage Mailbox, selected RunLog state, and other non-D1 stores for the current UTC day (cheap no-op once complete)              |
-| Every 5 min outside 00:30–06:10 | Production worker | Staging catch-up: resume the oldest stranded day (progress without summary, today − ≤14 days); cheap no-op otherwise           |
-| 06:15                           | Production worker | Staging watchdog: a missing `exporter/summary.json` for today, or an earlier stranded day, fails the lane → Sentry             |
-| 02:15                           | Control plane     | Primary D1 export Workflow per configured database (APP_DB and JOBS_DB)                                                        |
-| 02:45–05:45 hourly              | Control plane     | Catch-up create/restart of same-day D1 Workflows                                                                               |
-| Hourly `:45`                    | Control plane     | D1 freshness for every configured source (identity, size ceiling, manifest age ≤26h, R2 size/ETag) + seal recent complete days |
+| When (UTC)                      | Who               | What                                                                                                                                      |
+| ------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `*/5` during 00:30–06:10        | Production worker | Staging export: resume the oldest stranded day (progress without summary, today − ≤14 days), else stage today (cheap no-op once complete) |
+| Every 5 min outside 00:30–06:10 | Production worker | Staging catch-up: resume the oldest stranded day (progress without summary, today − ≤14 days); cheap no-op otherwise                      |
+| 06:15                           | Production worker | Staging watchdog: a missing `exporter/summary.json` for today, or an earlier stranded day, fails the lane → Sentry                        |
+| 02:15                           | Control plane     | Primary D1 export Workflow per configured database (APP_DB and JOBS_DB)                                                                   |
+| 02:45–05:45 hourly              | Control plane     | Catch-up create/restart of same-day D1 Workflows                                                                                          |
+| Hourly `:45`                    | Control plane     | D1 freshness for every configured source (identity, size ceiling, manifest age ≤26h, R2 size/ETag) + seal recent complete days            |
 
 ### Stranded staging days (manual finish)
 
 Failure mode: the nightly exporter hard-stops when the window closes, so a night
 with too much work leaves `staging/{day}/exporter/progress.json` without
 `exporter/summary.json`. The 06:15 watchdog pages; without a summary the day can
-never seal. Daytime catch-up ticks (table above) normally finish the day
-automatically within a day or two at steady state. When more than one day in the
-lookback is stranded, catch-up finishes the oldest first so earlier days seal
-before today's ticks consume the daytime budget. The hourly control-plane seal
+never seal. Nightly and daytime catch-up ticks (table above) normally finish the
+day automatically within a day or two at steady state. When more than one day in
+the lookback is stranded, both lanes finish the oldest first so earlier days
+seal before later nights stack more backlog. The hourly control-plane seal
 (16-day lookback, matched to catch-up plus overnight gap) then seals it — no
 operator action needed.
 

@@ -502,6 +502,44 @@ test('exporter resumes from progress cursor across ticks when budget is exhauste
 	).toBe(true)
 })
 
+test('nightly ticks prefer the oldest stranded day before today', async () => {
+	const { client } = createMemoryS3()
+	const env = createEnv()
+	const strandedDay = '2026-07-22'
+	await client.put(
+		`staging/${strandedDay}/exporter/progress.json`,
+		JSON.stringify(__testOnlyCreateInitialProgress(strandedDay, at('02:00'))),
+	)
+
+	const resumed = await runDrExportTick({
+		env,
+		now: at('02:00'),
+		timeBudgetMs: 60_000,
+		s3: client,
+	})
+	expect(resumed).toMatchObject({
+		day: strandedDay,
+		mode: 'nightly',
+		skipped: false,
+	})
+	expect(resumed.day).not.toBe(day)
+})
+
+test('nightly ticks target today when no stranded days exist', async () => {
+	const { client } = createMemoryS3()
+	const env = createEnv()
+	const result = await runDrExportTick({
+		env,
+		now: at('02:00'),
+		timeBudgetMs: 60_000,
+		s3: client,
+	})
+	expect(result).toMatchObject({
+		day,
+		mode: 'nightly',
+	})
+})
+
 test('daytime catch-up resumes a stranded previous day until its summary is written', async () => {
 	mockStorageEntries([{ key: 'k', value: 1 }])
 	const { client, readText } = createMemoryS3()

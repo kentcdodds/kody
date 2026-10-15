@@ -42,6 +42,7 @@ import {
 	sealDayWorkflowInstanceId,
 	sealStatusResponseStatus,
 } from './seal-day-run.ts'
+import { handleDrOpsMaintenanceRequest } from './dr-ops-maintenance.ts'
 import { enqueueBackup, enqueueWorkflow } from './workflow-trigger.ts'
 
 async function readForm(request: Request): Promise<URLSearchParams> {
@@ -337,6 +338,9 @@ export async function handleControlPlaneFetch(
 	env: BackupEnvironment,
 	fetcher: typeof fetch = fetch,
 ): Promise<Response> {
+	const drOpsResponse = await handleDrOpsMaintenanceRequest(request, env)
+	if (drOpsResponse) return drOpsResponse
+
 	try {
 		await verifyAccessJwt(env, request, fetcher)
 	} catch (error) {

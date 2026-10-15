@@ -216,7 +216,7 @@ function utcDayMinus(day: string, daysBack: number) {
  * staging has progress but no completion summary — a night the exporter
  * started and never finished because the window closed. Preferring the
  * oldest stranded day lets yesterday finish and seal before today's
- * catch-up ticks consume the daytime budget. Days with neither object
+ * nightly and catch-up ticks move on. Days with neither object
  * never started (for example before DR enablement) and are deliberately
  * not eligible: catch-up resumes staged work, it never starts a fresh
  * past-day export whose dumps would actually contain current data.
@@ -1308,14 +1308,17 @@ export async function runDrExportTick(input: {
 	if (!config) return empty('not-configured')
 	const s3 = input.s3 ?? createDrBackupS3Client(config)
 
-	if (mode === 'catch-up') {
+	if (mode === 'nightly' || mode === 'catch-up') {
 		const stranded = await findStrandedStagingDay({
 			s3,
 			today,
 			lookbackDays: drExportCatchUpLookbackDays,
 		})
-		if (!stranded) return empty('no-stranded-day')
-		day = stranded
+		if (stranded) {
+			day = stranded
+		} else if (mode === 'catch-up') {
+			return empty('no-stranded-day')
+		}
 	}
 	if (mode === 'operator') {
 		const progressHead = await s3.head(stagingProgressKey(day))

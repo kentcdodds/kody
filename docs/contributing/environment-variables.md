@@ -566,6 +566,12 @@ evidence):
 - `RESTORE_CONFIRM_SECRET` — HMAC secret for the 10-minute prepare→execute
   production-restore token.
 - `DR_RESTORE_SECRET` — bearer shared with the production Worker.
+- `DR_OPS_SECRET` — optional bearer for agent-only seal enqueue/status on
+  `POST /__maintenance/dr-seal` and `GET /__maintenance/seal-status` on the DR
+  control plane. Does not grant restore, drill, or purge. Unset → `503` on those
+  routes. Edge Access on `kody-dr.kentcdodds.com` is still required unless a
+  service token or `/__maintenance/*` bypass is configured (see
+  disaster-recovery runbook).
 
 GitHub Actions `workflow_dispatch` escrow (`.github/workflows/dr-escrow.yml`)
 also needs `SECRET_STORE_KEY`, `SECRET_ESCROW_PASSPHRASE`, and the DR S3
