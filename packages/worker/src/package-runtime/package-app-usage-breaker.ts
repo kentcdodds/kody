@@ -197,7 +197,8 @@ async function readEntry(env: BreakerEnv, scope: string, now: number) {
 	)
 	const entry = isBreakerEntry(stored) ? stored : null
 	if ((scopeGeneration.get(scope) ?? 0) !== generation) {
-		return isolateState.get(scope)?.entry ?? entry
+		const local = isolateState.get(scope)
+		return local ? local.entry : entry
 	}
 	rememberBounded(isolateState, scope, {
 		entry,

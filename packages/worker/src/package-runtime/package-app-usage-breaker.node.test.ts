@@ -277,6 +277,61 @@ test('a KV read that started before the breaker opened does not erase the open s
 	)
 })
 
+test('a KV read that overlaps a successful probe does not resurrect the closed breaker', async () => {
+	vi.spyOn(console, 'info').mockImplementation(() => {})
+	let releaseRead = () => {}
+	const slowRead = new Promise<void>((resolve) => (releaseRead = resolve))
+	let reads = 0
+	let stored: string | null = null
+	const env = {
+		BUNDLE_ARTIFACTS_KV: {
+			async get() {
+				reads += 1
+				const snapshot = stored
+				if (reads === 2) await slowRead
+				return snapshot === null ? null : (JSON.parse(snapshot) as unknown)
+			},
+			async put(_key: string, value: string) {
+				stored = value
+			},
+			async delete() {
+				stored = null
+			},
+		},
+	} as unknown as Env
+	const check = vi.fn<() => Promise<void>>()
+	const deferred: Array<Promise<unknown>> = []
+	const gate = (now: number) =>
+		gatePackageAppUsage({
+			env,
+			ownerId,
+			actorId: 'person-1',
+			check,
+			waitUntil: (promise) => deferred.push(promise),
+			now,
+		})
+
+	check.mockRejectedValueOnce(computeDenial())
+	await gate(start)
+	await Promise.all(deferred.splice(0))
+	expect(stored).not.toBeNull()
+
+	// In a fresh isolate after the cooldown, one request's KV read stalls
+	// holding the open entry while another request's probe passes and closes.
+	resetPackageAppUsageBreakerForTests()
+	const afterCooldown = start + packageAppUsageBreakerCooldownMs
+	const stalled = gate(afterCooldown)
+	check.mockResolvedValueOnce(undefined)
+	await expect(gate(afterCooldown)).resolves.toBeUndefined()
+	expect(stored).toBeNull()
+
+	// Usage denies again, but the stalled request must see the close and
+	// serve on the closed path rather than probe with the stale entry.
+	check.mockRejectedValue(computeDenial())
+	releaseRead()
+	await expect(stalled).resolves.toBeUndefined()
+})
+
 test('half-open: only one probe at a time; concurrent requests are refused', async () => {
 	const t = setup()
 	vi.spyOn(console, 'info').mockImplementation(() => {})
