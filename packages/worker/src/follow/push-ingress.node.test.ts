@@ -62,7 +62,7 @@ function pushedEvent(
 }
 
 /**
- * The first compare-and-swap sees a concurrent writer move `updated_at`
+ * The first compare-and-swap sees a concurrent writer bump `revision`
  * after this attempt has already read the row.
  */
 function missFirstPendingCas(db: D1Database): D1Database {
@@ -91,14 +91,16 @@ function missFirstPendingCas(db: D1Database): D1Database {
 									return async () => {
 										if (armed) {
 											armed = false
+											// Bump revision only: same event time leaves updated_at
+											// unchanged, which is the CAS hole this revision fixes.
 											await originalPrepare(
 												`UPDATE follow_push_pending
-												 SET updated_at = ?, after_commit = ?, commits_json = ?,
+												 SET revision = revision + 1,
+												 	after_commit = ?, commits_json = ?,
 												 	total_commits_count = ?
 												 WHERE target_kind = 'package' AND target_id = ?`,
 											)
 												.bind(
-													'2026-10-15T00:00:30.000Z',
 													'after-race',
 													JSON.stringify([commit('c-race')]),
 													1,
@@ -144,6 +146,7 @@ test('a compare-and-swap miss re-reads and keeps the concurrent commits', async 
 			commits: [commit('c1')],
 			totalCommitsCount: 1,
 			updatedAt: '2026-10-15T00:00:00.000Z',
+			revision: 0,
 		},
 		null,
 	)
@@ -164,4 +167,55 @@ test('a compare-and-swap miss re-reads and keeps the concurrent commits', async 
 	expect(pending?.afterCommit).toBe('after-2')
 	expect(pending?.commits.map((entry) => entry.id)).toEqual(['c-race', 'c2'])
 	expect(pending?.totalCommitsCount).toBe(2)
+})
+
+test('same event timestamp contention still keeps both pushes', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	const db = createD1FromSqlite(sqlite)
+	await ensureFollowTables(db)
+	await insertFollow(db, {
+		id: 'follow-1',
+		followerOrgId: 'org-follower',
+		creatorUserId: 'person-1',
+		targetKind: 'package',
+		targetOwnerId: 'org-owner',
+		targetId: 'pkg-1',
+		targetName: '@ada/notes',
+		createdAt: '2026-10-15T00:00:00.000Z',
+	})
+	const at = '2026-10-15T00:00:00.000Z'
+	await upsertFollowPushPending(
+		db,
+		{
+			targetKind: 'package',
+			targetId: 'pkg-1',
+			windowStartedAt: at,
+			beforeCommit: 'before-1',
+			afterCommit: 'after-1',
+			ref: 'refs/heads/main',
+			commits: [commit('c1')],
+			totalCommitsCount: 1,
+			updatedAt: at,
+			revision: 0,
+		},
+		null,
+	)
+	await recordFollowDefaultBranchPush({
+		env: { APP_DB: missFirstPendingCas(db) } as Env,
+		source: {
+			entity_kind: 'package',
+			entity_id: 'pkg-1',
+		} as EntitySourceRow,
+		// Same timestamp as the seeded window tip: updated_at alone would not CAS.
+		event: pushedEvent(at),
+		now: new Date('2026-10-15T00:01:00.000Z'),
+	})
+	const pending = await getFollowPushPending(db, {
+		targetKind: 'package',
+		targetId: 'pkg-1',
+	})
+	expect(pending?.updatedAt).toBe(at)
+	expect(pending?.commits.map((entry) => entry.id)).toEqual(['c-race', 'c2'])
+	expect(pending?.totalCommitsCount).toBe(2)
+	expect(pending?.revision).toBeGreaterThan(0)
 })

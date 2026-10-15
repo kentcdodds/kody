@@ -80,6 +80,7 @@ const pending: FollowPushPending = {
 	commits: [],
 	totalCommitsCount: 1,
 	updatedAt: '2026-10-15T11:54:00.000Z',
+	revision: 0,
 }
 
 async function seed() {

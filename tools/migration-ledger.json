@@ -563,6 +563,10 @@
 		{
 			"filename": "0151-follow-events.sql",
 			"sha256": "74c82b5ea0d063b45470a531a8132eed51bca18668e76c41b967bf8ebcdd7214"
+		},
+		{
+			"filename": "0152-follow-push-pending-revision.sql",
+			"sha256": "3fcbc60dd250517171ce37af377a63599aa39cfc298896c17464128780b0a9af"
 		}
 	]
 }

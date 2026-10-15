@@ -334,6 +334,7 @@ function mapPending(row: Record<string, unknown>): FollowPushPending {
 		commits: parseCommits(row['commits_json']),
 		totalCommitsCount: Number(row['total_commits_count'] ?? 0),
 		updatedAt: String(row['updated_at']),
+		revision: Number(row['revision'] ?? 0),
 	}
 }
 
@@ -361,7 +362,8 @@ export async function getFollowPushPending(
 	const row = await db
 		.prepare(
 			`SELECT target_kind, target_id, window_started_at, before_commit,
-				after_commit, ref, commits_json, total_commits_count, updated_at
+				after_commit, ref, commits_json, total_commits_count, updated_at,
+				revision
 			FROM follow_push_pending
 			WHERE target_kind = ? AND target_id = ?`,
 		)
@@ -371,21 +373,22 @@ export async function getFollowPushPending(
 }
 
 /**
- * Insert or replace the open window only when `expectedUpdatedAt` is still
- * the stored `updated_at` (`null` when the row is absent). A miss means a
- * concurrent push won the race; the caller re-reads and merges.
+ * Insert or replace the open window only when `expectedRevision` is still
+ * the stored `revision` (`null` when the row is absent). A miss means a
+ * concurrent push won the race; the caller re-reads and merges. `updated_at`
+ * stays webhook event time for tip ordering and may not change on a write.
  */
 export async function upsertFollowPushPending(
 	db: D1Database,
 	row: FollowPushPending,
-	expectedUpdatedAt: string | null,
+	expectedRevision: number | null,
 ): Promise<boolean> {
 	const result = await db
 		.prepare(
 			`INSERT INTO follow_push_pending (
 				target_kind, target_id, window_started_at, before_commit, after_commit,
-				ref, commits_json, total_commits_count, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ref, commits_json, total_commits_count, updated_at, revision
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
 			ON CONFLICT (target_kind, target_id) DO UPDATE SET
 				window_started_at = excluded.window_started_at,
 				before_commit = excluded.before_commit,
@@ -393,8 +396,9 @@ export async function upsertFollowPushPending(
 				ref = excluded.ref,
 				commits_json = excluded.commits_json,
 				total_commits_count = excluded.total_commits_count,
-				updated_at = excluded.updated_at
-			WHERE follow_push_pending.updated_at = ?`,
+				updated_at = excluded.updated_at,
+				revision = follow_push_pending.revision + 1
+			WHERE follow_push_pending.revision = ?`,
 		)
 		.bind(
 			row.targetKind,
@@ -406,7 +410,7 @@ export async function upsertFollowPushPending(
 			JSON.stringify(row.commits),
 			row.totalCommitsCount,
 			row.updatedAt,
-			expectedUpdatedAt,
+			expectedRevision,
 		)
 		.run()
 	return (result.meta.changes ?? 0) > 0
@@ -419,7 +423,8 @@ export async function listDueFollowPushPending(
 	const result = await db
 		.prepare(
 			`SELECT target_kind, target_id, window_started_at, before_commit,
-				after_commit, ref, commits_json, total_commits_count, updated_at
+				after_commit, ref, commits_json, total_commits_count, updated_at,
+				revision
 			FROM follow_push_pending
 			WHERE window_started_at <= ?`,
 		)
@@ -431,14 +436,14 @@ export async function listDueFollowPushPending(
 /** Deletes the flushed snapshot only when no newer write replaced it. */
 export async function deleteFollowPushPendingIfUnchanged(
 	db: D1Database,
-	row: Pick<FollowPushPending, 'targetKind' | 'targetId' | 'updatedAt'>,
+	row: Pick<FollowPushPending, 'targetKind' | 'targetId' | 'revision'>,
 ): Promise<boolean> {
 	const result = await db
 		.prepare(
 			`DELETE FROM follow_push_pending
-			WHERE target_kind = ? AND target_id = ? AND updated_at = ?`,
+			WHERE target_kind = ? AND target_id = ? AND revision = ?`,
 		)
-		.bind(row.targetKind, row.targetId, row.updatedAt)
+		.bind(row.targetKind, row.targetId, row.revision)
 		.run()
 	return (result.meta.changes ?? 0) > 0
 }
@@ -480,6 +485,7 @@ export async function ensureFollowTables(db: D1Database) {
 			commits_json TEXT NOT NULL,
 			total_commits_count INTEGER NOT NULL,
 			updated_at TEXT NOT NULL,
+			revision INTEGER NOT NULL DEFAULT 0,
 			PRIMARY KEY (target_kind, target_id)
 		)`,
 	]
