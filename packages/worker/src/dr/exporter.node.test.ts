@@ -523,6 +523,15 @@ test('nightly ticks prefer the oldest stranded day before today', async () => {
 		skipped: false,
 	})
 	expect(resumed.day).not.toBe(day)
+	const todayProgress = await client.getText(progressKey)
+	expect(todayProgress).not.toBeNull()
+	expect(
+		__testOnlyParseProgress(JSON.parse(todayProgress!.text)),
+	).toMatchObject({
+		day,
+		phase: 'mailbox',
+	})
+	expect(await client.getText(stagingSummaryKey(day))).toBeNull()
 })
 
 test('nightly ticks target today when no stranded days exist', async () => {
@@ -1193,6 +1202,16 @@ test('watchdog passes on a written summary and fails loudly on incomplete or str
 	await expect(watchdog(incomplete.client)).rejects.toThrow(
 		/summary missing for 2026-07-23.*phase=artifacts/,
 	)
+
+	// Backlog drain: tonight has no summary yet but an older day is stranded.
+	const deferred = createMemoryS3()
+	await deferred.client.put('staging/2026-07-22/exporter/progress.json', '{}')
+	expect(await watchdog(deferred.client)).toMatchObject({
+		day,
+		skipped: false,
+		summaryPresent: false,
+		reason: 'deferred-for-older-stranded',
+	})
 
 	// Tonight finished, but earlier days are still progress-without-summary.
 	// The page lists oldest first — the same order catch-up resumes.

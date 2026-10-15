@@ -216,14 +216,17 @@ Contract: `packages/shared/src/backup-staging.ts`.
      plus the previous 14 days for progress-without-summary and resumes the
      oldest stranded day under the normal ~20 s budget and progress lease until
      its summary is written; when none are stranded, nightly ticks stage today.
-     Catch-up is disabled during the nightly window so the two lanes do not
-     double-run the same tick. The 14-day lookback is sized above the observed
-     ~2.5–3 day finish time for ~500 Mailbox owners so a day cannot age out
-     mid-phase (live failure: 2026-09-12..2026-09-22 under the old 2-day
-     lookback). Catch-up is resume-only: a day that never staged progress is not
-     started fresh (its dumps would contain current data, not that day's). Data
-     staged during catch-up is read at resume time; a slightly newer dump is
-     preferred over an unsealable day.
+     When nightly defers today for an older stranded day, it create-only seeds
+     today's `exporter/progress.json` if neither progress nor summary exists so
+     catch-up can resume tonight after backlog drains. Catch-up is disabled
+     during the nightly window so the two lanes do not double-run the same tick.
+     The 14-day lookback is sized above the observed ~2.5–3 day finish time for
+     ~500 Mailbox owners so a day cannot age out mid-phase (live failure:
+     2026-09-12..2026-09-22 under the old 2-day lookback). Catch-up is
+     resume-only: a day that never staged progress is not started fresh (its
+     dumps would contain current data, not that day's). Data staged during
+     catch-up is read at resume time; a slightly newer dump is preferred over an
+     unsealable day.
    - **Resumable phase state** — `exporter/progress.json` contains phase
      cursors, counters, bounded index-entry tails, and conditional-write
      revision data. Mailbox, selected RunLog, and StorageRunner dump pages plus
@@ -702,20 +705,21 @@ the correctness spec and incident-only fallback:
 
 ## Schedules and freshness
 
-| When (UTC)                      | Who               | What                                                                                                                                      |
-| ------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `*/5` during 00:30–06:10        | Production worker | Staging export: resume the oldest stranded day (progress without summary, today − ≤14 days), else stage today (cheap no-op once complete) |
-| Every 5 min outside 00:30–06:10 | Production worker | Staging catch-up: resume the oldest stranded day (progress without summary, today − ≤14 days); cheap no-op otherwise                      |
-| 06:15                           | Production worker | Staging watchdog: a missing `exporter/summary.json` for today, or an earlier stranded day, fails the lane → Sentry                        |
-| 02:15                           | Control plane     | Primary D1 export Workflow per configured database (APP_DB and JOBS_DB)                                                                   |
-| 02:45–05:45 hourly              | Control plane     | Catch-up create/restart of same-day D1 Workflows                                                                                          |
-| Hourly `:45`                    | Control plane     | D1 freshness for every configured source (identity, size ceiling, manifest age ≤26h, R2 size/ETag) + seal recent complete days            |
+| When (UTC)                      | Who               | What                                                                                                                                                                                                   |
+| ------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `*/5` during 00:30–06:10        | Production worker | Staging export: resume the oldest stranded day (progress without summary, today − ≤14 days), else stage today (cheap no-op once complete)                                                              |
+| Every 5 min outside 00:30–06:10 | Production worker | Staging catch-up: resume the oldest stranded day (progress without summary, today − ≤14 days); cheap no-op otherwise                                                                                   |
+| 06:15                           | Production worker | Staging watchdog: missing today's summary with no older stranded days, or today complete while earlier days stranded, fails → Sentry; missing today summary during backlog drain is expected (no page) |
+| 02:15                           | Control plane     | Primary D1 export Workflow per configured database (APP_DB and JOBS_DB)                                                                                                                                |
+| 02:45–05:45 hourly              | Control plane     | Catch-up create/restart of same-day D1 Workflows                                                                                                                                                       |
+| Hourly `:45`                    | Control plane     | D1 freshness for every configured source (identity, size ceiling, manifest age ≤26h, R2 size/ETag) + seal recent complete days                                                                         |
 
 ### Stranded staging days (manual finish)
 
 Failure mode: the nightly exporter hard-stops when the window closes, so a night
 with too much work leaves `staging/{day}/exporter/progress.json` without
-`exporter/summary.json`. The 06:15 watchdog pages; without a summary the day can
+`exporter/summary.json`. The 06:15 watchdog pages when tonight is genuinely
+incomplete and not deferred for older backlog; without a summary the day can
 never seal. Nightly and daytime catch-up ticks (table above) normally finish the
 day automatically within a day or two at steady state. When more than one day in
 the lookback is stranded, both lanes finish the oldest first so earlier days

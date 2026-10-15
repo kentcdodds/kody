@@ -1315,6 +1315,27 @@ export async function runDrExportTick(input: {
 			lookbackDays: drExportCatchUpLookbackDays,
 		})
 		if (stranded) {
+			if (mode === 'nightly' && stranded !== today) {
+				// Nightly defers today while draining an older stranded day; seed
+				// today's progress so catch-up can resume it later (resume-only).
+				const todaySummaryHead = await s3.head(stagingSummaryKey(today))
+				if (!todaySummaryHead.exists) {
+					const todayProgressHead = await s3.head(stagingProgressKey(today))
+					if (!todayProgressHead.exists) {
+						const initial = createInitialProgress(today, now)
+						try {
+							await s3.put(stagingProgressKey(today), JSON.stringify(initial), {
+								contentType: 'application/json',
+								ifNoneMatch: '*',
+							})
+						} catch (error) {
+							if (!(error instanceof DrBackupPreconditionFailedError)) {
+								throw error
+							}
+						}
+					}
+				}
+			}
 			day = stranded
 		} else if (mode === 'catch-up') {
 			return empty('no-stranded-day')
@@ -1494,13 +1515,13 @@ export type DrExportWatchdogResult = {
 
 /**
  * Post-window health check for the nightly staging exporter. Throws when the
- * day's `exporter/summary.json` is missing so the scheduled-lane handler
- * reports the failure to Sentry — an incomplete night is otherwise silent
- * (the exporter just stops getting ticks when the window closes). Also throws
- * when an earlier day within the catch-up lookback is still stranded
- * (progress without summary). Catch-up prefers the oldest stranded day, so
- * an earlier day still missing a summary at 06:15 means catch-up is stuck
- * and should stay loud once per day instead of failing silently forever.
+ * day's `exporter/summary.json` is missing and no older stranded day explains
+ * the deferral — an incomplete night is otherwise silent (the exporter stops
+ * getting ticks when the window closes). When earlier stranded days exist and
+ * tonight has no summary yet (nightly deferred to drain backlog), returns
+ * without paging. Throws when tonight has a summary but earlier days are still
+ * stranded: catch-up prefers the oldest stranded day, so that combination
+ * means catch-up is stuck and should stay loud once per day.
  */
 export async function runDrExportWatchdogTick(input: {
 	env: Env
@@ -1542,6 +1563,23 @@ export async function runDrExportWatchdogTick(input: {
 			JSON.stringify({ day, summaryPresent: true }),
 		)
 		return { day, skipped: false, summaryPresent: true }
+	}
+	if (!summary && strandedPreviousDays.length > 0) {
+		console.info(
+			'dr_export_watchdog',
+			JSON.stringify({
+				day,
+				summaryPresent: false,
+				reason: 'deferred-for-older-stranded',
+				strandedPreviousDays,
+			}),
+		)
+		return {
+			day,
+			skipped: false,
+			summaryPresent: false,
+			reason: 'deferred-for-older-stranded',
+		}
 	}
 	const strandedDetail =
 		strandedPreviousDays.length > 0
