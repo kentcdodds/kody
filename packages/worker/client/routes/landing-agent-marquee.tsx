@@ -75,6 +75,8 @@ const driftSpeed = 28
 const idleAfterUseMs = 2500
 /** Pointer travel before a press on a mark becomes a drag instead of a click. */
 const dragThreshold = 6
+/** How many marks away from the pointer the magnification reaches. */
+const magnifyReach = 2.5
 
 function agentMarqueeMotion() {
 	return ref((node: Element, signal: AbortSignal) => {
@@ -141,9 +143,92 @@ function agentMarqueeMotion() {
 		let hovering = false
 		let pressed = false
 
+		// Dock-style magnification: every mark scales by its distance to the
+		// mouse, not by whether the mouse is over it, and the marks around
+		// the pointer make room. Centers come from layout (offsetLeft), so
+		// the transforms written here never feed back into the measurement.
+		const style = getComputedStyle(node)
+		const iconSize = parseFloat(style.getPropertyValue('--agent-size')) || 64
+		const maxZoom = parseFloat(style.getPropertyValue('--agent-zoom')) || 1.25
+		let pointerX: number | null = null
+		let magnifyRaf: number | null = null
+		const magnify = () => {
+			magnifyRaf = null
+			const px = pointerX
+			if (px == null) {
+				for (const item of items) {
+					item.style.removeProperty('--agent-scale')
+					item.style.removeProperty('--agent-x')
+					item.classList.remove('is-nearest')
+				}
+				return
+			}
+			const start = trackStart()
+			const pitch =
+				(items[1]?.offsetLeft ?? 0) - (items[0]?.offsetLeft ?? 0) || 90
+			const radius = pitch * magnifyReach
+			let nearest = -1
+			let nearestDistance = Infinity
+			const extras = items.map((item, index) => {
+				const center =
+					item.offsetLeft - start + item.offsetWidth / 2 - node.scrollLeft
+				const distance = Math.abs(center - px)
+				if (distance < nearestDistance) {
+					nearestDistance = distance
+					nearest = index
+				}
+				const t =
+					distance < radius
+						? (1 + Math.cos((Math.PI * distance) / radius)) / 2
+						: 0
+				const scale = 1 + (maxZoom - 1) * t
+				item.style.setProperty('--agent-scale', scale.toFixed(4))
+				return iconSize * (scale - 1)
+			})
+			const total = extras.reduce((sum, extra) => sum + extra, 0)
+			let before = 0
+			extras.forEach((extra, index) => {
+				const item = items[index]
+				if (!item) return
+				item.style.setProperty(
+					'--agent-x',
+					`${(before + extra / 2 - total / 2).toFixed(2)}px`,
+				)
+				before += extra
+				item.classList.toggle(
+					'is-nearest',
+					index === nearest && nearestDistance < pitch / 2,
+				)
+			})
+		}
+		const scheduleMagnify = () => {
+			if (magnifyRaf == null) magnifyRaf = requestAnimationFrame(magnify)
+		}
+		node.addEventListener(
+			'pointermove',
+			(event) => {
+				if (!(event instanceof PointerEvent) || event.pointerType !== 'mouse')
+					return
+				pointerX = event.clientX - node.getBoundingClientRect().left
+				node.classList.add('is-magnifying')
+				scheduleMagnify()
+			},
+			{ signal, passive: true },
+		)
+		node.addEventListener(
+			'pointerleave',
+			() => {
+				pointerX = null
+				node.classList.remove('is-magnifying')
+				scheduleMagnify()
+			},
+			{ signal },
+		)
+
 		node.addEventListener(
 			'scroll',
 			() => {
+				if (pointerX != null) scheduleMagnify()
 				if (Math.abs(node.scrollLeft - pos) < 1) return
 				pos = node.scrollLeft
 				if (wrap() !== 0) apply()
@@ -373,7 +458,8 @@ function agentMarqueeMotion() {
 			observer.disconnect()
 			resize.disconnect()
 			if (raf != null) cancelAnimationFrame(raf)
-			node.classList.remove('is-looping', 'is-dragging')
+			if (magnifyRaf != null) cancelAnimationFrame(magnifyRaf)
+			node.classList.remove('is-looping', 'is-dragging', 'is-magnifying')
 		})
 	})
 }

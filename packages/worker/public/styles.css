@@ -852,21 +852,47 @@ html.is-settled {
 	opacity: 0;
 }
 
-.landing-agent:is(:hover, :focus-visible, :active) .landing-agent-icon {
-	scale: var(--agent-zoom);
+/* With JS (`.is-looping`) a mouse magnifies like the macOS Dock: each mark
+   scales by its distance to the pointer (`--agent-scale`) and its
+   neighbours make room (`--agent-x`), so the gaps never shrink a mark.
+   Without JS, hover zooms one mark. Keyboard focus and touch presses zoom
+   the focused or pressed mark either way. */
+.landing-agents.is-looping .landing-agents-item {
+	translate: var(--agent-x, 0px) 0;
 }
 
-.landing-agent:is(:hover, :focus-visible, :active) .landing-agent-name {
+.landing-agents.is-looping .landing-agent-icon {
+	scale: var(--agent-scale, 1);
+}
+
+.landing-agents.is-looping .landing-agents-item.is-nearest .landing-agent-name {
 	opacity: 1;
 }
 
-.landing-agents-item:has(
-	~ .landing-agents-item .landing-agent:is(:hover, :focus-visible, :active)
-) {
+.landing-agents:not(.is-looping) .landing-agent:hover .landing-agent-icon,
+.landing-agents .landing-agent:is(:focus-visible, :active) .landing-agent-icon {
+	scale: var(--agent-zoom);
+}
+
+.landing-agents:not(.is-looping) .landing-agent:hover .landing-agent-name,
+.landing-agents .landing-agent:is(:focus-visible, :active) .landing-agent-name {
+	opacity: 1;
+}
+
+.landing-agents:not(.is-looping)
+	.landing-agents-item:has(~ .landing-agents-item .landing-agent:hover),
+.landing-agents
+	.landing-agents-item:has(
+		~ .landing-agents-item .landing-agent:is(:focus-visible, :active)
+	) {
 	translate: calc(-1 * var(--agent-shift)) 0;
 }
 
-.landing-agents-item:has(.landing-agent:is(:hover, :focus-visible, :active))
+.landing-agents:not(.is-looping)
+	.landing-agents-item:has(.landing-agent:hover)
+	~ .landing-agents-item,
+.landing-agents
+	.landing-agents-item:has(.landing-agent:is(:focus-visible, :active))
 	~ .landing-agents-item {
 	translate: var(--agent-shift) 0;
 }
@@ -882,6 +908,12 @@ html.is-settled {
 
 	.landing-agent-name {
 		transition: opacity 200ms var(--ease-out);
+	}
+
+	/* Track the pointer closely while magnifying; settle slowly after. */
+	.landing-agents.is-magnifying .landing-agents-item,
+	.landing-agents.is-magnifying .landing-agent-icon {
+		transition-duration: 70ms;
 	}
 }
 

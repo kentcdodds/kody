@@ -111,6 +111,43 @@ test('agent marquee drift resumes after a press released outside the row', async
 		.not.toBe(before)
 })
 
+test('agent marquee magnifies by pointer distance, gaps included', async ({
+	page,
+}) => {
+	await page.emulateMedia({ reducedMotion: 'reduce' })
+	await page.goto('/')
+	await waitForClientHydration(page)
+	const marquee = page.locator('nav.landing-agents')
+	await expect(marquee).toHaveClass(/is-looping/)
+	const box = await marquee.boundingBox()
+	if (!box) throw new Error('marquee has no box')
+	await page.mouse.move(box.x + box.width / 2, box.y + 40)
+	const [left, right] = await marquee.evaluate((nav) => {
+		const navLeft = nav.getBoundingClientRect().left
+		const visible = [...nav.querySelectorAll('.landing-agent-icon')]
+			.map((icon) => {
+				const rect = icon.getBoundingClientRect()
+				return (rect.left + rect.right) / 2 - navLeft
+			})
+			.filter((x) => x > 150 && x < nav.clientWidth - 150)
+		return [visible[1] ?? 0, visible[2] ?? 0]
+	})
+	await page.mouse.move(box.x + (left + right) / 2, box.y + 40)
+	const scales = () =>
+		marquee.evaluate((nav) =>
+			[...nav.querySelectorAll('.landing-agent-icon')]
+				.map((icon) => Number(getComputedStyle(icon).scale) || 1)
+				.sort((a, b) => b - a)
+				.slice(0, 2),
+		)
+	await expect
+		.poll(async () => Math.min(...(await scales())))
+		.toBeGreaterThan(1.15)
+
+	await page.mouse.move(box.x + box.width / 2, box.y + box.height + 300)
+	await expect.poll(async () => Math.max(...(await scales()))).toBe(1)
+})
+
 test('agent marquee scrolls endlessly in both directions', async ({ page }) => {
 	await page.emulateMedia({ reducedMotion: 'reduce' })
 	await page.goto('/')
