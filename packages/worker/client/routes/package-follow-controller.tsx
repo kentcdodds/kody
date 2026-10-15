@@ -8,6 +8,7 @@ import {
 	followDeliveryNote,
 	followPostErrorMessage,
 	followEventOptions,
+	followEventsToSubmit,
 	initialFollowEventChoice,
 	postOrgFollow,
 } from '#client/routes/follows-shared.ts'
@@ -175,6 +176,11 @@ export function createPackageFollowController(
 		message = null
 		handle.update()
 		const target = state.target
+		const { events } = followEventsToSubmit(
+			state,
+			workspace.follow,
+			chosenEvents,
+		)
 		const payload = await postOrgFollow(
 			workspace.slug,
 			intent === 'follow'
@@ -182,7 +188,7 @@ export function createPackageFollowController(
 						intent: 'follow',
 						name: target.name,
 						kind: target.kind,
-						events: normalizeFollowEvents(chosenEvents),
+						...(events ? { events } : {}),
 					}
 				: { intent: 'unfollow', name: target.name, kind: target.kind },
 		).catch(() => null)
@@ -340,11 +346,10 @@ export function createPackageFollowController(
 		const skipped = follow
 			? followSkipReasonCopy(follow.lastDeliverySkipReason)
 			: null
-		const nothingChosen = chosenEvents.length === 0
+		const submission = followEventsToSubmit(current, follow, chosenEvents)
+		const nothingChosen = submission.events?.length === 0
 		const unchanged =
-			follow?.status === 'active' &&
-			normalizeFollowEvents(follow.events).join() ===
-				normalizeFollowEvents(chosenEvents).join()
+			follow?.status === 'active' && submission.events === undefined
 		const primaryLabel = !follow
 			? 'Follow'
 			: follow.status === 'paused'
@@ -474,6 +479,12 @@ export function createPackageFollowController(
 				{nothingChosen && !blocked ? (
 					<p mix={css(mutedSmallCss)}>
 						Choose at least one. To stop everything, unfollow.
+					</p>
+				) : null}
+				{submission.dropsGated && !nothingChosen ? (
+					<p data-testid="package-follow-drops-gated" mix={css(gatedCss)}>
+						Saving turns off pushes for this workspace. Pushes need read access,
+						which you don’t have.
 					</p>
 				) : null}
 				{message ? (

@@ -55,21 +55,47 @@ export function followEventOptions(
 	}))
 }
 
-/**
- * Events checked when the panel opens for one workspace. Stored events the
- * viewer can no longer turn on are dropped so Save never resends them.
- */
-export function initialFollowEventChoice(
-	state: Pick<PackageFollowStatePayload, 'availableEvents' | 'canPush'>,
-	follow: FollowSummary | null,
-): Array<FollowEvent> {
-	const offerable = state.availableEvents.filter(
+type FollowEventAccess = Pick<
+	PackageFollowStatePayload,
+	'availableEvents' | 'canPush'
+>
+
+function offerableFollowEvents(state: FollowEventAccess) {
+	return state.availableEvents.filter(
 		(event) => event !== 'pushed' || state.canPush,
 	)
-	if (!follow) return offerable
-	return normalizeFollowEvents(follow.events).filter((event) =>
-		offerable.includes(event),
-	)
+}
+
+/** Events checked when the panel opens for one workspace. */
+export function initialFollowEventChoice(
+	state: FollowEventAccess,
+	follow: FollowSummary | null,
+): Array<FollowEvent> {
+	if (follow) return normalizeFollowEvents(follow.events)
+	return offerableFollowEvents(state)
+}
+
+/**
+ * What Save or Resume sends. An untouched existing choice sends nothing so
+ * the server keeps it, including events the viewer can no longer turn on; an
+ * edited choice can only carry events the viewer can turn on now.
+ */
+export function followEventsToSubmit(
+	state: FollowEventAccess,
+	follow: Pick<FollowSummary, 'events'> | null,
+	chosen: ReadonlyArray<FollowEvent>,
+): { events: Array<FollowEvent> | undefined; dropsGated: boolean } {
+	const picked = normalizeFollowEvents(chosen)
+	if (follow && normalizeFollowEvents(follow.events).join() === picked.join()) {
+		return { events: undefined, dropsGated: false }
+	}
+	const offerable = offerableFollowEvents(state)
+	return {
+		events: picked.filter((event) => offerable.includes(event)),
+		dropsGated: Boolean(
+			follow?.events.some((event) => !offerable.includes(event)),
+		),
+	}
 }
 
 /** Copy for a failed follow change. Rate limits name the workspace's hourly cap. */

@@ -3,6 +3,7 @@ import {
 	describeFollowEvents,
 	describePausedFollow,
 	followEventOptions,
+	followEventsToSubmit,
 	followPostErrorMessage,
 	initialFollowEventChoice,
 	postOrgFollow,
@@ -80,30 +81,37 @@ test('initialFollowEventChoice keeps an existing choice and defaults to what is 
 			},
 		),
 	).toEqual(['pushed'])
+})
+
+test('followEventsToSubmit keeps an untouched choice and drops gated events only on edit', () => {
+	const state: Parameters<typeof followEventsToSubmit>[0] = {
+		availableEvents: ['published', 'pushed'],
+		canPush: false,
+	}
+	const stored: Parameters<typeof followEventsToSubmit>[1] = {
+		events: ['published', 'pushed'],
+	}
+
+	expect(followEventsToSubmit(state, stored, ['pushed', 'published'])).toEqual({
+		events: undefined,
+		dropsGated: false,
+	})
 	expect(
-		initialFollowEventChoice(
-			{ availableEvents: ['published', 'pushed'], canPush: false },
-			{
-				status: 'active',
-				events: ['published', 'pushed'],
-				pausedAt: null,
-				pausedReason: null,
-				lastDeliverySkipReason: null,
-			},
-		),
-	).toEqual(['published'])
+		followEventsToSubmit(state, { events: ['pushed'] }, ['pushed']),
+	).toEqual({ events: undefined, dropsGated: false })
 	expect(
-		initialFollowEventChoice(
-			{ availableEvents: ['published', 'pushed'], canPush: false },
-			{
-				status: 'active',
-				events: ['pushed'],
-				pausedAt: null,
-				pausedReason: null,
-				lastDeliverySkipReason: null,
-			},
-		),
-	).toEqual([])
+		followEventsToSubmit(state, { events: ['pushed'] }, [
+			'pushed',
+			'published',
+		]),
+	).toEqual({ events: ['published'], dropsGated: true })
+	expect(followEventsToSubmit(state, null, ['published'])).toEqual({
+		events: ['published'],
+		dropsGated: false,
+	})
+	expect(
+		followEventsToSubmit({ ...state, canPush: true }, stored, ['pushed']),
+	).toEqual({ events: ['pushed'], dropsGated: false })
 })
 
 test('rate-limit errors name the workspace limit', () => {
