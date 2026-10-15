@@ -278,12 +278,17 @@ import {
 	createDiscordApiHandler,
 	createDiscordHandler,
 } from '#app/handlers/discord.ts'
-import { createFeaturesHandler } from '#app/handlers/features.ts'
+import {
+	createFeaturesHandler,
+	createLegacyFeatureCredentialsRedirectHandler,
+} from '#app/handlers/features.ts'
 import { createBusinessHandler } from '#app/handlers/business.ts'
 import { createPricingHandler } from '#app/handlers/pricing.ts'
 import { createFaqHandler } from '#app/handlers/faq.ts'
+import { createWithAgentHandler } from '#app/handlers/with-agent.ts'
 import { createAcquisitionHandler } from '#app/handlers/acquisition.ts'
 import { createCaseStudiesHandler } from '#app/handlers/case-studies.ts'
+import { createBelieveHandler } from '#app/handlers/believe.ts'
 import { createPrivacyHandler } from '#app/handlers/privacy.ts'
 import { createSupportHandler } from '#app/handlers/support.ts'
 import { createTermsHandler } from '#app/handlers/terms.ts'
@@ -442,15 +447,18 @@ export function createAppRouter(env: Env) {
 			legacyGuidesPath: createLegacyGuidesPathRedirectHandler(env),
 			features: createFeaturesHandler(env),
 			featureMemory: createFeaturesHandler(env),
-			featureSecrets: createFeaturesHandler(env),
+			featureSecrets: createLegacyFeatureCredentialsRedirectHandler(env),
+			featureCredentials: createFeaturesHandler(env),
 			featurePackages: createFeaturesHandler(env),
 			featureTriggers: createFeaturesHandler(env),
-			featureIntegrations: createFeaturesHandler(env),
+			featureIntegrations: createLegacyFeatureCredentialsRedirectHandler(env),
 			featureApps: createFeaturesHandler(env),
 			business: createBusinessHandler(env),
 			pricing: createPricingHandler(env),
 			faq: createFaqHandler(env),
 			caseStudies: createCaseStudiesHandler(env),
+			believe: createBelieveHandler(env),
+			withAgent: createWithAgentHandler(env),
 			n8nAlternatives: createAcquisitionHandler(env),
 			mcpGateway: createAcquisitionHandler(env),
 			sharedMemory: createAcquisitionHandler(env),

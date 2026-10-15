@@ -1,4 +1,3 @@
-import { landingHeroHeadline } from '#universal/landing-home-copy.ts'
 import { isYoutubeVideoId } from '#universal/youtube-watch.ts'
 
 export type LandingHeroVideo = {
@@ -7,10 +6,13 @@ export type LandingHeroVideo = {
 }
 
 const retiredHeroTitlePattern = /stop sweating/i
+const retiredHeroTitle = 'Your agents\u2019 cloud'
+const emDashPattern = /\s*\u2014\s*/g
 
 /**
  * Homepage-only presentation: keep playlist order, drop invalid clips,
- * and retitle leftover "Stop Sweating" strings to the locked continuity H1.
+ * retitle leftover "Stop Sweating" strings to the brand line, and turn the
+ * playlist's em dashes into colons (the homepage uses no em dashes).
  */
 export function presentLandingHeroVideos(
 	videos: ReadonlyArray<LandingHeroVideo>,
@@ -21,8 +23,8 @@ export function presentLandingHeroVideos(
 		result.push({
 			videoId: video.videoId,
 			title: retiredHeroTitlePattern.test(video.title)
-				? landingHeroHeadline
-				: video.title.trim(),
+				? retiredHeroTitle
+				: video.title.trim().replace(emDashPattern, ': '),
 		})
 	}
 	return result

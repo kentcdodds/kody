@@ -2,7 +2,10 @@ import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
-import { onboardingMobileFeaturedAgentIds } from './onboarding-mcp-clients.ts'
+import {
+	onboardingDesktopFeaturedAgentIds,
+	onboardingMobileFeaturedAgentIds,
+} from './onboarding-mcp-clients.ts'
 import {
 	isValidWalkthroughHostPick,
 	joinWalkthroughHostLabels,
@@ -32,20 +35,9 @@ test('every valid pick is a coding host, a chat host, and a third host of either
 	const allRow = listAllWalkthroughHosts()
 	expect(picks.length).toBeGreaterThan(0)
 	const ids = (hosts: Array<{ id: string }>) => hosts.map((host) => host.id)
-	expect(ids(codingRow)).toEqual(
-		expect.arrayContaining([
-			'grok-bot',
-			'muse',
-			'wajo',
-			'cue',
-			'openmuse',
-			'dots',
-		]),
-	)
+	expect(ids(codingRow)).toEqual(expect.arrayContaining(['grok-bot', 'muse']))
 	expect(ids(chatRow)).toContain('grok-bot')
-	expect(ids(allRow)).toEqual(
-		expect.arrayContaining(['muse', 'wajo', 'cue', 'openmuse', 'dots']),
-	)
+	expect(ids(allRow)).toContain('muse')
 	expect(
 		walkthroughHostCatalog.find((host) => host.id === 'muse'),
 	).toMatchObject({
@@ -54,47 +46,8 @@ test('every valid pick is a coding host, a chat host, and a third host of either
 		company: 'meta',
 		kind: 'coding',
 	})
-	expect(
-		walkthroughHostCatalog.find((host) => host.id === 'openmuse'),
-	).toMatchObject({
-		label: 'OpenMuse',
-		icon: 'openmuse',
-		company: 'copilotkit',
-		kind: 'coding',
-	})
-	expect(
-		walkthroughHostCatalog.find((host) => host.id === 'wajo'),
-	).toMatchObject({
-		label: 'Wajo',
-		icon: 'wajo',
-		company: 'wajo',
-		kind: 'coding',
-	})
-	expect(
-		walkthroughHostCatalog.find((host) => host.id === 'cue'),
-	).toMatchObject({
-		label: 'Cue',
-		icon: 'cue',
-		company: 'cue',
-		kind: 'coding',
-	})
-	expect(
-		walkthroughHostCatalog.find((host) => host.id === 'dots'),
-	).toMatchObject({
-		label: 'Dots',
-		icon: 'dots',
-		company: 'openai',
-		kind: 'coding',
-	})
 	expect(ids(picks.map((pick) => pick.coding))).toEqual(
-		expect.arrayContaining([
-			'muse',
-			'grok-bot',
-			'wajo',
-			'cue',
-			'openmuse',
-			'dots',
-		]),
+		expect.arrayContaining(['muse', 'grok-bot']),
 	)
 	expect(ids(picks.map((pick) => pick.invoke))).toContain('grok-bot')
 	expect(
@@ -196,7 +149,7 @@ test('phone slot offers chat apps plus coding hosts with a real phone surface', 
 			replaceWalkthroughHost(
 				pickWalkthroughHosts(() => 0),
 				'coding',
-				'dots',
+				'muse',
 			),
 			'invoke',
 			'gemini',
@@ -300,4 +253,32 @@ test('pickWalkthroughHosts uses the injected rng, maps acts, and supports host r
 	expect(replaced.notify).toEqual(pick.notify)
 	expect(replaceWalkthroughHost(pick, 'invoke', pick.coding.id)).toEqual(pick)
 	expect(replaceWalkthroughHost(pick, 'notify', 'missing')).toEqual(pick)
+})
+
+test('the catalog only shows agents with a featured Get started connect path', () => {
+	const onboardingIdByHost = {
+		cursor: 'cursor',
+		'claude-code': 'claude-code',
+		copilot: 'copilot',
+		opencode: 'opencode',
+		codex: 'codex',
+		chatgpt: 'chatgpt',
+		claude: 'claude-desktop',
+		grok: 'grok',
+		'grok-bot': 'grok-bot',
+		gemini: 'gemini',
+		devin: 'devin',
+		openclaw: 'openclaw',
+		muse: 'muse',
+	} as const satisfies Record<
+		(typeof walkthroughHostCatalog)[number]['id'],
+		string
+	>
+	const featured = new Set<string>([
+		...onboardingDesktopFeaturedAgentIds,
+		...onboardingMobileFeaturedAgentIds,
+	])
+	for (const host of walkthroughHostCatalog) {
+		expect(featured).toContain(onboardingIdByHost[host.id])
+	}
 })

@@ -7,6 +7,7 @@ import {
 	landingPrimitivesMoreLink,
 } from '#universal/landing-home-copy.ts'
 import { landingLanternOrbs } from '#universal/landing-lantern.ts'
+import { primitiveFeatureHref } from '#universal/primitive-cards.ts'
 
 test('primitives sentence pairs lantern orbs with words and ships empty leaders', async () => {
 	const html = await renderToString(jsx(LandingPrimitives, {}))
@@ -34,7 +35,7 @@ test('primitives sentence pairs lantern orbs with words and ships empty leaders'
 	)
 
 	for (const primitive of landingHomePrimitives) {
-		expect(html).toContain(`href="/features/${primitive.id}"`)
+		expect(html).toContain(`href="${primitiveFeatureHref(primitive.id)}"`)
 		expect(html).toContain(`>${primitive.word}<`)
 		expect(html).toContain(`data-word="${primitive.id}"`)
 		expect(html).toContain(`data-orb="${primitive.id}"`)

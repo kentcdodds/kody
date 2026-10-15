@@ -6,28 +6,23 @@ import {
 	createRouteData,
 	renderRoutePendingStatus,
 } from '#client/route-data.tsx'
-import {
-	fetchOnboardingPayload,
-	type OnboardingPayload,
-} from '#client/routes/onboarding-payload.ts'
-import { onboardingPath } from '#client/routes/onboarding-redirect.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { reveal, revealPop } from '#client/reveal.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
-import { landingFactoryBeats } from '#universal/landing-factory-beats.ts'
-import { landingWorldBrands } from '#universal/landing-world-brands.ts'
-import { renderIcon } from '#universal/icon.tsx'
-import { homepageSignupPath } from '#universal/first-touch-attribution.ts'
+import { docHref } from '#universal/docs-nav.ts'
 import { routes } from '#universal/routes.ts'
 import {
 	isLandingHeroVideo,
-	landingHeroChooserLabel,
 	landingHeroChooserLabelEmphasis,
 	landingHeroChooserLabelLead,
 	presentLandingHeroVideos,
 	type LandingHeroVideo as LandingHeroVideoItem,
 } from '#universal/landing-hero-copy.ts'
 import {
+	landingClosingBelieveLink,
+	landingClosingHeadingEmphasis,
+	landingClosingHeadingLead,
+	landingClosingLead,
 	landingCompareCaption,
 	landingCompareWithItems,
 	landingCompareWithoutItems,
@@ -35,77 +30,57 @@ import {
 	landingCompareWithoutTitle,
 	landingHeroHeadlineEmphasis,
 	landingHeroHeadlineLead,
-	landingHeroLead,
+	landingHeroHeadlineTail,
+	landingHeroPlugLine,
 	landingHeroPrimaryCta,
-	landingHeroSecondaryCta,
-	landingHeroSubheadEmphasis,
-	landingHeroSubheadLead,
-	landingHeroSubheadTail,
-	landingInviteGuestLead,
-	landingInviteHeadingEmphasis,
-	landingInviteHeadingLead,
-	landingInviteSignedInLead,
-	landingVsHeading,
-	landingVsItems,
+	landingHeroSubhead,
+	landingIsHeadingIs,
+	landingIsHeadingIsNot,
+	landingIsHeadingJoin,
+	landingIsHeadingLead,
+	landingIsItem,
+	landingIsNotItems,
 } from '#universal/landing-home-copy.ts'
 import {
 	accountDeletedConfirmationMessage,
 	isAccountDeletedHome,
 } from '#universal/account-deletion-confirmation.ts'
-import { publicCreateAccountLabel } from '#universal/public-signup-copy.ts'
 import {
 	pickWalkthroughHosts,
 	type WalkthroughHostPick,
 } from '#universal/walkthrough-hosts.ts'
+import { pickWithAgentOrder } from '#universal/with-agents.ts'
+import { LandingAgentMarquee } from '#client/routes/landing-agent-marquee.tsx'
 import { LandingHeroAgents } from '#client/routes/landing-hero-agents.tsx'
 import { LandingHeroVideo } from '#client/routes/landing-hero-video.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import {
-	LandingPrimitives,
-	landingPrimitivesSectionId,
-} from '#client/routes/landing-primitives.tsx'
 import { LandingPrimitiveCards } from '#client/routes/landing-primitive-cards.tsx'
 import { LandingTestimonialsCarousel } from './landing-testimonials-carousel.tsx'
 import { LandingLoopPlayer } from './landing-loop-player.tsx'
 import { WalkthroughHostIntro } from './walkthrough-host-intro.tsx'
 
 /**
- * Public landing page. Cross-agent continuity is the door: H1, compare,
- * primitives, and vs come first. Factory / orbit / videos prove it. Motion
- * is enhance-only (`html.js`) and fully off under `prefers-reduced-motion`.
+ * Public landing page. The shared team cloud is the door: H1, one connect
+ * CTA, compare, primitive cards, and what Kody is and is not come first.
+ * The orbit walkthrough, team ecosystem, and videos prove it, and the page
+ * closes on invisible software. The connect CTA copies an agent-led setup prompt, so the page
+ * never links to `/onboarding`. Motion is enhance-only (`html.js`) and fully
+ * off under `prefers-reduced-motion`.
  *
  * Layout styles live in `public/styles.css` (`.landing-*`) so SSR does not
  * emit a per-node `<style data-rmx>` tag for every marketing block.
  */
 
-const factoryPathSteps = [
-	{
-		kicker: 'Today',
-		title: 'Ad hoc prompt',
-		note: 'Same question. More tokens.',
-	},
-	{
-		kicker: 'Save it',
-		title: 'A package',
-		note: 'Durable software you own.',
-	},
-	{
-		kicker: 'Trigger it',
-		title: 'No inference',
-		note: 'Cron, webhook, email, or event.',
-	},
-] as const
-
 const ecosystemPathSteps = [
 	{
 		kicker: 'Repos',
-		title: 'Your git',
-		note: 'Isolated, agent-written.',
+		title: 'Team git',
+		note: 'Shared repos your agents write.',
 	},
 	{
 		kicker: 'Registry',
-		title: 'Your npm',
-		note: 'Packages you can run.',
+		title: 'Team npm',
+		note: 'Packages anyone can run.',
 	},
 	{
 		kicker: 'Share',
@@ -116,8 +91,8 @@ const ecosystemPathSteps = [
 
 const ecosystemTriggers = ['Webhook', 'Cron', 'HTTP', 'App'] as const
 
-const communityHref = routes.community.href()
-const howItWorksHref = `#${landingPrimitivesSectionId}`
+const believeHref = routes.believe.href()
+const connectYourAgentDocHref = docHref('connect-your-agent')
 
 function isHomePath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/'
@@ -145,81 +120,60 @@ async function fetchLandingHeroVideos(signal: AbortSignal) {
 	}
 }
 
-function chipIconStyle(icon: string) {
-	return { '--chip-icon': `url("/images/icons/${icon}.svg")` }
-}
-
 export async function homeRouteLoader(
 	_url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const [onboarding, landingHeroVideos] = await Promise.all([
-		fetchOnboardingPayload(signal),
-		fetchLandingHeroVideos(signal),
-	])
-	const result: RouteLoaderResult = {}
-	if (onboarding) result.onboarding = onboarding
-	result.walkthroughHosts = pickWalkthroughHosts()
-	result.landingHeroVideos = landingHeroVideos
-	return result
+	return {
+		walkthroughHosts: pickWalkthroughHosts(),
+		landingAgentOrder: pickWithAgentOrder(),
+		landingHeroVideos: await fetchLandingHeroVideos(signal),
+	}
 }
 
 type HomePagePayloads = {
-	onboarding: OnboardingPayload | null
 	walkthroughHosts?: WalkthroughHostPick
 	landingHeroVideos: Array<LandingHeroVideoItem>
 }
 
 export function HomeRoute(handle: Handle) {
-	let loggedIn = false
 	let walkthroughHosts: WalkthroughHostPick | null = null
+	let landingAgentOrder: Array<string> | null = null
 	let landingHeroVideos: Array<LandingHeroVideoItem> = []
 	/** Payload last applied to the closure state above. */
 	let appliedPayload: HomePagePayloads | null = null
-	const homeData = createRouteData<'onboarding', HomePagePayloads>({
+	const homeData = createRouteData<'landingHeroVideos', HomePagePayloads>({
 		consume(handle, href) {
 			if (!isHomePath(href)) return null
-			const onboarding = tryConsumeRouteLoaderData(handle, 'onboarding', href)
 			const hosts = tryConsumeRouteLoaderData(handle, 'walkthroughHosts', href)
+			const agentOrder = tryConsumeRouteLoaderData(
+				handle,
+				'landingAgentOrder',
+				href,
+			)
+			if (agentOrder) landingAgentOrder = agentOrder
 			const videos = tryConsumeRouteLoaderData(
 				handle,
 				'landingHeroVideos',
 				href,
 			)
-			// Optional keys stand on their own; apply them even when the
-			// required onboarding key is missing and the fallback fetch runs.
+			// Hosts stand on their own; apply them even when the videos key is
+			// missing and the fallback fetch runs.
 			if (hosts) walkthroughHosts = hosts
-			if (videos) landingHeroVideos = presentLandingHeroVideos(videos)
-			if (!onboarding) return null
-			return {
-				onboarding,
-				walkthroughHosts: hosts,
-				landingHeroVideos: videos
-					? presentLandingHeroVideos(videos)
-					: landingHeroVideos,
-			}
+			if (!videos) return null
+			return { walkthroughHosts: hosts, landingHeroVideos: videos }
 		},
 		async load(_href, signal) {
-			const [onboarding, videos] = await Promise.all([
-				fetchOnboardingPayload(signal),
-				fetchLandingHeroVideos(signal),
-			])
 			return {
-				onboarding,
 				walkthroughHosts: walkthroughHosts ?? pickWalkthroughHosts(),
-				landingHeroVideos: videos,
+				landingHeroVideos: await fetchLandingHeroVideos(signal),
 			}
 		},
 	})
 
-	function applyOnboardingPayload(payload: OnboardingPayload | null) {
-		loggedIn = payload?.loggedIn === true
-	}
-
 	function applyHomePayload(payload: HomePagePayloads) {
 		if (payload.walkthroughHosts) walkthroughHosts = payload.walkthroughHosts
 		landingHeroVideos = presentLandingHeroVideos(payload.landingHeroVideos)
-		applyOnboardingPayload(payload.onboarding)
 	}
 
 	return () => {
@@ -231,11 +185,6 @@ export function HomeRoute(handle: Handle) {
 		}
 		const pending = snapshot.kind === 'pending'
 		const busy = pending && appliedPayload !== null
-
-		// A failed fallback fetch still settles the door for a visitor.
-		const onboardingReady = appliedPayload !== null || snapshot.kind === 'error'
-		const isSignedIn = onboardingReady && loggedIn
-		const connectHref = isSignedIn ? onboardingPath : homepageSignupPath
 
 		const showAccountDeleted = isAccountDeletedHome(
 			new URL(currentHref, 'https://kody.local').search,
@@ -258,33 +207,33 @@ export function HomeRoute(handle: Handle) {
 						<h1 data-rise style={{ '--rise': '0' }} class="landing-hero-title">
 							{landingHeroHeadlineLead}
 							<em>{landingHeroHeadlineEmphasis}</em>
+							{landingHeroHeadlineTail}
 						</h1>
 						<h2
 							data-rise
 							style={{ '--rise': '0.6' }}
 							class="landing-hero-subhead"
 						>
-							{landingHeroSubheadLead}
-							<em>{landingHeroSubheadEmphasis}</em>
-							{landingHeroSubheadTail}
+							{landingHeroSubhead}
 						</h2>
-						<p data-rise style={{ '--rise': '1' }} class="landing-hero-lead">
-							{landingHeroLead}
-						</p>
 						<div
 							data-rise
-							style={{ '--rise': '1.4' }}
+							style={{ '--rise': '0.8' }}
+							class="landing-agents-row"
+						>
+							<LandingAgentMarquee order={landingAgentOrder} />
+						</div>
+						<div
+							data-rise
+							style={{ '--rise': '1' }}
 							class="landing-hero-actions"
 						>
-							<a href={connectHref} class="landing-pill landing-hero-cta">
-								{landingHeroPrimaryCta}
-							</a>
-							<BuildWithAgentButton />
-							<a href={howItWorksHref} class="landing-hero-secondary">
-								{landingHeroSecondaryCta}
-							</a>
+							{renderConnectCta()}
 						</div>
 					</div>
+					<p data-rise style={{ '--rise': '1.4' }} class="landing-hero-plug">
+						{landingHeroPlugLine}
+					</p>
 					<div class="landing-compare">
 						<div class="landing-compare-col">
 							<h3 id="compare-without-title" class="landing-compare-title">
@@ -316,66 +265,27 @@ export function HomeRoute(handle: Handle) {
 					<p class="landing-compare-caption">{landingCompareCaption}</p>
 				</section>
 
-				<LandingPrimitives />
 				<LandingPrimitiveCards />
 
-				<section aria-labelledby="vs-title" class="landing-vs">
-					<h2 id="vs-title" class="landing-section-heading">
-						{landingVsHeading}
+				<section aria-labelledby="is-title" class="landing-vs">
+					<h2 id="is-title" class="landing-section-heading">
+						{landingIsHeadingLead}
+						<em>{landingIsHeadingIs}</em>
+						{landingIsHeadingJoin}
+						<em>{landingIsHeadingIsNot}</em>
 					</h2>
 					<ul class="landing-vs-list">
-						{landingVsItems.map((item) => (
+						{landingIsNotItems.map((item) => (
 							<li key={item.kicker} class="landing-vs-item" mix={reveal()}>
 								<p class="landing-vs-kicker">{item.kicker}</p>
 								<p class="landing-vs-body">{item.body}</p>
 							</li>
 						))}
+						<li class="landing-vs-item landing-vs-item-is" mix={reveal()}>
+							<p class="landing-vs-kicker">{landingIsItem.kicker}</p>
+							<p class="landing-vs-body">{landingIsItem.body}</p>
+						</li>
 					</ul>
-				</section>
-
-				<section
-					id="durable-software"
-					aria-labelledby="factory-title"
-					class="landing-factory"
-				>
-					<h2 id="factory-title" class="landing-section-heading">
-						From ad hoc prompts to <em>durable software</em>
-					</h2>
-					<p class="landing-factory-lead">
-						Stop re-paying for the same answer. Save the process, then trigger
-						it <strong>without expensive inference</strong>.
-					</p>
-					<div class="landing-path">
-						{renderLandingPathSteps(
-							factoryPathSteps,
-							'From ad hoc prompt to trigger',
-						)}
-						<div class="landing-path-stem" aria-hidden="true"></div>
-						<ul class="landing-path-fan" aria-label="Example triggers">
-							{landingFactoryBeats.map((beat, index) => (
-								<li
-									key={beat.title}
-									class="landing-path-fan-slot"
-									mix={reveal(index * 70)}
-								>
-									<a
-										href={routes.docDetail.href({ slug: beat.slug })}
-										class="landing-path-fan-item landing-path-fan-link"
-									>
-										<span class="landing-path-kicker">{beat.trigger}</span>
-										<span class="landing-path-fan-title">
-											{renderIcon(beat.icon, { size: '22' })}
-											{beat.title}
-										</span>
-									</a>
-								</li>
-							))}
-						</ul>
-					</div>
-					<p class="landing-factory-ritual">
-						<span>Ask once.</span> <span>Save it.</span>{' '}
-						<span>Trigger it.</span>
-					</p>
 				</section>
 
 				<section class="landing-proof">
@@ -416,16 +326,17 @@ export function HomeRoute(handle: Handle) {
 				<section aria-labelledby="ecosystem-title" class="landing-ecosystem">
 					<div>
 						<h2 id="ecosystem-title" class="landing-section-heading">
-							Your own <em>git</em> and <em>npm</em>.
+							Your team&rsquo;s own <em>git</em> and <em>npm</em>.
 						</h2>
 						<p class="landing-split-copy">
-							An ecosystem for individuals and teams: isolated repos, packages
-							you publish, then trigger what you save.
+							One workspace your whole team shares: repos any teammate&rsquo;s
+							agent can build in, packages the team publishes once, and triggers
+							that run them for everyone.
 						</p>
 						<div class="landing-path landing-path-split">
 							{renderLandingPathSteps(
 								ecosystemPathSteps,
-								'From your git to the community',
+								'From your team\u2019s git to the community',
 							)}
 							<div class="landing-path-stem" aria-hidden="true"></div>
 							<ul
@@ -463,8 +374,8 @@ export function HomeRoute(handle: Handle) {
 				) : null}
 
 				<section
-					id="invite"
-					aria-labelledby="invite-title"
+					id="invisible-software"
+					aria-labelledby="closing-title"
 					class="landing-invite"
 				>
 					<img
@@ -473,72 +384,48 @@ export function HomeRoute(handle: Handle) {
 						class="landing-invite-art"
 					/>
 					<h2
-						id="invite-title"
+						id="closing-title"
 						class="landing-section-heading landing-invite-title"
 					>
-						{landingInviteHeadingLead}
-						<em>{landingInviteHeadingEmphasis}</em>
+						{landingClosingHeadingLead}
+						<em>{landingClosingHeadingEmphasis}</em>
 					</h2>
-					{isSignedIn ? (
-						<div>
-							<p class="landing-invite-lead">{landingInviteSignedInLead}</p>
-							<p class="landing-invite-cta">
-								<a href={onboardingPath} class="landing-pill">
-									{landingHeroPrimaryCta}
-								</a>
-							</p>
-						</div>
-					) : (
-						<div>
-							<p class="landing-invite-lead">{landingInviteGuestLead}</p>
-							<p class="landing-invite-cta">
-								<a href={homepageSignupPath} class="landing-pill">
-									{publicCreateAccountLabel}
-								</a>
-							</p>
-						</div>
-					)}
-					<ul
-						aria-label="Services that work with Kody"
-						class="landing-world-cloud landing-invite-tools"
-					>
-						{landingWorldBrands.map((brand, index) =>
-							'href' in brand && brand.href ? (
-								<li key={brand.label} class="landing-world-link-item">
-									<a
-										href={brand.href}
-										class="landing-chip landing-chip-icon landing-chip-link"
-										style={chipIconStyle(brand.icon)}
-										mix={revealPop(index * 35)}
-									>
-										{brand.label}
-									</a>
-								</li>
-							) : (
-								<li
-									key={brand.label}
-									class="landing-chip landing-chip-icon"
-									style={chipIconStyle(brand.icon)}
-									mix={revealPop(index * 35)}
-								>
-									{brand.label}
-								</li>
-							),
-						)}
-						<li class="landing-world-link-item">
-							<a
-								href={communityHref}
-								class="landing-chip landing-chip-muted landing-chip-link"
-								mix={revealPop(landingWorldBrands.length * 35)}
-							>
-								Public packages
-							</a>
-						</li>
-					</ul>
+					<p class="landing-invite-lead">{landingClosingLead}</p>
+					<p class="landing-invite-believe">
+						<a href={believeHref} class="landing-inline-link">
+							{landingClosingBelieveLink} <span aria-hidden="true">→</span>
+						</a>
+					</p>
+					<div class="landing-invite-cta">{renderConnectCta()}</div>
 				</section>
 			</div>
 		)
 	}
+}
+
+/**
+ * The page's one call to action: copy an agent-led setup prompt. Copying
+ * needs JavaScript, so without it the same label links to the connect docs.
+ */
+function renderConnectCta() {
+	return (
+		<>
+			<span class="landing-connect-copy">
+				<BuildWithAgentButton
+					label={landingHeroPrimaryCta}
+					variant="pill"
+					onboardingPage={false}
+					icons={false}
+				/>
+			</span>
+			<a
+				href={connectYourAgentDocHref}
+				class="landing-connect-fallback landing-inline-link"
+			>
+				{landingHeroPrimaryCta}
+			</a>
+		</>
+	)
 }
 
 type LandingPathStep = {

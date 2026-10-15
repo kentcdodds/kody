@@ -86,7 +86,11 @@ Object). `evaluateRepoFeatureFlag(db, key, { sourceId, ownerId })` in
 
 Operate it with `adminFeatureFlagRepoOverride({ key, sourceId, enabled })` (or
 `clear: true`) and inspect with `adminFeatureFlagRepoCheck({ key, sourceId })`;
-both are admin-only and audited.
+both are admin-only and audited. Like every `admin` capability they are
+execute-only (no Open API operation, so `kody api <operationId>` rejects them):
+call `kody.adminFeatureFlagRepoCheck(...)` from `execute` / `kody execute`.
+`sourceId` is the `{id}` in `/git/sources/{id}.git` (`repoGetGitRemote`
+`source_id`), not the `repo_id` from `repoList`.
 
 ### Experiments audience
 

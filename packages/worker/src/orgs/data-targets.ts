@@ -168,8 +168,13 @@ function appliesToOrgHardPurge(target: UserScopedDataTarget): boolean {
 		case 'community_listing_child':
 			return true
 		case 'user_columns':
-			// Owner id columns (community listings, package approvals, …).
-			return target.columns.includes('owner_user_id')
+			// Owner id columns (community listings, package approvals, …)
+			// plus org-owned follows (`follower_org_id`).
+			return (
+				target.columns.includes('owner_user_id') ||
+				(target.table === 'follows' &&
+					target.columns.includes('follower_org_id'))
+			)
 		case 'db_user_id':
 		case 'db_user_target':
 		case 'null_user_column':

@@ -607,6 +607,23 @@ test('apply refuses orphans unless skipOrphans', async () => {
 
 test('apply moves everything, re-seals credentials, and cleans up orphans', async () => {
 	const { sqlite, db } = await seed()
+	sqlite
+		.prepare(
+			`INSERT INTO user_repos (id, user_id, name, created_at, updated_at)
+			 VALUES ('repo-notes', ?, 'notes', ?, ?)`,
+		)
+		.run(src, now, now)
+	sqlite
+		.prepare(
+			`INSERT INTO follows (
+				id, follower_org_id, creator_user_id, target_kind, target_owner_id,
+				target_id, target_name, status, created_at, updated_at
+			) VALUES
+				('follow-pkg', 'org-follower', 'person-1', 'package', ?, ?, '@bradhave/alpha', 'active', ?, ?),
+				('follow-repo', 'org-follower', 'person-1', 'repo', ?, 'repo-notes', '@bradhave/notes', 'active', ?, ?),
+				('follow-kept', 'org-follower', 'person-1', 'package', 'org-other', 'pkg-other', '@other/keep', 'active', ?, ?)`,
+		)
+		.run(src, pkgA, now, now, src, now, now, now, now)
 	const calls: Calls = []
 	const backups: Array<string> = []
 	const logged: Array<string> = []
@@ -662,6 +679,33 @@ test('apply moves everything, re-seals credentials, and cleans up orphans', asyn
 		{ id: pkgA, user_id: dst, name: '@haveman/alpha' },
 		{ id: pkgB, user_id: dst, name: '@haveman/beta' },
 		{ id: pkgC, user_id: dst, name: '@haveman/gamma' },
+	])
+	expect(
+		sqlite
+			.prepare(
+				`SELECT id, follower_org_id, target_owner_id, target_name
+				 FROM follows ORDER BY id`,
+			)
+			.all(),
+	).toEqual([
+		{
+			id: 'follow-kept',
+			follower_org_id: 'org-follower',
+			target_owner_id: 'org-other',
+			target_name: '@other/keep',
+		},
+		{
+			id: 'follow-pkg',
+			follower_org_id: 'org-follower',
+			target_owner_id: dst,
+			target_name: '@haveman/alpha',
+		},
+		{
+			id: 'follow-repo',
+			follower_org_id: 'org-follower',
+			target_owner_id: dst,
+			target_name: '@haveman/notes',
+		},
 	])
 	expect(
 		sqlite.prepare(`SELECT id, user_id FROM entity_sources ORDER BY id`).all(),

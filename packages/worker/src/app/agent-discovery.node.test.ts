@@ -43,14 +43,15 @@ test('agent discovery documents describe the MCP server and public pages', async
 	for (const suffix of [
 		'',
 		'/memory',
-		'/secrets',
 		'/packages',
 		'/triggers',
-		'/integrations',
+		'/credentials',
 		'/apps',
 	]) {
 		expect(sitemap).toContain(`<loc>${origin}/features${suffix}</loc>`)
 	}
+	expect(sitemap).not.toContain(`<loc>${origin}/features/secrets</loc>`)
+	expect(sitemap).not.toContain(`<loc>${origin}/features/integrations</loc>`)
 
 	expect(sitemap).toContain(
 		'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
@@ -59,6 +60,7 @@ test('agent discovery documents describe the MCP server and public pages', async
 	expect(sitemap).toContain(`<loc>${origin}/discord</loc>`)
 	expect(sitemap).toContain(`<loc>${origin}/faq</loc>`)
 	expect(sitemap).toContain(`<loc>${origin}/case-studies</loc>`)
+	expect(sitemap).toContain(`<loc>${origin}/believe</loc>`)
 	expect(sitemap).toContain(`<loc>${origin}/support</loc>`)
 	expect(sitemap).toContain(`<loc>${origin}/docs</loc>`)
 	expect(sitemap).toContain(`<loc>${origin}/docs/connect</loc>`)

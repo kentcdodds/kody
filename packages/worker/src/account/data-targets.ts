@@ -574,6 +574,24 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		table: 'community_forks',
 		columns: ['forker_user_id'],
 	},
+	// Follows belong to the follower org. Deleting the person who created one
+	// anonymizes attribution and leaves the row for the rest of the org.
+	{
+		kind: 'replace_user_column',
+		table: 'follows',
+		matchColumn: 'creator_user_id',
+		setColumn: 'creator_user_id',
+		value: 'deleted-user',
+	},
+	{
+		kind: 'user_columns',
+		table: 'follows',
+		columns: ['follower_org_id'],
+		includeInExport: false,
+		surface: 'follows_owned_by_org',
+		reason:
+			'Org hard purge deletes follows owned by the org. Account export uses creator_user_id so the creating person receives the row. Deleting a member anonymizes creator_user_id and leaves the org follow in place.',
+	},
 	{
 		kind: 'community_listing_child',
 		table: 'community_reports',
@@ -735,7 +753,12 @@ export function getAccountD1UserColumnCoverage() {
 			}
 			case 'user_columns': {
 				for (const column of target.columns) {
-					covered.add(`${target.table}.${column}`)
+					// Inventory guards scan `user_id` / `*_user_id` only. Org
+					// owner columns such as `follower_org_id` stay on the target
+					// for purge but are not part of that coverage set.
+					if (column === 'user_id' || column.endsWith('_user_id')) {
+						covered.add(`${target.table}.${column}`)
+					}
 				}
 				break
 			}

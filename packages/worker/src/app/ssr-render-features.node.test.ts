@@ -56,56 +56,53 @@ function createAnonymousTestDb() {
 	} as unknown as D1Database
 }
 
-test.each([
-	'',
-	'/memory',
-	'/secrets',
-	'/packages',
-	'/triggers',
-	'/integrations',
-	'/apps',
-])('renders feature page %s before hydration', async (suffix) => {
-	invalidateCommunityPublicCache()
-	setAuthSessionSecret(testCookieSecret)
-	const env = {
-		COOKIE_SECRET: testCookieSecret,
-		SECRET_STORE_KEY: 'LOCAL_TEST_SECRET_STORE_KEY_32_CHARS_MINIMUM',
-		...testOidcSigningEnv,
-		APP_DB: createAnonymousTestDb(),
-		BUNDLE_ARTIFACTS_KV: {},
-		JOB_MANAGER: {},
-		STORAGE_RUNNER: {},
-		PACKAGE_REALTIME_SESSION: {},
-		MCP_CLIENT_HUB: {},
-	} as unknown as Env
+test.each(['', '/memory', '/packages', '/triggers', '/credentials', '/apps'])(
+	'renders feature page %s before hydration',
+	async (suffix) => {
+		invalidateCommunityPublicCache()
+		setAuthSessionSecret(testCookieSecret)
+		const env = {
+			COOKIE_SECRET: testCookieSecret,
+			SECRET_STORE_KEY: 'LOCAL_TEST_SECRET_STORE_KEY_32_CHARS_MINIMUM',
+			...testOidcSigningEnv,
+			APP_DB: createAnonymousTestDb(),
+			BUNDLE_ARTIFACTS_KV: {},
+			JOB_MANAGER: {},
+			STORAGE_RUNNER: {},
+			PACKAGE_REALTIME_SESSION: {},
+			MCP_CLIENT_HUB: {},
+		} as unknown as Env
 
-	const response = await renderAppPage({
-		request: new Request(
-			`https://example.com/features${suffix}?utm_source=test`,
-		),
-		env,
-	})
+		const response = await renderAppPage({
+			request: new Request(
+				`https://example.com/features${suffix}?utm_source=test`,
+			),
+			env,
+		})
 
-	expect(response.status).toBe(200)
-	const html = await response.text()
+		expect(response.status).toBe(200)
+		const html = await response.text()
 
-	expect(html).not.toContain('Loading page')
-	expect(html.match(/<h1[ >]/g)).toHaveLength(1)
-	expect(html.match(/<main[ >]/g)).toHaveLength(1)
-	if (suffix)
-		expect(html).toContain(
-			`/images/lantern/kody-primitives-orb-${suffix.slice(1)}.webp`,
-		)
-	if (suffix === '/secrets') {
-		expect(html).toContain('href="/onboarding"')
-		expect(html).toContain('Connect your agent')
-	}
-	if (suffix === '/packages') {
-		expect(html).toContain('id="package-source-fallback"')
-		expect(html).toContain('src/brief.ts')
-	}
-	if (suffix === '/memory') {
-		expect(html).toContain('id="ms-hero-note"')
-		expect(html).toContain('Lead with the decision. Keep updates short.')
-	}
-})
+		expect(html).not.toContain('Loading page')
+		expect(html.match(/<h1[ >]/g)).toHaveLength(1)
+		expect(html.match(/<main[ >]/g)).toHaveLength(1)
+		if (suffix) {
+			const orb = suffix === '/credentials' ? 'integrations' : suffix.slice(1)
+			expect(html).toContain(`/images/lantern/kody-primitives-orb-${orb}.webp`)
+		}
+		if (suffix === '/credentials') {
+			expect(html).toContain('href="/onboarding"')
+			expect(html).toContain('Connect your agent')
+			expect(html).toContain('id="secret-result"')
+			expect(html).toContain('it works with Kody.')
+		}
+		if (suffix === '/packages') {
+			expect(html).toContain('id="package-source-fallback"')
+			expect(html).toContain('src/brief.ts')
+		}
+		if (suffix === '/memory') {
+			expect(html).toContain('id="ms-hero-note"')
+			expect(html).toContain('Lead with the decision. Keep updates short.')
+		}
+	},
+)

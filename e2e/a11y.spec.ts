@@ -203,10 +203,9 @@ test('feature detail pages have no blocking axe violations in either theme', asy
 	await page.emulateMedia({ reducedMotion: 'reduce' })
 	for (const feature of [
 		'memory',
-		'secrets',
 		'packages',
 		'triggers',
-		'integrations',
+		'credentials',
 		'apps',
 	]) {
 		for (const theme of themes) {

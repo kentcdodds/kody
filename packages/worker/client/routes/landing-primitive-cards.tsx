@@ -10,13 +10,13 @@ import { routes } from '#universal/routes.ts'
  * Homepage cards: a small copy of each `/features` widget beside the
  * primitive's name and one line. The widget is decorative (the card is one
  * link); `/features` has the interactive versions. Narrow screens turn the
- * grid into a swipe row so six cards do not become six screens of scroll.
+ * grid into a swipe row so the cards do not become five screens of scroll.
  */
 export function LandingPrimitiveCards() {
 	return () => (
 		<section aria-labelledby="primitive-cards-title" class="landing-pcards">
 			<h2 id="primitive-cards-title" class="landing-section-heading">
-				See each one <em>at work</em>
+				<em>Primitives</em> for your agents
 			</h2>
 			<ul class="landing-pcards-list">
 				{primitiveCards.map((card) => (

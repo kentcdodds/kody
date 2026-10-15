@@ -212,6 +212,40 @@ function serviceUnavailableResponse(message: string) {
 	})
 }
 
+function unsupportedMediaTypeResponse(encoding: string) {
+	return new Response(`Unsupported Content-Encoding: ${encoding}`, {
+		status: 415,
+		headers: {
+			'Cache-Control': 'no-store',
+			'Content-Type': 'text/plain; charset=utf-8',
+		},
+	})
+}
+
+/**
+ * Git gzips smart-HTTP request bodies over 1 KiB (`Content-Encoding: gzip`),
+ * e.g. a clone with ~17+ wants or any fetch with a round of haves. Upstream
+ * requests only carry the headers we forward, so decode here; otherwise
+ * Artifacts parses gzip bytes as pkt-lines and fails with HTTP 500.
+ */
+export function decodeGitRequestBody(request: Request): Request | Response {
+	const encoding = request.headers.get('Content-Encoding')?.trim().toLowerCase()
+	if (!encoding || encoding === 'identity' || !request.body) return request
+	if (encoding !== 'gzip' && encoding !== 'x-gzip') {
+		return unsupportedMediaTypeResponse(encoding)
+	}
+	const headers = new Headers(request.headers)
+	headers.delete('Content-Encoding')
+	headers.delete('Content-Length')
+	return new Request(request.url, {
+		method: request.method,
+		headers,
+		body: request.body.pipeThrough(new DecompressionStream('gzip')),
+		signal: request.signal,
+		duplex: 'half',
+	} as RequestInit & { duplex: 'half' })
+}
+
 function filterProxiedResponseHeaders(headers: Headers) {
 	const filtered = new Headers()
 	headers.forEach((value, key) => {
@@ -606,12 +640,15 @@ async function proxyArtifactsGitRequest(input: {
  * pass through unchanged.
  */
 export async function handlePlainRepoGitHttpRequest(
-	request: Request,
+	incoming: Request,
 	env: Env,
 ): Promise<Response | null> {
-	const url = new URL(request.url)
+	const url = new URL(incoming.url)
 	const parsed = parsePlainRepoGitHttpPath(url.pathname)
 	if (!parsed) return null
+
+	const request = decodeGitRequestBody(incoming)
+	if (request instanceof Response) return request
 
 	const token = extractArtifactsTokenFromRequest(request)
 	if (!token) return unauthorizedResponse()

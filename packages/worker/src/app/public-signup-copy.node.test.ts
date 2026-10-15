@@ -11,7 +11,6 @@ import { createMemoryKv } from '#worker/test-support/auth-provider-harness.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 import { testOidcSigningEnv } from '#worker/test-support/oidc-signing-env.ts'
 import { loadHomePageOnboardingData } from '#app/onboarding-data.ts'
-import { homepageSignupPath } from '#universal/first-touch-attribution.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -93,7 +92,7 @@ const signupLink = expect.arrayContaining([
 	expect.objectContaining({ href: '/signup' }),
 ])
 
-test('FAQ, pricing, and home SSR copy send visitors to create an account under anonymous cache rules', async () => {
+test('FAQ and pricing SSR copy send visitors to create an account under anonymous cache rules', async () => {
 	const faqResponse = await renderMarketing('/faq')
 	expect(faqResponse.headers.get('Cache-Control')).toBe(
 		anonymousHtmlCacheControl,
@@ -110,9 +109,6 @@ test('FAQ, pricing, and home SSR copy send visitors to create an account under a
 	for (const planId of ['plan-free', 'plan-pro']) {
 		expect(anchors(namedSection(pricing, planId))).toEqual(signupLink)
 	}
-
-	const home = await (await renderMarketing('/')).text()
-	expect(home).toContain(homepageSignupPath.replaceAll('&', '&amp;'))
 })
 
 test('blog post closer invites visitors to create an account', async () => {

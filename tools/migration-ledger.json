@@ -553,7 +553,11 @@
 			"sha256": "b1d86122ab55b8ec74f3edd53844f4da24f0f3c35099d0cb21a5f92a9f767c63"
 		},
 		{
-			"filename": "0149-invite-link-targets.sql",
+			"filename": "0149-follows.sql",
+			"sha256": "7fa4d43f1f83d682cd5c018d4df5a9d7542659c4368a41ae266b4b1e3d6e99b6"
+		},
+		{
+			"filename": "0150-invite-link-targets.sql",
 			"sha256": "f0e98f1965a29ba31b51c505f639815d9a0033f737537f0c08eb902f4528bf4f"
 		}
 	]
