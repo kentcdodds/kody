@@ -15,15 +15,12 @@ const mockModule = vi.hoisted(() => ({
 	approvePackageCapabilitySet: vi.fn(),
 	enqueueWentPublicApproval: vi.fn(),
 	loadCurrentPackageSecurityAudit: vi.fn(),
-	evaluateSelfPublish: vi.fn(),
-	selfPublishPackage: vi.fn(),
+	attemptSelfPublish: vi.fn(),
 }))
 
 vi.mock('#worker/package-capabilities/self-publish.ts', () => ({
-	evaluateSelfPublish: (...args: Array<unknown>) =>
-		mockModule.evaluateSelfPublish(...args),
-	selfPublishPackage: (...args: Array<unknown>) =>
-		mockModule.selfPublishPackage(...args),
+	attemptSelfPublish: (...args: Array<unknown>) =>
+		mockModule.attemptSelfPublish(...args),
 }))
 
 vi.mock('#worker/package-capabilities/security-audit-state.ts', () => ({
@@ -246,8 +243,8 @@ test('packageUpdate internet_visible without an approved capability set records 
 		recordedBy: null,
 		recordedAt: '2026-10-15T00:00:00.000Z',
 	})
-	mockModule.evaluateSelfPublish.mockResolvedValue({
-		eligible: false,
+	mockModule.attemptSelfPublish.mockResolvedValue({
+		status: 'blocked',
 		blocker: 'declares_credentials',
 	})
 
@@ -259,7 +256,6 @@ test('packageUpdate internet_visible without an approved capability set records 
 		self_publish_blocker: 'declares_credentials',
 	})
 	expect(result).not.toHaveProperty('security_audit')
-	expect(mockModule.selfPublishPackage).not.toHaveBeenCalled()
 	expect(mockModule.enqueueWentPublicApproval).toHaveBeenCalledWith(
 		expect.objectContaining({
 			ownerUserId: 'user-1',
@@ -288,14 +284,13 @@ test('packageUpdate internet_visible self-publishes a package that declares noth
 			isInternetVisible: true,
 		})
 	mockModule.loadCapabilityApprovalSummary.mockResolvedValue(summary)
-	mockModule.evaluateSelfPublish.mockResolvedValue({ eligible: true })
-	mockModule.selfPublishPackage.mockResolvedValue({ ok: true })
+	mockModule.attemptSelfPublish.mockResolvedValue({ status: 'self_published' })
 
 	const result = await update({ internet_visible: true })
 	expect(result).toMatchObject({ ok: true, self_published: true })
 	expect(result).not.toHaveProperty('approval_url')
 	expect(result).not.toHaveProperty('internet_visible_pending')
-	expect(mockModule.selfPublishPackage).toHaveBeenCalledWith(
+	expect(mockModule.attemptSelfPublish).toHaveBeenCalledWith(
 		expect.objectContaining({
 			ownerUserId: 'user-1',
 			actorUserId: 'user-1',
@@ -308,15 +303,15 @@ test('packageUpdate internet_visible self-publishes a package that declares noth
 })
 
 test('packageUpdate internet_visible on an unaudited version tells the agent to audit and record it before the handoff', async () => {
+	mockModule.attemptSelfPublish.mockResolvedValue({
+		status: 'blocked',
+		blocker: 'not_audited',
+	})
 	mockModule.getSavedPackageById.mockResolvedValue(createSavedPackage())
 	mockModule.loadCapabilityApprovalSummary.mockResolvedValue({
 		capabilitySet: { entries: [], fingerprint: 'fp-1' },
 		publishedCommit: 'commit-1',
 		fingerprintMatchesApproval: false,
-	})
-	mockModule.evaluateSelfPublish.mockResolvedValue({
-		eligible: false,
-		blocker: 'declares_credentials',
 	})
 	mockModule.enqueueWentPublicApproval.mockResolvedValue({ id: 'request-1' })
 	mockModule.loadCurrentPackageSecurityAudit.mockResolvedValue(null)
@@ -335,6 +330,7 @@ test('packageUpdate internet_visible on an unaudited version tells the agent to 
 	expect(result).toMatchObject({
 		approval_url: 'https://heykody.dev/@user/notes/approve-capabilities',
 		internet_visible_pending: true,
+		self_publish_blocker: 'not_audited',
 		security_audit: {
 			operation: 'packageSecurityAuditRecord',
 			http_route: 'POST /v1/packages/pkg-1/security-audits',
@@ -364,9 +360,8 @@ test('packageUpdate internet_visible sends the owner to approve when self-publis
 		publishedCommit: 'commit-1',
 		fingerprintMatchesApproval: false,
 	})
-	mockModule.evaluateSelfPublish.mockResolvedValue({ eligible: true })
-	mockModule.selfPublishPackage.mockResolvedValue({
-		ok: false,
+	mockModule.attemptSelfPublish.mockResolvedValue({
+		status: 'failed',
 		error: 'The published version changed.',
 	})
 

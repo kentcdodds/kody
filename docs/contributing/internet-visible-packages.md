@@ -65,7 +65,17 @@ The audit is informational and approves nothing.
 - none of them declares `kody.credentials` (or has a fresh needs closure that
   does), `secretMounts`, `secretProvider`, `subscriptions`, `emits`, `jobs`,
   `retrievers`, or `webhooks`;
+- a security audit with verdict `pass` is recorded
+  (`packageSecurityAuditRecord`) for the package's current published commit and
+  capability fingerprint;
 - the caller has `package:publish` on the package.
+
+It is evaluated in two places, both through `attemptSelfPublish`: when
+`packageUpdate` sets `internet_visible: true` (again on every re-toggle), and
+when `packageSecurityAuditRecord` records a `pass` while a `went_public` request
+is pending. Anything that fails a check stays pending for the owner, and the
+response's `self_publish_blocker` names the first failed check (`not_audited`
+and `audit_concerns` for the audit).
 
 `selfPublishPackage` then records the capability pin, supersedes an owner-path
 `went_public` request for the same package, enqueues one whose details carry

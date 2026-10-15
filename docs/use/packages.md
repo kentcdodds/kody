@@ -918,18 +918,23 @@ responses also return the next step for the agent. `packageUpdate` returns
 records it, and then hands you the approval link.
 
 An agent can make a package internet-visible on its own (self-publish) when the
-package and every package it depends on declare nothing: no `kody.credentials`
+package and every package it depends on declare nothing (no `kody.credentials`
 slots and no `secretMounts`, `secretProvider`, `subscriptions`, `emits`, `jobs`,
-`retrievers`, or `webhooks`. `packageUpdate` then turns serving on right away
-and returns `self_published: true`. The org activity log records it as
+`retrievers`, or `webhooks`) and a security audit with verdict `pass` is
+recorded for the current published version. `packageUpdate` then turns serving
+on right away and returns `self_published: true`. If the audit is missing, the
+request waits (`self_publish_blocker: 'not_audited'`); recording a passing audit
+with `packageSecurityAuditRecord` re-evaluates it and self-publishes then, and
+so does calling `packageUpdate` again. The org activity log records it as
 `package.went_public.self_publish`. A self-published package cannot use any
 credential while it stays public this way, even one it declares later. To give
 it credentials, declare them, publish, turn internet-visible off, and approve
 turning it on again. Self-publish needs credential-need enforcement to be on.
 Otherwise, or when anything is declared, `packageUpdate` returns the
 `approval_url` and a `self_publish_blocker` that says why (`enforcement_off`,
-`unpublished`, `declares_credentials`, `declares_capabilities`, or
-`not_permitted` when the caller cannot publish the package).
+`unpublished`, `declares_credentials`, `declares_capabilities`, `not_audited`,
+`audit_concerns`, or `not_permitted` when the caller cannot publish the
+package).
 
 ## Approve many changes at once
 

@@ -1,10 +1,6 @@
-import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
-import {
-	AuthorizationError,
-	authorizePackageWrite,
-} from '#worker/authorization/authorize.ts'
+import { authorizePackageWrite } from '#worker/authorization/authorize.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -34,9 +30,8 @@ import {
 	loadCapabilityApprovalSummary,
 } from '#worker/package-capabilities/capability-approval-service.ts'
 import {
-	evaluateSelfPublish,
-	selfPublishPackage,
-	type SelfPublishBlocker,
+	attemptSelfPublish,
+	type SelfPublishAttempt,
 } from '#worker/package-capabilities/self-publish.ts'
 import { enqueueWentPublicApproval } from '#worker/package-capabilities/went-public-approval.ts'
 import {
@@ -98,7 +93,7 @@ const packageUpdateChangesSchema = z
 			.boolean()
 			.optional()
 			.describe(
-				`Internet-visible app serving. Independent of visibility/forkable. Setting true makes the package internet-visible right away (self-publish, audited) when nothing in its dependency tree declares a credential or another capability (kody.credentials, secretMounts, secretProvider, subscriptions, emits, jobs, retrievers, webhooks) and credential-need enforcement is on. Otherwise agents cannot approve: it returns an approval_url for the owner website and self_publish_blocker says why. When the published version has no security audit, it also returns security_audit: run that audit, record it with ${packageSecurityAuditRecordOperation} using security_audit.args, then hand the owner approval_url. Setting false turns off public app serving (requires confirm_name).`,
+				`Internet-visible app serving. Independent of visibility/forkable. Setting true makes the package internet-visible right away (self-publish, logged) when credential-need enforcement is on, nothing in its dependency tree declares a credential or another capability (kody.credentials, secretMounts, secretProvider, subscriptions, emits, jobs, retrievers, webhooks), and a security audit with verdict pass is recorded for the current published commit + fingerprint. Otherwise agents cannot approve: it returns an approval_url for the owner website and self_publish_blocker says why. When the published version has no security audit, it also returns security_audit: run that audit and record it with ${packageSecurityAuditRecordOperation} using security_audit.args. Recording verdict pass re-evaluates the pending request and self-publishes when everything else allows it; otherwise hand the owner approval_url. Calling this again with internet_visible true also re-evaluates. Setting false turns off public app serving (requires confirm_name).`,
 			),
 	})
 	.refine(
@@ -111,24 +106,6 @@ const packageUpdateChangesSchema = z
 			message: 'Provide at least one supported package change.',
 		},
 	)
-
-/** Self-publish approves for the owner, so it takes publish permission. */
-async function mayPublishPackage(
-	ctx: { env: Env; request: RequestContext | null },
-	pkg: { id: string; userId: string; name: string },
-) {
-	try {
-		await authorizePackageWrite(
-			ctx,
-			{ id: pkg.id, userId: pkg.userId, label: pkg.name },
-			'package:publish',
-		)
-		return true
-	} catch (error) {
-		if (error instanceof AuthorizationError) return false
-		throw error
-	}
-}
 
 export const packageUpdateCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
@@ -195,11 +172,13 @@ export const packageUpdateCapability = defineDomainCapability(
 					'unpublished',
 					'declares_credentials',
 					'declares_capabilities',
+					'not_audited',
+					'audit_concerns',
 					'not_permitted',
 				])
 				.optional()
 				.describe(
-					'Why internet_visible waits on owner Approve instead of self-publishing: credential-need enforcement is off, a package in the tree is unpublished, the tree declares credentials, the tree declares other capabilities, or the caller may not publish this package.',
+					`Why internet_visible waits on owner Approve instead of self-publishing: credential-need enforcement is off, a package in the tree is unpublished, the tree declares credentials, the tree declares other capabilities, the current published commit + fingerprint has no security audit (not_audited) or one with verdict concerns (audit_concerns), or the caller may not publish this package. For not_audited: audit, record verdict pass with ${packageSecurityAuditRecordOperation}; that re-evaluates the pending request.`,
 				),
 		}),
 		async handler(args, ctx) {
@@ -301,7 +280,9 @@ export const packageUpdateCapability = defineDomainCapability(
 
 			let internetVisiblePending = false
 			let selfPublished = false
-			let selfPublishBlocker: SelfPublishBlocker | 'not_permitted' | null = null
+			let selfPublishBlocker:
+				| Extract<SelfPublishAttempt, { status: 'blocked' }>['blocker']
+				| null = null
 			let approvalUrl: string | undefined
 			let securityAudit: PackageSecurityAuditNextStep | null = null
 			if (
@@ -324,34 +305,22 @@ export const packageUpdateCapability = defineDomainCapability(
 						`Publish the package before making it internet-visible. Then send the owner to approve capabilities: ${approvalUrl}`,
 					)
 				}
-				const eligibility = await evaluateSelfPublish({
+				const attempt = await attemptSelfPublish({
 					env: ctx.env,
+					request: requireMcpRequest(ctx.callerContext),
+					requestUrl: ctx.callerContext.baseUrl,
+					ownerUserId: owner.ownerUserId,
+					actorUserId: owner.actorUserId,
 					savedPackage: existing,
 					summary,
 				})
-				selfPublishBlocker = !eligibility.eligible
-					? eligibility.blocker
-					: (await mayPublishPackage(
-								{ env: ctx.env, request: ctx.callerContext.request },
-								existing,
-						  ))
-						? null
-						: 'not_permitted'
-				if (selfPublishBlocker === null) {
-					const result = await selfPublishPackage({
-						env: ctx.env,
-						request: requireMcpRequest(ctx.callerContext),
-						requestUrl: ctx.callerContext.baseUrl,
-						ownerUserId: owner.ownerUserId,
-						actorUserId: owner.actorUserId,
-						savedPackage: existing,
-						summary,
-					})
-					if (!result.ok) {
-						throw new McpCallerError(
-							`${result.error} Send the owner to approve making it internet-visible: ${approvalUrl}`,
-						)
-					}
+				if (attempt.status === 'failed') {
+					throw new McpCallerError(
+						`${attempt.error} Send the owner to approve making it internet-visible: ${approvalUrl}`,
+					)
+				}
+				if (attempt.status === 'blocked') selfPublishBlocker = attempt.blocker
+				if (attempt.status === 'self_published') {
 					selfPublished = true
 				} else if (summary.fingerprintMatchesApproval) {
 					// Record/refresh the pin for the current published commit, then

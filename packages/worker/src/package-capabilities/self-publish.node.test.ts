@@ -1,6 +1,7 @@
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
+import type * as Authorize from '#worker/authorization/authorize.ts'
 import type * as WentPublicApproval from './went-public-approval.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -14,6 +15,8 @@ const mockModule = vi.hoisted(() => ({
 	resolvePackageApprovalRequest: vi.fn(),
 	approveWentPublicRequest: vi.fn(),
 	logOrgAuditEvent: vi.fn(),
+	loadCurrentPackageSecurityAudit: vi.fn(),
+	authorizePackageWrite: vi.fn(),
 }))
 
 vi.mock('#worker/feature-flags/service.ts', () => ({
@@ -51,13 +54,28 @@ vi.mock('#app/account-package-approval-requests.ts', () => ({
 	approveWentPublicRequest: (...args: Array<unknown>) =>
 		mockModule.approveWentPublicRequest(...args),
 }))
+vi.mock('./security-audit-state.ts', () => ({
+	loadCurrentPackageSecurityAudit: (...args: Array<unknown>) =>
+		mockModule.loadCurrentPackageSecurityAudit(...args),
+}))
+vi.mock('#worker/authorization/authorize.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof Authorize>()),
+	authorizePackageWrite: (...args: Array<unknown>) =>
+		mockModule.authorizePackageWrite(...args),
+}))
 vi.mock('#worker/orgs/org-audit.ts', () => ({
 	logOrgAuditEvent: (...args: Array<unknown>) =>
 		mockModule.logOrgAuditEvent(...args),
 }))
 
-const { evaluateSelfPublish, selfPublishPackage, selfPublishAuditAction } =
-	await import('./self-publish.ts')
+const {
+	attemptSelfPublish,
+	evaluateSelfPublish,
+	selfPublishPackage,
+	selfPublishAuditAction,
+} = await import('./self-publish.ts')
+const { AuthorizationError } =
+	await import('#worker/authorization/authorize.ts')
 
 const ownerId = ownerIdFromStored('org-1')
 const savedPackage = {
@@ -132,6 +150,14 @@ beforeEach(() => {
 	mockModule.isFeatureGloballyEnabled.mockResolvedValue(true)
 	mockModule.loadPublishedCredentialNeeds.mockResolvedValue([])
 	mockModule.logOrgAuditEvent.mockResolvedValue(undefined)
+	mockModule.loadCurrentPackageSecurityAudit.mockResolvedValue({
+		verdict: 'pass',
+		summary: 'Checked.',
+		auditor: 'Audit agent',
+		recordedBy: null,
+		recordedAt: '2026-10-15T00:00:00.000Z',
+	})
+	mockModule.authorizePackageWrite.mockResolvedValue(undefined)
 })
 
 test('a tree that declares nothing is eligible, checked per package owner with the fresh closure', async () => {
@@ -215,6 +241,72 @@ test('self-publish is blocked with enforcement off, credentials, or other capabi
 			blocker: 'declares_capabilities',
 		})
 	}
+})
+
+test('self-publish needs a passing security audit for the current commit and fingerprint', async () => {
+	publishTree({ 'source-root': {} })
+	const evaluate = () =>
+		evaluateSelfPublish({ env, savedPackage, summary: summary() })
+
+	mockModule.loadCurrentPackageSecurityAudit.mockResolvedValueOnce(null)
+	await expect(evaluate()).resolves.toEqual({
+		eligible: false,
+		blocker: 'not_audited',
+	})
+	expect(mockModule.loadCurrentPackageSecurityAudit).toHaveBeenCalledWith(
+		env.APP_DB,
+		{
+			ownerUserId: ownerId,
+			packageId: 'pkg-1',
+			publishedCommit: 'commit-root',
+			fingerprint: 'fp-1',
+		},
+	)
+
+	mockModule.loadCurrentPackageSecurityAudit.mockResolvedValueOnce({
+		verdict: 'concerns',
+		summary: 'Look closer.',
+		auditor: 'Audit agent',
+		recordedBy: null,
+		recordedAt: '2026-10-15T00:00:00.000Z',
+	})
+	await expect(evaluate()).resolves.toEqual({
+		eligible: false,
+		blocker: 'audit_concerns',
+	})
+
+	await expect(evaluate()).resolves.toEqual({ eligible: true })
+})
+
+test('attemptSelfPublish writes nothing when blocked or when the caller may not publish', async () => {
+	publishTree({ 'source-root': {} })
+	const request = sessionRequestContext('person-1')
+	const attempt = () =>
+		attemptSelfPublish({
+			env,
+			request,
+			requestUrl: 'https://heykody.dev',
+			ownerUserId: ownerId,
+			actorUserId: 'person-1',
+			savedPackage,
+			summary: summary(),
+		})
+
+	mockModule.loadCurrentPackageSecurityAudit.mockResolvedValueOnce(null)
+	await expect(attempt()).resolves.toEqual({
+		status: 'blocked',
+		blocker: 'not_audited',
+	})
+
+	mockModule.authorizePackageWrite.mockRejectedValueOnce(
+		Object.create(AuthorizationError.prototype),
+	)
+	await expect(attempt()).resolves.toEqual({
+		status: 'blocked',
+		blocker: 'not_permitted',
+	})
+	expect(mockModule.approvePackageCapabilitySet).not.toHaveBeenCalled()
+	expect(mockModule.enqueueWentPublicApproval).not.toHaveBeenCalled()
 })
 
 test('selfPublishPackage pins the set, approves a marked went_public request, and audits once', async () => {

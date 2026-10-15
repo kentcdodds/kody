@@ -2,13 +2,21 @@
  * Self-publish (issue #3822): an agent's request to make a package
  * internet-visible is approved without the owner's click when nothing in the
  * package's resolved dependency tree declares a credential or any other
- * capability. It needs credential-need enforcement on, because only then does
+ * capability, and a security audit with verdict `pass` is recorded for the
+ * package's current published commit and capability fingerprint. It is tried
+ * when `packageUpdate` turns internet-visible on, and again when
+ * `packageSecurityAuditRecord` records a pass while a `went_public` request is
+ * pending. It needs credential-need enforcement on, because only then does
  * declaring nothing mean the fetch gateway and `credential()` fill nothing for
  * it. The credential door refuses every credential to a self-published package
  * (`assertSelfPublishedPackageResolvesNothing`), which covers the by-name
  * helpers enforcement does not reach.
  */
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import {
+	AuthorizationError,
+	authorizePackageWrite,
+} from '#worker/authorization/authorize.ts'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { approveWentPublicRequest } from '#app/account-package-approval-requests.ts'
@@ -32,6 +40,7 @@ import {
 	getPendingWentPublicApproval,
 	isSelfPublishRequest,
 } from './went-public-approval.ts'
+import { loadCurrentPackageSecurityAudit } from './security-audit-state.ts'
 
 export const selfPublishAuditAction = 'package.went_public.self_publish'
 
@@ -40,6 +49,8 @@ export type SelfPublishBlocker =
 	| 'unpublished'
 	| 'declares_credentials'
 	| 'declares_capabilities'
+	| 'not_audited'
+	| 'audit_concerns'
 
 export type SelfPublishEligibility =
 	| { eligible: true }
@@ -96,8 +107,9 @@ async function evaluateTreePackage(
 
 /**
  * Whether going internet-visible may skip the owner's Approve: enforcement is
- * on, and the package and every package in its resolved dependency tree are
- * published and declare no credential and no capability.
+ * on, the package and every package in its resolved dependency tree are
+ * published and declare no credential and no capability, and the current
+ * published commit + fingerprint has a passing security audit.
  */
 export async function evaluateSelfPublish(input: {
 	env: Env
@@ -124,6 +136,16 @@ export async function evaluateSelfPublish(input: {
 	for (const sourceId of sourceIds) {
 		const blocker = await evaluateTreePackage(input.env, sourceId)
 		if (blocker) return { eligible: false, blocker }
+	}
+	const audit = await loadCurrentPackageSecurityAudit(input.env.APP_DB, {
+		ownerUserId: input.savedPackage.userId,
+		packageId: input.savedPackage.id,
+		publishedCommit: input.summary.publishedCommit,
+		fingerprint: input.summary.capabilitySet.fingerprint,
+	})
+	if (!audit) return { eligible: false, blocker: 'not_audited' }
+	if (audit.verdict !== 'pass') {
+		return { eligible: false, blocker: 'audit_concerns' }
 	}
 	return { eligible: true }
 }
@@ -222,4 +244,58 @@ export async function selfPublishPackage(input: {
 			: { requestId: wentPublic.id, error: result.error },
 	)
 	return result.ok ? { ok: true } : { ok: false, error: result.error }
+}
+
+/** Self-publish approves for the owner, so it takes publish permission. */
+async function mayPublishPackage(
+	ctx: { env: Env; request: RequestContext | null },
+	pkg: SavedPackageRecord,
+) {
+	try {
+		await authorizePackageWrite(
+			ctx,
+			{ id: pkg.id, userId: pkg.userId, label: pkg.name },
+			'package:publish',
+		)
+		return true
+	} catch (error) {
+		if (error instanceof AuthorizationError) return false
+		throw error
+	}
+}
+
+export type SelfPublishAttempt =
+	| { status: 'self_published' }
+	| { status: 'blocked'; blocker: SelfPublishBlocker | 'not_permitted' }
+	| { status: 'failed'; error: string }
+
+/**
+ * Evaluates and, when eligible and the caller may publish the package,
+ * self-publishes it. Nothing is written when it is blocked.
+ */
+export async function attemptSelfPublish(input: {
+	env: Env
+	request: RequestContext
+	requestUrl: string
+	ownerUserId: OwnerId
+	actorUserId: string
+	savedPackage: SavedPackageRecord
+	summary: CapabilityApprovalSummary
+}): Promise<SelfPublishAttempt> {
+	const eligibility = await evaluateSelfPublish(input)
+	if (!eligibility.eligible) {
+		return { status: 'blocked', blocker: eligibility.blocker }
+	}
+	if (
+		!(await mayPublishPackage(
+			{ env: input.env, request: input.request },
+			input.savedPackage,
+		))
+	) {
+		return { status: 'blocked', blocker: 'not_permitted' }
+	}
+	const result = await selfPublishPackage(input)
+	return result.ok
+		? { status: 'self_published' }
+		: { status: 'failed', error: result.error }
 }
