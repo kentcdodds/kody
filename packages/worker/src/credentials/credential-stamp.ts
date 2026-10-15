@@ -87,7 +87,12 @@ export type CredentialStampScan = {
 
 const packageManifestPath = 'package.json'
 
-/** 0010 labels that cannot be sealed into a stamp allowlist. */
+/**
+ * 0010 labels that cannot be sealed into a stamp allowlist. `kody.mcp` stays
+ * off this list in phase 1: 0010 reports it even when mcp slots are declared,
+ * and migrating every mcp caller is phase 2. Non-literal names, `|scope=`,
+ * secretMounts, packageSecrets.get, and plain http still fail closed.
+ */
 const unstampableLegacyPatterns = new Set<LegacyCredentialPattern>([
 	'computed secret',
 	'computed integration',
@@ -95,7 +100,6 @@ const unstampableLegacyPatterns = new Set<LegacyCredentialPattern>([
 	'secretMounts',
 	'packageSecrets.get',
 	'plain http',
-	'kody.mcp',
 ])
 
 const credentialFunctionNames = new Set(['credential', 'credentials'])
@@ -604,7 +608,6 @@ function unstampablePatternFix(pattern: LegacyCredentialPattern): string {
 		case 'plain http':
 			return 'Use https:// for any request that carries a credential placeholder.'
 		case 'kody.mcp':
-			return 'Declare an mcp slot in kody.credentials with a description and call credential("KEY") instead of kody.mcp.'
 		case 'literal secret':
 		case 'webhook secretName':
 			return 'Declare the name in kody.credentials with a description.'

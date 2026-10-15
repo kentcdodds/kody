@@ -397,9 +397,9 @@ export default async function digest(input: { account: string; key: string }) {
 Publish error (credentials check `ok: false`): declare every credential this
 package can use as a `kody.credentials` slot with a real description, branch
 with literal `credential("KEY")` / `createAuthenticatedFetch("account")` only,
-replace `kody.mcp` with an `mcp` slot + `credential("KEY")`, and remove
-`|scope=`. `credential.named()` stays limited to ad hoc runs and unshared
-personal-org packages (not stamped).
+and remove `|scope=` / computed names. `credential.named()` stays limited to ad
+hoc runs and unshared personal-org packages (not stamped). Migrating `kody.mcp`
+callers to mcp slots is phase 2 of #3836.
 
 Save each scan step result as its own JSON file, then print the report over all
 of them:
