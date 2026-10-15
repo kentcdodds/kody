@@ -2,6 +2,63 @@ import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 
+test('follow push pending revision and generation columns keep existing rows', () => {
+	const sqlite = new DatabaseSync(':memory:')
+	sqlite.exec(`
+		CREATE TABLE follow_push_pending (
+			target_kind TEXT NOT NULL,
+			target_id TEXT NOT NULL,
+			window_started_at TEXT NOT NULL,
+			before_commit TEXT,
+			after_commit TEXT,
+			ref TEXT NOT NULL,
+			commits_json TEXT NOT NULL,
+			total_commits_count INTEGER NOT NULL,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (target_kind, target_id)
+		);
+		INSERT INTO follow_push_pending (
+			target_kind, target_id, window_started_at, before_commit, after_commit,
+			ref, commits_json, total_commits_count, updated_at
+		) VALUES (
+			'package', 'pkg-1', '2026-10-15T00:00:00.000Z', 'a', 'b',
+			'refs/heads/main', '[]', 0, '2026-10-15T00:00:00.000Z'
+		);
+	`)
+	sqlite.exec(
+		readFileSync(
+			new URL(
+				'../../migrations/0152-follow-push-pending-revision.sql',
+				import.meta.url,
+			),
+			'utf8',
+		),
+	)
+	const row = sqlite
+		.prepare(
+			`SELECT revision FROM follow_push_pending
+			 WHERE target_kind = 'package' AND target_id = 'pkg-1'`,
+		)
+		.get() as { revision: number }
+	expect(row.revision).toBe(0)
+	sqlite.exec(
+		readFileSync(
+			new URL(
+				'../../migrations/0153-follow-push-pending-generation.sql',
+				import.meta.url,
+			),
+			'utf8',
+		),
+	)
+	const withGeneration = sqlite
+		.prepare(
+			`SELECT revision, generation FROM follow_push_pending
+			 WHERE target_kind = 'package' AND target_id = 'pkg-1'`,
+		)
+		.get() as { revision: number; generation: string }
+	expect(withGeneration).toEqual({ revision: 0, generation: '' })
+})
+
 test('fork backfill stores personal org id and keeps the person as creator', () => {
 	const sqlite = new DatabaseSync(':memory:')
 	sqlite.exec(`

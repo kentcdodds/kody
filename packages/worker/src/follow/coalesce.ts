@@ -47,7 +47,8 @@ export function mergeFollowPushWindow(input: {
 	/**
 	 * Wall clock for open/close and for `windowStartedAt` on a fresh window.
 	 * Tip ordering and stored `updatedAt` still use webhook event time so a
-	 * late older push does not move `after` backward.
+	 * late older push does not move `after` backward. Compare-and-swap uses
+	 * `revision`, which the DB increments on every successful write.
 	 */
 	now: Date
 }): FollowPushMerge {
@@ -82,6 +83,9 @@ export function mergeFollowPushWindow(input: {
 			updatedAt: incomingIsCurrent
 				? input.incoming.at
 				: input.existing.updatedAt,
+			// Caller CAS-es on the stored revision; the DB bumps it on write.
+			revision: input.existing.revision,
+			generation: input.existing.generation,
 		},
 	}
 }
@@ -104,6 +108,10 @@ function freshWindow(input: {
 		commits: capCommits(input.incoming.commits),
 		totalCommitsCount: input.incoming.totalCommitsCount,
 		updatedAt: input.incoming.at,
+		// Insert starts at 0; upsert increments on later conflict updates.
+		revision: 0,
+		// Assigned by the DB insert; a fresh window has no identity yet.
+		generation: '',
 	}
 }
 

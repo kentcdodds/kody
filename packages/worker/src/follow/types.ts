@@ -82,7 +82,16 @@ export type FollowPushPending = {
 	ref: string
 	commits: Array<FollowPushCommit>
 	totalCommitsCount: number
+	/** Webhook event time for tip ordering; not the CAS token. */
 	updatedAt: string
+	/** Monotonic DB write counter used for compare-and-swap. */
+	revision: number
+	/**
+	 * Per-insert identity paired with `revision` for compare-and-swap, so a
+	 * row deleted and reinserted (revision back at 0) never matches an older
+	 * snapshot. Rows that predate it read as ''.
+	 */
+	generation: string
 }
 
 export type FollowTargetSnapshot = {
