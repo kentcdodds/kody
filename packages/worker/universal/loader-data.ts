@@ -2210,6 +2210,12 @@ export type AccountPackagePendingApproval = {
 export type AccountPackageApproveCapabilitiesLoaderData = {
 	ok: true
 	pendingApprovals: Array<AccountPackagePendingApproval>
+	/**
+	 * Pending `went_public` request to approve together with the capability
+	 * set (`approve-capabilities-and-go-public`). Null unless the owner asked
+	 * to go public and the live capability set is not yet approved.
+	 */
+	goPublicRequestId: string | null
 	email: string
 	package: {
 		id: string

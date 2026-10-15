@@ -312,7 +312,15 @@ async function publishItemView(
 		case 'went_public':
 			return {
 				...base,
-				...state,
+				...(state.canApprove &&
+				!(await wentPublicCapabilitiesApproved(viewer, savedPackage))
+					? {
+							...state,
+							canApprove: false,
+							statusMessage:
+								'Its credentials and capabilities are not approved yet. Review them on the package’s approval page, where one Approve also turns on internet-visible serving.',
+						}
+					: state),
 				title: 'Serve on the public internet',
 				summary: `${readWentPublicSummary(request.details)} Approving turns on internet-visible serving for commit ${shortCommit}. Denying leaves it off.`,
 				grants: [
@@ -334,6 +342,20 @@ async function publishItemView(
 			throw new Error(`Unknown approval reason: ${String(exhaustive)}`)
 		}
 	}
+}
+
+/** Going public needs the live capability set approved first. */
+async function wentPublicCapabilitiesApproved(
+	viewer: ApprovalViewer,
+	savedPackage: SavedPackageRecord,
+) {
+	const summary = await loadCapabilityApprovalSummary({
+		env: viewer.env,
+		ownerUserId: viewer.request.org.id as OwnerId,
+		savedPackage,
+		requestUrl: viewer.baseUrl,
+	})
+	return summary.fingerprintMatchesApproval
 }
 
 function publishItemState(

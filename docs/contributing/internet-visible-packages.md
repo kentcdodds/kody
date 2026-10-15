@@ -19,6 +19,20 @@ appear on that page or in package code. Regular packages keep floating on
 current `published_commit`
 ([ADR 0069](./decisions/0069-internet-visible-capability-pinning.md)).
 
+Turning internet-visible on (settings toggle or `packageUpdate`) records the
+`went_public` request right away, even before the capability set is approved.
+When that request is pending and the live capability set still needs approval,
+the approval page shows one **Approve and make internet-visible** button
+(`approve-capabilities-and-go-public`). It runs both decisions in order, each
+with its own checks and its own org audit event: the capability pin
+(`package.capabilities.approve`), then the `went_public` request
+(`package.went_public.approve`). If the second step fails, the pin stays
+recorded and the page falls back to the separate went-public card. The two steps
+were never split for a security reason; they share one queue
+([ADR 0068 amendment](./decisions/0068-credentials-own-placement-scoped-clients.md)).
+An approval bundle's went-public item cannot be approved until the capability
+set is, so it points at the package's approval page instead.
+
 ## ADR 0001 exception
 
 Public-site pinning of an approved dependency snapshot is the accepted exception

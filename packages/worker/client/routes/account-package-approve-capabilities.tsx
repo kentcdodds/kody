@@ -224,6 +224,7 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 
 	async function approveCapabilities() {
 		if (!payload?.publishedCommit || approving) return
+		const goPublicRequestId = payload.goPublicRequestId
 		approving = true
 		message = null
 		handle.update()
@@ -237,11 +238,20 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 						'Content-Type': 'application/json',
 					},
 					credentials: 'include',
-					body: JSON.stringify({
-						action: 'approve-capabilities',
-						packageId: payload.package.id,
-						fingerprint: payload.fingerprint,
-					}),
+					body: JSON.stringify(
+						goPublicRequestId
+							? {
+									action: 'approve-capabilities-and-go-public',
+									packageId: payload.package.id,
+									fingerprint: payload.fingerprint,
+									requestId: goPublicRequestId,
+								}
+							: {
+									action: 'approve-capabilities',
+									packageId: payload.package.id,
+									fingerprint: payload.fingerprint,
+								},
+					),
 				},
 			)
 			const body = await readJson<{ ok?: boolean; error?: string }>(response)
@@ -251,7 +261,7 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 				handle.update()
 				return
 			}
-			if (payload.package.isInternetVisible) {
+			if (payload.package.isInternetVisible || goPublicRequestId) {
 				window.location.assign(payload.settingsHref)
 			} else {
 				// Capability pin recorded; went_public is now pending on this page.
@@ -294,9 +304,16 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 		const storageEntries =
 			payload?.entries.filter((entry) => entry.kind === 'storage') ?? []
 
-		const pendingApprovals = payload?.pendingApprovals ?? []
+		const goPublicRequestId = payload?.goPublicRequestId ?? null
+		const allPendingApprovals = payload?.pendingApprovals ?? []
+		// The went_public request rides on the capability Approve below.
+		const pendingApprovals = goPublicRequestId
+			? allPendingApprovals.filter(
+					(approval) => approval.id !== goPublicRequestId,
+				)
+			: allPendingApprovals
 		const publishedCommit = payload?.publishedCommit ?? null
-		const hasPausedPublish = pendingApprovals.some(
+		const hasPausedPublish = allPendingApprovals.some(
 			(approval) => approval.pendingCommit !== publishedCommit,
 		)
 
@@ -448,7 +465,9 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 									{payload.latestApprovedAt
 										? ` (${payload.latestApprovedAt})`
 										: ''}
-									. Approving again keeps internet-visible on for the same set.
+									{payload.package.isInternetVisible
+										? '. Approving again keeps internet-visible on for the same set.'
+										: '. Approving again refreshes it for the current published version.'}
 								</p>
 							</div>
 						) : null}
@@ -535,6 +554,16 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 							packageName={payload.package.name}
 							hasPausedPublish={hasPausedPublish}
 						/>
+						{goPublicRequestId ? (
+							<p
+								data-testid="package-approve-capabilities-go-public-note"
+								mix={css({ margin: 0, color: colors.textMuted })}
+							>
+								You asked to make this package internet-visible. One approval
+								records this capability set and turns on internet-visible
+								serving.
+							</p>
+						) : null}
 						<div
 							mix={css({
 								display: 'flex',
@@ -554,9 +583,11 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 							>
 								{status === 'approving'
 									? 'Approving…'
-									: payload.package.isInternetVisible
-										? 'Re-approve capability set'
-										: 'Approve capability set'}
+									: goPublicRequestId
+										? 'Approve and make internet-visible'
+										: payload.package.isInternetVisible
+											? 'Re-approve capability set'
+											: 'Approve capability set'}
 							</button>
 							<a
 								href={payload.settingsHref}

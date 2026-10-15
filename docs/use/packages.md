@@ -868,6 +868,16 @@ again. A locked package keeps its locked-publish flow first: approving that
 publish on approve-publish runs this check and pauses there if the needs
 changed. Platform codemods do not pause.
 
+## Approval when a package goes internet-visible
+
+Turning on internet-visible serving in package settings, or with `packageUpdate`
+(`internet_visible: true`), sends you to the same approval page. It lists the
+credentials and other capabilities the package and its dependencies can reach.
+One **Approve and make internet-visible** click approves that capability set and
+turns internet-visible serving on. Each of the two decisions is still checked
+and recorded in the org activity log on its own. If the capability set was
+already approved, the page shows only the request to go public.
+
 ## Approve many changes at once
 
 When several approvals wait on you, an agent can put them on one page.
@@ -929,7 +939,7 @@ items on an approval bundle page show the same state and link to the package's
 approval page for the prompt or summary.
 
 The audit is informational. It never approves capabilities or makes a package
-internet-visible; **Approve capability set** stays a separate owner click.
+internet-visible; Approve stays the owner's own click.
 
 ## Community fork provenance
 

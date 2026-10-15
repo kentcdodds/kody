@@ -11,6 +11,22 @@ const mockModule = vi.hoisted(() => ({
 	updateSavedPackage: vi.fn(),
 	setSavedPackageLockedAt: vi.fn(),
 	resolvePackageOwnerContext: vi.fn(),
+	loadCapabilityApprovalSummary: vi.fn(),
+	approvePackageCapabilitySet: vi.fn(),
+	enqueueWentPublicApproval: vi.fn(),
+}))
+
+vi.mock('#worker/package-capabilities/capability-approval-service.ts', () => ({
+	loadCapabilityApprovalSummary: (...args: Array<unknown>) =>
+		mockModule.loadCapabilityApprovalSummary(...args),
+	approvePackageCapabilitySet: (...args: Array<unknown>) =>
+		mockModule.approvePackageCapabilitySet(...args),
+	clearInternetVisible: vi.fn(),
+}))
+
+vi.mock('#worker/package-capabilities/went-public-approval.ts', () => ({
+	enqueueWentPublicApproval: (...args: Array<unknown>) =>
+		mockModule.enqueueWentPublicApproval(...args),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -197,5 +213,31 @@ test('packageUpdate rejects invalid changes and cross-user or unauthenticated ac
 	await expect(update({ hidden: true }, { userId: null })).rejects.toThrow(
 		/authenticated/i,
 	)
+	expect(mockModule.updateSavedPackage).not.toHaveBeenCalled()
+})
+
+test('packageUpdate internet_visible without an approved capability set records the ask for one owner Approve', async () => {
+	mockModule.getSavedPackageById.mockResolvedValue(createSavedPackage())
+	mockModule.loadCapabilityApprovalSummary.mockResolvedValue({
+		capabilitySet: { entries: [], fingerprint: 'fp-1' },
+		publishedCommit: 'commit-1',
+		fingerprintMatchesApproval: false,
+	})
+	mockModule.enqueueWentPublicApproval.mockResolvedValue({ id: 'request-1' })
+
+	await expect(update({ internet_visible: true })).resolves.toMatchObject({
+		ok: true,
+		approval_url: 'https://heykody.dev/@user/notes/approve-capabilities',
+		internet_visible_pending: true,
+	})
+	expect(mockModule.enqueueWentPublicApproval).toHaveBeenCalledWith(
+		expect.objectContaining({
+			ownerUserId: 'user-1',
+			publishedCommit: 'commit-1',
+			fingerprint: 'fp-1',
+			requestedByUserId: 'user-1',
+		}),
+	)
+	expect(mockModule.approvePackageCapabilitySet).not.toHaveBeenCalled()
 	expect(mockModule.updateSavedPackage).not.toHaveBeenCalled()
 })
