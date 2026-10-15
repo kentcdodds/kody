@@ -347,7 +347,9 @@ export function createPackageFollowController(
 			? followSkipReasonCopy(follow.lastDeliverySkipReason)
 			: null
 		const submission = followEventsToSubmit(current, follow, chosenEvents)
-		const nothingChosen = submission.events?.length === 0
+		const nothingChosen = !(submission.events ?? chosenEvents).some((event) =>
+			offerable.some((option) => option.event === event),
+		)
 		const unchanged =
 			follow?.status === 'active' && submission.events === undefined
 		const primaryLabel = !follow
@@ -401,6 +403,9 @@ export function createPackageFollowController(
 					<legend mix={css(labelCss)}>Send events for</legend>
 					{eventOptions.map((option) => {
 						const disabled = Boolean(option.disabledReason)
+						const checked =
+							chosenEvents.includes(option.event) &&
+							(!disabled || submission.events === undefined)
 						return (
 							<label
 								key={option.event}
@@ -411,7 +416,7 @@ export function createPackageFollowController(
 									type="checkbox"
 									name="events"
 									value={option.event}
-									checked={!disabled && chosenEvents.includes(option.event)}
+									checked={checked}
 									disabled={disabled || submitting}
 									mix={on('change', (event) => {
 										const checked = (event.currentTarget as HTMLInputElement)

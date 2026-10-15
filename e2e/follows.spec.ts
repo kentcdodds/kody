@@ -127,3 +127,67 @@ test('#follow opens the panel and explains why a repo without read access cannot
 	await expect(panel.getByTestId('package-follow-blocked')).toBeVisible()
 	await expect(panel.getByTestId('package-follow-submit')).toBeDisabled()
 })
+
+test('an existing push follow without read access still shows pushes as on', async ({
+	page,
+	seedE2eUser,
+	login,
+}) => {
+	test.setTimeout(process.env.CI ? 90_000 : 60_000)
+	const runId = Date.now()
+	const owner = await seedE2eUser({
+		email: `follows-kept-owner-${runId}@example.com`,
+		username: `kept-owner-${runId}`,
+		password: 'follows-kept-owner-password',
+	})
+	const visitor = await seedE2eUser({
+		email: `kept-visitor-${runId}@example.com`,
+		username: `kept-visitor-${runId}`,
+		password: 'follows-kept-visitor-password',
+	})
+	const ownerId = seedStableUserIdFromEmail(owner.email)
+	const visitorId = seedStableUserIdFromEmail(visitor.email)
+	const repoName = `kept-stash-${runId}`
+	const repoId = `repo-kept-${runId}`
+	seedPublicRepo({ ownerId, id: repoId, name: repoName })
+	const now = new Date().toISOString()
+	executeE2eD1Command(`
+INSERT INTO follows (
+	id, follower_org_id, creator_user_id, target_kind, target_owner_id,
+	target_id, target_name, status, published_enabled, pushed_enabled,
+	created_at, updated_at
+) VALUES (
+	${sqlString(`follow-kept-${runId}`)},
+	${sqlString(visitorId)},
+	${sqlString(visitorId)},
+	'repo',
+	${sqlString(ownerId)},
+	${sqlString(repoId)},
+	${sqlString(`@${owner.username}/${repoName}`)},
+	'active',
+	0,
+	1,
+	${sqlString(now)},
+	${sqlString(now)}
+);
+`)
+
+	await login({
+		email: visitor.email,
+		password: visitor.password,
+		mode: 'login',
+	})
+	await page.goto(`/@${owner.username}/${repoName}#follow`)
+	await waitForClientHydration(page)
+
+	const panel = page.getByTestId('package-follow-panel')
+	await expect(panel).toBeVisible()
+	await expect(panel.getByTestId('package-follow-status')).toHaveText(
+		'Following. Pushes go to this workspace.',
+	)
+	const pushes = panel.getByRole('checkbox', { name: /Pushes/ })
+	await expect(pushes).toBeChecked()
+	await expect(pushes).toBeDisabled()
+	await expect(panel.getByTestId('package-follow-submit')).toBeDisabled()
+	await expect(panel.getByTestId('package-follow-unfollow')).toBeEnabled()
+})
