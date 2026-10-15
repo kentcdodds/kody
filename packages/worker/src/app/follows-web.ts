@@ -221,7 +221,7 @@ export async function applyOrgFollowsPost(input: {
 	try {
 		switch (body.intent) {
 			case 'follow': {
-				let target: { name: string; kind: FollowTargetKindName } = body
+				let target: { name: string; kind: FollowTargetKindName }
 				if ('id' in body) {
 					const record = await getFollowForOrg(input.env.APP_DB, {
 						followerOrgId: input.org.id,
@@ -238,6 +238,8 @@ export async function applyOrgFollowsPost(input: {
 						)
 					}
 					target = live
+				} else {
+					target = body
 				}
 				const follow = await addFollow({
 					env: input.env,
