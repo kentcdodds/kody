@@ -1901,6 +1901,42 @@ export async function ensureEmailSendingEventSubscription(input: {
 	return { id: payload.result.id, name: payload.result.name }
 }
 
+/**
+ * Remove a named Email Sending event subscription when it is no longer
+ * required (for example the system-domain subscription after user and system
+ * domains collapse to one hostname). Idempotent when the name is already gone.
+ */
+export async function deleteEmailSendingEventSubscriptionIfPresent(input: {
+	accountId: string
+	apiToken: string
+	name: string
+	dryRun: boolean
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+}) {
+	if (input.dryRun) {
+		console.error(
+			`[dry-run] delete Email Sending event subscription if present: ${input.name}`,
+		)
+		return { deleted: false as const, name: input.name }
+	}
+	const subscriptions = await listCloudflareEventSubscriptions(input)
+	const existing = subscriptions.find(
+		(subscription) => subscription.name === input.name,
+	)
+	if (!existing) {
+		console.error(`Email event subscription absent: ${input.name}`)
+		return { deleted: false as const, name: input.name }
+	}
+	await cloudflareApiRequest<CloudflareEventSubscription>({
+		...input,
+		pathname: `/event_subscriptions/subscriptions/${encodeURIComponent(existing.id)}`,
+		method: 'DELETE',
+	})
+	console.error(`Deleted Email event subscription: ${existing.name}`)
+	return { deleted: true as const, id: existing.id, name: existing.name }
+}
+
 export async function ensureArtifactsAccountEventSubscription(input: {
 	accountId: string
 	apiToken: string

@@ -1,5 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import {
+	deleteEmailSendingEventSubscriptionIfPresent,
 	ensureArtifactsAccountEventSubscription,
 	ensureCloudflareQueue,
 	ensureEmailSendingEventSubscription,
@@ -806,6 +807,23 @@ async function ensureProductionResources(options: CliOptions) {
 			name: subscription.name,
 			domain: entry.domain,
 			kind: entry.kind,
+		})
+	}
+	// When user and system domains collapse to one hostname, stop ensuring a
+	// separate system subscription and delete any leftover so the queue does
+	// not keep receiving events for an obsolete domain or duplicates.
+	const needsSystemEmailSubscription = emailSendingSubscriptionDomains.some(
+		(entry) => entry.kind === 'system',
+	)
+	if (!needsSystemEmailSubscription) {
+		await deleteEmailSendingEventSubscriptionIfPresent({
+			accountId: accountId ?? 'dry-run-account',
+			apiToken: apiToken ?? 'dry-run-token',
+			name: emailSendingEventSubscriptionName({
+				workerName: bindings.workerName,
+				kind: 'system',
+			}),
+			dryRun: options.dryRun,
 		})
 	}
 	const artifactsEventSubscription =
