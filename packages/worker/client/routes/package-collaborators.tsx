@@ -577,7 +577,7 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 							title="Who has access"
 							description={
 								view.org.personal
-									? 'You always have full access to your own packages. Teams and members belong to organizations; share this package with a link below.'
+									? 'You always have full access to your own packages. People you invite show up here once they accept.'
 									: 'Organization owners always have full access.'
 							}
 						>
