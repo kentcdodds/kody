@@ -501,7 +501,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		username: 'account-user',
 		viewer: { displayName: 'account-user', avatarUrl: null },
 		organizations: [],
-		invites: [],
+		pendingInvites: [],
 	}
 	expect(organizations.loaderData?.accountOrganizations).toEqual(
 		organizationsPayload,
@@ -618,6 +618,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(waiting.loaderData?.accountWaiting).toEqual({
 		ok: true,
 		items: expect.any(Array),
+		invites: [],
 	})
 	const mcpOauthClients = await signedIn(
 		createAccountMcpOauthClientsHandler,

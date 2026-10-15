@@ -46,6 +46,7 @@ import {
 	renderShellStatus,
 } from './community-detail-sections.tsx'
 import { loadPackageCollaboratorsPage } from './package-collaborators-data.ts'
+import { PackageInviteLinksPanel } from './package-collaborators-invite-links.tsx'
 import {
 	collaboratorDetail,
 	collaboratorName,
@@ -576,7 +577,7 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 							title="Who has access"
 							description={
 								view.org.personal
-									? 'You always have full access to your own packages. Teams and members belong to organizations, so a personal package has no one to add here.'
+									? 'You always have full access to your own packages. People you invite show up here once they accept.'
 									: 'Organization owners always have full access.'
 							}
 						>
@@ -595,6 +596,12 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 						</AccountManagementPanel>
 						{view.org.personal ? null : renderAddTeam(view)}
 						{view.org.personal ? null : renderAddMember(view)}
+						<PackageInviteLinksPanel
+							username={username}
+							kodyId={kodyId}
+							orgSlug={view.org.slug}
+							personal={view.org.personal}
+						/>
 					</>
 				) : null}
 			</article>

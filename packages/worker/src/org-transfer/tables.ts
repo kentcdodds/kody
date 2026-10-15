@@ -164,6 +164,7 @@ export const orgTransferTables: Record<string, OrgTransferTableDisposition> = {
 		'Client callback subscriptions belong to the OAuth client connection.',
 	),
 	oauth_connections: keep(personOwned),
+	org_invite_link_pending: keep(orgMembershipShape),
 	org_invite_link_redemptions: keep(orgMembershipShape),
 	org_invite_links: keep(orgMembershipShape),
 	org_limit_overrides: keep(orgMembershipShape),

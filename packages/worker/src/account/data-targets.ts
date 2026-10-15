@@ -711,6 +711,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		value: 'deleted-user',
 	},
 	{ kind: 'user_id', table: 'org_invite_link_redemptions' },
+	{ kind: 'user_id', table: 'org_invite_link_pending' },
 	{
 		kind: 'replace_user_column',
 		table: 'teams',

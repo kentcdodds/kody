@@ -18,6 +18,10 @@ import {
 	createTeam,
 	removeTeamMember,
 } from '#worker/orgs/access-writes.ts'
+import {
+	listActiveOrgInviteLinks,
+	type ListedInviteLink,
+} from '#worker/orgs/invite-links.ts'
 import { orgAuditWriterFromRequest } from '#worker/orgs/org-audit.ts'
 import { listOrgMembers } from '#worker/orgs/org-members-list.ts'
 import { listTeamsWithMembers } from '#worker/orgs/org-teams-list.ts'
@@ -26,6 +30,7 @@ import {
 	type OrgTeamMemberView,
 	type OrgTeamView,
 	type OrgTeamsLoaderData,
+	type ScopedInviteLinkView,
 } from '#universal/loader-data.ts'
 import { orgRoleLabel } from '#universal/org-pages.ts'
 import { type routes } from '#universal/routes.ts'
@@ -85,7 +90,28 @@ function toOrgMemberView(member: {
 	}
 }
 
-async function loadOrgTeamsData(input: {
+function toTeamInviteLinkView(
+	link: ListedInviteLink,
+	teamNames: ReadonlyMap<string, string>,
+): Array<ScopedInviteLinkView> {
+	if (link.target.kind !== 'team') return []
+	const teamName = teamNames.get(link.target.teamId)
+	if (!teamName) return []
+	return [
+		{
+			id: link.id,
+			label: teamName,
+			teamId: link.target.teamId,
+			maxUses: link.maxUses,
+			useCount: link.useCount,
+			expiresAt: link.expiresAt,
+			createdByUsername: link.createdByUsername,
+			createdByDisplayName: link.createdByDisplayName,
+		},
+	]
+}
+
+export async function loadOrgTeamsData(input: {
 	env: Env
 	user: Parameters<typeof orgHasPermission>[1]
 	org: ManagedOrg
@@ -96,12 +122,24 @@ async function loadOrgTeamsData(input: {
 	const canRemoveMembers =
 		!input.org.personal &&
 		(await orgHasPermission(input.env, input.user, 'team:delete'))
-	const [teams, orgMembers] = await Promise.all([
+	// A team link also adds the person to the org, so it needs both.
+	const canCreateInviteLinks =
+		canManage && (await orgHasPermission(input.env, input.user, 'member:write'))
+	const [teams, orgMembers, inviteLinks] = await Promise.all([
 		listTeamsWithMembers(input.env.APP_DB, input.org.id),
 		canManage
 			? listOrgMembers(input.env.APP_DB, input.org.id)
 			: Promise.resolve([]),
+		canCreateInviteLinks
+			? listActiveOrgInviteLinks(
+					input.env.APP_DB,
+					input.org.id,
+					new Date().toISOString(),
+					{ kind: 'team' },
+				)
+			: Promise.resolve([]),
 	])
+	const teamNames = new Map(teams.map((team) => [team.id, team.name]))
 	return {
 		ok: true,
 		org: input.org,
@@ -116,10 +154,14 @@ async function loadOrgTeamsData(input: {
 		orgMembers: orgMembers.map(toOrgMemberView),
 		canManage,
 		canRemoveMembers,
+		canCreateInviteLinks,
+		inviteLinks: inviteLinks.flatMap((link) =>
+			toTeamInviteLinkView(link, teamNames),
+		),
 	}
 }
 
-function personalOrgTeamWriteResponse() {
+export function personalOrgTeamWriteResponse() {
 	return jsonResponse(
 		{
 			ok: false,
