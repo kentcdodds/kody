@@ -1203,12 +1203,14 @@ test('watchdog passes on a written summary and fails loudly on incomplete or str
 		/summary missing for 2026-07-23.*phase=artifacts/,
 	)
 
-	// Backlog drain: tonight has no summary yet but an older day is still
-	// advancing (fresh lease) — defer the "tonight failed" page.
+	// Backlog drain: tonight has no summary yet but an older day recently
+	// advanced (lease cleared after a successful tick) — defer the page.
 	const deferred = createMemoryS3()
 	const activeOlder = {
 		...__testOnlyCreateInitialProgress('2026-07-22', at('00:30')),
-		leaseExpiresAt: new Date(now.getTime() + 60_000).toISOString(),
+		leaseExpiresAt: null,
+		advancedAt: new Date(now.getTime() - 5 * 60_000).toISOString(),
+		revision: 12,
 	}
 	await deferred.client.put(
 		'staging/2026-07-22/exporter/progress.json',
@@ -1221,11 +1223,13 @@ test('watchdog passes on a written summary and fails loudly on incomplete or str
 		reason: 'deferred-for-older-stranded',
 	})
 
-	// Older stranded day with a long-expired lease: page as catch-up stuck.
+	// Older stranded day with a cold advancedAt: page as catch-up stuck.
 	const staleOlder = createMemoryS3()
 	const staleProgress = {
 		...__testOnlyCreateInitialProgress('2026-07-22', at('00:30')),
-		leaseExpiresAt: new Date(now.getTime() - 3 * 60 * 60_000).toISOString(),
+		leaseExpiresAt: null,
+		advancedAt: new Date(now.getTime() - 3 * 60 * 60_000).toISOString(),
+		revision: 3,
 	}
 	await staleOlder.client.put(
 		'staging/2026-07-22/exporter/progress.json',

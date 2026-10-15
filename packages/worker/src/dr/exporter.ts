@@ -85,6 +85,8 @@ const storageExportPageSize = 250
 const indexChunkEntryLimit = 100
 const previousSealedDayLookbackDays = 35
 const progressLeaseDurationMs = 2 * 60_000
+/** Watchdog / catch-up: older stranded work is "active" if it advanced within this window. */
+const strandedCatchUpActiveMs = 2 * 60 * 60_000
 const exporterProgressSchemaVersion = 3 as const
 const ownerExportPageSize = 250
 const runLogInitialCursor = 'job-run-observability:'
@@ -121,6 +123,12 @@ export type DrExporterProgress = {
 	revision: number
 	leaseId: string | null
 	leaseExpiresAt: string | null
+	/**
+	 * Wall time of the latest progress persist. Survives lease release so the
+	 * 06:15 watchdog can tell a healthy drain (recent tick, lease cleared)
+	 * from a cold stranded day.
+	 */
+	advancedAt?: string | null
 	/** Set while conditionally replacing a schema-v1 completion marker. */
 	legacySummaryEtag?: string | null
 	mailbox: OwnerLaneProgress
@@ -264,6 +272,7 @@ function createInitialProgress(day: string, now: Date): DrExporterProgress {
 		revision: 0,
 		leaseId: null,
 		leaseExpiresAt: null,
+		advancedAt: null,
 		legacySummaryEtag: null,
 		mailbox: createInitialOwnerLaneProgress(),
 		runLog: createInitialOwnerLaneProgress(),
@@ -454,6 +463,7 @@ async function persistProgress(s3: DrBackupS3Client, session: ProgressSession) {
 			Date.now() + progressLeaseDurationMs,
 		).toISOString()
 	}
+	session.progress.advancedAt = new Date().toISOString()
 	session.progress.revision += 1
 	const body = JSON.stringify(session.progress)
 	const key = stagingProgressKey(session.progress.day)
@@ -1578,15 +1588,19 @@ export async function runDrExportWatchdogTick(input: {
 			}
 			const progress = parseProgress(parsed)
 			if (!progress) continue
+			// Prefer advancedAt (survives lease clear after a successful tick).
+			// Fall back to lease-derived activity for older progress.json files.
+			const advancedAtMs = Date.parse(progress.advancedAt ?? '')
 			const leaseExpiresAtMs = Date.parse(progress.leaseExpiresAt ?? '')
-			const activityAtMs = Number.isFinite(leaseExpiresAtMs)
-				? leaseExpiresAtMs - progressLeaseDurationMs
-				: NaN
+			const activityAtMs = Number.isFinite(advancedAtMs)
+				? advancedAtMs
+				: Number.isFinite(leaseExpiresAtMs)
+					? leaseExpiresAtMs - progressLeaseDurationMs
+					: NaN
 			if (
 				Number.isFinite(activityAtMs) &&
-				nowMs - activityAtMs < progressLeaseDurationMs * 60
+				nowMs - activityAtMs < strandedCatchUpActiveMs
 			) {
-				// ~2h: same order as catch-up "stuck" judgment (~24 missed 5-min ticks).
 				olderCatchUpActive = true
 				break
 			}
