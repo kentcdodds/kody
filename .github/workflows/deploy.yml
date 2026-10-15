@@ -668,6 +668,9 @@ jobs:
           SYSTEM_EMAIL_DOMAIN: ${{ vars.SYSTEM_EMAIL_DOMAIN }}
           LEGACY_USER_EMAIL_DOMAINS: ${{ vars.LEGACY_USER_EMAIL_DOMAINS }}
           LEGACY_SYSTEM_EMAIL_DOMAINS: ${{ vars.LEGACY_SYSTEM_EMAIL_DOMAINS }}
+          # Optional override for DMARC rua forward destination (default
+          # me@kentcdodds.com in tools/ci/resource-utils.ts).
+          DMARC_REPORT_FORWARD_TO: ${{ vars.DMARC_REPORT_FORWARD_TO }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
           # Prefer environment secret when Kent (or CI) stored the zone id as a

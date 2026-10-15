@@ -1678,16 +1678,17 @@ function emailRoutingRuleMatchesDmarcMailbox(input: {
 	)
 }
 
-function emailRoutingRuleForwardsTo(input: {
+function emailRoutingRuleForwardsExactlyTo(input: {
 	rule: CloudflareEmailRoutingRule
 	forwardTo: string
 }) {
 	const want = input.forwardTo.toLowerCase()
-	return (input.rule.actions ?? []).some(
-		(action) =>
-			action.type === 'forward' &&
-			(action.value ?? []).some((value) => value.toLowerCase() === want),
+	const forwardActions = (input.rule.actions ?? []).filter(
+		(action) => action.type === 'forward',
 	)
+	if (forwardActions.length !== 1) return false
+	const values = forwardActions[0]?.value ?? []
+	return values.length === 1 && values[0]?.toLowerCase() === want
 }
 
 /**
@@ -1717,17 +1718,27 @@ export async function ensureDmarcEmailRoutingRule(input: {
 		return { mailbox, forwardTo: input.forwardTo, created: false as const }
 	}
 
-	const destinations = await cloudflareApiRequest<
-		Array<CloudflareEmailRoutingDestination>
-	>({
-		accountId: input.accountId,
-		apiToken: input.apiToken,
-		apiBaseUrl: input.apiBaseUrl,
-		fetcher: input.fetcher,
-		sleep: input.sleep,
-		pathname: '/email/routing/addresses?per_page=50',
-	})
-	const destination = (destinations.result ?? []).find(
+	const destinations: Array<CloudflareEmailRoutingDestination> = []
+	{
+		let page = 1
+		let totalPages = 1
+		do {
+			const payload = await cloudflareApiRequest<
+				Array<CloudflareEmailRoutingDestination>
+			>({
+				accountId: input.accountId,
+				apiToken: input.apiToken,
+				apiBaseUrl: input.apiBaseUrl,
+				fetcher: input.fetcher,
+				sleep: input.sleep,
+				pathname: `/email/routing/addresses?page=${page}&per_page=50`,
+			})
+			destinations.push(...(payload.result ?? []))
+			totalPages = Math.max(1, payload.result_info?.total_pages ?? 1)
+			page += 1
+		} while (page <= totalPages)
+	}
+	const destination = destinations.find(
 		(entry) => entry.email.toLowerCase() === input.forwardTo.toLowerCase(),
 	)
 	if (!destination) {
@@ -1741,16 +1752,26 @@ export async function ensureDmarcEmailRoutingRule(input: {
 		)
 	}
 
-	const listed = await cloudflareRootApiRequest<
-		Array<CloudflareEmailRoutingRule>
-	>({
-		apiToken: input.apiToken,
-		apiBaseUrl: input.apiBaseUrl,
-		fetcher: input.fetcher,
-		sleep: input.sleep,
-		pathname: `/zones/${encodeURIComponent(input.zoneId)}/email/routing/rules?per_page=50`,
-	})
-	const existing = (listed.result ?? []).find((rule) =>
+	const rules: Array<CloudflareEmailRoutingRule> = []
+	{
+		let page = 1
+		let totalPages = 1
+		do {
+			const payload = await cloudflareRootApiRequest<
+				Array<CloudflareEmailRoutingRule>
+			>({
+				apiToken: input.apiToken,
+				apiBaseUrl: input.apiBaseUrl,
+				fetcher: input.fetcher,
+				sleep: input.sleep,
+				pathname: `/zones/${encodeURIComponent(input.zoneId)}/email/routing/rules?page=${page}&per_page=50`,
+			})
+			rules.push(...(payload.result ?? []))
+			totalPages = Math.max(1, payload.result_info?.total_pages ?? 1)
+			page += 1
+		} while (page <= totalPages)
+	}
+	const existing = rules.find((rule) =>
 		emailRoutingRuleMatchesDmarcMailbox({ rule, mailbox }),
 	)
 	const desiredBody = {
@@ -1762,7 +1783,10 @@ export async function ensureDmarcEmailRoutingRule(input: {
 	if (existing) {
 		const alreadyOk =
 			existing.enabled !== false &&
-			emailRoutingRuleForwardsTo({ rule: existing, forwardTo: input.forwardTo })
+			emailRoutingRuleForwardsExactlyTo({
+				rule: existing,
+				forwardTo: input.forwardTo,
+			})
 		if (alreadyOk) {
 			console.error(
 				`Email Routing rule exists: ${mailbox} → ${input.forwardTo} (${existing.id})`,
