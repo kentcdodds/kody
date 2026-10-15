@@ -292,9 +292,12 @@ export const handlers = [
 Scheduled behavior should not be its first real execution. When the CLI is
 available, prefer
 [`kody dev job`](#local-cli-testing-when-the-host-can-run-code) while
-unpublished; otherwise publish after `repoRunChecks`, then call the published
-`execute` import below before enabling the schedule. Package job manifests do
-not supply params to their entrypoints, so structure the package with:
+unpublished. Without the CLI, publish first — session/tool-only lane:
+`repoRunChecks` then `repoPublishSession`; git lane: push then
+`packagePublishExternalPush` (do **not** use `repoRunChecks` on an unpublished
+push; `repoOpenSession` refuses that HEAD) — then call the published `execute`
+import below before enabling the schedule. Package job manifests do not supply
+params to their entrypoints, so structure the package with:
 
 - a shared implementation that accepts explicit input
 - an optional callable export that passes representative input to that
