@@ -545,7 +545,11 @@
 			"sha256": "18d8fb033af7e5f4e2aab1311a95ae24be9e60a2aac454c7d2c764129bc49ae9"
 		},
 		{
-			"filename": "0147-feature-flag-repo-overrides.sql",
+			"filename": "0147-users-personal-org-id-required.sql",
+			"sha256": "f929f07d49cc5cbf391743d38df7595431d335287f2d336105ac404ccd8e805f"
+		},
+		{
+			"filename": "0148-feature-flag-repo-overrides.sql",
 			"sha256": "b1d86122ab55b8ec74f3edd53844f4da24f0f3c35099d0cb21a5f92a9f767c63"
 		}
 	]

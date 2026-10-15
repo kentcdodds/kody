@@ -1,10 +1,12 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { listOwnerEmailDeliveryEvents } from '#worker/email/owner-email-reader.ts'
 import { emailDeliveryEventTypeValues } from '#worker/email/types.ts'
-import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
+import {
+	emailOwnerOrgId,
+	requireVerifiedEmailAccountUser,
+} from './require-verified-user.ts'
 
 const emailDeliveryEventSchema = z.object({
 	id: z.string(),
@@ -61,7 +63,7 @@ export const emailDeliveryEventListCapability = defineDomainCapability(
 			const user = await requireVerifiedEmailAccountUser(ctx)
 			const events = await listOwnerEmailDeliveryEvents({
 				env: ctx.env,
-				ownerId: personalOrgId(user.userId),
+				ownerId: emailOwnerOrgId(ctx, user),
 				messageId: args.message_id ?? null,
 				eventType: args.event_type ?? null,
 				limit: args.limit,

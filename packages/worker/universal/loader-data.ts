@@ -1247,7 +1247,6 @@ export type AccountOrganizationsLoaderData = {
 	/** The signup organization is named and pictured after the person. */
 	viewer: { displayName: string; avatarUrl: string | null }
 	organizations: Array<AccountOrganizationSummary>
-	lastUsedOrganization: string | null
 	invites: Array<AccountInviteSummary>
 }
 

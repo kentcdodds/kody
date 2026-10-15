@@ -5,7 +5,6 @@ import {
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
-import { isSecureRequest } from '#app/auth-session.ts'
 import {
 	readAuthenticatedAppUser,
 	type AuthenticatedAppUser,
@@ -36,7 +35,6 @@ import {
 } from '#app/handlers/profile.tsx'
 import { jsonResponse } from '#worker/json-response.ts'
 import { loadOrgBindingForSlug, type OrgBinding } from '#worker/orgs/repo.ts'
-import { serializeLastUsedOrgCookie } from '#universal/org-last-used-cookie.ts'
 import {
 	toProfileListLoaderData,
 	toProfileShellLoaderData,
@@ -173,7 +171,6 @@ export function createOrgSectionHandler(
 					status: 404,
 				})
 			}
-			const slug = resolution.org.slug ?? ctx.params.orgSlug ?? ''
 			const params = {
 				...ctx.params,
 				...sectionParams(section, ctx.params.rest),
@@ -181,33 +178,18 @@ export function createOrgSectionHandler(
 				// the immutable personal-org slug after a rename.
 				...(section === 'repositories' ? { username: user.username } : {}),
 			}
-			const response =
-				section === 'repositories' && isTeamOrg(resolution, user.mcpUser)
-					? await renderTeamRepositoriesPage({
-							env,
-							request: ctx.request,
-							user,
-							binding: resolution,
-						})
-					: await inner.handler({
-							request: ctx.request,
-							params,
-							url: new URL(ctx.request.url),
-						} as never)
-			if (!slug) return response
-			const headers = new Headers(response.headers)
-			headers.append(
-				'Set-Cookie',
-				serializeLastUsedOrgCookie({
-					slug,
-					secure: isSecureRequest(ctx.request),
-				}),
-			)
-			return new Response(response.body, {
-				status: response.status,
-				statusText: response.statusText,
-				headers,
-			})
+			return section === 'repositories' && isTeamOrg(resolution, user.mcpUser)
+				? await renderTeamRepositoriesPage({
+						env,
+						request: ctx.request,
+						user,
+						binding: resolution,
+					})
+				: await inner.handler({
+						request: ctx.request,
+						params,
+						url: new URL(ctx.request.url),
+					} as never)
 		},
 	}
 }

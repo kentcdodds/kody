@@ -1,8 +1,5 @@
 import { z } from 'zod'
-import {
-	ownerIdFromStored,
-	personalOrgId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { type CredentialPermissionFamily } from '@kody-internal/shared/org-permissions.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { authorizeCredentialScope } from '#worker/authorization/authorize.ts'
@@ -17,6 +14,10 @@ import {
 	revokePersonalCredentialOrgGrant,
 } from '#worker/credentials/personal-credentials.ts'
 import { orgAuditWriterFromRequest } from '#worker/orgs/org-audit.ts'
+import {
+	loadPersonalOrgIdForPerson,
+	personalOrgIdForPerson,
+} from '#worker/orgs/personal-org-id.ts'
 import { getOrgById, getOrgBySlug } from '#worker/orgs/repo.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -71,7 +72,13 @@ async function resolveTargetOrg(
 	slug: string | undefined,
 ) {
 	if (slug === undefined) {
-		if (request.org.id === personalOrgId(request.actor!.userId)) {
+		if (
+			request.org.id ===
+			personalOrgIdForPerson({
+				userId: request.actor!.userId,
+				personalOrgId: ctx.callerContext.user?.personalOrgId,
+			})
+		) {
 			throw new McpCallerError(
 				'This request is bound to your personal org, where your personal credentials already work. Pass org with the slug of the org to grant to.',
 			)
@@ -98,7 +105,7 @@ async function authorizeGrantChange(
 ) {
 	const credential = await getOrgCredential(
 		ctx.env.APP_DB,
-		personalOrgId(request.actor!.userId),
+		await loadPersonalOrgIdForPerson(ctx.env.APP_DB, request.actor!.userId),
 		credentialId,
 	)
 	const families: Array<CredentialPermissionFamily> = credential

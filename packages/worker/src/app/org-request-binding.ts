@@ -1,6 +1,5 @@
 import { loadOrgBindingForSlug, type OrgBinding } from '#worker/orgs/repo.ts'
 import { readOrgSlugFromUrl } from '#universal/org-binding/url.ts'
-import { isLastUsedOrgCommitApiPath } from '#universal/org-last-used-cookie.ts'
 import {
 	orgOwnedAccountApiSection,
 	orgOwnedSectionForPath,
@@ -67,7 +66,6 @@ export function isOrgBoundPath(pathname: string): boolean {
 	return (
 		orgOwnedAccountApiSection(pathname) !== null ||
 		isCreditsApiPath(pathname) ||
-		isLastUsedOrgCommitApiPath(pathname) ||
 		orgSlugFromPageUrl(pathname) !== null
 	)
 }
@@ -161,11 +159,10 @@ async function resolveRequestOrg(
 	const slugOnPage = orgSlugFromPageUrl(url.pathname)
 	const apiSection = orgOwnedAccountApiSection(url.pathname)
 	const creditsApi = isCreditsApiPath(url.pathname)
-	const lastUsedCommit = isLastUsedOrgCommitApiPath(url.pathname)
 	const slug =
 		slugOnPage ??
 		orgSlugFromConnectOauthUrl(url) ??
-		(apiSection || creditsApi || lastUsedCommit
+		(apiSection || creditsApi
 			? orgSlugFromAccountApiReferer(request, url.origin)
 			: null)
 	// Credits mutations must name an org (path or usage-page Referer). Falling

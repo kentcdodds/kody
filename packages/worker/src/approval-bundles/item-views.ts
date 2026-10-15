@@ -151,6 +151,7 @@ function unavailable(
 		canApprove: false,
 		canDeny: false,
 		fingerprint: null,
+		detailLabel: null,
 		grants: [],
 		reviewHref: null,
 		decision: decisionView(decision),
@@ -295,15 +296,16 @@ async function publishItemView(
 		decision: decisionView(decision),
 	}
 	const state = publishItemState(request, publishedCommit, decision)
-	const shortCommit = request.pendingCommit.slice(0, 7)
 	switch (request.reason) {
 		case 'credential_needs_changed': {
 			const changes = readCredentialNeedChanges(request.details)
 			return {
 				...base,
 				...state,
+				detailLabel: 'Paused commit',
 				title: 'Publish with changed credential needs',
-				summary: `Approving publishes commit ${shortCommit}, which asks for the credentials below. The previously published version keeps serving until you approve. Denying drops this paused publish.`,
+				summary:
+					'Approving publishes this version, which asks for the credentials below. The previously published version keeps serving until you approve. Denying drops this paused publish.',
 				grants: await Promise.all(
 					changes.map((change) => credentialNeedGrant(viewer, change)),
 				),
@@ -313,8 +315,9 @@ async function publishItemView(
 			return {
 				...base,
 				...state,
+				detailLabel: 'Published commit',
 				title: 'Serve on the public internet',
-				summary: `${readWentPublicSummary(request.details)} Approving turns on internet-visible serving for commit ${shortCommit}. Denying leaves it off.`,
+				summary: `${readWentPublicSummary(request.details)} Approving turns on internet-visible serving for this version. Denying leaves it off.`,
 				grants: [
 					{
 						change: 'added',
@@ -525,6 +528,7 @@ async function capabilitiesItemView(
 			'This internet-visible package now reaches different credentials or storage than you approved. Approving pins the current set for public serving. Denying leaves it unapproved.',
 		package: packageView(viewer, savedPackage),
 		fingerprint: summary.capabilitySet.fingerprint,
+		detailLabel: 'Capability fingerprint',
 		grants,
 		reviewHref: routes.communityPackageApproveCapabilities.href({
 			username: orgSlug(viewer),
@@ -667,6 +671,7 @@ async function credentialPicksItemView(
 		summary: `Approving saves these credential mappings for ${scope.savedPackage.kodyId} and turns on any trigger listed. Denying changes nothing.${reason ? ` Agent note (not written by Kody): ${reason}` : ''}`,
 		package: packageView(viewer, scope.savedPackage),
 		fingerprint: view.fingerprint,
+		detailLabel: 'Approval fingerprint',
 		grants,
 		reviewHref: buildCredentialApprovalHref({
 			username: orgSlug(viewer),

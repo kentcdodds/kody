@@ -91,6 +91,7 @@ test('emailSend forwards optional attachments and rejects invalid attachment sha
 	expect(mocks.sendOutboundEmail).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: ownerIdFromStored('user-1'),
+			actorPersonId: personIdFromStored('user-1'),
 			accountEmail: 'user@example.com',
 			recipientPolicy: 'self',
 			to: null,

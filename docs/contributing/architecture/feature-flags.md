@@ -44,7 +44,7 @@ extended by `0065-experiments-opt-in.sql`:
   `experiments_opt_in` flag audience, edited at `/account/experiments`.
 
 - `feature_flag_repo_overrides` — per-repo forced on/off for repo-scoped flags,
-  keyed by `(flag_key, source_id)` (migration 0147). No foreign keys, so a table
+  keyed by `(flag_key, source_id)` (migration 0148). No foreign keys, so a table
   rebuild cannot cascade away rollout state; overrides for deleted sources are
   inert.
 

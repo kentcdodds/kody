@@ -25,7 +25,6 @@ import {
 import { renderIcon } from '#universal/icon.tsx'
 import { type AccountOrganizationsLoaderData } from '#universal/loader-data.ts'
 import {
-	currentSwitcherSlug,
 	orderOrganizations,
 	orgIdentity,
 	orgRoleLabel,
@@ -384,21 +383,13 @@ function inviteRoleLabel(
 	}
 }
 
-function renderOrganizationList(
-	data: AccountOrganizationsLoaderData,
-	currentPathname: string,
-) {
+function renderOrganizationList(data: AccountOrganizationsLoaderData) {
 	const organizations = orderOrganizations(
 		organizationsWithSignupFallback({
 			organizations: data.organizations,
 			username: data.username,
 		}),
 	)
-	const currentSlug = currentSwitcherSlug({
-		pathname: currentPathname,
-		organizations,
-		lastUsedSlug: data.lastUsedOrganization,
-	})
 	return (
 		<ul mix={css(orgListCss)} data-testid="account-organizations">
 			{organizations.map((org) =>
@@ -409,10 +400,7 @@ function renderOrganizationList(
 					personal: org.personal,
 					viewer: data.viewer,
 					detail: orgRoleLabel(org.role),
-					pills:
-						org.slug === currentSlug
-							? [{ label: 'Current', tone: 'accent' }]
-							: [],
+					pills: [],
 					// Each org opens its overview: a team org's home (which
 					// links Settings, Members, and its sections), the signup
 					// org's workspace overview.
@@ -489,7 +477,7 @@ export function AccountOrganizationsRoute(handle: Handle) {
 			<AccountManagementShell busy={pending && Boolean(data)}>
 				<AccountPageHeader
 					title="Organizations"
-					description="Each organization has its own repositories, secrets, and members. Switch between them from the header."
+					description="Each organization has its own repositories, secrets, and members. Open one to work in it, or switch from your avatar menu."
 					currentHref={href}
 					actions={
 						<a
@@ -531,10 +519,7 @@ export function AccountOrganizationsRoute(handle: Handle) {
 							title="Your organizations"
 							ariaLabel="Your organizations"
 						>
-							{renderOrganizationList(
-								data,
-								new URL(href, 'http://localhost').pathname,
-							)}
+							{renderOrganizationList(data)}
 						</AccountManagementPanel>
 						<AccountManagementPanel
 							id="invites"

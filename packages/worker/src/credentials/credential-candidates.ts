@@ -15,10 +15,8 @@ import {
 	chunkArray,
 	maxD1BoundParameters,
 } from '@kody-internal/shared/chunk.ts'
-import {
-	personalOrgId,
-	type OwnerId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { loadPersonalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import {
 	listScopeIncludes,
@@ -242,7 +240,7 @@ export async function listUsableCredentials(input: {
 	if (actor && personal.length > 0) {
 		const personalRows = await loadRows({
 			db: input.env.APP_DB,
-			ownerId: personalOrgId(actor),
+			ownerId: await loadPersonalOrgIdForPerson(input.env.APP_DB, actor),
 			ids: personal.map((credential) => credential.id),
 			now,
 		})

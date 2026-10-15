@@ -193,6 +193,7 @@ export const searchCapability = defineDomainCapability(
 			const query = args.query?.trim() ?? ''
 			const domainFilter = args.domain?.trim() || undefined
 			const conversationId = resolveConversationId(args.conversationId)
+			// person-keyed (not personal org): metering / conversation identity
 			const userId = ctx.callerContext.user
 				? personalOrgId(ctx.callerContext.user.userId)
 				: null

@@ -1,6 +1,5 @@
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { type AccountOrganizationSummary } from '#universal/loader-data.ts'
-import { readLastUsedOrgSlug } from '#universal/org-last-used-cookie.ts'
 import { buildOrgAvatarUrl } from '#worker/orgs/org-avatar.ts'
 import {
 	listOrganizationsForPerson,
@@ -11,14 +10,12 @@ import {
 export type AccountOrganizationSnapshot = {
 	organizations: Array<AccountOrganizationSummary>
 	inviteCount: number
-	lastUsedOrganization: string | null
 	invites: Array<PendingInviteSummary>
 }
 
 export async function loadAccountOrganizationSnapshot(
 	env: Env,
 	user: Pick<AuthenticatedAppUser, 'email' | 'username' | 'mcpUser'>,
-	request: Request,
 ): Promise<AccountOrganizationSnapshot> {
 	const now = new Date().toISOString()
 	const identity = {
@@ -30,12 +27,6 @@ export async function loadAccountOrganizationSnapshot(
 		listOrganizationsForPerson(env.APP_DB, user.mcpUser.userId),
 		listPendingInvitesForPerson(env.APP_DB, identity),
 	])
-	const remembered = readLastUsedOrgSlug(request.headers.get('cookie'))
-	const lastUsedOrganization = organizations.some(
-		(org) => org.slug === remembered,
-	)
-		? remembered
-		: null
 	return {
 		organizations: organizations.map((org) => ({
 			slug: org.slug,
@@ -47,7 +38,6 @@ export async function loadAccountOrganizationSnapshot(
 				: buildOrgAvatarUrl({ slug: org.slug, avatarKey: org.avatarKey }),
 		})),
 		inviteCount: invites.length,
-		lastUsedOrganization,
 		invites,
 	}
 }

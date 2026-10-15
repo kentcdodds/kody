@@ -107,7 +107,6 @@ test('session handler only renews remembered sessions after the renewal window',
 				},
 				organizations: [],
 				inviteCount: 0,
-				lastUsedOrganization: null,
 			},
 		})
 		const setCookie = response.headers.get('Set-Cookie')

@@ -125,6 +125,7 @@ test('emailReply gates unverified accounts, surfaces failed delivery, and forwar
 	expect(mocks.sendOutboundEmail).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: ownerIdFromStored('user-1'),
+			actorPersonId: personIdFromStored('user-1'),
 			accountEmail: 'user@example.com',
 			recipientPolicy: 'reply',
 			replyToMessageId: 'inbound-1',

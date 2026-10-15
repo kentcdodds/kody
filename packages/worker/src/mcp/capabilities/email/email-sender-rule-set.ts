@@ -10,7 +10,10 @@ import {
 	emailSenderRuleEffectValues,
 	emailSenderRuleKindValues,
 } from '#worker/email/types.ts'
-import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
+import {
+	emailOwnerOrgId,
+	requireVerifiedEmailAccountUser,
+} from './require-verified-user.ts'
 import { emailSenderRuleSchema, toSenderRule } from './shared.ts'
 
 export const emailSenderRuleSetCapability = defineDomainCapability(
@@ -46,7 +49,7 @@ export const emailSenderRuleSetCapability = defineDomainCapability(
 			try {
 				const rule = await upsertEmailSenderRule({
 					db: ctx.env.APP_DB,
-					userId: user.userId,
+					userId: emailOwnerOrgId(ctx, user),
 					kind: args.kind,
 					value: args.value,
 					effect: args.effect,

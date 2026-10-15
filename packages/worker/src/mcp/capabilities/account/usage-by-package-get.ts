@@ -1,4 +1,4 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
+import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -105,7 +105,7 @@ export const usageByPackageGetCapability = defineDomainCapability(
 			const now = new Date()
 			const ownerId = ownerIdFromCaller(ctx.callerContext)
 			const teamSlug =
-				ownerId === personalOrgId(user.userId)
+				ownerId === personalOrgIdForPerson(user)
 					? null
 					: ctx.callerContext.request?.org.slug?.trim() || null
 			const entitlement = await getUserEntitlement(db, {

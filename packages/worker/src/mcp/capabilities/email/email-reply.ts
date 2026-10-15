@@ -1,8 +1,10 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
+import {
+	emailOwnerOrgId,
+	requireVerifiedEmailAccountUser,
+} from './require-verified-user.ts'
 import { sendOutboundEmail } from '#worker/email/outbound.ts'
 import { mailboxRpc } from '#worker/email/mailbox-client.ts'
 import { mailboxMessageToEmailMessageRecord } from '#worker/email/mailbox-record-mappers.ts'
@@ -41,14 +43,14 @@ export const emailReplyCapability = defineDomainCapability(
 			const user = await requireVerifiedEmailAccountUser(ctx)
 			const originalRecord = await mailboxRpc({
 				env: ctx.env,
-				userId: personalOrgId(user.userId),
+				userId: emailOwnerOrgId(ctx, user),
 			}).getMessage({
 				messageId: args.message_id,
 			})
 			const original = originalRecord
 				? mailboxMessageToEmailMessageRecord(
 						originalRecord,
-						personalOrgId(user.userId),
+						emailOwnerOrgId(ctx, user),
 					)
 				: null
 			if (!original)
@@ -57,7 +59,8 @@ export const emailReplyCapability = defineDomainCapability(
 			// sendOutboundEmail; this capability never chooses it.
 			const result = await sendOutboundEmail({
 				env: ctx.env,
-				userId: personalOrgId(user.userId),
+				userId: emailOwnerOrgId(ctx, user),
+				actorPersonId: user.userId,
 				request: ctx.callerContext.request,
 				accountEmail: user.email,
 				recipientPolicy: 'reply',

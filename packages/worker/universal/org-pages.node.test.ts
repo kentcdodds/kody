@@ -6,7 +6,6 @@ import {
 	orgUsagePath,
 	orgUsageWhereItWentPath,
 	relocateAccountHref,
-	currentSwitcherSlug,
 	orderOrganizations,
 	orgIdentity,
 	orgOwnedAccountApiSection,
@@ -23,6 +22,7 @@ import {
 	parseOrgUsagePath,
 	switchOrgPath,
 	type OrganizationSummary,
+	urlOrgSlug,
 } from './org-pages.ts'
 
 const personal: OrganizationSummary = {
@@ -210,75 +210,33 @@ test('switcher lists the signup organization first, then roles, then create and 
 	expect(single[0]).toEqual({ kind: 'org', org: personal, showRole: false })
 })
 
-test('current organization comes from the URL, then the last-used slug', () => {
+test('current organization comes only from the URL', () => {
 	const organizations = [personal, acme]
+	expect(urlOrgSlug({ pathname: '/@acme/-/secrets', organizations })).toBe(
+		'acme',
+	)
+	expect(urlOrgSlug({ pathname: '/@acme', organizations })).toBe('acme')
+	// Pages without an org in the URL have no current org.
+	expect(urlOrgSlug({ pathname: '/account', organizations })).toBeNull()
 	expect(
-		currentSwitcherSlug({
-			pathname: '/@acme/-/secrets',
-			organizations,
-			lastUsedSlug: 'ada',
-		}),
-	).toBe('acme')
-	expect(
-		currentSwitcherSlug({
-			pathname: '/@acme/-/settings',
-			organizations,
-			lastUsedSlug: 'ada',
-		}),
-	).toBe('acme')
-	expect(
-		currentSwitcherSlug({
-			pathname: '/account',
-			organizations,
-			lastUsedSlug: 'acme',
-		}),
-	).toBe('acme')
-	expect(
-		currentSwitcherSlug({
-			pathname: '/account',
-			organizations,
-			lastUsedSlug: null,
-		}),
-	).toBe('ada')
+		urlOrgSlug({ pathname: '/account/organizations', organizations }),
+	).toBeNull()
 })
 
 test('org-owned URL slug wins even when the session list is empty or personal-only', () => {
 	expect(
-		currentSwitcherSlug({
-			pathname: '/@acme/-/settings',
-			organizations: [personal],
-			lastUsedSlug: 'ada',
-		}),
+		urlOrgSlug({ pathname: '/@acme/-/settings', organizations: [personal] }),
 	).toBe('acme')
-	expect(
-		currentSwitcherSlug({
-			pathname: '/@acme/-/members',
-			organizations: [],
-			lastUsedSlug: 'ada',
-		}),
-	).toBe('acme')
-	expect(
-		currentSwitcherSlug({
-			pathname: '/@acme/-/billing',
-			organizations: [personal],
-			lastUsedSlug: null,
-		}),
-	).toBe('acme')
+	expect(urlOrgSlug({ pathname: '/@acme/-/members', organizations: [] })).toBe(
+		'acme',
+	)
 	// Public profile and package pages still require membership.
 	expect(
-		currentSwitcherSlug({
-			pathname: '/@acme',
-			organizations: [personal],
-			lastUsedSlug: 'ada',
-		}),
-	).toBe('ada')
+		urlOrgSlug({ pathname: '/@acme', organizations: [personal] }),
+	).toBeNull()
 	expect(
-		currentSwitcherSlug({
-			pathname: '/@acme/some-pkg',
-			organizations: [personal],
-			lastUsedSlug: 'ada',
-		}),
-	).toBe('ada')
+		urlOrgSlug({ pathname: '/@acme/some-pkg', organizations: [personal] }),
+	).toBeNull()
 })
 
 test('org rows show the signup organization as the person and others by name or handle', () => {

@@ -69,6 +69,80 @@ function storageSummary(entry: CapabilityEntry) {
 		: 'This package can save and read its own data.'
 }
 
+const credentialValuesNote = 'Credential values never appear here.'
+
+function sentence(text: string) {
+	const trimmed = text.trim()
+	if (trimmed.length === 0) return trimmed
+	return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`
+}
+
+/**
+ * Page title and lead copy follow what is actually waiting. Public / internet
+ * visibility is mentioned only when a went_public request is pending or the
+ * page is the capability-set pin for internet-visible serving.
+ */
+function approveCapabilitiesPageCopy(
+	payload: AccountPackageApproveCapabilitiesLoaderData,
+) {
+	const pending = payload.pendingApprovals
+	const hasWentPublic = pending.some(
+		(approval) => approval.reason === 'went_public',
+	)
+	const hasCredentialNeeds = pending.some(
+		(approval) => approval.reason === 'credential_needs_changed',
+	)
+	if (pending.length > 0 && hasCredentialNeeds && !hasWentPublic) {
+		const changeLines = pending.flatMap((approval) => approval.changes)
+		const what =
+			changeLines.length > 0
+				? changeLines.map(sentence).join(' ')
+				: 'This version changes the package’s credential needs.'
+		return {
+			title: 'Approve credential needs',
+			description: `${what} The previously published version keeps running until you approve. ${credentialValuesNote}`,
+			mentionInternet: false,
+		}
+	}
+	if (pending.length > 0 && hasWentPublic) {
+		return {
+			title: 'Approve package changes',
+			description: hasCredentialNeeds
+				? `Review the credential and internet-visibility changes below. ${credentialValuesNote}`
+				: `Approving turns on internet-visible serving for this package. ${credentialValuesNote}`,
+			mentionInternet: true,
+		}
+	}
+	if (payload.package.isInternetVisible) {
+		return {
+			title: 'Approve internet-visible capabilities',
+			description: `${payload.package.name} is served on the public internet. Check what it can use before you re-approve. ${credentialValuesNote}`,
+			mentionInternet: true,
+		}
+	}
+	return {
+		title: 'Approve internet-visible capabilities',
+		description: `Before ${payload.package.name} is served on the public internet, check what it can use. ${credentialValuesNote}`,
+		mentionInternet: true,
+	}
+}
+
+function credentialsSectionIntro(input: {
+	isInternetVisible: boolean
+	mentionInternet: boolean
+}) {
+	// Entries are the currently published capability set. On credential-needs-only
+	// review, do not attribute them to the paused publish (shown above) or imply
+	// they are already reachable via public requests.
+	if (!input.mentionInternet) {
+		return 'The previously published version can use these.'
+	}
+	if (input.isInternetVisible) {
+		return 'It is internet-visible, so requests from anyone can run code that uses these.'
+	}
+	return 'Once it is internet-visible, requests from anyone can run code that uses these.'
+}
+
 /**
  * Raw identifiers for the collapsed Details disclosure. The decision itself
  * reads in plain language; these are copy targets for support and agents.
@@ -295,6 +369,19 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 			payload?.entries.filter((entry) => entry.kind === 'storage') ?? []
 
 		const pendingApprovals = payload?.pendingApprovals ?? []
+		const pageCopy = payload
+			? approveCapabilitiesPageCopy(payload)
+			: {
+					title: 'Approve package changes',
+					description: `Review what this package asks for. ${credentialValuesNote}`,
+					mentionInternet: false,
+				}
+		const hasWentPublicPending = pendingApprovals.some(
+			(approval) => approval.reason === 'went_public',
+		)
+		const hasCredentialNeedsPending = pendingApprovals.some(
+			(approval) => approval.reason === 'credential_needs_changed',
+		)
 		const publishedCommit = payload?.publishedCommit ?? null
 		const hasPausedPublish = pendingApprovals.some(
 			(approval) => approval.pendingCommit !== publishedCommit,
@@ -316,18 +403,8 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 							</p>
 						) : null
 					}
-					title={
-						pendingApprovals.length > 0
-							? 'Approve package changes'
-							: 'Approve internet-visible capabilities'
-					}
-					description={
-						payload
-							? payload.package.isInternetVisible
-								? `${payload.package.name} is served on the public internet. Check what it can use before you re-approve. Secret values never appear here.`
-								: `Before ${payload.package.name} is served on the public internet, check what it can use. Secret values never appear here.`
-							: 'Review every credential and capability this package can reach before serving it on the public internet. Secret values never appear here.'
-					}
+					title={pageCopy.title}
+					description={pageCopy.description}
 				/>
 				{message ? (
 					<AccountManagementMessage tone="error">
@@ -357,11 +434,11 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 							Waiting for your approval
 						</h2>
 						<p mix={css({ margin: 0, color: colors.textMuted })}>
-							{pendingApprovals.some(
-								(approval) => approval.reason === 'credential_needs_changed',
-							)
-								? 'The previously published version keeps running until you approve.'
-								: 'Internet-visible serving stays off until you approve.'}
+							{hasWentPublicPending
+								? 'Internet-visible serving stays off until you approve.'
+								: hasCredentialNeedsPending
+									? 'The previously published version keeps running until you approve.'
+									: 'Nothing changes until you approve.'}
 						</p>
 						<ul mix={css(cardListCss)}>
 							{pendingApprovals.map((approval) => (
@@ -433,7 +510,7 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 						aria-label="Capability set"
 						mix={css({ display: 'grid', gap: spacing.xl })}
 					>
-						{!payload.publishedCommit ? (
+						{!payload.publishedCommit && pageCopy.mentionInternet ? (
 							<div mix={css(getAccentCalloutCss())}>
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									Publish this package before approving internet-visible
@@ -448,7 +525,9 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 									{payload.latestApprovedAt
 										? ` (${payload.latestApprovedAt})`
 										: ''}
-									. Approving again keeps internet-visible on for the same set.
+									{payload.package.isInternetVisible
+										? '. Approving again keeps internet-visible on for the same set.'
+										: '.'}
 								</p>
 							</div>
 						) : null}
@@ -470,9 +549,10 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 							) : (
 								<>
 									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										{payload.package.isInternetVisible
-											? 'It is internet-visible, so requests from anyone can run code that uses these.'
-											: 'Once it is internet-visible, requests from anyone can run code that uses these.'}
+										{credentialsSectionIntro({
+											isInternetVisible: payload.package.isInternetVisible,
+											mentionInternet: pageCopy.mentionInternet,
+										})}
 									</p>
 									<ul mix={css(cardListCss)}>
 										{credentialEntries.map((entry) => (
@@ -543,21 +623,23 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 								alignItems: 'center',
 							})}
 						>
-							<button
-								type="button"
-								disabled={status === 'approving' || !payload.publishedCommit}
-								data-testid="package-approve-capabilities"
-								mix={[
-									css(getPrimaryButtonCss()),
-									on('click', () => void approveCapabilities()),
-								]}
-							>
-								{status === 'approving'
-									? 'Approving…'
-									: payload.package.isInternetVisible
-										? 'Re-approve capability set'
-										: 'Approve capability set'}
-							</button>
+							{pageCopy.mentionInternet ? (
+								<button
+									type="button"
+									disabled={status === 'approving' || !payload.publishedCommit}
+									data-testid="package-approve-capabilities"
+									mix={[
+										css(getPrimaryButtonCss()),
+										on('click', () => void approveCapabilities()),
+									]}
+								>
+									{status === 'approving'
+										? 'Approving…'
+										: payload.package.isInternetVisible
+											? 'Re-approve capability set'
+											: 'Approve capability set'}
+								</button>
+							) : null}
 							<a
 								href={payload.settingsHref}
 								mix={css(getGhostButtonCss())}

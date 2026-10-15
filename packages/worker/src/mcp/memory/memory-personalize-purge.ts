@@ -5,12 +5,12 @@
  */
 import {
 	parseOwnerId,
-	personalOrgId,
 	type PersonId,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { listGrants, softDeleteGrant } from '#worker/orgs/access-writes.ts'
 import { type OrgAuditWriter } from '#worker/orgs/org-audit.ts'
+import { loadPersonalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { legacyOrgMemoryProvenanceUri } from './memory-owner.ts'
 import {
 	findPersonalSkip,
@@ -133,7 +133,7 @@ async function verifyReadersHaveCopies(input: {
 	for (const personId of input.readers) {
 		const skip = await findPersonalSkip({
 			db: input.db,
-			personalOrgId: personalOrgId(personId),
+			personalOrgId: await loadPersonalOrgIdForPerson(input.db, personId),
 			source: input.memory,
 			provenanceUri,
 		})

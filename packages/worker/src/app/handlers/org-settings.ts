@@ -1,5 +1,4 @@
 import { type Action } from 'remix/router'
-import { isSecureRequest } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	orgHasPermission,
@@ -18,7 +17,6 @@ import {
 import { updateOrgProfile } from '#worker/orgs/org-profile.ts'
 import { softDeleteOrg } from '#worker/orgs/soft-delete.ts'
 import { type OrgSettingsLoaderData } from '#universal/loader-data.ts'
-import { serializeLastUsedOrgCookie } from '#universal/org-last-used-cookie.ts'
 import { routes } from '#universal/routes.ts'
 import { packageAppCustomDomainsCnameTargetFromBaseUrl } from '#worker/package-app-custom-hostnames/cname-target.ts'
 import { isPackageAppCustomDomainsEnabledForUser } from '#worker/package-app-custom-hostnames/feature-flag.ts'
@@ -29,22 +27,6 @@ import {
 	PackageAppCustomHostnameError,
 	syncPackageAppCustomHostname,
 } from '#worker/package-app-custom-hostnames/service.ts'
-function withLastUsedOrg(request: Request, slug: string, response: Response) {
-	const headers = new Headers(response.headers)
-	headers.append(
-		'Set-Cookie',
-		serializeLastUsedOrgCookie({
-			slug,
-			secure: isSecureRequest(request),
-		}),
-	)
-	return new Response(response.body, {
-		status: response.status,
-		statusText: response.statusText,
-		headers,
-	})
-}
-
 function renderDenied(
 	request: Request,
 	env: Env,
@@ -140,22 +122,18 @@ export function createOrgSettingsHandler(env: Env) {
 				permission: 'org:read',
 			})
 			if (!access.ok) return renderDenied(request, env, access)
-			return withLastUsedOrg(
+			return await renderAppPage({
 				request,
-				access.org.slug,
-				await renderAppPage({
-					request,
-					env,
-					title: 'Settings',
-					loaderData: {
-						orgSettings: await loadOrgSettingsData({
-							env,
-							user,
-							org: access.org,
-						}),
-					},
-				}),
-			)
+				env,
+				title: 'Settings',
+				loaderData: {
+					orgSettings: await loadOrgSettingsData({
+						env,
+						user,
+						org: access.org,
+					}),
+				},
+			})
 		},
 	} satisfies Action<typeof routes.orgSettings>
 }
