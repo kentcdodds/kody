@@ -2,8 +2,9 @@
  * The package Collaborators tab (`/@owner/<kody-id>/collaborators`): who holds
  * a grant on one package and which teams and org members a manager can still
  * add. Changes go through `packageCollaboratorSet` / `packageCollaboratorRemove`,
- * which only add teams and members of the owning org; inviting people from
- * outside the org is not offered here.
+ * which only add teams and members of the owning org. A personal org has no
+ * members, so there the tab invites people instead, through `inviteCreate`
+ * (`kind: "grant"`) and `inviteRevoke`.
  */
 import {
 	grantPresets,
@@ -47,6 +48,17 @@ export type PackageCollaboratorView = {
 	createdAt: string
 }
 
+/** A pending grant invite on the package (personal orgs only). */
+export type PackageCollaboratorInviteView = {
+	id: string
+	inviteeEmail: string | null
+	inviteeUsername: string | null
+	/** Null for an advanced invite with an explicit permission list. */
+	preset: PackageCollaboratorPreset | null
+	expiresAt: string
+	createdAt: string
+}
+
 export type PackageCollaboratorTeamOption = {
 	id: string
 	slug: string
@@ -65,6 +77,8 @@ export type PackageCollaboratorsView = {
 	package: { id: string; kodyId: string; name: string }
 	org: { slug: string; personal: boolean }
 	collaborators: Array<PackageCollaboratorView>
+	/** Pending grant invites on this package; always empty in a team org. */
+	invites: Array<PackageCollaboratorInviteView>
 	/** Teams and members not already holding a grant on this package. */
 	options: {
 		teams: Array<PackageCollaboratorTeamOption>
@@ -72,10 +86,24 @@ export type PackageCollaboratorsView = {
 	}
 }
 
+/** Shown once, right after an invite is created. */
+export type PackageCollaboratorInviteCreated = {
+	expiresAt: string
+	inviteeLabel: string
+	preset: PackageCollaboratorPreset
+	prompt: string
+}
+
+export type PackageCollaboratorsWriteResult = PackageCollaboratorsView & {
+	invite?: PackageCollaboratorInviteCreated
+}
+
 /**
  * POST body for `communityPackageCollaboratorsApiPost`; the response is the
- * updated `PackageCollaboratorsView`. `grant` adds a team or org member, or
- * changes the preset of one who already holds a grant.
+ * updated `PackageCollaboratorsView` (`PackageCollaboratorsWriteResult` after
+ * an invite). `grant` adds a team or org member, or changes the preset of one
+ * who already holds a grant. `invite` and `revoke-invite` are personal-org
+ * only.
  */
 export type PackageCollaboratorsChange =
 	| {
@@ -85,6 +113,46 @@ export type PackageCollaboratorsChange =
 			preset: PackageCollaboratorPreset
 	  }
 	| { intent: 'revoke'; grantId: string }
+	| { intent: 'invite'; invitee: string; preset: PackageCollaboratorPreset }
+	| { intent: 'revoke-invite'; inviteId: string }
+
+/** An email address, or a username with or without its leading `@`. */
+export function readPackageCollaboratorInvitee(
+	value: string,
+): { email: string } | { username: string } {
+	const trimmed = value.trim()
+	if (/^[^@\s]+@[^@\s]+$/.test(trimmed)) return { email: trimmed }
+	return { username: trimmed.replace(/^@/, '') }
+}
+
+export function packageCollaboratorInviteeLabel(invite: {
+	inviteeEmail: string | null
+	inviteeUsername: string | null
+}) {
+	if (invite.inviteeEmail) return invite.inviteeEmail
+	return invite.inviteeUsername ? `@${invite.inviteeUsername}` : 'Invite'
+}
+
+/**
+ * What each preset means for someone invited to a personal package, in the
+ * words the invite form shows.
+ */
+export function packageCollaboratorInvitePresetExplanation(
+	preset: PackageCollaboratorPreset,
+) {
+	switch (preset) {
+		case 'use':
+			return 'Run it and read the source. They cannot change it.'
+		case 'contribute':
+			return 'Run it and update it from their own Kody.'
+		case 'manage':
+			return 'Run it and update it from their own Kody, plus publish, delete, and choose who else has access.'
+		default: {
+			const exhaustive: never = preset
+			return exhaustive
+		}
+	}
+}
 
 export function packageCollaboratorPresetLabel(
 	preset: PackageCollaboratorPreset,

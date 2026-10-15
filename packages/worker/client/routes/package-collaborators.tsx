@@ -25,6 +25,7 @@ import {
 	type PackageCollaboratorsChange,
 	type PackageCollaboratorsLoaderData,
 	type PackageCollaboratorsView,
+	type PackageCollaboratorsWriteResult,
 	type PackageCollaboratorView,
 	packageCollaboratorPresetDescription,
 	packageCollaboratorPresetLabel,
@@ -46,6 +47,7 @@ import {
 	renderShellStatus,
 } from './community-detail-sections.tsx'
 import { loadPackageCollaboratorsPage } from './package-collaborators-data.ts'
+import { createPackageCollaboratorInvites } from './package-collaborators-invites.tsx'
 import {
 	collaboratorDetail,
 	collaboratorName,
@@ -114,6 +116,7 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 		teamPreset = 'use'
 		memberPreset = 'use'
 		removeChecks.clear()
+		invites.reset()
 	}
 
 	function removeCheckFor(key: string) {
@@ -124,12 +127,19 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 		return created
 	}
 
+	const invites = createPackageCollaboratorInvites(handle, {
+		postChange: (key, change, success) => postChange(key, change, success),
+		isBusy: () => busy !== null,
+		busyKey: () => busy,
+		removeCheckFor,
+	})
+
 	async function postChange(
 		key: ChangeKey,
 		change: PackageCollaboratorsChange,
 		success: string,
-	) {
-		if (busy) return
+	): Promise<PackageCollaboratorsWriteResult | null> {
+		if (busy) return null
 		busy = key
 		message = null
 		handle.update()
@@ -147,14 +157,14 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 				},
 			)
 			const payload = (await response.json().catch(() => null)) as
-				| PackageCollaboratorsView
+				| PackageCollaboratorsWriteResult
 				| { ok: false; error?: string }
 				| null
 			if (response.status === 401) {
 				window.location.assign(
 					`/login?redirectTo=${encodeURIComponent(window.location.pathname)}`,
 				)
-				return
+				return null
 			}
 			if (!response.ok || !payload?.ok) {
 				throw new Error(
@@ -162,15 +172,18 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 						'Kody could not save that change.',
 				)
 			}
+			const { invite: _invite, ...view } = payload
 			writes += 1
-			written = { view: payload, writes }
+			written = { view, writes }
 			message = success
 			messageTone = 'info'
 			pageData.reload(handle, readCurrentRouterHref(handle))
+			return payload
 		} catch (error) {
 			message =
 				error instanceof Error ? error.message : 'Kody could not save that.'
 			messageTone = 'error'
+			return null
 		} finally {
 			busy = null
 			handle.update()
@@ -576,7 +589,7 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 							title="Who has access"
 							description={
 								view.org.personal
-									? 'You always have full access to your own packages. Teams and members belong to organizations, so a personal package has no one to add here.'
+									? 'You always have full access to your own packages. People you invite show up here once they accept.'
 									: 'Organization owners always have full access.'
 							}
 						>
@@ -593,6 +606,7 @@ export function PackageCollaboratorsRoute(handle: Handle) {
 								</ul>
 							)}
 						</AccountManagementPanel>
+						{view.org.personal ? invites.render(view) : null}
 						{view.org.personal ? null : renderAddTeam(view)}
 						{view.org.personal ? null : renderAddMember(view)}
 					</>

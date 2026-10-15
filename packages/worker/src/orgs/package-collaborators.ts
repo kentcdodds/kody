@@ -4,6 +4,7 @@ import { listOrgMembers } from '#worker/orgs/org-members-list.ts'
 import { listTeams } from '#worker/orgs/org-teams-list.ts'
 import {
 	isPackageCollaboratorPreset,
+	type PackageCollaboratorInviteView,
 	type PackageCollaboratorKind,
 	type PackageCollaboratorMemberOption,
 	type PackageCollaboratorTeamOption,
@@ -47,6 +48,44 @@ async function loadUsers(db: D1Database, userIds: ReadonlyArray<string>) {
 		.bind(...userIds)
 		.all<UserRow>()
 	return new Map((rows.results ?? []).map((row) => [row.user_id, row]))
+}
+
+/** Pending, unexpired grant invites on one package. Callers authorize first. */
+export async function listPendingPackageInvites(input: {
+	db: D1Database
+	orgId: string
+	packageId: string
+	now?: string
+}): Promise<Array<PackageCollaboratorInviteView>> {
+	const rows = await input.db
+		.prepare(
+			`SELECT id, preset, invitee_email, invitee_username, expires_at, created_at
+			 FROM invites
+			 WHERE org_id = ?
+			   AND kind = 'grant'
+			   AND resource_type = 'package'
+			   AND resource_id = ?
+			   AND status = 'pending'
+			   AND expires_at > ?
+			 ORDER BY created_at DESC, id ASC`,
+		)
+		.bind(input.orgId, input.packageId, input.now ?? new Date().toISOString())
+		.all<{
+			id: string
+			preset: string | null
+			invitee_email: string | null
+			invitee_username: string | null
+			expires_at: string
+			created_at: string
+		}>()
+	return (rows.results ?? []).map((row) => ({
+		id: row.id,
+		inviteeEmail: row.invitee_email,
+		inviteeUsername: row.invitee_username,
+		preset: readPreset(row.preset),
+		expiresAt: row.expires_at,
+		createdAt: row.created_at,
+	}))
 }
 
 /**

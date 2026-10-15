@@ -98,6 +98,9 @@ INSERT INTO saved_packages (
 	).toHaveValue('contribute')
 
 	await expect(page.getByTestId('package-collaborators-invite')).toHaveCount(0)
+	await expect(
+		page.getByTestId('package-collaborators-team-callout'),
+	).toHaveCount(0)
 
 	await memberRow.getByRole('button', { name: 'Remove' }).click()
 	await memberRow.getByRole('button', { name: 'Confirm remove' }).click()
@@ -106,4 +109,108 @@ INSERT INTO saved_packages (
 	await expect(
 		addMember.getByRole('combobox', { name: 'Member', exact: true }),
 	).toContainText(`@${member.username}`)
+})
+
+test('a personal org owner invites an outside collaborator, revokes the invite, and removes access', async ({
+	page,
+	seedE2eUser,
+	login,
+}) => {
+	test.setTimeout(process.env.CI ? 120_000 : 90_000)
+	const runId = Date.now()
+	const owner = await seedE2eUser({
+		email: `solo-owner-${runId}@example.com`,
+		username: `solo-owner-${runId}`,
+		password: 'solo-owner-password',
+	})
+	const friend = await seedE2eUser({
+		email: `solo-friend-${runId}@example.com`,
+		username: `solo-friend-${runId}`,
+		password: 'solo-friend-password',
+	})
+	const ownerId = seedStableUserIdFromEmail(owner.email)
+	const friendId = seedStableUserIdFromEmail(friend.email)
+	const packageId = `pkg-solo-${runId}`
+	const packageName = `solo-pkg-${runId}`
+	const now = new Date().toISOString()
+	executeE2eD1Command(`
+INSERT INTO saved_packages (
+	id, user_id, name, kody_id, description, tags_json, search_text,
+	source_id, has_app, hidden, is_private
+) VALUES (
+	${sqlString(packageId)}, ${sqlString(ownerId)}, ${sqlString(packageName)},
+	${sqlString(packageName)}, 'E2E personal package', '[]', ${sqlString(packageName)},
+	${sqlString(`src-solo-${runId}`)}, 0, 0, 1
+);
+`)
+
+	await login({ email: owner.email, password: owner.password, mode: 'login' })
+	await page.goto(`/@${owner.username}/${packageName}/collaborators`)
+	await waitForClientHydration(page)
+	await expect(page.getByTestId('package-collaborators-empty')).toBeVisible()
+	await expect(
+		page.getByTestId('package-collaborators-add-member'),
+	).toHaveCount(0)
+
+	const callout = page.getByTestId('package-collaborators-team-callout')
+	await expect(
+		callout.getByRole('link', { name: 'Create a team organization' }),
+	).toHaveAttribute('href', '/account/organizations/new')
+	await expect(
+		callout.getByRole('link', { name: 'Learn more' }),
+	).toHaveAttribute('href', '/docs/organizations')
+
+	const form = page.getByTestId('package-collaborators-invite')
+	await expect(form).toContainText('They cannot change it.')
+	await form
+		.getByRole('textbox', { name: 'Email or username' })
+		.fill(`@${friend.username}`)
+	await form.getByRole('radio', { name: /Contribute/ }).check()
+	await form.getByRole('button', { name: 'Create invite' }).click()
+
+	const ready = page.getByTestId('package-collaborators-invite-ready')
+	await expect(ready).toContainText(`Invite ready for @${friend.username}`)
+	await expect(
+		ready.getByRole('button', { name: 'Copy invite message' }),
+	).toBeVisible()
+	const prompt = page.getByTestId('package-collaborators-prompt')
+	await expect(prompt).toBeHidden()
+	await ready.getByText('Details', { exact: true }).click()
+	await expect(prompt).toContainText('Call inviteAccept with this token:')
+
+	const invites = page.getByTestId('package-collaborator-invite')
+	const pending = invites.filter({ hasText: `@${friend.username}` })
+	await expect(pending).toContainText('Contribute')
+	await page.reload()
+	await waitForClientHydration(page)
+	await expect(pending).toBeVisible()
+	await expect(ready).toHaveCount(0)
+
+	await pending.getByRole('button', { name: 'Revoke' }).click()
+	await pending.getByRole('button', { name: 'Confirm revoke' }).click()
+	await expect(invites).toHaveCount(0)
+
+	executeE2eD1Command(`
+INSERT INTO grants (
+	id, org_id, resource_type, resource_id, subject_type, subject_id,
+	preset, created_by_user_id, created_at, updated_at
+) VALUES (
+	${sqlString(`grant-solo-${runId}`)}, ${sqlString(ownerId)}, 'package', ${sqlString(packageId)},
+	'user', ${sqlString(friendId)}, 'use', ${sqlString(ownerId)}, ${sqlString(now)}, ${sqlString(now)}
+);
+INSERT INTO grant_permissions (grant_id, permission) VALUES
+	(${sqlString(`grant-solo-${runId}`)}, 'package:read'),
+	(${sqlString(`grant-solo-${runId}`)}, 'package:execute');
+`)
+	await page.reload()
+	await waitForClientHydration(page)
+	const row = page
+		.getByTestId('package-collaborator')
+		.filter({ hasText: `@${friend.username}` })
+	await expect(row).toContainText('Outside collaborator')
+	await expect(row).toContainText('Use')
+	await row.getByRole('button', { name: 'Remove' }).click()
+	await row.getByRole('button', { name: 'Confirm remove' }).click()
+	await expect(row).toHaveCount(0)
+	await expect(page.getByTestId('package-collaborators-empty')).toBeVisible()
 })
