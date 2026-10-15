@@ -157,8 +157,11 @@ async function fetchWithHeadersTimeout(
 ): Promise<Response> {
 	const controller = new AbortController()
 	const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+	const signal = init.signal
+		? AbortSignal.any([controller.signal, init.signal])
+		: controller.signal
 	try {
-		const response = await fetch(url, { ...init, signal: controller.signal })
+		const response = await fetch(url, { ...init, signal })
 		clearTimeout(timeoutId)
 		return response
 	} catch (error) {
@@ -412,11 +415,12 @@ async function proxyArtifactsReceivePack(input: {
 				const waited = await waitOutReceivePackBusy({
 					deadlineMs,
 					backoffMs: artifactsReceivePackBusyBackoffMs,
-					send: async () =>
+					send: async (_attempt, signal) =>
 						fetchWithHeadersTimeout(upstreamUrl, {
 							method: 'POST',
 							headers,
 							body: packBody as BodyInit,
+							signal,
 						}),
 					isBusy: (response, bodyText) =>
 						isArtifactsGitReceivePackBusyResponse({

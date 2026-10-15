@@ -447,6 +447,25 @@ test('oversized packs get 413 and a full queue gets a retryable 503', async () =
 	expect((await holding).status).toBe(200)
 })
 
+test('Artifacts sends never follow redirects and busy attempts are aborted before retry', async () => {
+	const { store } = createMemoryStore()
+	const inits: Array<RequestInit> = []
+	const queue = new RepoPushQueue({
+		store,
+		sleep: async () => {},
+		fetch: async (_url, init) => {
+			inits.push(init)
+			return inits.length === 1
+				? new Response('0025\x03artifacts_git_receive_pack_busy\n')
+				: new Response('000eunpack ok\n0000')
+		},
+	})
+	const response = await queue.handle(pushRequest('pack'))
+	expect(response.status).toBe(200)
+	expect(inits.map((init) => init.redirect)).toEqual(['manual', 'manual'])
+	expect(inits.map((init) => init.signal?.aborted)).toEqual([true, false])
+})
+
 test('the token is only forwarded to the Artifacts host', async () => {
 	const { store } = createMemoryStore()
 	let calls = 0

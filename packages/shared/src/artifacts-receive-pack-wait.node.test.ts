@@ -283,6 +283,47 @@ test('sniff preserves large non-busy bodies byte for byte', async () => {
 	}
 })
 
+test('a stalled 2xx result is passed through after the sniff timeout', async () => {
+	let controller!: ReadableStreamDefaultController<Uint8Array>
+	const stream = new ReadableStream<Uint8Array>({
+		start(c) {
+			controller = c
+		},
+	})
+	const sniffed = await sniffInBandReceivePackBusy(
+		new Response(stream, { status: 200 }),
+		{ timeoutMs: 5 },
+	)
+	expect(sniffed.busy).toBe(false)
+	const late = sideband(1, '000eunpack ok\n0000')
+	controller.enqueue(late)
+	controller.close()
+	if (!sniffed.busy) {
+		expect(new Uint8Array(await sniffed.response.arrayBuffer())).toEqual(late)
+	}
+})
+
+test('busy attempts are aborted before the retry is sent', async () => {
+	const signals: Array<AbortSignal> = []
+	const result = await waitOutReceivePackBusy({
+		deadlineMs: Date.now() + 10_000,
+		backoffMs: [1],
+		sleep: async () => {
+			expect(signals.at(-1)?.aborted).toBe(true)
+		},
+		send: async (_attempt, signal) => {
+			signals.push(signal)
+			return signals.length < 3
+				? new Response(inBandBusyBody, { status: 200 })
+				: new Response('000eunpack ok\n0000', { status: 200 })
+		},
+		isBusy: () => false,
+		readBusyBody: async (response) => response.text(),
+	})
+	expect(result.kind).toBe('response')
+	expect(signals.map((signal) => signal.aborted)).toEqual([true, true, false])
+})
+
 test('full jitter backoff stays within the configured step', () => {
 	expect(computeReceivePackBusyBackoffMs(0, [100], () => 0)).toBe(0)
 	expect(computeReceivePackBusyBackoffMs(0, [100], () => 1)).toBe(100)

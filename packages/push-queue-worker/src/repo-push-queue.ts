@@ -393,10 +393,14 @@ export class RepoPushQueue {
 			sleep: this.#sleep,
 			now: this.#now,
 			random: this.#random,
-			send: async () => {
+			send: async (_attempt, attemptSignal) => {
 				stats.attempts += 1
 				stats.firstSendAt ??= this.#now()
-				return this.#send(entry, loaded, signal)
+				return this.#send(
+					entry,
+					loaded,
+					AbortSignal.any([signal, attemptSignal]),
+				)
 			},
 			isBusy: (response, bodyText) =>
 				isArtifactsGitReceivePackBusyResponse({
@@ -475,6 +479,8 @@ export class RepoPushQueue {
 			headers: entry.headers,
 			body,
 			signal,
+			// The validated upstream is the only host that may see the token.
+			redirect: 'manual',
 			duplex: 'half',
 		} as RequestInit)
 	}

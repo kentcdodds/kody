@@ -230,13 +230,18 @@ export async function readReceivePackBodyWithLimit(
 	return merged
 }
 
+/** Floor for how long a 2xx result may take to show its first pkt-line. */
+export const receivePackInBandSniffMinTimeoutMs = 30_000
+
 /**
  * Call `send` until it returns a non-busy response or the wait budget expires.
  * Busy response bodies are consumed via `readBusyBody` before the next attempt.
+ * Each attempt gets its own signal, aborted once that attempt is judged busy,
+ * so a busy attempt's upload never overlaps the retry.
  */
 export async function waitOutReceivePackBusy(input: {
 	deadlineMs: number
-	send: (attempt: number) => Promise<Response>
+	send: (attempt: number, signal: AbortSignal) => Promise<Response>
 	isBusy: (response: Response, bodyText: string) => boolean
 	readBusyBody: (response: Response) => Promise<string>
 	backoffMs?: ReadonlyArray<number>
@@ -256,11 +261,17 @@ export async function waitOutReceivePackBusy(input: {
 		if (now() >= input.deadlineMs) {
 			return { kind: 'timeout' }
 		}
-		const response = await input.send(attempt)
+		const attemptController = new AbortController()
+		const response = await input.send(attempt, attemptController.signal)
 		if (response.ok) {
 			// Artifacts reports lock contention in-band: HTTP 200 whose
 			// receive-pack result is a sideband fatal (band 3) busy packet.
-			const sniffed = await sniffInBandReceivePackBusy(response)
+			const sniffed = await sniffInBandReceivePackBusy(response, {
+				timeoutMs: Math.max(
+					input.deadlineMs - now(),
+					receivePackInBandSniffMinTimeoutMs,
+				),
+			})
 			if (!sniffed.busy) {
 				return { kind: 'response', response: sniffed.response }
 			}
@@ -277,6 +288,7 @@ export async function waitOutReceivePackBusy(input: {
 				}
 			}
 		}
+		attemptController.abort()
 		const remaining = input.deadlineMs - now()
 		if (remaining <= 0) {
 			return { kind: 'timeout' }
@@ -424,27 +436,52 @@ function concatBytes(chunks: Array<Uint8Array>, total: number) {
 /**
  * Inspect the head of a 2xx receive-pack result for an in-band busy packet.
  * Non-busy results are returned with an equivalent body (sniffed prefix plus
- * the untouched remainder of the upstream stream).
+ * the untouched remainder of the upstream stream). When the first decisive
+ * packet does not arrive within `timeoutMs`, the result is passed through as
+ * not busy so a stalled upstream never holds the caller's FIFO turn.
  */
 export async function sniffInBandReceivePackBusy(
 	response: Response,
-	limitBytes = receivePackInBandSniffLimitBytes,
+	options: { limitBytes?: number; timeoutMs?: number } = {},
 ): Promise<{ busy: true } | { busy: false; response: Response }> {
 	if (!response.body) return { busy: false, response }
+	const limitBytes = options.limitBytes ?? receivePackInBandSniffLimitBytes
 	const reader = response.body.getReader()
 	const chunks: Array<Uint8Array> = []
 	let total = 0
 	let done = false
 	let verdict: PktLineScan = { kind: 'need-more' }
-	while (verdict.kind === 'need-more' && total < limitBytes) {
-		const result = await reader.read()
-		if (result.done) {
-			done = true
-			break
+	let timer: ReturnType<typeof setTimeout> | undefined
+	const timedOut =
+		options.timeoutMs === undefined
+			? null
+			: new Promise<'timeout'>((resolve) => {
+					timer = setTimeout(
+						() => resolve('timeout'),
+						Math.max(0, options.timeoutMs ?? 0),
+					)
+				})
+	let pendingRead: Promise<ReadableStreamReadResult<Uint8Array>> | null = null
+	try {
+		while (verdict.kind === 'need-more' && total < limitBytes) {
+			const read = reader.read()
+			const result = timedOut
+				? await Promise.race([read, timedOut])
+				: await read
+			if (result === 'timeout') {
+				pendingRead = read
+				break
+			}
+			if (result.done) {
+				done = true
+				break
+			}
+			chunks.push(result.value)
+			total += result.value.byteLength
+			verdict = scanReceivePackResultForBusy(concatBytes(chunks, total))
 		}
-		chunks.push(result.value)
-		total += result.value.byteLength
-		verdict = scanReceivePackResultForBusy(concatBytes(chunks, total))
+	} finally {
+		if (timer !== undefined) clearTimeout(timer)
 	}
 	if (verdict.kind === 'busy') {
 		try {
@@ -461,7 +498,9 @@ export async function sniffInBandReceivePackBusy(
 			if (done) controller.close()
 		},
 		async pull(controller) {
-			const result = await reader.read()
+			const read = pendingRead ?? reader.read()
+			pendingRead = null
+			const result = await read
 			if (result.done) {
 				controller.close()
 				return
