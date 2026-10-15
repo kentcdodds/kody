@@ -8,7 +8,12 @@ import {
 	type GrantPreset,
 } from '@kody-internal/shared/grant-presets.ts'
 import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { type OrgRole } from '@kody-internal/shared/request-context.ts'
+import {
+	compileAccessForActor,
+	resourceGrantKey,
+} from '#worker/authorization/access-compile.ts'
 import { isPersonalOrg } from '#worker/orgs/is-personal-org.ts'
 import { isOrgActive } from '#worker/orgs/repo.ts'
 import { addOrgMember, addTeamMember, upsertGrant } from './access-writes.ts'
@@ -87,42 +92,62 @@ async function claimInviteLinkUse(input: {
 }
 
 /**
- * Membership and team links come from people who manage the org, so the
- * creator must still be a member. A package link may come from an outside
- * collaborator with Manage on that package, so a live grant on it also counts.
+ * A link keeps working only while its creator could still make it. A
+ * membership link needs the creator to still be a member (its original rule).
+ * A team link needs team:write and member:write. A package link needs Manage
+ * on that package, which an outside collaborator can hold through a grant.
  */
-async function inviteLinkCreatorStillValid(
+export async function inviteLinkCreatorStillValid(
 	db: D1Database,
-	link: StoredInviteLink,
+	link: InviteLinkCreatorCheck,
 ) {
-	const member = await db
-		.prepare(
-			`SELECT role FROM org_memberships
-			 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
-		)
-		.bind(link.orgId, link.createdByUserId)
-		.first<{ role: string }>()
-	if (member) return true
-	if (link.target.kind !== 'resource') return false
-	const grant = await db
-		.prepare(
-			`SELECT id FROM grants
-			 WHERE org_id = ?
-			   AND resource_type = ?
-			   AND resource_id = ?
-			   AND subject_type = 'user'
-			   AND subject_id = ?
-			   AND deleted_at IS NULL
-			 LIMIT 1`,
-		)
-		.bind(
-			link.orgId,
-			link.target.resourceType,
-			link.target.resourceId,
-			link.createdByUserId,
-		)
-		.first<{ id: string }>()
-	return Boolean(grant)
+	const role = await liveMembershipRole(db, link.orgId, link.createdByUserId)
+	const target = link.target
+	switch (target.kind) {
+		case 'membership':
+			return role != null
+		case 'team': {
+			if (role == null) return false
+			const access = await creatorAccess(db, link, role)
+			return (
+				access.isOwner ||
+				(access.orgPermissions.has('team:write') &&
+					access.orgPermissions.has('member:write'))
+			)
+		}
+		case 'resource': {
+			const access = await creatorAccess(db, link, role)
+			if (access.isOwner) return true
+			if (access.orgPermissions.has('package:manage_access')) return true
+			return (
+				access.resourcePermissions
+					.get(resourceGrantKey(target.resourceType, target.resourceId))
+					?.has('package:manage_access') ?? false
+			)
+		}
+		default: {
+			const exhaustive: never = target
+			throw new Error(`Unknown invite link target: ${String(exhaustive)}`)
+		}
+	}
+}
+
+type InviteLinkCreatorCheck = Pick<
+	StoredInviteLink,
+	'orgId' | 'createdByUserId' | 'target'
+>
+
+async function creatorAccess(
+	db: D1Database,
+	link: InviteLinkCreatorCheck,
+	role: OrgRole | null,
+) {
+	return await compileAccessForActor({
+		db,
+		orgId: ownerIdFromStored(link.orgId),
+		userId: link.createdByUserId,
+		role,
+	})
 }
 
 function seatRole(role: OrgRole) {
@@ -457,6 +482,36 @@ async function claimSingleUse(
 	return null
 }
 
+/**
+ * Gives back a claimed use when the access write after it fails, so the
+ * person can retry and a one-use link is not spent on nothing.
+ */
+async function withClaimReleasedOnFailure<T>(
+	input: RedeemInput<InviteLinkTarget>,
+	write: () => Promise<T>,
+): Promise<T> {
+	try {
+		return await write()
+	} catch (error) {
+		await input.db.batch([
+			input.db
+				.prepare(
+					`DELETE FROM org_invite_link_redemptions
+					 WHERE link_id = ? AND user_id = ?`,
+				)
+				.bind(input.link.id, input.user.userId),
+			input.db
+				.prepare(
+					`UPDATE org_invite_links
+					 SET use_count = MAX(use_count - 1, 0)
+					 WHERE id = ?`,
+				)
+				.bind(input.link.id),
+		])
+		throw error
+	}
+}
+
 async function redeemTeamLink(
 	input: RedeemInput<Extract<InviteLinkTarget, { kind: 'team' }>>,
 ): Promise<RedeemInviteLinkResult> {
@@ -474,28 +529,30 @@ async function redeemTeamLink(
 	}
 	const claimBlock = await claimSingleUse(input)
 	if (claimBlock) return claimBlock
-	if (!role) {
-		await addOrgMember({
+	await withClaimReleasedOnFailure(input, async () => {
+		if (!role) {
+			await addOrgMember({
+				db,
+				orgId: link.orgId,
+				userId: user.userId,
+				role: 'member',
+				invitedByUserId: link.createdByUserId,
+				audit: input.audit,
+			})
+			await syncSeatsAfterMembershipChange({
+				db,
+				env: input.env,
+				orgId: link.orgId,
+			})
+		}
+		await addTeamMember({
 			db,
 			orgId: link.orgId,
+			teamId: target.teamId,
 			userId: user.userId,
-			role: 'member',
-			invitedByUserId: link.createdByUserId,
+			addedByUserId: link.createdByUserId,
 			audit: input.audit,
 		})
-		await syncSeatsAfterMembershipChange({
-			db,
-			env: input.env,
-			orgId: link.orgId,
-		})
-	}
-	await addTeamMember({
-		db,
-		orgId: link.orgId,
-		teamId: target.teamId,
-		userId: user.userId,
-		addedByUserId: link.createdByUserId,
-		audit: input.audit,
 	})
 	await recordJoined(input, {
 		kind: 'team',
@@ -527,18 +584,20 @@ async function redeemResourceLink(
 	if (!planned) return success(true)
 	const claimBlock = await claimSingleUse(input)
 	if (claimBlock) return claimBlock
-	await upsertGrant({
-		db,
-		orgId: link.orgId,
-		resourceType: target.resourceType,
-		resourceId: target.resourceId,
-		family: 'package',
-		subject: { type: 'user', id: user.userId },
-		preset: planned.preset,
-		permissions: planned.permissions,
-		createdByUserId: link.createdByUserId,
-		audit: input.audit,
-	})
+	await withClaimReleasedOnFailure(input, () =>
+		upsertGrant({
+			db,
+			orgId: link.orgId,
+			resourceType: target.resourceType,
+			resourceId: target.resourceId,
+			family: 'package',
+			subject: { type: 'user', id: user.userId },
+			preset: planned.preset,
+			permissions: planned.permissions,
+			createdByUserId: link.createdByUserId,
+			audit: input.audit,
+		}),
+	)
 	await recordJoined(input, {
 		kind: 'resource',
 		resourceType: target.resourceType,

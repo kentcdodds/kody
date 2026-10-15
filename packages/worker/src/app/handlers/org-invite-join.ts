@@ -20,6 +20,7 @@ import {
 import {
 	hasRedeemedInviteLink,
 	inviteLinkAlreadySatisfied,
+	inviteLinkCreatorStillValid,
 	inviteLinkTargetBlock,
 	type InviteLinkTargetBlockReason,
 	redeemOrgInviteLink,
@@ -201,6 +202,15 @@ async function loadJoinPageData(input: {
 			? await settledBlockedLinkForViewer(db, link, block, viewerId)
 			: null
 		if (settled !== 'satisfied') return failure(settled ?? block)
+	}
+	if (
+		link.target.kind !== 'membership' &&
+		!(await inviteLinkCreatorStillValid(db, link))
+	) {
+		if (viewerId) {
+			await clearInviteLinkPending({ db, linkId: link.id, userId: viewerId })
+		}
+		return failure('inviter_gone')
 	}
 	const org = await getOrgById(db, link.orgId)
 	if (!org) return failure('invalid')

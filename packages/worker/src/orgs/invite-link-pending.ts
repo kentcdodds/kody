@@ -3,6 +3,7 @@
  * They wait on the person's Organizations page next to addressed invites.
  */
 import { andActiveOrgSql } from '#worker/soft-delete/live-sql.ts'
+import { inviteLinkCreatorStillValid } from './invite-link-redeem.ts'
 import {
 	linkColumns,
 	rowDomainsBlocked,
@@ -86,7 +87,8 @@ export async function listPendingInviteLinksForPerson(
 ): Promise<Array<PendingInviteLinkSummary>> {
 	const rows = await db
 		.prepare(
-			`SELECT l.id AS id, l.kind AS kind, l.role AS role, l.team_id AS team_id,
+			`SELECT l.id AS id, l.org_id AS org_id,
+			        l.created_by_user_id AS created_by_user_id, l.kind AS kind, l.role AS role, l.team_id AS team_id,
 			        l.resource_type AS resource_type, l.resource_id AS resource_id,
 			        l.preset AS preset, l.expires_at AS expires_at,
 			        o.slug AS org_slug, o.display_name AS org_display_name,
@@ -117,6 +119,8 @@ export async function listPendingInviteLinksForPerson(
 			Pick<
 				InviteLinkRow,
 				| 'id'
+				| 'org_id'
+				| 'created_by_user_id'
 				| 'kind'
 				| 'role'
 				| 'team_id'
@@ -133,11 +137,23 @@ export async function listPendingInviteLinksForPerson(
 				package_kody_id: string | null
 			}
 		>()
-	return (rows.results ?? []).flatMap((row) => {
-		const target = rowTarget(row)
-		if (!target) return []
-		if (target.kind === 'team' && !row.team_name) return []
-		if (target.kind === 'resource' && !row.package_name) return []
+	const listed = await Promise.all(
+		(rows.results ?? []).map(async (row) => {
+			const target = rowTarget(row)
+			if (!target) return null
+			if (target.kind === 'team' && !row.team_name) return null
+			if (target.kind === 'resource' && !row.package_name) return null
+			const creatorValid = await inviteLinkCreatorStillValid(db, {
+				orgId: row.org_id,
+				createdByUserId: row.created_by_user_id,
+				target,
+			})
+			return creatorValid ? { row, target } : null
+		}),
+	)
+	return listed.flatMap((entry) => {
+		if (!entry) return []
+		const { row, target } = entry
 		return [
 			{
 				linkId: row.id,

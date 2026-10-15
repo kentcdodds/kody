@@ -476,3 +476,96 @@ test('opened links wait for the person until they stop working', async () => {
 		).map((row) => row.linkId),
 	).toEqual([pkg.id])
 })
+
+function demoteOwnerToMember() {
+	sqlite
+		.prepare(
+			`UPDATE org_memberships SET role = 'member' WHERE org_id = ? AND user_id = ?`,
+		)
+		.run(teamOrgId, owner.personId)
+}
+
+test('links stop working when their creator can no longer share', async () => {
+	const team = await createLink(teamOrgId, {
+		kind: 'team',
+		teamId: 'team-design',
+	})
+	const pkg = await createLink(teamOrgId, {
+		kind: 'resource',
+		resourceType: 'package',
+		resourceId: 'pkg-team',
+		preset: 'use',
+	})
+	for (const linkId of [team.id, pkg.id]) {
+		await recordInviteLinkPending({ db, linkId, userId: joiner.personId })
+	}
+	demoteOwnerToMember()
+
+	expect(await redeemAsJoiner(team.tokenHash)).toMatchObject({
+		ok: false,
+		reason: 'inviter_gone',
+	})
+	expect(await redeemAsJoiner(pkg.tokenHash)).toMatchObject({
+		ok: false,
+		reason: 'inviter_gone',
+	})
+	expect(
+		await listPendingInviteLinksForPerson(db, {
+			userId: joiner.personId,
+			now: new Date().toISOString(),
+		}),
+	).toEqual([])
+
+	await upsertGrant({
+		db,
+		orgId: teamOrgId,
+		resourceType: 'package',
+		resourceId: 'pkg-team',
+		family: 'package',
+		subject: { type: 'user', id: owner.personId },
+		preset: 'manage',
+		permissions: null,
+		createdByUserId: owner.personId,
+		audit: audit(),
+	})
+	expect(
+		(
+			await listPendingInviteLinksForPerson(db, {
+				userId: joiner.personId,
+				now: new Date().toISOString(),
+			})
+		).map((row) => row.linkId),
+	).toEqual([pkg.id])
+	expect(await redeemAsJoiner(pkg.tokenHash)).toMatchObject({ ok: true })
+	expect(await redeemAsJoiner(team.tokenHash)).toMatchObject({
+		ok: false,
+		reason: 'inviter_gone',
+	})
+})
+
+test('a failed access write gives the link use back', async () => {
+	const { tokenHash } = await createLink(
+		teamOrgId,
+		{
+			kind: 'resource',
+			resourceType: 'package',
+			resourceId: 'pkg-team',
+			preset: 'use',
+		},
+		1,
+	)
+	sqlite.exec(
+		`CREATE TRIGGER fail_grants BEFORE INSERT ON grants
+		 BEGIN SELECT RAISE(ABORT, 'grant write failed'); END`,
+	)
+	await expect(redeemAsJoiner(tokenHash)).rejects.toThrow(/grant write failed/)
+	expect((await getInviteLinkByTokenHash(db, tokenHash))?.useCount).toBe(0)
+	sqlite.exec(`DROP TRIGGER fail_grants`)
+	expect(await redeemAsJoiner(tokenHash)).toMatchObject({
+		ok: true,
+		alreadyMember: false,
+	})
+	expect(await joinerGrant(teamOrgId, 'pkg-team')).toMatchObject({
+		preset: 'use',
+	})
+})

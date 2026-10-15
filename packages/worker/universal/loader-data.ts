@@ -1402,6 +1402,7 @@ export type OrgInviteJoinLoaderData =
 				| 'org_inactive'
 				| 'personal_org'
 				| 'target_gone'
+				| 'inviter_gone'
 				| 'already_used'
 	  }
 
