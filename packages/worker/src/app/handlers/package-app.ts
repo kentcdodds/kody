@@ -96,6 +96,7 @@ async function handleTaggedPackageAppRequest(
 	const approvedPublishedCommit = await resolveInternetVisibleApprovedCommit({
 		env,
 		lookup: slugLookup,
+		requestUrl: request.url,
 	})
 	const serveAnonymously =
 		org && approvedPublishedCommit

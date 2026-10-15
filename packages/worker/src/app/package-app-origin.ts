@@ -568,7 +568,11 @@ async function redirectAppOriginToPackageAppOrigin(input: {
 	// visitor who cannot run the app as themselves goes there without a
 	// handoff and is served anonymously.
 	const internetVisible = Boolean(
-		await resolveInternetVisibleApprovedCommit({ env, lookup: slugLookup }),
+		await resolveInternetVisibleApprovedCommit({
+			env,
+			lookup: slugLookup,
+			requestUrl: request.url,
+		}),
 	)
 
 	const customHandoff = await buildCustomHostnameHandoffTarget({
@@ -705,6 +709,7 @@ async function serveInternetVisiblePackageApp(input: {
 	const approvedPublishedCommit = await resolveInternetVisibleApprovedCommit({
 		env: input.env,
 		lookup,
+		requestUrl: input.request.url,
 	})
 	if (!approvedPublishedCommit) return null
 	const response = await servePackageAppRequest({
