@@ -34,6 +34,7 @@ import {
 } from '#universal/styles/style-primitives.ts'
 import {
 	colors,
+	mq,
 	radius,
 	spacing,
 	typography,
@@ -298,17 +299,17 @@ export function createPackageCollaboratorInvites(
 				<span aria-hidden="true" mix={css(iconWellCss)}>
 					{renderIcon('users', { size: '1.25rem' })}
 				</span>
-				<div mix={css({ display: 'grid', gap: spacing.sm, minWidth: 0 })}>
+				<div mix={css(calloutBodyCss)}>
 					<p mix={css({ margin: 0, fontWeight: 650 })}>Working with a group?</p>
-					<p mix={css(mutedCopyCss)}>
+					<p mix={css(calloutCopyCss)}>
 						A team organization gives you members, teams, and seats, so you
 						share packages with everyone at once instead of one invite at a
 						time.
 					</p>
-					<div mix={css(accountActionsCss)}>
+					<div mix={css(calloutActionsCss)}>
 						<a
 							href={routes.accountOrganizationsNew.href()}
-							mix={css(getGhostButtonCss({ size: 'sm' }))}
+							mix={css(calloutButtonCss)}
 						>
 							{renderIcon('plus', { size: '1.05rem' })}
 							Create a team organization
@@ -400,5 +401,43 @@ const calloutCss = {
 	padding: spacing.md,
 	borderRadius: radius.card,
 	border: `1.5px dashed ${colors.border}`,
+	boxSizing: 'border-box' as const,
 	minWidth: 0,
+	maxWidth: '100%',
+	// Space above the next AccountManagementPanel border (Pending invites).
+	marginBottom: spacing.xl,
+	[mq.mobile]: {
+		flexDirection: 'column' as const,
+		alignItems: 'stretch',
+		gap: spacing.sm,
+	},
+}
+
+const calloutBodyCss = {
+	display: 'grid',
+	gap: spacing.sm,
+	minWidth: 0,
+	flex: '1 1 auto',
+	maxWidth: '100%',
+}
+
+const calloutCopyCss = {
+	...mutedCopyCss,
+	overflowWrap: 'anywhere' as const,
+	maxWidth: '100%',
+}
+
+const calloutActionsCss = {
+	...accountActionsCss,
+	minWidth: 0,
+	maxWidth: '100%',
+}
+
+const calloutButtonCss = {
+	...getGhostButtonCss({ size: 'sm' }),
+	maxWidth: '100%',
+	boxSizing: 'border-box' as const,
+	whiteSpace: 'normal' as const,
+	height: 'auto',
+	textAlign: 'center' as const,
 }
