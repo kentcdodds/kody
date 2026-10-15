@@ -78,12 +78,15 @@ is pending. Anything that fails a check stays pending for the owner, and the
 response's `self_publish_blocker` names the first failed check (`not_audited`
 and `audit_concerns` for the audit).
 
-`selfPublishPackage` then records the capability pin, supersedes an owner-path
-`went_public` request for the same package, enqueues one whose details carry
-`selfPublish: true` (refusing if a reused or concurrent unmarked request holds
-the pending slot), approves it through `approveWentPublicRequest` (the same
-checks as the owner's click), and writes one org audit event,
-`package.went_public.self_publish`.
+`selfPublishPackage` then records the capability pin (refusing if the package
+was published again since the audited commit), enqueues or reuses the one
+pending `went_public` request and marks it `selfPublish: true` in place,
+approves it through `approveWentPublicRequest` (the same checks as the owner's
+click), and writes one org audit event, `package.went_public.self_publish`. If
+the approval fails or throws, the mark is cleared in place, so the request stays
+pending for the owner and an owner Approve never reads as self-publish;
+`packageUpdate` then reports `self_publish_error` with the owner's
+`approval_url`.
 
 The credential door (`resolveCredential`) refuses every credential to a package
 that is internet-visible and whose latest approved `went_public` request is a

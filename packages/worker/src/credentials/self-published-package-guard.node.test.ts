@@ -11,7 +11,12 @@ import { saveSecret } from '#mcp/secrets/service.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import * as featureFlags from '#worker/feature-flags/service.ts'
 import { resolvePackageApprovalRequest } from '#worker/package-capabilities/approval-requests-repo.ts'
-import { enqueueWentPublicApproval } from '#worker/package-capabilities/went-public-approval.ts'
+import {
+	enqueueWentPublicApproval,
+	getPendingWentPublicApproval,
+	isSelfPublishRequest,
+	setSelfPublishMark,
+} from '#worker/package-capabilities/went-public-approval.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import {
 	getSavedPackageById,
@@ -157,7 +162,32 @@ async function setup() {
 			},
 			env,
 		}).then((expanded) => expanded.request.headers.get('Authorization'))
-	return { packageId, approveWentPublic, fill, resolveUnstamped }
+	const enqueueOwnerRequest = () =>
+		enqueueWentPublicApproval({
+			env,
+			ownerUserId: orgId,
+			savedPackage,
+			publishedCommit: 'commit-owner',
+			fingerprint: 'fp',
+			requestedByUserId: stableUserId,
+		})
+	const pending = () =>
+		getPendingWentPublicApproval({ env, ownerUserId: orgId, packageId })
+	return {
+		env,
+		packageId,
+		approveWentPublic,
+		fill,
+		resolveUnstamped,
+		enqueueOwnerRequest,
+		pending,
+		resolve: (id: string) =>
+			resolvePackageApprovalRequest(db, {
+				id,
+				status: 'approved',
+				resolvedByUserId: stableUserId,
+			}),
+	}
 }
 
 test('a self-published package resolves no credential, even with enforcement off', async () => {
@@ -190,4 +220,26 @@ test('the unstamped credential-client door still refuses a self-published run pa
 		code: 'credential_need_undeclared',
 		key: 'RESEND',
 	})
+})
+
+test('the self-publish mark is set and cleared in place on a pending request only', async () => {
+	const t = await setup()
+	const request = await t.enqueueOwnerRequest()
+	await expect(setSelfPublishMark(t.env, request.id, true)).resolves.toBe(true)
+	const marked = await t.pending()
+	expect(marked?.id).toBe(request.id)
+	expect(isSelfPublishRequest(marked)).toBe(true)
+	expect(marked?.details['fingerprint']).toBe('fp')
+
+	await expect(setSelfPublishMark(t.env, request.id, false)).resolves.toBe(true)
+	const unmarked = await t.pending()
+	expect(unmarked?.id).toBe(request.id)
+	expect(isSelfPublishRequest(unmarked)).toBe(false)
+	expect(unmarked?.details).toEqual({
+		fingerprint: 'fp',
+		summary: 'Serve this package on the public internet.',
+	})
+
+	await t.resolve(request.id)
+	await expect(setSelfPublishMark(t.env, request.id, true)).resolves.toBe(false)
 })

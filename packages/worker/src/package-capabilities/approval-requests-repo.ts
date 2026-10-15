@@ -157,6 +157,34 @@ export async function enqueuePackageApprovalRequest(
 	}
 }
 
+/**
+ * Sets or clears one boolean detail flag on a request that is still pending.
+ * False when the request was no longer pending.
+ */
+export async function setPendingPackageApprovalRequestFlag(
+	db: D1Database,
+	input: { id: string; key: string; value: boolean },
+): Promise<boolean> {
+	const path = `$.${input.key}`
+	const statement = input.value
+		? db
+				.prepare(
+					`UPDATE package_approval_requests
+					SET details_json = json_set(coalesce(details_json, '{}'), ?, json('true'))
+					WHERE id = ? AND status = 'pending'`,
+				)
+				.bind(path, input.id)
+		: db
+				.prepare(
+					`UPDATE package_approval_requests
+					SET details_json = json_remove(coalesce(details_json, '{}'), ?)
+					WHERE id = ? AND status = 'pending'`,
+				)
+				.bind(path, input.id)
+	const result = await statement.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
 export async function getPendingPackageApprovalRequest(
 	db: D1Database,
 	input: {

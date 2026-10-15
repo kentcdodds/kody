@@ -31,17 +31,13 @@ import {
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { loadPublishedEntityManifest } from '#worker/repo/published-source.ts'
 import {
-	type PackageApprovalRequest,
-	resolvePackageApprovalRequest,
-} from './approval-requests-repo.ts'
-import {
 	approvePackageCapabilitySet,
 	type CapabilityApprovalSummary,
 } from './capability-approval-service.ts'
 import {
 	enqueueWentPublicApproval,
-	getPendingWentPublicApproval,
 	isSelfPublishRequest,
+	setSelfPublishMark,
 } from './went-public-approval.ts'
 import { loadCurrentPackageSecurityAudit } from './security-audit-state.ts'
 
@@ -227,20 +223,10 @@ export async function selfPublishPackage(input: {
 		})
 		return { ok: false, error }
 	}
-	// An owner-path request for the same commit would be reused as is, without
-	// the self-publish mark the credential door reads.
-	const pending = await getPendingWentPublicApproval({
-		env,
-		ownerUserId: input.ownerUserId,
-		packageId: savedPackage.id,
-	})
-	if (pending && !isSelfPublishRequest(pending)) {
-		await resolvePackageApprovalRequest(env.APP_DB, {
-			id: pending.id,
-			status: 'superseded',
-			resolvedByUserId: input.actorUserId,
-		})
-	}
+	// Enqueue reuses a pending owner-path request for the same commit, so the
+	// one pending request is marked in place, and unmarked again on any
+	// failure: it stays pending for the owner either way, and an owner Approve
+	// never reads as self-publish.
 	const wentPublic = await enqueueWentPublicApproval({
 		env,
 		ownerUserId: input.ownerUserId,
@@ -250,11 +236,12 @@ export async function selfPublishPackage(input: {
 		requestedByUserId: input.actorUserId,
 		selfPublish: true,
 	})
-	// Enqueue reuses a pending request, and a concurrent owner-path ask can
-	// take the one pending slot; only a marked request may be approved here.
-	if (!isSelfPublishRequest(wentPublic)) {
+	if (
+		!isSelfPublishRequest(wentPublic) &&
+		!(await setSelfPublishMark(env, wentPublic.id, true))
+	) {
 		const error =
-			'Another request to make this package internet-visible is pending, so it was left for the owner.'
+			'The request to make this package internet-visible was resolved meanwhile, so nothing was approved.'
 		await audit('failure', { requestId: wentPublic.id, error })
 		return { ok: false, error }
 	}
@@ -269,10 +256,10 @@ export async function selfPublishPackage(input: {
 			requestId: wentPublic.id,
 		})
 	} catch (error) {
-		await handBackToOwner(env, input, wentPublic)
+		await setSelfPublishMark(env, wentPublic.id, false)
 		throw error
 	}
-	if (!result.ok) await handBackToOwner(env, input, wentPublic)
+	if (!result.ok) await setSelfPublishMark(env, wentPublic.id, false)
 	await audit(
 		result.ok ? 'success' : 'failure',
 		result.ok
@@ -280,43 +267,6 @@ export async function selfPublishPackage(input: {
 			: { requestId: wentPublic.id, error: result.error },
 	)
 	return result.ok ? { ok: true } : { ok: false, error: result.error }
-}
-
-/**
- * A self-publish request the approval left pending would read as
- * self-published if the owner approved it later, so it is swapped for an
- * owner-path request for the same version.
- */
-async function handBackToOwner(
-	env: Env,
-	input: {
-		ownerUserId: OwnerId
-		actorUserId: string
-		savedPackage: SavedPackageRecord
-	},
-	selfPublishRequest: PackageApprovalRequest,
-) {
-	const pending = await getPendingWentPublicApproval({
-		env,
-		ownerUserId: input.ownerUserId,
-		packageId: input.savedPackage.id,
-	})
-	if (pending?.id !== selfPublishRequest.id) return
-	await resolvePackageApprovalRequest(env.APP_DB, {
-		id: pending.id,
-		status: 'superseded',
-		resolvedByUserId: input.actorUserId,
-	})
-	const fingerprint = pending.details['fingerprint']
-	if (!pending.baseCommit || typeof fingerprint !== 'string') return
-	await enqueueWentPublicApproval({
-		env,
-		ownerUserId: input.ownerUserId,
-		savedPackage: input.savedPackage,
-		publishedCommit: pending.baseCommit,
-		fingerprint,
-		requestedByUserId: pending.requestedByUserId,
-	})
 }
 
 /** Self-publish approves for the owner, so it takes publish permission. */

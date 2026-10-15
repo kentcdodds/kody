@@ -365,7 +365,14 @@ test('packageUpdate internet_visible sends the owner to approve when self-publis
 		error: 'The published version changed.',
 	})
 
-	await expect(update({ internet_visible: true })).rejects.toThrow(
-		'The published version changed. Send the owner to approve making it internet-visible: https://heykody.dev/@user/notes/approve-capabilities',
+	const result = await update({ internet_visible: true })
+	expect(result).toMatchObject({
+		internet_visible_pending: true,
+		approval_url: 'https://heykody.dev/@user/notes/approve-capabilities',
+		self_publish_error: 'The published version changed.',
+	})
+	expect(result).not.toHaveProperty('self_published')
+	expect(mockModule.enqueueWentPublicApproval).toHaveBeenCalledWith(
+		expect.objectContaining({ publishedCommit: 'commit-1' }),
 	)
 })
