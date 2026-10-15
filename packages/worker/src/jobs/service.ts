@@ -1415,8 +1415,11 @@ async function executeClaimedScheduledJob(input: {
 /**
  * Nothing is on for this slot, so no package run is started. Surface the skip
  * on job observability (last_run_error / error_count) so jobGet does not look
- * armed and healthy. A recurring job advances to its next slot; a once job
- * keeps its slot and retries with backoff until an enablement is on.
+ * armed and healthy. Write RunLog before settling the claim: when RunLog is
+ * configured and the upsert fails, retry shortly instead of advancing a
+ * recurring slot with a status-only D1 row and no last_run_error. A recurring
+ * job that recorded the skip advances to its next slot; a once job keeps its
+ * slot and retries with backoff until an enablement is on.
  */
 async function deferClaimedJobWithoutEnablement(input: {
 	env: Env
@@ -1438,6 +1441,43 @@ async function deferClaimedJobWithoutEnablement(input: {
 		jobName: row.record.name,
 		skipped: input.skipped,
 	})
+	const recorded = await upsertJobRunObservability({
+		env: input.env,
+		userId: input.userId,
+		outcome: {
+			jobId: row.id,
+			status: 'error',
+			ranAt: nowIso,
+			error,
+			durationMs: 0,
+		},
+	})
+	const runLogConfigured = Boolean((input.env as Partial<Env>).RUN_LOG)
+	if (runLogConfigured && !recorded) {
+		const nextRunAt = computeJobRetryAt({
+			now: input.now,
+			retryCount: row.retry_count,
+		})
+		const settled = await store.retryClaimedJob({
+			userId: input.userId,
+			jobId: row.id,
+			claimToken: input.claimToken,
+			nextRunAt,
+		})
+		logJobSchedulerEvent({
+			event: settled
+				? 'scheduled_job_skip_observability_failed'
+				: 'claim_lost_before_skip_transition',
+			userId: input.userId,
+			jobId: row.id,
+			scheduleType: row.record.schedule.type,
+			reason: settled
+				? 'observability_upsert_failed'
+				: 'fenced_claim_superseded',
+			errorMessage: settled ? error : undefined,
+		})
+		return { settled, nextRunAt, error }
+	}
 	const nextRunAt =
 		row.record.schedule.type === 'once' || !scheduledFor
 			? computeJobRetryAt({
@@ -1470,19 +1510,6 @@ async function deferClaimedJobWithoutEnablement(input: {
 					claimToken: input.claimToken,
 					scheduledFor,
 				})
-	if (settled) {
-		await upsertJobRunObservability({
-			env: input.env,
-			userId: input.userId,
-			outcome: {
-				jobId: row.id,
-				status: 'error',
-				ranAt: nowIso,
-				error,
-				durationMs: 0,
-			},
-		})
-	}
 	logJobSchedulerEvent({
 		event: settled
 			? 'scheduled_job_skipped'

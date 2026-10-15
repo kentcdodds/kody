@@ -507,6 +507,48 @@ test('a scheduled slot with only paused enablements names the pause in last_run_
 	)
 })
 
+test('a no-enablement skip retries instead of advancing when RunLog upsert fails', async () => {
+	planEnablementRuns.mockResolvedValueOnce({ runs: [], skipped: [] })
+	claimRunRecord.mockClear()
+	upsertJobRunObservability.mockClear()
+	finalizeClaimedJobRow.mockReset()
+	retryClaimedJobRow.mockReset()
+	finalizeClaimedJobRow.mockResolvedValue(true)
+	retryClaimedJobRow.mockResolvedValue(true)
+	upsertJobRunObservability.mockResolvedValue(null)
+	const recurring = createJobRecord({
+		id: 'package-job:pkg-fenced:observability-miss',
+	})
+	seedDueClaim(recurring)
+	const runLogEnv = { APP_DB: {}, RUN_LOG: {} } as Env
+	await expect(
+		runDueJobsForUser({
+			env: runLogEnv,
+			userId: recurring.userId,
+			now,
+		}),
+	).resolves.toMatchObject({
+		dueJobCount: 1,
+		successCount: 0,
+		errorCount: 1,
+		jobOutcomes: [
+			expect.objectContaining({
+				jobId: recurring.id,
+				outcome: 'failure',
+				nextRunAt: '2026-07-30T19:00:05.000Z',
+			}),
+		],
+	})
+	expect(finalizeClaimedJobRow).not.toHaveBeenCalled()
+	expect(retryClaimedJobRow).toHaveBeenCalledWith(
+		expect.objectContaining({
+			jobId: recurring.id,
+			nextRunAt: '2026-07-30T19:00:05.000Z',
+		}),
+	)
+	expect(upsertJobRunObservability).toHaveBeenCalledOnce()
+})
+
 test('each further enablement run renews the shared claim and stops once it is lost', async () => {
 	const secondEnablement: EnablementRun = {
 		...enablementRun,
