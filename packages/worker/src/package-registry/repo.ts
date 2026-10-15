@@ -320,7 +320,12 @@ export async function updateSavedPackage(
 		input.isPrivate !== undefined ||
 		input.isInternetVisible !== undefined
 	const [result] = changesVisibility
-		? await db.batch([update, bumpAccessEpochStatement(db, input.userId)])
+		? await db.batch([
+				update,
+				bumpAccessEpochStatement(db, input.userId, {
+					onlyIfPreviousChanged: true,
+				}),
+			])
 		: [await update.run()]
 
 	const changed = (result?.meta.changes ?? 0) > 0
@@ -391,7 +396,7 @@ export async function deleteSavedPackage(
 				`DELETE FROM saved_packages WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
 			)
 			.bind(input.packageId, input.userId),
-		bumpAccessEpochStatement(db, input.userId),
+		bumpAccessEpochStatement(db, input.userId, { onlyIfPreviousChanged: true }),
 	])
 	return (result?.meta.changes ?? 0) > 0
 }

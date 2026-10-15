@@ -3,7 +3,10 @@ import { beforeEach, expect, test } from 'vitest'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { bumpAccessEpochStatement } from '#worker/authorization/access-compile.ts'
-import { updateSavedPackage } from '#worker/package-registry/repo.ts'
+import {
+	deleteSavedPackage,
+	updateSavedPackage,
+} from '#worker/package-registry/repo.ts'
 import {
 	silenceExpectedConsoleErrors,
 	silenceExpectedConsoleWarns,
@@ -134,6 +137,22 @@ test('app visibility writes bump the org access epoch; projection refreshes do n
 		packageId: accessFixture.privateApp.id,
 		hidden: false,
 	})
+	expect(await readEpoch()).toBe(before + 1)
+
+	// A stale visibility edit, or deleting a package that is already gone,
+	// changes no row and keeps the epoch.
+	const staleChanged = await updateSavedPackage(env.APP_DB, {
+		userId: accessFixture.orgId,
+		packageId: accessFixture.privateApp.id,
+		hidden: true,
+		expectedUpdatedAt: '2000-01-01T00:00:00.000Z',
+	})
+	expect(staleChanged).toBe(false)
+	const missingDeleted = await deleteSavedPackage(env.APP_DB, {
+		userId: accessFixture.orgId,
+		packageId: 'missing-package',
+	})
+	expect(missingDeleted).toBe(false)
 	expect(await readEpoch()).toBe(before + 1)
 })
 

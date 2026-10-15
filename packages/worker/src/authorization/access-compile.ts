@@ -400,14 +400,26 @@ export async function compileAccessForActor(input: {
 	return compiled
 }
 
-/** Bump access_epoch so the next request recompiles. Same-batch with writers. */
-export function bumpAccessEpochStatement(db: D1Database, orgId: string) {
+/**
+ * Bump access_epoch so the next request recompiles. Same-batch with writers.
+ * `onlyIfPreviousChanged` skips the bump when the statement right before it
+ * in the batch changed no row (SQLite `changes()`), so a no-op write keeps the
+ * org's cached access decisions.
+ */
+export function bumpAccessEpochStatement(
+	db: D1Database,
+	orgId: string,
+	options: { onlyIfPreviousChanged?: boolean } = {},
+) {
+	const previousChangedSql = options.onlyIfPreviousChanged
+		? ' AND changes() > 0'
+		: ''
 	return db
 		.prepare(
 			`UPDATE orgs
 			 SET access_epoch = access_epoch + 1,
 			     updated_at = ?
-			 WHERE id = ?${andLiveDeletedAtSql()}`,
+			 WHERE id = ?${andLiveDeletedAtSql()}${previousChangedSql}`,
 		)
 		.bind(new Date().toISOString(), orgId)
 }
