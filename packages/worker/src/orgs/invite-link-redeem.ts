@@ -493,23 +493,27 @@ async function withClaimReleasedOnFailure<T>(
 	try {
 		return await write()
 	} catch (error) {
-		await input.db.batch([
-			input.db
-				.prepare(
-					`DELETE FROM org_invite_link_redemptions
-					 WHERE link_id = ? AND user_id = ?`,
-				)
-				.bind(input.link.id, input.user.userId),
-			input.db
-				.prepare(
-					`UPDATE org_invite_links
-					 SET use_count = MAX(use_count - 1, 0)
-					 WHERE id = ?`,
-				)
-				.bind(input.link.id),
-		])
+		await releaseClaim(input)
 		throw error
 	}
+}
+
+async function releaseClaim(input: RedeemInput<InviteLinkTarget>) {
+	await input.db.batch([
+		input.db
+			.prepare(
+				`DELETE FROM org_invite_link_redemptions
+					 WHERE link_id = ? AND user_id = ?`,
+			)
+			.bind(input.link.id, input.user.userId),
+		input.db
+			.prepare(
+				`UPDATE org_invite_links
+					 SET use_count = MAX(use_count - 1, 0)
+					 WHERE id = ?`,
+			)
+			.bind(input.link.id),
+	])
 }
 
 async function redeemTeamLink(
@@ -575,15 +579,23 @@ async function redeemResourceLink(
 	})
 	const role = await liveMembershipRole(db, link.orgId, user.userId)
 	if (role === 'owner') return success(true)
+	if (!(await plannedResourceGrant(db, link.orgId, target, user.userId))) {
+		return success(true)
+	}
+	const claimBlock = await claimSingleUse(input)
+	if (claimBlock) return claimBlock
+	// Plan again after the claim so a grant change that landed meanwhile is
+	// merged rather than overwritten by a stale snapshot.
 	const planned = await plannedResourceGrant(
 		db,
 		link.orgId,
 		target,
 		user.userId,
 	)
-	if (!planned) return success(true)
-	const claimBlock = await claimSingleUse(input)
-	if (claimBlock) return claimBlock
+	if (!planned) {
+		await releaseClaim(input)
+		return success(true)
+	}
 	await withClaimReleasedOnFailure(input, () =>
 		upsertGrant({
 			db,
