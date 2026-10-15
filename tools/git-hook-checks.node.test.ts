@@ -12,6 +12,7 @@ import {
 	listHookPaths,
 	parsePrePushUpdates,
 	isSkillsLockHookPath,
+	listInstalledNodeModulesDirs,
 	planGitHookChecks,
 	runGitHookChecks,
 	shouldSkipTestPushForProvenance,
@@ -672,6 +673,71 @@ test('withStagedTreeForTypecheck unlinks node_modules before worktree remove', a
 		})
 		expect(worktreePath.length).toBeGreaterThan(0)
 		expect(existsSync(repoModules)).toBe(true)
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
+})
+
+test('withStagedTreeForTypecheck links nested workspace node_modules', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'hook-staged-nested-nm-'))
+	const workspaceModules = join(root, 'packages', 'worker', 'node_modules')
+	const treeSha = 'e'.repeat(40)
+	const commitSha = 'f'.repeat(40)
+	await mkdir(join(root, 'node_modules'), { recursive: true })
+	await mkdir(join(workspaceModules, 'satori'), { recursive: true })
+	await mkdir(join(root, 'packages', 'mock-servers', 'github'), {
+		recursive: true,
+	})
+	await writeFile(
+		join(root, 'package.json'),
+		JSON.stringify({
+			workspaces: ['packages/worker', 'packages/mock-servers/*'],
+		}),
+	)
+	try {
+		expect(listInstalledNodeModulesDirs(root)).toEqual([
+			'node_modules',
+			join('packages', 'worker', 'node_modules'),
+		])
+		let worktreePath = ''
+		const git: GitRunner = (args) => {
+			if (args[0] === 'status') {
+				return gitResult(0, 'MM packages/worker/src/app.ts\n')
+			}
+			if (args[0] === 'write-tree') {
+				return gitResult(0, `${treeSha}\n`)
+			}
+			if (args.includes('commit-tree')) {
+				return gitResult(0, `${commitSha}\n`)
+			}
+			if (args[0] === 'worktree' && args[1] === 'add') {
+				worktreePath = args[3] ?? ''
+				mkdirSync(join(worktreePath, 'packages', 'worker'), {
+					recursive: true,
+				})
+				return gitResult(0, '')
+			}
+			if (args[0] === 'worktree' && args[1] === 'remove') {
+				expect(
+					existsSync(join(worktreePath, 'packages', 'worker', 'node_modules')),
+				).toBe(false)
+				return gitResult(0, '')
+			}
+			return gitResult(1)
+		}
+		await withStagedTreeForTypecheck({
+			git,
+			repoRoot: root,
+			run: (cwd) => {
+				expect(
+					existsSync(
+						join(cwd!, 'packages', 'worker', 'node_modules', 'satori'),
+					),
+				).toBe(true)
+				return 0
+			},
+		})
+		expect(existsSync(join(workspaceModules, 'satori'))).toBe(true)
 	} finally {
 		await rm(root, { recursive: true, force: true })
 	}
