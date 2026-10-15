@@ -424,3 +424,35 @@ test('reopening a used-up package link you accepted shows your access', async ()
 		orgInviteJoin: { ok: false, reason: 'exhausted' },
 	})
 })
+
+test('reopening an accepted link after its creator lost access shows your access', async () => {
+	const link = await createPackageLink()
+	signInJoiner(true)
+	await createOrgInviteJoinPostHandler(createEnv()).handler({
+		request: new Request(`https://kody.test/join/${link.token}`, {
+			method: 'POST',
+		}),
+		params: { token: link.token },
+	} as never)
+	sqlite
+		.prepare(
+			`UPDATE org_memberships SET role = 'member' WHERE org_id = ? AND user_id = ?`,
+		)
+		.run(owner.personId, owner.personId)
+	sqlite
+		.prepare(`UPDATE orgs SET access_epoch = access_epoch + 1 WHERE id = ?`)
+		.run(owner.personId)
+	const reopen = () =>
+		createOrgInviteJoinHandler(createEnv()).handler({
+			request: new Request(`https://kody.test/join/${link.token}`),
+			params: { token: link.token },
+		} as never)
+	expect(await (await reopen()).json()).toMatchObject({
+		orgInviteJoin: { ok: true, alreadyMember: true },
+	})
+
+	mocks.readAuthenticatedAppUser.mockResolvedValue(null)
+	expect(await (await reopen()).json()).toMatchObject({
+		orgInviteJoin: { ok: false, reason: 'inviter_gone' },
+	})
+})

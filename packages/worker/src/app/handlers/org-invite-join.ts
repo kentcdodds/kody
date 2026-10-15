@@ -205,7 +205,8 @@ async function loadJoinPageData(input: {
 	}
 	if (
 		link.target.kind !== 'membership' &&
-		!(await inviteLinkCreatorStillValid(db, link))
+		!(await inviteLinkCreatorStillValid(db, link)) &&
+		!(viewerId && (await inviteLinkAlreadySatisfied(db, link, viewerId)))
 	) {
 		if (viewerId) {
 			await clearInviteLinkPending({ db, linkId: link.id, userId: viewerId })
