@@ -30,7 +30,8 @@ vi.mock('#worker/jobs/jobs-data.ts', () => ({
 	}),
 }))
 
-const { hardPurgeOrg } = await import('./hard-purge.ts')
+const { hardPurgeOrg, PersonalOrgHardPurgeBlockedForLiveUserError } =
+	await import('./hard-purge.ts')
 
 function createAuditDb() {
 	const auditSqlite = new DatabaseSync(':memory:')
@@ -474,7 +475,7 @@ test('hardPurgeOrg leaves personal-org owner inventory for the following user pu
 	expect(audit?.action).toBe('org.purged')
 })
 
-test('hardPurgeOrg purges owner inventory when the personal-org person is still live', async () => {
+test('hardPurgeOrg blocks when the personal-org person is still live', async () => {
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
 	const appDb = createD1FromSqlite(sqlite)
@@ -541,7 +542,9 @@ test('hardPurgeOrg purges owner inventory when the personal-org person is still 
 		AUDIT_DB: auditDb,
 		BUNDLE_ARTIFACTS_KV: kv,
 	})
-	await hardPurgeOrg({ env, orgId: personId })
+	await expect(hardPurgeOrg({ env, orgId: personId })).rejects.toBeInstanceOf(
+		PersonalOrgHardPurgeBlockedForLiveUserError,
+	)
 
 	expect(
 		(
@@ -550,7 +553,7 @@ test('hardPurgeOrg purges owner inventory when the personal-org person is still 
 				.bind(personId)
 				.first<{ n: number }>()
 		)?.n,
-	).toBe(0)
+	).toBe(1)
 	expect(
 		(
 			await appDb
@@ -560,7 +563,7 @@ test('hardPurgeOrg purges owner inventory when the personal-org person is still 
 				.bind(personId)
 				.first<{ n: number }>()
 		)?.n,
-	).toBe(0)
+	).toBe(1)
 	expect(
 		(
 			await appDb
@@ -568,8 +571,8 @@ test('hardPurgeOrg purges owner inventory when the personal-org person is still 
 				.bind(personId)
 				.first<{ n: number }>()
 		)?.n,
-	).toBe(0)
-	expect(store.has(kvKey)).toBe(false)
+	).toBe(1)
+	expect(store.has(kvKey)).toBe(true)
 })
 
 test('hardPurgeOrg sweeps team org-avatars from COMMUNITY_ASSETS', async () => {
