@@ -214,6 +214,19 @@ export async function selfPublishPackage(input: {
 		expectedFingerprint: fingerprint,
 		enqueueWentPublic: false,
 	})
+	// The audit vouches for one commit. A publish since evaluation keeps the
+	// fingerprint but not the audit; binding the request's base commit to the
+	// audited one makes the approval refuse once the live commit moves.
+	if (approved.approval.publishedCommit !== input.summary.publishedCommit) {
+		const error =
+			'The package was published again since its security audit, so it was left for the owner. Audit the new version, then try again.'
+		await audit('failure', {
+			approvalId: approved.approval.id,
+			pinnedCommit: approved.approval.publishedCommit,
+			error,
+		})
+		return { ok: false, error }
+	}
 	// An owner-path request for the same commit would be reused as is, without
 	// the self-publish mark the credential door reads.
 	const pending = await getPendingWentPublicApproval({

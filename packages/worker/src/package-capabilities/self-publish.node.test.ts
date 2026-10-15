@@ -500,6 +500,38 @@ test('self-publish is blocked when a package in the tree republished since the p
 	).resolves.toEqual({ eligible: false, blocker: 'stale_dependencies' })
 })
 
+test('selfPublishPackage refuses when the package republished since the audited commit', async () => {
+	mockModule.approvePackageCapabilitySet.mockResolvedValue({
+		approval: { id: 'approval-2', publishedCommit: 'commit-newer' },
+	})
+
+	const result = await selfPublishPackage({
+		env,
+		request: sessionRequestContext('person-1', 'bea'),
+		requestUrl: 'https://heykody.dev',
+		ownerUserId: ownerId,
+		actorUserId: 'person-1',
+		savedPackage,
+		summary: summary(),
+	})
+	expect(result).toMatchObject({
+		ok: false,
+		error: expect.stringContaining('published again since its security audit'),
+	})
+	expect(mockModule.resolvePackageApprovalRequest).not.toHaveBeenCalled()
+	expect(mockModule.enqueueWentPublicApproval).not.toHaveBeenCalled()
+	expect(mockModule.approveWentPublicRequest).not.toHaveBeenCalled()
+	expect(mockModule.logOrgAuditEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			result: 'failure',
+			details: expect.objectContaining({
+				publishedCommit: 'commit-source-root',
+				pinnedCommit: 'commit-newer',
+			}),
+		}),
+	)
+})
+
 test('selfPublishPackage never approves a reused unmarked went_public request', async () => {
 	mockModule.approvePackageCapabilitySet.mockResolvedValue({
 		approval: { id: 'approval-1', publishedCommit: 'commit-source-root' },
