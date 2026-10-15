@@ -7,8 +7,9 @@ summary:
   interactive MCP with packageSubscriptionDispatch; follow metadata-first email,
   run.error.recorded activity notifiers, integration.auth.failed /
   integration.auth.succeeded reconnect notifiers, mcp.server.disconnected /
-  mcp.server.reconnected connection episodes, community.fork.upstream_updated
-  fork notifiers, and repo / package lifecycle topics.
+  mcp.server.reconnected connection episodes, follow.published / follow.pushed
+  follow notifiers, community.fork.upstream_updated fork notifiers, and repo /
+  package lifecycle topics.
 category: platform
 ---
 
@@ -647,14 +648,88 @@ Account-level Artifacts create/delete events map to `repo.created` and
 fan-out and Queue delivery match `repo.pushed`. Unmatched deletes (D1 row
 already gone) are acknowledged without retry.
 
+## `follow.published`
+
+`follow.published` fires when a package's live version moves: `published_commit`
+advanced. Followers of that package who still have create-level access receive
+the event on packages in **their** org that declare the topic. Filters narrow
+which of those handlers run; a filter never grants a topic the manifest does not
+declare.
+
+Anyone signed in can follow a public package (`is_private = 0`). A private
+package requires `package:read` on that package (a `use` grant includes read;
+`package:execute` alone does not). Losing that access pauses the follow. At zero
+credits the handler is skipped, the skip is stored on the follow, and nothing is
+queued.
+
+```ts
+type FollowPublishedEvent = {
+	event: 'follow.published'
+	event_id: string
+	target: { kind: 'package'; name: string }
+	previous_commit: string | null
+	published_commit: string
+	published_at: string
+}
+```
+
+`target.name` is `@handle/name`. The payload does not include internal ids.
+Create and list follows with `followAdd` / `followList` (`kody follow add` /
+`kody follow list` on the CLI). See the
+[follow CLI contract](../contributing/contracts/follow-cli.md).
+
+## `follow.pushed`
+
+`follow.pushed` fires when the target's default branch moves. Pushes inside a
+five-minute window collapse into one pending record (one row per target) and
+flush on the scheduled follow-maintenance lane. Each event carries at most 20
+commits; `push.commits_truncated` is true when `total_commits_count` is larger.
+
+Push delivery is stricter than create. A package follow also needs
+`package:read` on that package. A plain-repo follow needs org-wide
+`package:read` in the owner org. A package grant is not enough for a repo, and a
+grant preset name is never the check. If the follow exists but push is not
+allowed, the push is skipped and the follow stays active so `follow.published`
+can still fire. Owners cannot turn push follows off.
+
+```ts
+type FollowPushedEvent = {
+	event: 'follow.pushed'
+	event_id: string
+	target: { kind: 'package' | 'repo'; name: string }
+	push: {
+		ref: string
+		before: string | null
+		after: string | null
+		commits: Array<{
+			id: string
+			message: string
+			message_truncated: boolean
+			timestamp: string
+			author: { name: string; email: string }
+			committer: { name: string; email: string }
+			parents: Array<string>
+		}>
+		total_commits_count: number
+		commits_truncated: boolean
+	}
+	window_started_at: string
+}
+```
+
 ## `community.fork.upstream_updated`
 
-When a public package you forked is republished with a new pinned commit, Kody
-dispatches `community.fork.upstream_updated` to packages saved by **your**
-account that declare the topic. There is one event per fork of that listing
-(forking the same listing twice produces two events). Republishes that keep the
-same pinned commit do not emit, and forks already at the new pinned commit are
-skipped. Watching a public package without forking it is not supported.
+When a public package you forked is republished and the listing pin moves, Kody
+still delivers `community.fork.upstream_updated` to packages saved by **your**
+account that declare the topic. The event is a compatibility alias emitted from
+the follow pipeline, with the same payload as before. There is one event per
+fork of that listing (forking the same listing twice produces two events).
+Republishes that keep the same pinned commit do not emit, and forks already at
+the new pinned commit are skipped. Forking the listing also follows the upstream
+package. Watching a public package without forking it is supported: `followAdd`
+on `@handle/name` delivers `follow.published` (and `follow.pushed` when you can
+read the target). The alias itself still requires a fork, because its payload
+names that fork.
 
 Delivery is durable: `communityPublish` enqueues the republish on the
 `kody-community-listing-published-dispatch` Queue (with DLQ). Enqueue failures
