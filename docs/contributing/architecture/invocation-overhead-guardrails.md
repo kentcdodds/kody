@@ -39,11 +39,11 @@ platform overhead per call, not about what user code does inside the call.
   not await the run-record begin RPC before user `fetch`. Finish already upserts
   a complete row, so a dropped `running` insert is harmless. Hosted serve and
   package-app origin host setup emit request-scoped `Server-Timing` phases
-  (`owner`, `resolveSavedPackage`, `manifest`, `assertWithinComputeInclude`,
-  `appLoader`, `entrypoint`) via the same helper pages use, so warm overhead can
-  be attributed per phase without a separate benchmark harness. WebSocket
-  upgrades skip `Server-Timing`: Durable Object 101 responses have immutable
-  headers, and rebuilding them without the paired `webSocket` is invalid.
+  (`owner`, `resolveSavedPackage`, `manifest`, `usageGate`, `appLoader`,
+  `entrypoint`) via the same helper pages use, so warm overhead can be
+  attributed per phase without a separate benchmark harness. WebSocket upgrades
+  skip `Server-Timing`: Durable Object 101 responses have immutable headers, and
+  rebuilding them without the paired `webSocket` is invalid.
 
 ## Per-isolate caches and their staleness bounds
 

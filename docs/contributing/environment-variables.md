@@ -231,6 +231,19 @@ Worker secret (optional; see `packages/worker/src/app/package-app-ticket.ts`):
   use. Rotation:
   [secret-rotation.md](./secret-rotation.md#rotating-package_app_ticket_keys).
 
+Worker variable (optional; see
+`packages/worker/src/package-runtime/package-app-usage-breaker.ts`):
+
+- `PACKAGE_APP_USAGE_BREAKER_LIMIT_PERCENT` — positive number: the percent of
+  the existing usage limit (monthly include stop or org budget) at which the
+  package-app usage circuit breaker opens. Unset means `100`, which trips
+  exactly when the usage check denies. The check only denies past the limit, so
+  values below `100` behave like `100`. Values above `100` keep serving through
+  a grace margin. Set it as a JSON number in the production `vars` blocks of
+  both `packages/worker/wrangler.jsonc` and
+  `packages/runtime-worker/wrangler.jsonc`, because both Workers serve package
+  apps.
+
 ## MCP `execute` and outbound HTTP
 
 MCP `execute` runs sandboxed JavaScript with a global `fetch`. Calls to
