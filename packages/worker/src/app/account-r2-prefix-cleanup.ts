@@ -1,4 +1,5 @@
 import { communityIconR2ListingPrefixes } from '#worker/community/community-icon.ts'
+import { orgAvatarR2OrgPrefix } from '#worker/orgs/org-avatar.ts'
 import { identityIconR2RepoPrefixes } from '#worker/repo/identity-icon.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 
@@ -54,6 +55,14 @@ export async function deleteAccountCommunityAssetPrefixes(input: {
 		bucket: input.bucket,
 		prefix: userAvatarPrefix(input.stableUserId),
 		label: 'User avatar',
+	})
+	// Team (and personal) org avatars live under org-avatars/{ownerId}/, not
+	// user-avatars/. Owner hard-purge and account deletion share this helper,
+	// so sweep both prefixes for the same owner id.
+	deleted += await deletePrefixStrict({
+		bucket: input.bucket,
+		prefix: orgAvatarR2OrgPrefix(input.stableUserId),
+		label: 'Org avatar',
 	})
 	for (const listingId of new Set(input.listingIds)) {
 		for (const prefix of communityIconR2ListingPrefixes(listingId)) {

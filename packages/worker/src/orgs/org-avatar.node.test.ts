@@ -3,13 +3,16 @@ import { expect, test } from 'vitest'
 import {
 	buildOrgAvatarR2Key,
 	buildOrgAvatarUrl,
+	orgAvatarR2OrgPrefix,
 	parseOrgAvatarCacheKey,
 	splitOrgAvatarCacheKey,
 } from './org-avatar.ts'
 
 test('org avatar keys use the org-avatars prefix and build a public URL', () => {
+	const orgId = ownerIdFromStored('org-1')
+	expect(orgAvatarR2OrgPrefix(orgId)).toBe('org-avatars/org-1/')
 	const key = buildOrgAvatarR2Key({
-		orgId: ownerIdFromStored('org-1'),
+		orgId,
 		contentHash: 'abcdef',
 		contentType: 'image/png',
 	})
