@@ -30,10 +30,11 @@ Credential setup is
 
 Same loop. Differences: Devin PRs are usually authored by
 `devin-ai-integration[bot]`, so Bugbot often returns `github_account_mismatch`
-and that skip is the common path; treat a verified preview deploy as a mandatory
-merge gate (exercise the changed surface, not only a 200); for time gates, wake
-the Devin session via `kody:@kentcdodds/devin/sessions` `sendMessage` instead of
-Cursor `createRun`.
+and that skip is the common path; for previewable changes, treat a verified
+preview deploy as a mandatory merge gate (exercise the changed surface, not only
+a 200). For non-previewable changes, run the applicable static checks for the
+changed surface instead; for time gates, wake the Devin session via
+`kody:@kentcdodds/devin/sessions` `sendMessage` instead of Cursor `createRun`.
 
 ## Command
 
