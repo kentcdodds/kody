@@ -875,8 +875,9 @@ Turning on internet-visible serving in package settings, or with `packageUpdate`
 the package and each of its dependencies declare or were given:
 
 - credentials that fill a `kody.credentials` need: the org's credentials for
-  that provider and kind, plus any credential mapped to that need in the
-  package's credential settings
+  that provider and kind (including members' personal credentials shared with
+  the org), plus any credential mapped to that need in the package's credential
+  settings
 - credentials named in `kody.secretMounts`
 - the package's own package-scoped credentials
 - credentials you granted that package
