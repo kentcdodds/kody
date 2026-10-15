@@ -16,6 +16,7 @@ import {
 } from './package-name.ts'
 import { clearCachedPackageAppCustomHostnames } from '#worker/package-app-custom-hostnames/lookup-cache.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import { bumpAccessEpochStatement } from '#worker/authorization/access-compile.ts'
 import {
 	kodyPackageIdPattern,
 	type SavedPackageCommunityProvenance,
@@ -305,16 +306,24 @@ export async function updateSavedPackage(
 			? [...values, input.packageId, input.userId]
 			: [...values, input.packageId, input.userId, input.expectedUpdatedAt]
 
-	const result = await db
+	const update = db
 		.prepare(
 			`UPDATE saved_packages
 			SET ${assignments.join(', ')}
 			WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}${expectedUpdatedAtClause}`,
 		)
 		.bind(...bindValues)
-		.run()
+	// Visibility decides who may open the app, so it moves the org access
+	// epoch with it and outstanding package-app access decisions go stale.
+	const changesVisibility =
+		input.hidden !== undefined ||
+		input.isPrivate !== undefined ||
+		input.isInternetVisible !== undefined
+	const [result] = changesVisibility
+		? await db.batch([update, bumpAccessEpochStatement(db, input.userId)])
+		: [await update.run()]
 
-	const changed = (result.meta.changes ?? 0) > 0
+	const changed = (result?.meta.changes ?? 0) > 0
 	// App-level custom hostname cache embeds the package name leaf (kodyId).
 	// A rename must drop cached Host mappings in this isolate or handoff
 	// rejects the new slug for up to the cache TTL.
@@ -376,13 +385,15 @@ export async function deleteSavedPackage(
 		packageId: string
 	},
 ) {
-	const result = await db
-		.prepare(
-			`DELETE FROM saved_packages WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
-		)
-		.bind(input.packageId, input.userId)
-		.run()
-	return (result.meta.changes ?? 0) > 0
+	const [result] = await db.batch([
+		db
+			.prepare(
+				`DELETE FROM saved_packages WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
+			)
+			.bind(input.packageId, input.userId),
+		bumpAccessEpochStatement(db, input.userId),
+	])
+	return (result?.meta.changes ?? 0) > 0
 }
 
 export async function getSavedPackageById(
