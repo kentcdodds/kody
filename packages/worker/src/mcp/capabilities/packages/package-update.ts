@@ -33,7 +33,10 @@ import {
 	attemptSelfPublish,
 	type SelfPublishAttempt,
 } from '#worker/package-capabilities/self-publish.ts'
-import { enqueueWentPublicApproval } from '#worker/package-capabilities/went-public-approval.ts'
+import {
+	enqueueWentPublicApproval,
+	getPendingWentPublicApproval,
+} from '#worker/package-capabilities/went-public-approval.ts'
 import {
 	loadPackageSecurityAuditNextStep,
 	type PackageSecurityAuditNextStep,
@@ -322,12 +325,26 @@ export const packageUpdateCapability = defineDomainCapability(
 					savedPackage: existing,
 					summary,
 				})
-				// A failed attempt takes the owner path below, so a request stays
-				// pending for the owner.
-				if (attempt.status === 'failed') selfPublishError = attempt.error
+				if (attempt.status === 'failed') {
+					// A failed attempt leaves the request it saw pending; with none
+					// pending (resolved meanwhile), the summary is not worth re-asking on.
+					const pending = await getPendingWentPublicApproval({
+						env: ctx.env,
+						ownerUserId: owner.ownerUserId,
+						packageId: existing.id,
+					})
+					if (!pending) {
+						throw new McpCallerError(
+							`${attempt.error} Nothing is pending for the owner; call packageUpdate with internet_visible true again.`,
+						)
+					}
+					selfPublishError = attempt.error
+				}
 				if (attempt.status === 'blocked') selfPublishBlocker = attempt.blocker
 				if (attempt.status === 'self_published') {
 					selfPublished = true
+				} else if (selfPublishError) {
+					// Its pending request already waits on the owner's Approve click.
 				} else if (summary.fingerprintMatchesApproval) {
 					// Record/refresh the pin for the current published commit, then
 					// leave went_public pending for the owner's Approve click.

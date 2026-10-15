@@ -250,7 +250,7 @@ async function reevaluatePendingSelfPublish(
 	})
 	if (!pending) return null
 	try {
-		return await attemptSelfPublish(input)
+		return await attemptSelfPublish({ ...input, pendingRequestId: pending.id })
 	} catch (error) {
 		// The audit is already recorded; failing here would invite a duplicate on retry.
 		console.error('Self-publish re-evaluation after a security audit failed', {

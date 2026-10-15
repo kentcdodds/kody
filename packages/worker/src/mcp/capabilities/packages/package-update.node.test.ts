@@ -14,6 +14,7 @@ const mockModule = vi.hoisted(() => ({
 	loadCapabilityApprovalSummary: vi.fn(),
 	approvePackageCapabilitySet: vi.fn(),
 	enqueueWentPublicApproval: vi.fn(),
+	getPendingWentPublicApproval: vi.fn(),
 	loadCurrentPackageSecurityAudit: vi.fn(),
 	attemptSelfPublish: vi.fn(),
 }))
@@ -37,6 +38,8 @@ vi.mock('#worker/package-capabilities/capability-approval-service.ts', () => ({
 }))
 
 vi.mock('#worker/package-capabilities/went-public-approval.ts', () => ({
+	getPendingWentPublicApproval: (...args: Array<unknown>) =>
+		mockModule.getPendingWentPublicApproval(...args),
 	enqueueWentPublicApproval: (...args: Array<unknown>) =>
 		mockModule.enqueueWentPublicApproval(...args),
 }))
@@ -353,7 +356,9 @@ test('packageUpdate internet_visible on an unaudited version tells the agent to 
 	).toContain('published_commit: "commit-1"')
 })
 
-test('packageUpdate internet_visible sends the owner to approve when self-publish fails', async () => {
+test('packageUpdate internet_visible leaves the pending request for the owner when self-publish fails', async () => {
+	mockModule.enqueueWentPublicApproval.mockReset()
+	mockModule.approvePackageCapabilitySet.mockReset()
 	mockModule.getSavedPackageById.mockResolvedValue(createSavedPackage())
 	mockModule.loadCapabilityApprovalSummary.mockResolvedValue({
 		capabilitySet: { entries: [], fingerprint: 'fp-1' },
@@ -364,6 +369,9 @@ test('packageUpdate internet_visible sends the owner to approve when self-publis
 		status: 'failed',
 		error: 'The published version changed.',
 	})
+	mockModule.getPendingWentPublicApproval.mockResolvedValueOnce({
+		id: 'request-1',
+	})
 
 	const result = await update({ internet_visible: true })
 	expect(result).toMatchObject({
@@ -372,7 +380,12 @@ test('packageUpdate internet_visible sends the owner to approve when self-publis
 		self_publish_error: 'The published version changed.',
 	})
 	expect(result).not.toHaveProperty('self_published')
-	expect(mockModule.enqueueWentPublicApproval).toHaveBeenCalledWith(
-		expect.objectContaining({ publishedCommit: 'commit-1' }),
+	expect(mockModule.enqueueWentPublicApproval).not.toHaveBeenCalled()
+	expect(mockModule.approvePackageCapabilitySet).not.toHaveBeenCalled()
+
+	mockModule.getPendingWentPublicApproval.mockResolvedValueOnce(null)
+	await expect(update({ internet_visible: true })).rejects.toThrow(
+		'The published version changed. Nothing is pending for the owner',
 	)
+	expect(mockModule.enqueueWentPublicApproval).not.toHaveBeenCalled()
 })

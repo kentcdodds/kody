@@ -170,6 +170,12 @@ export async function selfPublishPackage(input: {
 	actorUserId: string
 	savedPackage: SavedPackageRecord
 	summary: CapabilityApprovalSummary
+	/**
+	 * The pending `went_public` request the caller saw. Only that request is
+	 * marked and approved; none is enqueued, so a request the owner withdrew
+	 * meanwhile is never replaced.
+	 */
+	pendingRequestId?: string
 }): Promise<SelfPublishResult> {
 	const { env, savedPackage } = input
 	const fingerprint = input.summary.capabilitySet.fingerprint
@@ -224,25 +230,28 @@ export async function selfPublishPackage(input: {
 		return { ok: false, error }
 	}
 	// Enqueue reuses a pending owner-path request for the same commit, so the
-	// one pending request is marked in place, and unmarked again on any
-	// failure: it stays pending for the owner either way, and an owner Approve
-	// never reads as self-publish.
-	const wentPublic = await enqueueWentPublicApproval({
-		env,
-		ownerUserId: input.ownerUserId,
-		savedPackage,
-		publishedCommit: approved.approval.publishedCommit,
-		fingerprint,
-		requestedByUserId: input.actorUserId,
-		selfPublish: true,
-	})
-	if (
-		!isSelfPublishRequest(wentPublic) &&
-		!(await setSelfPublishMark(env, wentPublic.id, true))
-	) {
+	// one pending request (or the caller's) is marked in place, and unmarked
+	// again on any failure: it stays pending for the owner either way, and an
+	// owner Approve never reads as self-publish.
+	let requestId = input.pendingRequestId
+	let marked = false
+	if (!requestId) {
+		const enqueued = await enqueueWentPublicApproval({
+			env,
+			ownerUserId: input.ownerUserId,
+			savedPackage,
+			publishedCommit: approved.approval.publishedCommit,
+			fingerprint,
+			requestedByUserId: input.actorUserId,
+			selfPublish: true,
+		})
+		requestId = enqueued.id
+		marked = isSelfPublishRequest(enqueued)
+	}
+	if (!marked && !(await setSelfPublishMark(env, requestId, true))) {
 		const error =
 			'The request to make this package internet-visible was resolved meanwhile, so nothing was approved.'
-		await audit('failure', { requestId: wentPublic.id, error })
+		await audit('failure', { requestId, error })
 		return { ok: false, error }
 	}
 	let result: Awaited<ReturnType<typeof approveWentPublicRequest>>
@@ -253,18 +262,18 @@ export async function selfPublishPackage(input: {
 			savedPackage,
 			ownerUserId: input.ownerUserId,
 			actorUserId: input.actorUserId,
-			requestId: wentPublic.id,
+			requestId,
 		})
 	} catch (error) {
-		await setSelfPublishMark(env, wentPublic.id, false)
+		await setSelfPublishMark(env, requestId, false)
 		throw error
 	}
-	if (!result.ok) await setSelfPublishMark(env, wentPublic.id, false)
+	if (!result.ok) await setSelfPublishMark(env, requestId, false)
 	await audit(
 		result.ok ? 'success' : 'failure',
 		result.ok
-			? { requestId: wentPublic.id, approvalId: approved.approval.id }
-			: { requestId: wentPublic.id, error: result.error },
+			? { requestId, approvalId: approved.approval.id }
+			: { requestId, error: result.error },
 	)
 	return result.ok ? { ok: true } : { ok: false, error: result.error }
 }
@@ -304,6 +313,7 @@ export async function attemptSelfPublish(input: {
 	actorUserId: string
 	savedPackage: SavedPackageRecord
 	summary: CapabilityApprovalSummary
+	pendingRequestId?: string
 }): Promise<SelfPublishAttempt> {
 	const eligibility = await evaluateSelfPublish(input)
 	if (!eligibility.eligible) {

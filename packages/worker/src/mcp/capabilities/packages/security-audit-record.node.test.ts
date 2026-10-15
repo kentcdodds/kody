@@ -197,6 +197,7 @@ test('packageSecurityAuditRecord re-evaluates a pending internet-visible request
 			actorUserId: 'user-1',
 			requestUrl: 'https://heykody.dev',
 			summary: expect.objectContaining({ publishedCommit }),
+			pendingRequestId: 'request-1',
 		}),
 	)
 

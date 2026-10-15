@@ -472,3 +472,38 @@ test('selfPublishPackage refuses when the package republished since the audited 
 		}),
 	)
 })
+
+test('selfPublishPackage with a pending request id approves only that request and never enqueues', async () => {
+	pinCurrentCommit()
+	mockModule.setSelfPublishMark.mockResolvedValueOnce(true)
+	mockModule.approveWentPublicRequest.mockResolvedValue({ ok: true })
+	const input = {
+		env,
+		request: sessionRequestContext('person-1', 'bea'),
+		requestUrl: 'https://heykody.dev',
+		ownerUserId: ownerId,
+		actorUserId: 'person-1',
+		savedPackage,
+		summary: summary(),
+		pendingRequestId: 'seen-request',
+	}
+
+	await expect(selfPublishPackage(input)).resolves.toEqual({ ok: true })
+	expect(mockModule.enqueueWentPublicApproval).not.toHaveBeenCalled()
+	expect(mockModule.setSelfPublishMark).toHaveBeenCalledWith(
+		env,
+		'seen-request',
+		true,
+	)
+	expect(mockModule.approveWentPublicRequest).toHaveBeenCalledWith(
+		expect.objectContaining({ requestId: 'seen-request' }),
+	)
+
+	mockModule.approveWentPublicRequest.mockClear()
+	mockModule.setSelfPublishMark.mockResolvedValueOnce(false)
+	await expect(selfPublishPackage(input)).resolves.toMatchObject({
+		ok: false,
+	})
+	expect(mockModule.enqueueWentPublicApproval).not.toHaveBeenCalled()
+	expect(mockModule.approveWentPublicRequest).not.toHaveBeenCalled()
+})
