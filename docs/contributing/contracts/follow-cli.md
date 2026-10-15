@@ -104,7 +104,7 @@ delivery. `follow.published` fires when a package `published_commit` moves.
 row per target for five minutes, at most 20 commits on the event.
 
 Forking a community listing creates a follow of the upstream package. Existing
-forks are backfilled by migration `0148-follows.sql` when the listing row still
+forks are backfilled by migration `0149-follows.sql` when the listing row still
 exists. A listing pin move still delivers `community.fork.upstream_updated` from
 this pipeline with the historical payload, one event per fork behind the new
 pin. The old fork-only queue enqueue is off.

@@ -43,7 +43,7 @@ test('fork backfill stores personal org id and keeps the person as creator', () 
 	`)
 	sqlite.exec(
 		readFileSync(
-			new URL('../../migrations/0148-follows.sql', import.meta.url),
+			new URL('../../migrations/0149-follows.sql', import.meta.url),
 			'utf8',
 		),
 	)
