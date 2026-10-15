@@ -73,7 +73,7 @@ test('/with/:agent leads with the setup prompt and MCP URL for agents without an
 		html.match(/aria-label="Copy setup prompt, copy setup prompt"/g),
 	).toHaveLength(1)
 	expect(html).toContain('<code>https://kody.codes/mcp</code>')
-	expect(html).not.toContain('Rather let Amp')
+	expect(html).not.toContain('Rather let ')
 	expect(html).toContain('href="/with/cursor"')
 })
 
