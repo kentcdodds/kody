@@ -155,6 +155,22 @@ const optionalPackageAppTicketKeysSchema = createSchema<
 	return { value: keys.join(',') }
 })
 
+const optionalPositivePercentSchema = createSchema<
+	unknown,
+	number | string | undefined
+>((value, context) => {
+	if (value === undefined) return { value: undefined }
+	if (typeof value === 'string' && !value.trim()) return { value: undefined }
+	if (typeof value !== 'number' && typeof value !== 'string') {
+		return fail('Expected number or numeric string', context.path)
+	}
+	const n = typeof value === 'number' ? value : Number(value.trim())
+	if (!Number.isFinite(n) || n <= 0) {
+		return fail('Expected a positive percent', context.path)
+	}
+	return { value }
+})
+
 const secretStoreKeySchema = createSchema<unknown, string>((value, context) => {
 	if (typeof value !== 'string') {
 		return fail(
@@ -255,6 +271,9 @@ export const EnvSchema = object({
 	// signs; every key verifies (rotation: docs/contributing/secret-rotation.md).
 	// Unset derives one key from COOKIE_SECRET.
 	PACKAGE_APP_TICKET_KEYS: optionalPackageAppTicketKeysSchema,
+	// Percent of the existing usage limit at which the package-app usage
+	// circuit breaker opens. Unset means 100 (trip exactly at the limit).
+	PACKAGE_APP_USAGE_BREAKER_LIMIT_PERCENT: optionalPositivePercentSchema,
 	USER_EMAIL_DOMAIN: optionalNonEmptyStringSchema,
 	// Overrides the system email domain derived from APP_BASE_URL. Committed
 	// in production so email and the web origin can move independently.
