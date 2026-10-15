@@ -1,8 +1,11 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import {
+	defaultDmarcReportForwardTo,
 	deleteEmailSendingEventSubscriptionIfPresent,
 	ensureArtifactsAccountEventSubscription,
 	ensureCloudflareQueue,
+	ensureDmarcEmailRoutingRule,
+	ensureDmarcReportingTxtRecords,
 	ensureEmailSendingEventSubscription,
 	ensurePackageAppDnsRecords,
 	ensureR2Bucket,
@@ -826,6 +829,23 @@ async function ensureProductionResources(options: CliOptions) {
 			dryRun: options.dryRun,
 		})
 	}
+	const dmarcForwardTo =
+		process.env.DMARC_REPORT_FORWARD_TO?.trim() || defaultDmarcReportForwardTo
+	await ensureDmarcReportingTxtRecords({
+		apiToken: apiToken ?? 'dry-run-token',
+		zoneId: zoneId ?? 'dry-run-zone',
+		systemEmailDomain: emailSendingSystemDomain,
+		userEmailDomain: emailSendingUserDomain,
+		dryRun: options.dryRun,
+	})
+	await ensureDmarcEmailRoutingRule({
+		accountId: accountId ?? 'dry-run-account',
+		apiToken: apiToken ?? 'dry-run-token',
+		zoneId: zoneId ?? 'dry-run-zone',
+		systemEmailDomain: emailSendingSystemDomain,
+		forwardTo: dmarcForwardTo,
+		dryRun: options.dryRun,
+	})
 	const artifactsEventSubscription =
 		await ensureArtifactsAccountEventSubscription({
 			accountId: accountId ?? 'dry-run-account',

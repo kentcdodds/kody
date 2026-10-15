@@ -122,6 +122,15 @@ deploy ensures two Queue event subscriptions when those domains differ:
 `kody-email-delivery-events` (user inbox) and
 `kody-system-email-delivery-events` (transactional `kody@`).
 
+DMARC reporting: production ensure upserts `_dmarc.kody.codes` and
+`_dmarc.inbox.kody.codes` to `v=DMARC1; p=reject; rua=mailto:dmarc@kody.codes`,
+and an Email Routing rule that forwards `dmarc@kody.codes` to
+`me@kentcdodds.com` (override with Actions env `DMARC_REPORT_FORWARD_TO`). The
+forward destination must already be verified under **Email → Email Routing →
+Destination addresses** — Cloudflare's verification email is Kent-only and is
+not skippable via API. Deploy token needs DNS Edit plus Email Routing edit on
+the mail zone.
+
 ### Access (Zero Trust)
 
 DR Admin UI (`kody-dr.kentcdodds.com`) is gated by Cloudflare Access plus

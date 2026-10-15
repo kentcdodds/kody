@@ -33,6 +33,16 @@ This project uses the following resources:
 - Cloudflare Email Routing for inbound mail
   - Configure MX records and selected route aliases in the Cloudflare dashboard.
   - Route only aliases that should persist inbound mail to the Worker.
+  - Production CI also ensures a Routing rule that forwards
+    `dmarc@<SYSTEM_EMAIL_DOMAIN>` to a verified destination
+    (`DMARC_REPORT_FORWARD_TO`, default `me@kentcdodds.com`) so DMARC aggregate
+    reports land in an operator mailbox. Destination verification is
+    dashboard-only (Cloudflare sends a confirm link).
+- DMARC reporting TXT
+  - Production CI upserts `_dmarc.<SYSTEM_EMAIL_DOMAIN>` and
+    `_dmarc.<USER_EMAIL_DOMAIN>` (when distinct) to
+    `v=DMARC1; p=reject; rua=mailto:dmarc@<SYSTEM_EMAIL_DOMAIN>`.
+  - Deploy token needs DNS Edit on the mail zone (`CLOUDFLARE_ZONE_ID`).
 - Cloudflare Queue for Email Sending delivery events
   - Production CI ensures `kody-email-delivery` and `kody-email-delivery-dlq`,
     then reconciles `email.sending` event subscriptions for both the user inbox

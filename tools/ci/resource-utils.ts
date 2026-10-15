@@ -1202,7 +1202,7 @@ export async function cloudflareApiRequest<T>(
 type CloudflareRootApiRequestInput = {
 	apiToken: string
 	pathname: string
-	method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+	method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 	body?: Record<string, unknown>
 	apiBaseUrl?: string
 	fetcher?: typeof fetch
@@ -1516,6 +1516,301 @@ export async function ensurePackageAppDnsRecords(input: {
 		console.error(
 			`Created package-app DNS: ${created.result?.name} (${created.result?.id})`,
 		)
+	}
+}
+
+/** Local-part for DMARC aggregate reports (rua) on the system email domain. */
+export const dmarcReportMailboxLocal = 'dmarc'
+
+export const defaultDmarcReportForwardTo = 'me@kentcdodds.com'
+
+export function dmarcReportMailboxAddress(systemEmailDomain: string) {
+	return `${dmarcReportMailboxLocal}@${systemEmailDomain}`
+}
+
+export function dmarcReportingTxtContent(systemEmailDomain: string) {
+	return `v=DMARC1; p=reject; rua=mailto:${dmarcReportMailboxAddress(systemEmailDomain)}`
+}
+
+export function dmarcReportingRecordNames(input: {
+	systemEmailDomain: string
+	userEmailDomain: string
+}) {
+	const names = [`_dmarc.${input.systemEmailDomain}`]
+	if (input.userEmailDomain !== input.systemEmailDomain) {
+		names.push(`_dmarc.${input.userEmailDomain}`)
+	}
+	return names
+}
+
+/**
+ * Idempotently ensure `_dmarc` TXT records advertise aggregate reporting to
+ * `dmarc@<systemEmailDomain>` while keeping `p=reject`. Updates an existing
+ * TXT when content differs; fails closed on non-TXT conflicts at the name.
+ */
+export async function ensureDmarcReportingTxtRecords(input: {
+	apiToken: string
+	zoneId: string
+	systemEmailDomain: string
+	userEmailDomain: string
+	dryRun: boolean
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+	sleep?: (ms: number) => Promise<void>
+}) {
+	const desired = dmarcReportingTxtContent(input.systemEmailDomain)
+	const recordNames = dmarcReportingRecordNames({
+		systemEmailDomain: input.systemEmailDomain,
+		userEmailDomain: input.userEmailDomain,
+	})
+	if (input.dryRun) {
+		for (const recordName of recordNames) {
+			console.error(
+				`[dry-run] ensure DMARC TXT: ${recordName} → ${desired} (zone ${input.zoneId})`,
+			)
+		}
+		return { recordNames, content: desired }
+	}
+
+	for (const recordName of recordNames) {
+		const listed = await cloudflareRootApiRequest<Array<CloudflareDnsRecord>>({
+			apiToken: input.apiToken,
+			apiBaseUrl: input.apiBaseUrl,
+			fetcher: input.fetcher,
+			sleep: input.sleep,
+			pathname: `/zones/${encodeURIComponent(input.zoneId)}/dns_records?name=${encodeURIComponent(recordName)}`,
+		})
+		const records = listed.result ?? []
+		const conflicting = records.find(
+			(record) => record.name === recordName && record.type !== 'TXT',
+		)
+		if (conflicting) {
+			return fail(
+				`DMARC DNS name "${recordName}" exists in zone ${input.zoneId} but is not TXT (found ${conflicting.type} ${conflicting.content}). Fix it in the Cloudflare dashboard, then re-run deploy.`,
+			)
+		}
+		const existingTxt = records.filter(
+			(record) => record.name === recordName && record.type === 'TXT',
+		)
+		if (existingTxt.length > 1) {
+			return fail(
+				`DMARC DNS name "${recordName}" has ${String(existingTxt.length)} TXT records in zone ${input.zoneId}; keep a single _dmarc TXT, then re-run deploy.`,
+			)
+		}
+		const existing = existingTxt[0]
+		if (existing) {
+			const current = existing.content.replace(/^"|"$/g, '')
+			if (current === desired) {
+				console.error(`DMARC TXT exists: ${existing.name} (${existing.id})`)
+				continue
+			}
+			const updated = await cloudflareRootApiRequest<CloudflareDnsRecord>({
+				apiToken: input.apiToken,
+				apiBaseUrl: input.apiBaseUrl,
+				fetcher: input.fetcher,
+				sleep: input.sleep,
+				pathname: `/zones/${encodeURIComponent(input.zoneId)}/dns_records/${encodeURIComponent(existing.id)}`,
+				method: 'PUT',
+				body: {
+					type: 'TXT',
+					name: recordName,
+					content: desired,
+					ttl: 1,
+				},
+			})
+			console.error(
+				`Updated DMARC TXT: ${updated.result?.name} (${updated.result?.id})`,
+			)
+			continue
+		}
+
+		const created = await cloudflareRootApiRequest<CloudflareDnsRecord>({
+			apiToken: input.apiToken,
+			apiBaseUrl: input.apiBaseUrl,
+			fetcher: input.fetcher,
+			sleep: input.sleep,
+			pathname: `/zones/${encodeURIComponent(input.zoneId)}/dns_records`,
+			method: 'POST',
+			body: {
+				type: 'TXT',
+				name: recordName,
+				content: desired,
+				ttl: 1,
+			},
+		})
+		console.error(
+			`Created DMARC TXT: ${created.result?.name} (${created.result?.id})`,
+		)
+	}
+	return { recordNames, content: desired }
+}
+
+type CloudflareEmailRoutingDestination = {
+	id: string
+	email: string
+	verified?: string | null
+}
+
+type CloudflareEmailRoutingRule = {
+	id: string
+	name?: string
+	enabled?: boolean
+	matchers?: Array<{
+		type?: string
+		field?: string
+		value?: string
+	}>
+	actions?: Array<{
+		type?: string
+		value?: Array<string>
+	}>
+}
+
+function emailRoutingRuleMatchesDmarcMailbox(input: {
+	rule: CloudflareEmailRoutingRule
+	mailbox: string
+}) {
+	return (input.rule.matchers ?? []).some(
+		(matcher) =>
+			matcher.type === 'literal' &&
+			matcher.field === 'to' &&
+			matcher.value?.toLowerCase() === input.mailbox.toLowerCase(),
+	)
+}
+
+function emailRoutingRuleForwardsTo(input: {
+	rule: CloudflareEmailRoutingRule
+	forwardTo: string
+}) {
+	const want = input.forwardTo.toLowerCase()
+	return (input.rule.actions ?? []).some(
+		(action) =>
+			action.type === 'forward' &&
+			(action.value ?? []).some((value) => value.toLowerCase() === want),
+	)
+}
+
+/**
+ * Ensure Email Routing forwards `dmarc@<systemEmailDomain>` to a verified
+ * destination so DMARC aggregate reports are deliverable. Creates the rule
+ * when missing; updates when the matcher exists but the forward target or
+ * enabled state differs. Fails when the destination is missing or unverified
+ * (Kent must complete Cloudflare's destination verification email).
+ */
+export async function ensureDmarcEmailRoutingRule(input: {
+	accountId: string
+	apiToken: string
+	zoneId: string
+	systemEmailDomain: string
+	forwardTo: string
+	dryRun: boolean
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+	sleep?: (ms: number) => Promise<void>
+}) {
+	const mailbox = dmarcReportMailboxAddress(input.systemEmailDomain)
+	const ruleName = `DMARC reports → ${input.forwardTo}`
+	if (input.dryRun) {
+		console.error(
+			`[dry-run] ensure Email Routing rule: ${mailbox} → ${input.forwardTo} (zone ${input.zoneId})`,
+		)
+		return { mailbox, forwardTo: input.forwardTo, created: false as const }
+	}
+
+	const destinations = await cloudflareApiRequest<
+		Array<CloudflareEmailRoutingDestination>
+	>({
+		accountId: input.accountId,
+		apiToken: input.apiToken,
+		apiBaseUrl: input.apiBaseUrl,
+		fetcher: input.fetcher,
+		sleep: input.sleep,
+		pathname: '/email/routing/addresses?per_page=50',
+	})
+	const destination = (destinations.result ?? []).find(
+		(entry) => entry.email.toLowerCase() === input.forwardTo.toLowerCase(),
+	)
+	if (!destination) {
+		return fail(
+			`Email Routing destination "${input.forwardTo}" is not registered on account ${input.accountId}. Add and verify it under Email → Email Routing → Destination addresses (or set DMARC_REPORT_FORWARD_TO to a verified address), then re-run deploy.`,
+		)
+	}
+	if (!destination.verified) {
+		return fail(
+			`Email Routing destination "${input.forwardTo}" exists but is not verified yet. Complete the Cloudflare verification email, then re-run deploy.`,
+		)
+	}
+
+	const listed = await cloudflareRootApiRequest<
+		Array<CloudflareEmailRoutingRule>
+	>({
+		apiToken: input.apiToken,
+		apiBaseUrl: input.apiBaseUrl,
+		fetcher: input.fetcher,
+		sleep: input.sleep,
+		pathname: `/zones/${encodeURIComponent(input.zoneId)}/email/routing/rules?per_page=50`,
+	})
+	const existing = (listed.result ?? []).find((rule) =>
+		emailRoutingRuleMatchesDmarcMailbox({ rule, mailbox }),
+	)
+	const desiredBody = {
+		name: ruleName,
+		enabled: true,
+		matchers: [{ type: 'literal', field: 'to', value: mailbox }],
+		actions: [{ type: 'forward', value: [input.forwardTo] }],
+	}
+	if (existing) {
+		const alreadyOk =
+			existing.enabled !== false &&
+			emailRoutingRuleForwardsTo({ rule: existing, forwardTo: input.forwardTo })
+		if (alreadyOk) {
+			console.error(
+				`Email Routing rule exists: ${mailbox} → ${input.forwardTo} (${existing.id})`,
+			)
+			return {
+				mailbox,
+				forwardTo: input.forwardTo,
+				created: false as const,
+				id: existing.id,
+			}
+		}
+		const updated = await cloudflareRootApiRequest<CloudflareEmailRoutingRule>({
+			apiToken: input.apiToken,
+			apiBaseUrl: input.apiBaseUrl,
+			fetcher: input.fetcher,
+			sleep: input.sleep,
+			pathname: `/zones/${encodeURIComponent(input.zoneId)}/email/routing/rules/${encodeURIComponent(existing.id)}`,
+			method: 'PUT',
+			body: desiredBody,
+		})
+		console.error(
+			`Updated Email Routing rule: ${mailbox} → ${input.forwardTo} (${updated.result?.id ?? existing.id})`,
+		)
+		return {
+			mailbox,
+			forwardTo: input.forwardTo,
+			created: false as const,
+			id: updated.result?.id ?? existing.id,
+		}
+	}
+
+	const created = await cloudflareRootApiRequest<CloudflareEmailRoutingRule>({
+		apiToken: input.apiToken,
+		apiBaseUrl: input.apiBaseUrl,
+		fetcher: input.fetcher,
+		sleep: input.sleep,
+		pathname: `/zones/${encodeURIComponent(input.zoneId)}/email/routing/rules`,
+		method: 'POST',
+		body: desiredBody,
+	})
+	console.error(
+		`Created Email Routing rule: ${mailbox} → ${input.forwardTo} (${created.result?.id})`,
+	)
+	return {
+		mailbox,
+		forwardTo: input.forwardTo,
+		created: true as const,
+		id: created.result?.id,
 	}
 }
 

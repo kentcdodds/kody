@@ -14,10 +14,15 @@ import {
 	emailSendingEventTypes,
 	emptyR2Bucket,
 	encodeR2ObjectKey,
+	defaultDmarcReportForwardTo,
 	deleteEmailSendingEventSubscriptionIfPresent,
+	dmarcReportingRecordNames,
+	dmarcReportingTxtContent,
 	ensureArtifactsAccountEventSubscription,
 	ensureArtifactsNamespace,
 	ensureCloudflareQueue,
+	ensureDmarcEmailRoutingRule,
+	ensureDmarcReportingTxtRecords,
 	ensureEmailSendingEventSubscription,
 	ensurePackageAppDnsRecords,
 	ensureR2BucketLifecycle,
@@ -1301,5 +1306,256 @@ test('ensurePackageAppDnsRecords fails closed on conflicting DNS records', async
 	).rejects.toThrow('process.exit called')
 	expect(consoleError).toHaveBeenCalledWith(
 		expect.stringContaining('found A 192.0.2.1'),
+	)
+})
+
+test('dmarcReportingTxtContent and record names cover system and user domains', () => {
+	expect(dmarcReportingTxtContent('kody.codes')).toBe(
+		'v=DMARC1; p=reject; rua=mailto:dmarc@kody.codes',
+	)
+	expect(
+		dmarcReportingRecordNames({
+			systemEmailDomain: 'kody.codes',
+			userEmailDomain: 'inbox.kody.codes',
+		}),
+	).toEqual(['_dmarc.kody.codes', '_dmarc.inbox.kody.codes'])
+	expect(
+		dmarcReportingRecordNames({
+			systemEmailDomain: 'kody.codes',
+			userEmailDomain: 'kody.codes',
+		}),
+	).toEqual(['_dmarc.kody.codes'])
+	expect(defaultDmarcReportForwardTo).toBe('me@kentcdodds.com')
+})
+
+test('ensureDmarcReportingTxtRecords creates, updates, and reuses TXT records', async () => {
+	consoleError.mockImplementation(() => {})
+	const desired = dmarcReportingTxtContent('kody.codes')
+	const args = {
+		apiToken: 'token-1',
+		zoneId: 'zone-mail',
+		systemEmailDomain: 'kody.codes',
+		userEmailDomain: 'inbox.kody.codes',
+		dryRun: false,
+	}
+	const createFetcher = mockFetch(
+		ok([]),
+		ok({
+			id: 'txt-system',
+			type: 'TXT',
+			name: '_dmarc.kody.codes',
+			content: desired,
+		}),
+		ok([]),
+		ok({
+			id: 'txt-inbox',
+			type: 'TXT',
+			name: '_dmarc.inbox.kody.codes',
+			content: desired,
+		}),
+	)
+	await expect(
+		ensureDmarcReportingTxtRecords({ ...args, fetcher: createFetcher }),
+	).resolves.toEqual({
+		recordNames: ['_dmarc.kody.codes', '_dmarc.inbox.kody.codes'],
+		content: desired,
+	})
+	const records = `${zoneApi}/zone-mail/dns_records`
+	expect(createFetcher.mock.calls).toEqual([
+		[
+			`${records}?name=${encodeURIComponent('_dmarc.kody.codes')}`,
+			expect.objectContaining({ method: 'GET' }),
+		],
+		[
+			records,
+			expect.objectContaining({
+				method: 'POST',
+				body: JSON.stringify({
+					type: 'TXT',
+					name: '_dmarc.kody.codes',
+					content: desired,
+					ttl: 1,
+				}),
+			}),
+		],
+		[
+			`${records}?name=${encodeURIComponent('_dmarc.inbox.kody.codes')}`,
+			expect.objectContaining({ method: 'GET' }),
+		],
+		[
+			records,
+			expect.objectContaining({
+				method: 'POST',
+				body: JSON.stringify({
+					type: 'TXT',
+					name: '_dmarc.inbox.kody.codes',
+					content: desired,
+					ttl: 1,
+				}),
+			}),
+		],
+	])
+
+	const updateFetcher = mockFetch(
+		ok([
+			{
+				id: 'txt-old',
+				type: 'TXT',
+				name: '_dmarc.kody.codes',
+				content: 'v=DMARC1; p=reject;',
+			},
+		]),
+		ok({
+			id: 'txt-old',
+			type: 'TXT',
+			name: '_dmarc.kody.codes',
+			content: desired,
+		}),
+		ok([
+			{
+				id: 'txt-inbox-ok',
+				type: 'TXT',
+				name: '_dmarc.inbox.kody.codes',
+				content: desired,
+			},
+		]),
+	)
+	await ensureDmarcReportingTxtRecords({ ...args, fetcher: updateFetcher })
+	expect(updateFetcher).toHaveBeenNthCalledWith(
+		2,
+		`${records}/txt-old`,
+		expect.objectContaining({
+			method: 'PUT',
+			body: JSON.stringify({
+				type: 'TXT',
+				name: '_dmarc.kody.codes',
+				content: desired,
+				ttl: 1,
+			}),
+		}),
+	)
+	expect(updateFetcher).toHaveBeenCalledTimes(3)
+})
+
+test('ensureDmarcReportingTxtRecords fails closed on non-TXT conflicts', async () => {
+	consoleError.mockImplementation(() => {})
+	using _exit = mockProcessExit()
+	const conflictFetcher = mockFetch(
+		ok([
+			{
+				id: 'cname',
+				type: 'CNAME',
+				name: '_dmarc.kody.codes',
+				content: 'elsewhere.example',
+			},
+		]),
+	)
+	await expect(
+		ensureDmarcReportingTxtRecords({
+			apiToken: 'token-1',
+			zoneId: 'zone-mail',
+			systemEmailDomain: 'kody.codes',
+			userEmailDomain: 'kody.codes',
+			dryRun: false,
+			fetcher: conflictFetcher,
+		}),
+	).rejects.toThrow('process.exit called')
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.stringContaining('is not TXT'),
+	)
+})
+
+test('ensureDmarcEmailRoutingRule creates and reuses a forward rule', async () => {
+	consoleError.mockImplementation(() => {})
+	const args = {
+		...creds,
+		zoneId: 'zone-mail',
+		systemEmailDomain: 'kody.codes',
+		forwardTo: 'me@kentcdodds.com',
+	}
+	const createFetcher = mockFetch(
+		ok([
+			{
+				id: 'dest-1',
+				email: 'me@kentcdodds.com',
+				verified: '2026-01-01T00:00:00Z',
+			},
+		]),
+		ok([]),
+		ok({
+			id: 'rule-1',
+			name: 'DMARC reports → me@kentcdodds.com',
+			enabled: true,
+			matchers: [{ type: 'literal', field: 'to', value: 'dmarc@kody.codes' }],
+			actions: [{ type: 'forward', value: ['me@kentcdodds.com'] }],
+		}),
+	)
+	await expect(
+		ensureDmarcEmailRoutingRule({ ...args, fetcher: createFetcher }),
+	).resolves.toEqual({
+		mailbox: 'dmarc@kody.codes',
+		forwardTo: 'me@kentcdodds.com',
+		created: true,
+		id: 'rule-1',
+	})
+	expect(createFetcher).toHaveBeenNthCalledWith(
+		1,
+		`${accountApi}/email/routing/addresses?per_page=50`,
+		expect.objectContaining({ method: 'GET' }),
+	)
+	expect(createFetcher).toHaveBeenNthCalledWith(
+		3,
+		`${zoneApi}/zone-mail/email/routing/rules`,
+		expect.objectContaining({
+			method: 'POST',
+			body: JSON.stringify({
+				name: 'DMARC reports → me@kentcdodds.com',
+				enabled: true,
+				matchers: [{ type: 'literal', field: 'to', value: 'dmarc@kody.codes' }],
+				actions: [{ type: 'forward', value: ['me@kentcdodds.com'] }],
+			}),
+		}),
+	)
+
+	const reuseFetcher = mockFetch(
+		ok([
+			{
+				id: 'dest-1',
+				email: 'me@kentcdodds.com',
+				verified: '2026-01-01T00:00:00Z',
+			},
+		]),
+		ok([
+			{
+				id: 'rule-1',
+				enabled: true,
+				matchers: [{ type: 'literal', field: 'to', value: 'dmarc@kody.codes' }],
+				actions: [{ type: 'forward', value: ['me@kentcdodds.com'] }],
+			},
+		]),
+	)
+	await expect(
+		ensureDmarcEmailRoutingRule({ ...args, fetcher: reuseFetcher }),
+	).resolves.toMatchObject({ created: false, id: 'rule-1' })
+	expect(reuseFetcher).toHaveBeenCalledTimes(2)
+})
+
+test('ensureDmarcEmailRoutingRule fails when destination is unverified', async () => {
+	consoleError.mockImplementation(() => {})
+	using _exit = mockProcessExit()
+	const unverifiedFetcher = mockFetch(
+		ok([{ id: 'dest-1', email: 'me@kentcdodds.com', verified: null }]),
+	)
+	await expect(
+		ensureDmarcEmailRoutingRule({
+			...creds,
+			zoneId: 'zone-mail',
+			systemEmailDomain: 'kody.codes',
+			forwardTo: 'me@kentcdodds.com',
+			fetcher: unverifiedFetcher,
+		}),
+	).rejects.toThrow('process.exit called')
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.stringContaining('not verified yet'),
 	)
 })
