@@ -51,6 +51,34 @@ test('estimatePaidListMrrUsdCents uses catalog list MRR and treats overlays as $
 	).toEqual({ cents: 0, source: 'none' })
 })
 
+test('estimatePaidListMrrUsdCents multiplies seats only for purchasable Pro', () => {
+	expect(
+		estimatePaidListMrrUsdCents({
+			stripePlan: 'pro',
+			stripePriceId: 'price_pro',
+			catalog,
+			quantity: 3,
+		}),
+	).toEqual({ cents: 3_600, source: 'stripe_catalog' })
+	expect(
+		estimatePaidListMrrUsdCents({
+			stripePlan: 'pro',
+			stripePriceId: 'price_pro',
+			catalog,
+			quantity: 0,
+		}),
+	).toEqual({ cents: 1_200, source: 'stripe_catalog' })
+	// Retired prices keep historical Stripe quantity; live seats must not inflate.
+	expect(
+		estimatePaidListMrrUsdCents({
+			stripePlan: 'standard',
+			stripePriceId: standardPriceId,
+			catalog,
+			quantity: 3,
+		}),
+	).toEqual({ cents: 1_200, source: 'stripe_catalog' })
+})
+
 function costVsPay(
 	username: string,
 	uniqueWorkerDays: number,

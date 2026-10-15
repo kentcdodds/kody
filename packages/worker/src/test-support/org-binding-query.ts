@@ -41,9 +41,13 @@ export function personalOrgAccessD1(): D1Database {
 					return {
 						async first() {
 							if (isActiveOrgQuery(normalizedQuery)) return { ok: 1 }
+							// orgBindingForOrgStatements binds (personId, orgId);
+							// orgBindingForPersonStatement binds only personId.
+							// Prefer the org id when present so distinct personal
+							// orgs stub org_id correctly.
 							return isOrgBindingMembershipQuery(normalizedQuery)
 								? mockPersonalOrgBindingRow(
-										String(params[0] ?? params[1] ?? ''),
+										String(params[1] ?? params[0] ?? ''),
 									)
 								: null
 						},

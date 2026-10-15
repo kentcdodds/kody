@@ -22,13 +22,18 @@ function extensionForContentType(contentType: UserAvatarOutputContentType) {
 	}
 }
 
+/** R2 listing prefix for every avatar object owned by one org. */
+export function orgAvatarR2OrgPrefix(orgId: string) {
+	return `${orgAvatarR2KeyPrefix}${orgId}/`
+}
+
 export function buildOrgAvatarR2Key(input: {
 	orgId: string
 	contentHash: string
 	contentType: UserAvatarOutputContentType
 }) {
 	const extension = extensionForContentType(input.contentType)
-	return `${orgAvatarR2KeyPrefix}${input.orgId}/${input.contentHash}.${extension}`
+	return `${orgAvatarR2OrgPrefix(input.orgId)}${input.contentHash}.${extension}`
 }
 
 export function parseOrgAvatarCacheKey(avatarKey: string): string | null {

@@ -20,6 +20,7 @@ const {
 
 type ActiveUserRow = {
 	stable_user_id: string
+	org_id: string
 	username: string
 	plan: string
 	stripe_plan: string | null
@@ -43,7 +44,7 @@ function createFleetDb(input: {
 		event_count: number
 	}>
 	metricLeaders?: Array<{
-		user_id: string
+		stable_user_id: string
 		username: string
 		metric: string
 		total_duration_ms: number
@@ -133,6 +134,7 @@ function activeUser(
 ): ActiveUserRow {
 	return {
 		stable_user_id,
+		org_id: stable_user_id,
 		username,
 		plan,
 		stripe_plan: null,
@@ -194,7 +196,7 @@ test('loadFleetUsageInsights returns bounded consumer rankings and pressure pane
 		],
 		metricLeaders: [
 			{
-				user_id: ownerIdFromStored('user-a'),
+				stable_user_id: 'user-a',
 				username: 'alice',
 				metric: 'execute',
 				total_duration_ms: 1_000,
@@ -679,4 +681,98 @@ test('fleet entitlement pressure scores temporary Pro gift overlays, not Free ca
 	expect(
 		insights.entitlementPressure.map((row) => row.stableUserId).sort(),
 	).toEqual(['base-free', 'expired-gift', 'gifted', 'referral-gift'])
+})
+
+test('fleet entitlement reads key consumption duration and worker-days by personal org id when distinct', async () => {
+	const personId = 'person-distinct'
+	const orgId = 'org-distinct'
+	expect(personId).not.toBe(orgId)
+	entitlementMocks.readAdminEntitlementConsumption.mockResolvedValue([
+		consumption('secrets', 'secrets', 9, 10),
+	])
+	const durationBinds: Array<Array<unknown>> = []
+	const db = createFleetDb({
+		activeUsers: [activeUser(personId, 'ada', 'free', 50, { org_id: orgId })],
+		runtimeByUser: { [orgId]: 1_000 },
+		uniqueWorkerDaysByUser: { [orgId]: 12 },
+		onDurationQueryBind(params) {
+			durationBinds.push(params)
+		},
+	})
+	const snapshots = await loadFleetEntitlementCrossingSnapshots({
+		db,
+		env: { APP_DB: db } as Env,
+		now,
+	})
+	expect(snapshots).toEqual([
+		expect.objectContaining({
+			stableUserId: personId,
+			runtimeDurationMs: 1_000,
+			uniqueWorkerDays: 12,
+		}),
+	])
+	expect(consumptionCalls()).toEqual([
+		expect.objectContaining({ usageUserId: orgId }),
+	])
+	expect(durationBinds.some((params) => params.includes(orgId))).toBe(true)
+	expect(durationBinds.every((params) => !params.includes(personId))).toBe(true)
+})
+
+test('loadFleetUsageInsights rankings expose person id for distinct personal org rollups', async () => {
+	const personId = 'person-rank'
+	const orgId = 'org-rank'
+	expect(personId).not.toBe(orgId)
+	entitlementMocks.readAdminEntitlementConsumption.mockResolvedValue([])
+	const db = createFleetDb({
+		runtimeLeaders: [
+			{
+				stable_user_id: personId,
+				username: 'ada',
+				total_duration_ms: 9_000,
+			},
+		],
+		eventLeaders: [
+			{ stable_user_id: personId, username: 'ada', event_count: 100 },
+		],
+		metricLeaders: [
+			{
+				stable_user_id: personId,
+				username: 'ada',
+				metric: 'execute',
+				total_duration_ms: 4_000,
+			},
+		],
+		activeUsers: [activeUser(personId, 'ada', 'free', 100, { org_id: orgId })],
+		dynamicWorkerDays: 0,
+		dynamicWorkerLeaders: [],
+	})
+	const data = await loadFleetUsageInsights({
+		db,
+		env: { APP_DB: db } as Env,
+		now,
+	})
+	expect(data.topRuntimeDurationConsumers).toEqual([
+		{
+			stableUserId: ownerIdFromStored(personId),
+			username: 'ada',
+			totalDurationMs: 9_000,
+		},
+	])
+	expect(data.topEventCountConsumers).toEqual([
+		{
+			stableUserId: ownerIdFromStored(personId),
+			username: 'ada',
+			eventCount: 100,
+		},
+	])
+	expect(
+		data.topDurationConsumersByMetric.find((row) => row.metric === 'execute')
+			?.consumers,
+	).toEqual([
+		{
+			stableUserId: ownerIdFromStored(personId),
+			username: 'ada',
+			totalDurationMs: 4_000,
+		},
+	])
 })

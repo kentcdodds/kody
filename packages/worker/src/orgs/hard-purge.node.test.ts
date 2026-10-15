@@ -30,7 +30,8 @@ vi.mock('#worker/jobs/jobs-data.ts', () => ({
 	}),
 }))
 
-const { hardPurgeOrg } = await import('./hard-purge.ts')
+const { hardPurgeOrg, PersonalOrgHardPurgeBlockedForLiveUserError } =
+	await import('./hard-purge.ts')
 
 function createAuditDb() {
 	const auditSqlite = new DatabaseSync(':memory:')
@@ -472,4 +473,153 @@ test('hardPurgeOrg leaves personal-org owner inventory for the following user pu
 		.bind(personId)
 		.first<{ action: string }>()
 	expect(audit?.action).toBe('org.purged')
+})
+
+test('hardPurgeOrg blocks when the personal-org person is still live', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const appDb = createD1FromSqlite(sqlite)
+	const auditDb = createAuditDb()
+	const personId = ownerIdFromStored('person-live-purge')
+	const ts = '2026-01-01T00:00:00.000Z'
+	await appDb
+		.prepare(
+			`INSERT INTO users (
+				id, username, email, password_hash, stable_user_id,
+				created_at, updated_at
+			) VALUES (1, 'live-purge', 'live@example.com', 'hash', ?, ?, ?)`,
+		)
+		.bind(personId, ts, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO orgs (
+				id, slug, display_name, plan, entitlement_ladder, deleted_at,
+				created_at, updated_at
+			) VALUES (?, 'live-purge', 'Live', 'free', 'public', ?, ?, ?)`,
+		)
+		.bind(personId, ts, ts, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO handles (handle, org_id, created_at) VALUES ('live-purge', ?, ?)`,
+		)
+		.bind(personId, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO org_memberships (
+				org_id, user_id, role, created_at, deleted_at
+			) VALUES (?, ?, 'owner', ?, ?)`,
+		)
+		.bind(personId, personId, ts, ts)
+		.run()
+	const kvKey = 'bundle-artifact:v1:live-src-1'
+	await appDb
+		.prepare(
+			`INSERT INTO published_bundle_artifacts (
+				id, user_id, source_id, published_commit, artifact_kind, artifact_name,
+				entry_point, kv_key, dependencies_json, created_at, updated_at
+			) VALUES (
+				'pba-live-1', ?, 'live-src-1', 'abc123', 'module', 'main',
+				'index.js', ?, '[]', ?, ?
+			)`,
+		)
+		.bind(personId, kvKey, ts, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO secret_buckets (
+				id, user_id, scope, binding_key, created_at, updated_at, deleted_at
+			) VALUES ('sec-live', ?, 'user', 'default', ?, ?, ?)`,
+		)
+		.bind(personId, ts, ts, ts)
+		.run()
+	const { store, kv } = createKv()
+	await kv.put(kvKey, 'live-artifact')
+
+	const env = createSuccessfulDeletionEnv(appDb, {
+		AUDIT_DB: auditDb,
+		BUNDLE_ARTIFACTS_KV: kv,
+	})
+	await expect(hardPurgeOrg({ env, orgId: personId })).rejects.toBeInstanceOf(
+		PersonalOrgHardPurgeBlockedForLiveUserError,
+	)
+
+	expect(
+		(
+			await appDb
+				.prepare(`SELECT COUNT(*) AS n FROM orgs WHERE id = ?`)
+				.bind(personId)
+				.first<{ n: number }>()
+		)?.n,
+	).toBe(1)
+	expect(
+		(
+			await appDb
+				.prepare(
+					`SELECT COUNT(*) AS n FROM published_bundle_artifacts WHERE user_id = ?`,
+				)
+				.bind(personId)
+				.first<{ n: number }>()
+		)?.n,
+	).toBe(1)
+	expect(
+		(
+			await appDb
+				.prepare(`SELECT COUNT(*) AS n FROM secret_buckets WHERE user_id = ?`)
+				.bind(personId)
+				.first<{ n: number }>()
+		)?.n,
+	).toBe(1)
+	expect(store.has(kvKey)).toBe(true)
+})
+
+test('hardPurgeOrg sweeps team org-avatars from COMMUNITY_ASSETS', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const appDb = createD1FromSqlite(sqlite)
+	const auditDb = createAuditDb()
+	const orgId = ownerIdFromStored('org-avatar-purge')
+	const ts = '2026-01-01T00:00:00.000Z'
+	await seedTeamOrgGraph({ appDb, orgId, ts })
+	const avatarKey = `org-avatars/${orgId}/hash.png`
+	const otherKey = 'org-avatars/other-org/hash.png'
+	const assets = new Map<string, string>([
+		[avatarKey, 'png'],
+		[otherKey, 'png'],
+		[`user-avatars/${orgId}/face.png`, 'png'],
+	])
+	const env = createSuccessfulDeletionEnv(appDb, {
+		AUDIT_DB: auditDb,
+		COMMUNITY_ASSETS: {
+			async list(options?: { prefix?: string; cursor?: string }) {
+				const prefix = options?.prefix ?? ''
+				const matches = [...assets.keys()]
+					.filter(
+						(key) =>
+							key.startsWith(prefix) &&
+							(!options?.cursor || key > options.cursor),
+					)
+					.sort()
+				const objects = matches.slice(0, 10).map((key) => ({ key }))
+				return {
+					objects,
+					delimitedPrefixes: [],
+					...(matches.length > objects.length
+						? { truncated: true as const, cursor: objects.at(-1)!.key }
+						: { truncated: false as const }),
+				}
+			},
+			async delete(value: string | Array<string>) {
+				for (const key of Array.isArray(value) ? value : [value]) {
+					assets.delete(key)
+				}
+			},
+		},
+	})
+	await hardPurgeOrg({ env, orgId })
+	expect(assets.has(avatarKey)).toBe(false)
+	expect(assets.has(`user-avatars/${orgId}/face.png`)).toBe(false)
+	expect(assets.has(otherKey)).toBe(true)
 })

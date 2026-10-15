@@ -30,6 +30,10 @@ import {
 	userEntitlementColumnsSql,
 	type UserEntitlementRow,
 } from '#worker/entitlements/service.ts'
+import {
+	joinOrgsOnPersonalOrgIdSql,
+	personalOrgIdSql,
+} from '#worker/orgs/personal-org-sql.ts'
 import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
 import { computeIncludeWarningPutsAccessAtRisk } from '#universal/usage-presentation.ts'
 import { sendToOrgBillingRecipients } from '#worker/billing/org-billing-emails.ts'
@@ -84,11 +88,15 @@ const stockSecretThreshold = Math.ceil(planLimits.free.maxSecrets * 0.8)
 
 type WarningCandidate = UserEntitlementRow & {
 	stable_user_id: OwnerId
+	/** Personal org id — owner key for usage, wallets, meters, billing mail. */
+	org_id: OwnerId
 	email: string
 }
 
-const candidateColumnsSql = `u.stable_user_id, u.email, ${userEntitlementColumnsSql('o')}`
-const orgEntitlementJoinSql = `INNER JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)${andLiveDeletedAtSql('o')}`
+const candidateColumnsSql = `u.stable_user_id, o.id AS org_id, u.email, ${userEntitlementColumnsSql('o')}`
+const orgEntitlementJoinSql = `${joinOrgsOnPersonalOrgIdSql}${andLiveDeletedAtSql('o')}`
+/** Owner-keyed stock / rollup rows join to the effective personal org id. */
+const joinUsersOnOwnerKeyedIdSql = `INNER JOIN users u ON ${personalOrgIdSql} =`
 
 export type UserWarningResource =
 	| EntitlementResource
@@ -212,22 +220,23 @@ async function warnOneUserIfNeeded(input: {
 	const kv = input.env.BUNDLE_ARTIFACTS_KV
 	if (!kv) return null
 
+	const ownerId = input.user.org_id
 	const entitlement = await resolveUserEntitlementFromRow({
 		db: input.env.APP_DB,
-		stableUserId: input.user.stable_user_id,
+		stableUserId: ownerId,
 		row: input.user,
 		now: input.now,
 	})
 	const [consumption, computeWarnings] = await Promise.all([
 		readAdminEntitlementConsumption({
 			env: input.env,
-			usageUserId: input.user.stable_user_id,
+			usageUserId: ownerId,
 			entitlement,
 			now: input.now,
 		}),
 		readComputeOverageWarnings({
 			db: input.env.APP_DB,
-			stableUserId: input.user.stable_user_id,
+			stableUserId: ownerId,
 			entitlement,
 			now: input.now,
 		}),
@@ -258,7 +267,7 @@ async function warnOneUserIfNeeded(input: {
 			approaching.push(warning)
 			await deleteWarningClaims({
 				kv,
-				userId: input.user.stable_user_id,
+				userId: ownerId,
 				kind: 'reached',
 				resource: item.resource,
 				now: input.now,
@@ -268,14 +277,14 @@ async function warnOneUserIfNeeded(input: {
 		await Promise.all([
 			deleteWarningClaims({
 				kv,
-				userId: input.user.stable_user_id,
+				userId: ownerId,
 				kind: 'approaching',
 				resource: item.resource,
 				now: input.now,
 			}),
 			deleteWarningClaims({
 				kv,
-				userId: input.user.stable_user_id,
+				userId: ownerId,
 				kind: 'reached',
 				resource: item.resource,
 				now: input.now,
@@ -285,21 +294,21 @@ async function warnOneUserIfNeeded(input: {
 
 	const newReached = await unclaimedWarnings({
 		kv,
-		userId: input.user.stable_user_id,
+		userId: ownerId,
 		kind: 'reached',
 		warnings: reached,
 		now: input.now,
 	})
 	const newApproaching = await unclaimedWarnings({
 		kv,
-		userId: input.user.stable_user_id,
+		userId: ownerId,
 		kind: 'approaching',
 		warnings: approaching,
 		now: input.now,
 	})
 	await refreshStillOverStockClaims({
 		kv,
-		userId: input.user.stable_user_id,
+		userId: ownerId,
 		now: input.now,
 		reached,
 		approaching,
@@ -320,7 +329,7 @@ async function warnOneUserIfNeeded(input: {
 			env: input.env,
 			kv,
 			emailConfig: input.emailConfig,
-			ownerId: input.user.stable_user_id,
+			ownerId,
 			kind,
 			warnings,
 			now: input.now,
@@ -703,7 +712,7 @@ export async function listUsersForEntitlementWarningSweep(
 					ORDER BY event_count DESC
 					LIMIT ?
 				 ) AS ranked
-				 INNER JOIN users u ON u.stable_user_id = ranked.user_id
+				 ${joinUsersOnOwnerKeyedIdSql} ranked.user_id
 				 ${orgEntitlementJoinSql}
 				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 					AND u.email_verified_at IS NOT NULL
@@ -727,7 +736,7 @@ export async function listUsersForEntitlementWarningSweep(
 					ORDER BY stock_count DESC
 					LIMIT ?
 				 ) AS stock
-				 INNER JOIN users u ON u.stable_user_id = stock.user_id
+				 ${joinUsersOnOwnerKeyedIdSql} stock.user_id
 				 ${orgEntitlementJoinSql}
 				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 					AND u.email_verified_at IS NOT NULL`,
@@ -749,7 +758,7 @@ export async function listUsersForEntitlementWarningSweep(
 					ORDER BY stock_count DESC
 					LIMIT ?
 				 ) AS stock
-				 INNER JOIN users u ON u.stable_user_id = stock.user_id
+				 ${joinUsersOnOwnerKeyedIdSql} stock.user_id
 				 ${orgEntitlementJoinSql}
 				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 					AND u.email_verified_at IS NOT NULL`,
@@ -771,7 +780,7 @@ export async function listUsersForEntitlementWarningSweep(
 					ORDER BY event_count DESC
 					LIMIT ?
 				 ) AS ranked
-				 INNER JOIN users u ON u.stable_user_id = ranked.user_id
+				 ${joinUsersOnOwnerKeyedIdSql} ranked.user_id
 				 ${orgEntitlementJoinSql}
 				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 					AND u.email_verified_at IS NOT NULL
@@ -790,7 +799,7 @@ export async function listUsersForEntitlementWarningSweep(
 					ORDER BY event_count DESC
 					LIMIT ?
 				 ) AS ranked
-				 INNER JOIN users u ON u.stable_user_id = ranked.user_id
+				 ${joinUsersOnOwnerKeyedIdSql} ranked.user_id
 				 ${orgEntitlementJoinSql}
 				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 					AND u.email_verified_at IS NOT NULL
