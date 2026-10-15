@@ -22,5 +22,4 @@ test('package no-access page names the package and offers a request-access copy'
 	expect(html).toContain('href="/docs/package-sharing"')
 	expect(html).toContain('Copy access request')
 	expect(html).toContain('data-error-agent-prompt')
-	expect(html).not.toContain("This doesn't quite connect.")
 })

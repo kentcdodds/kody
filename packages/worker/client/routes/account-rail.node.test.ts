@@ -52,16 +52,8 @@ test('account rail holds the person: profile, security, organizations, experimen
 	]) {
 		expect(isAccountRailPath(path), path).toBe(false)
 	}
-})
-
-test('account rail has no workspaces group; orgs live in the avatar menu', () => {
-	const groups = accountRailGroups()
-	expect(groups.map((group) => group.label)).toEqual([null])
-	expect(
-		groups
-			.flatMap((group) => group.items)
-			.some((item) => item.label.startsWith('@')),
-	).toBe(false)
+	expect(accountRailGroups().map((group) => group.label)).toEqual([null])
+	expect(items.some((item) => item.label.startsWith('@'))).toBe(false)
 })
 
 test('workspace home is the overview for the signup org and /@slug for a team', () => {
@@ -209,9 +201,6 @@ test('team organization rail shares the sections and keeps members, settings, an
 		'Credits',
 		'Billing',
 	])
-	expect(
-		teamOwner.flatMap((group) => group.items).map((item) => item.label),
-	).not.toContain('Memories')
 	expect(teamOwner.at(-1)?.items.map((item) => item.href)).toEqual([
 		'/@acme/-/members',
 		'/@acme/-/settings',

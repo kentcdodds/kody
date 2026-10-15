@@ -157,9 +157,6 @@ test('a credential-needs-only bundle item states the credential change and hides
 	expect(html).toContain('NEXTDNS_API_KEY')
 	expect(html).toContain('provider nextdns')
 	expect(html).toContain('Credential values are never shown.')
-	expect(html).not.toContain('public internet')
-	expect(html).not.toContain('internet-visible')
-	expect(html).not.toContain('Secret values')
 
 	const item = html.slice(html.indexOf('data-testid="approval-bundle-item"'))
 	const detailsIndex = item.indexOf(

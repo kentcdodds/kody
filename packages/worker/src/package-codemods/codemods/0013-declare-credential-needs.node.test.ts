@@ -1,9 +1,5 @@
 import { expect, test } from 'vitest'
-import {
-	declareCredentialNeedsCodemod,
-	declareCredentialNeedsMessages,
-	declaredCredentialSlotDescription,
-} from './0013-declare-credential-needs.ts'
+import { declareCredentialNeedsCodemod } from './0013-declare-credential-needs.ts'
 
 const packageContext = { packageName: '@acme/demo' }
 
@@ -33,7 +29,30 @@ function declaredSlots(result: { files: Record<string, string> }) {
 	>
 }
 
-const slot = { description: declaredCredentialSlotDescription }
+const slot = {
+	description:
+		'Used by this package by name. Declared automatically from its source; describe what it is for.',
+}
+const messages = {
+	declare:
+		'Uses credentials by name that kody.credentials does not declare. Add a kody.credentials slot for each.',
+	computed:
+		'Builds a credential name or credential() key at run time. Declare each credential it can use as a kody.credentials slot by hand.',
+	vault:
+		'Uses a vault ref ({{secret/provider:ref}}). Declare a kody.credentials slot keyed by the provider by hand.',
+	invalidKey:
+		'Uses a credential name that is not a valid kody.credentials slot key (a letter, then letters, numbers, dots, underscores, or hyphens; max 64). Rename it or declare it by hand.',
+	kindMismatch:
+		'Uses a credential that kody.credentials declares with a kind that cannot fill it. Fix the slot kind by hand.',
+	undeclaredCredentialKey:
+		'Calls credential() with a key that kody.credentials does not declare. Declare the slot with the kind it takes (a slot with no kind takes only secret, oauth, or login credentials) by hand.',
+	indirectCredential:
+		'Passes credential or credentials around instead of calling it. Declare each key it reads as a kody.credentials slot by hand.',
+	invalidManifest:
+		'package.json or its kody.credentials is not valid. Fix it, then declare each credential the package uses.',
+	unparsedModule:
+		'A module could not be parsed, so the credential names it uses were not read reliably. Declare each credential it uses as a kody.credentials slot by hand.',
+}
 
 test('0013 declares every literal name the fetch gateway fills', () => {
 	const result = transform(
@@ -85,7 +104,7 @@ test('0013 leaves undeclared credential() keys for the owner and accepts declare
 		needsManual: [
 			{
 				path: 'index.ts',
-				message: declareCredentialNeedsMessages.undeclaredCredentialKey,
+				message: messages.undeclaredCredentialKey,
 			},
 		],
 	})
@@ -171,11 +190,11 @@ test('0013 flags what it cannot declare and still declares the rest', () => {
 	})
 	expect(result.needsManual.map((finding) => finding.message).sort()).toEqual(
 		[
-			declareCredentialNeedsMessages.computed,
-			declareCredentialNeedsMessages.indirectCredential,
-			declareCredentialNeedsMessages.invalidKey,
-			declareCredentialNeedsMessages.kindMismatch,
-			declareCredentialNeedsMessages.vault,
+			messages.computed,
+			messages.indirectCredential,
+			messages.invalidKey,
+			messages.kindMismatch,
+			messages.vault,
 		].sort(),
 	)
 	expect(
@@ -239,7 +258,7 @@ test('0013 does not declare names read from a module it cannot parse', () => {
 		needsManual: [
 			{
 				path: 'index.ts',
-				message: declareCredentialNeedsMessages.unparsedModule,
+				message: messages.unparsedModule,
 			},
 		],
 	})
@@ -260,7 +279,7 @@ test('0013 keeps manifest indentation, other kody fields, and is idempotent', ()
 		credentials: { K: slot },
 	})
 	expect(declareCredentialNeedsCodemod.detect(files, packageContext)).toEqual([
-		{ path: 'package.json', message: declareCredentialNeedsMessages.declare },
+		{ path: 'package.json', message: messages.declare },
 	])
 	const twice = declareCredentialNeedsCodemod.transform(
 		once.files,
@@ -285,7 +304,7 @@ test('0013 reports an invalid manifest without writing', () => {
 		needsManual: [
 			{
 				path: 'package.json',
-				message: declareCredentialNeedsMessages.invalidManifest,
+				message: messages.invalidManifest,
 			},
 		],
 	})

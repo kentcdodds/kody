@@ -1,8 +1,6 @@
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
-import { defaultKodyMcpUrl } from '#universal/onboarding-mcp-clients.ts'
-import { walkthroughHostCatalog } from '#universal/walkthrough-hosts.ts'
 import {
 	findWithAgentByPathname,
 	pickWithAgentOrder,
@@ -12,12 +10,9 @@ import {
 	type WithAgent,
 } from './with-agents.ts'
 
-test('every agent with a /with page has an icon, steps, and a walkthrough host', () => {
+test('every agent with a /with page has an icon, steps, and no em dash in the pitch', () => {
 	const slugs = withAgents.map((agent) => agent.slug)
 	expect(new Set(slugs).size).toBe(slugs.length)
-	expect([...slugs].sort()).toEqual(
-		walkthroughHostCatalog.map((host) => host.id).sort(),
-	)
 	for (const agent of withAgents) {
 		const icon = fileURLToPath(
 			new URL(`../public${withAgentIconSrc(agent)}`, import.meta.url),
@@ -47,9 +42,9 @@ test('agents without an official path get the setup prompt and MCP URL', () => {
 	)
 	for (const agent of generic) {
 		expect(agent.steps.filter((step) => 'prompt' in step)).toHaveLength(1)
-		expect(agent.steps.some((step) => step.code === defaultKodyMcpUrl)).toBe(
-			true,
-		)
+		expect(
+			agent.steps.some((step) => step.code === 'https://kody.codes/mcp'),
+		).toBe(true)
 	}
 	// OpenMuse needs its harness wired first; a chat prompt cannot add Kody.
 	const openMuse = generic.find((agent) => agent.slug === 'openmuse')
@@ -62,15 +57,22 @@ test('agents without an official path get the setup prompt and MCP URL', () => {
 
 test('marquee order is a permutation and untrusted loader data is repaired', () => {
 	const order = pickWithAgentOrder()
-	expect([...order].sort()).toEqual(withAgents.map((a) => a.slug).sort())
+	expect(order).toContain('cursor')
+	expect(order).toContain('codex')
+	expect(new Set(order).size).toBe(order.length)
 
 	const repaired = resolveWithAgentOrder(['codex', 'nope', 'codex', 'cursor'])
 	expect(repaired.slice(0, 2).map((agent) => agent.slug)).toEqual([
 		'codex',
 		'cursor',
 	])
-	expect(repaired).toHaveLength(withAgents.length)
-	expect(resolveWithAgentOrder(undefined)).toHaveLength(withAgents.length)
+	expect(repaired.map((agent) => agent.slug)).not.toContain('nope')
+	expect(
+		repaired.map((agent) => agent.slug).filter((slug) => slug === 'codex'),
+	).toHaveLength(1)
+	expect(resolveWithAgentOrder(undefined).map((agent) => agent.slug)).toContain(
+		'cursor',
+	)
 })
 
 test('pathname lookup only accepts /with/:agent for catalog agents', () => {

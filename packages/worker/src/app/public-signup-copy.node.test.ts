@@ -5,7 +5,6 @@ import { createBlogPostHandler } from '#app/handlers/blog.tsx'
 import { createFaqHandler } from '#app/handlers/faq.ts'
 import { createPricingHandler } from '#app/handlers/pricing.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { anonymousHtmlCacheControl } from '#app/anonymous-html-cache.ts'
 import { listBlogPosts } from '#worker/blog/catalog.ts'
 import { createMemoryKv } from '#worker/test-support/auth-provider-harness.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
@@ -95,14 +94,14 @@ const signupLink = expect.arrayContaining([
 test('FAQ and pricing SSR copy send visitors to create an account under anonymous cache rules', async () => {
 	const faqResponse = await renderMarketing('/faq')
 	expect(faqResponse.headers.get('Cache-Control')).toBe(
-		anonymousHtmlCacheControl,
+		'public, max-age=60, stale-while-revalidate=300',
 	)
 	expect(faqResponse.headers.get('Vary')).toBe('Cookie')
 	expect(anchors(faqGetStarted(await faqResponse.text()))).toEqual(signupLink)
 
 	const pricingResponse = await renderMarketing('/pricing')
 	expect(pricingResponse.headers.get('Cache-Control')).toBe(
-		anonymousHtmlCacheControl,
+		'public, max-age=60, stale-while-revalidate=300',
 	)
 	const pricing = await pricingResponse.text()
 	expect(pricing).not.toContain('id="plan-standard"')

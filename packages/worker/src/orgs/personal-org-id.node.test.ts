@@ -1,8 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
-import {
-	personIdFromStored,
-	personalOrgId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -31,16 +28,14 @@ test('personalOrgIdFromUserRow prefers a stored personal org id', () => {
 })
 
 test('personalOrgIdFromUserRow falls back to the person id while the column is empty', () => {
-	const expected = personalOrgId(personIdFromStored(personId))
 	for (const personalOrgIdValue of [null, undefined, '', '   ']) {
 		expect(
 			personalOrgIdFromUserRow({
 				personal_org_id: personalOrgIdValue,
 				stable_user_id: `  ${personId}  `,
 			}),
-		).toBe(expected)
+		).toBe(personId)
 	}
-	expect(expected).toBe(personId)
 })
 
 test('personalOrgIdForPerson prefers a stamped personalOrgId', () => {
@@ -51,7 +46,7 @@ test('personalOrgIdForPerson prefers a stamped personalOrgId', () => {
 			personalOrgId: distinctOrgId as never,
 		}),
 	).toBe(distinctOrgId)
-	expect(personalOrgIdForPerson({ userId })).toBe(personalOrgId(userId))
+	expect(personalOrgIdForPerson({ userId })).toBe(userId)
 })
 
 test('loadPersonalOrgIdForPerson reads users.personal_org_id', async () => {

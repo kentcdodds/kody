@@ -1,7 +1,7 @@
 /**
  * Locked kody.codes homepage copy (hero plus the early-scroll sections).
  * Keep these strings exact. Do not invent positioning or swap in synonyms.
- * `ssr-render-homepage-hero.node.test.ts` pins the hero against this module.
+ * Homepage SSR tests pin independent literals of this copy, not this module.
  */
 
 export const landingHeroHeadlineLead = 'The '

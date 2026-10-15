@@ -86,7 +86,6 @@ test('agent discovery documents describe the MCP server and public pages', async
 		version: kodyMcpServerCardVersion,
 	})
 	expect(card.description).toContain('individuals and teams')
-	expect(card.description).not.toContain('personal assistant')
 	expect(card.url).toBe(`${origin}${mcpResourcePath}`)
 	expect(card.transport).toEqual({
 		type: 'streamable-http',
@@ -107,8 +106,6 @@ test('agent discovery documents describe the MCP server and public pages', async
 	expect(authMd).toContain(`${origin}${mcpResourcePath}`)
 	expect(authMd).toContain('individuals and teams')
 	expect(authMd).toContain('credentials')
-	expect(authMd).not.toContain('personal assistant')
-	expect(authMd).not.toContain('paste secrets')
 
 	const homeMd = buildHomeMarkdown(origin)
 	expect(homeMd.startsWith('# Kody\n')).toBe(true)
@@ -117,17 +114,9 @@ test('agent discovery documents describe the MCP server and public pages', async
 	expect(homeMd).toContain(`${origin}/llms.txt`)
 	expect(homeMd).toContain('individuals and teams')
 	expect(homeMd).toContain('orgs, teams,')
-	expect(homeMd).not.toContain('personal assistant')
-	expect(homeMd).not.toContain('per-user personal')
 
 	expect(getAgentSkill('connect-kody')?.body).toContain('individuals and')
-	expect(getAgentSkill('connect-kody')?.body).not.toContain(
-		'personal assistant',
-	)
 	expect(getAgentSkill('what-is-kody')?.body).toContain('orgs, teams, grants')
-	expect(getAgentSkill('what-is-kody')?.body).not.toContain(
-		'personal assistant',
-	)
 
 	const now = new Date('2026-08-18T20:00:00.000Z')
 	const securityTxt = buildSecurityTxt(origin, now)

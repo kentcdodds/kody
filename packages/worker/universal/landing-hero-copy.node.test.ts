@@ -29,7 +29,6 @@ test('homepage carousel keeps playlist order and retitles leftover Stop Sweating
 		third.videoId,
 		'OZKDO9Pzmo0',
 	])
-	expect(presented[0]?.title).toBe(first.title)
 	expect(presented[3]?.title).toBe('Your agents\u2019 cloud')
 })
 

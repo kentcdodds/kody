@@ -5,11 +5,7 @@ import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { deliverFollowRecords, deliverListingForkAliases } from './deliver.ts'
 import { ensureFollowTables, getFollowByTarget, insertFollow } from './repo.ts'
-import {
-	followZeroCreditsSkipReason,
-	type FollowPushPending,
-	type FollowRecord,
-} from './types.ts'
+import { type FollowPushPending, type FollowRecord } from './types.ts'
 
 const aliasMocks = vi.hoisted(() => ({
 	listCommunityForksByListingId: vi.fn(),
@@ -192,7 +188,7 @@ test('a 429 invocation is stored on the follow and does not throw', async () => 
 		targetId: 'pkg-1',
 	})
 	expect(row?.status).toBe('active')
-	expect(row?.lastDeliverySkipReason).toBe(followZeroCreditsSkipReason)
+	expect(row?.lastDeliverySkipReason).toBe('zero_credits')
 	expect(row?.lastDeliverySkipAt).toBe(now.toISOString())
 })
 
