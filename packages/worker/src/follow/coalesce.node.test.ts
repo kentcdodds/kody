@@ -230,9 +230,7 @@ test('a push after the window replaces the pending row', async () => {
 	})
 	expect(replaced.action).toBe('replace')
 	if (replaced.action !== 'replace') return
-	expect(
-		await upsertFollowPushPending(db, replaced.pending, seeded),
-	).toBe(true)
+	expect(await upsertFollowPushPending(db, replaced.pending, seeded)).toBe(true)
 	const stored = await getFollowPushPending(db, base)
 	expect(stored?.windowStartedAt).toBe('2026-10-15T00:06:00.000Z')
 	expect(stored?.afterCommit).toBe('after-2')
@@ -336,12 +334,12 @@ test('same event timestamp still serializes concurrent merges via revision', asy
 	expect(writerA.pending.updatedAt).toBe(at)
 	expect(writerB.pending.updatedAt).toBe(at)
 
-	expect(
-		await upsertFollowPushPending(db, writerA.pending, sharedAt),
-	).toBe(true)
-	expect(
-		await upsertFollowPushPending(db, writerB.pending, sharedAt),
-	).toBe(false)
+	expect(await upsertFollowPushPending(db, writerA.pending, sharedAt)).toBe(
+		true,
+	)
+	expect(await upsertFollowPushPending(db, writerB.pending, sharedAt)).toBe(
+		false,
+	)
 
 	const afterA = await getFollowPushPending(db, base)
 	expect(afterA?.revision).toBe(1)
@@ -361,9 +359,7 @@ test('same event timestamp still serializes concurrent merges via revision', asy
 		},
 	})
 	expect(retried.action).toBe('merge')
-	expect(
-		await upsertFollowPushPending(db, retried.pending, afterA),
-	).toBe(true)
+	expect(await upsertFollowPushPending(db, retried.pending, afterA)).toBe(true)
 	const both = await getFollowPushPending(db, base)
 	expect(both?.revision).toBe(2)
 	expect(both?.updatedAt).toBe(at)
@@ -389,7 +385,9 @@ test('a reinserted window does not match a stale snapshot at revision 0', async 
 				at: '2026-10-15T00:00:00.000Z',
 			},
 		}).pending
-	expect(await upsertFollowPushPending(db, window('after-old', 'c-old'), null)).toBe(true)
+	expect(
+		await upsertFollowPushPending(db, window('after-old', 'c-old'), null),
+	).toBe(true)
 	const stale = await getFollowPushPending(db, base)
 	if (!stale) throw new Error('expected a pending row')
 
@@ -398,12 +396,16 @@ test('a reinserted window does not match a stale snapshot at revision 0', async 
 	// A stale writer that read the deleted row must not recreate it.
 	expect(await upsertFollowPushPending(db, stale, stale)).toBe(false)
 	expect(await getFollowPushPending(db, base)).toBeNull()
-	expect(await upsertFollowPushPending(db, window('after-new', 'c-new'), null)).toBe(true)
+	expect(
+		await upsertFollowPushPending(db, window('after-new', 'c-new'), null),
+	).toBe(true)
 	const fresh = await getFollowPushPending(db, base)
 	expect(fresh?.revision).toBe(0)
 	expect(fresh?.generation).not.toBe(stale.generation)
 	// An insert never clobbers an existing row.
-	expect(await upsertFollowPushPending(db, window('after-x', 'c-x'), null)).toBe(false)
+	expect(
+		await upsertFollowPushPending(db, window('after-x', 'c-x'), null),
+	).toBe(false)
 
 	// Flush B still holds the old revision-0 snapshot: it must not delete C.
 	expect(await deleteFollowPushPendingIfUnchanged(db, stale)).toBe(false)
