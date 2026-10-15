@@ -1,8 +1,11 @@
 import { expect, test } from 'vitest'
 import {
 	acceptedEmailVerificationDelivery,
+	describeEmailVerificationDelivery,
+	emailVerificationDeliveryHelpPath,
 	isAdminUserVerificationFilter,
 	isStalledEmailVerificationDelivery,
+	shouldPollEmailVerificationDelivery,
 } from './email-verification-delivery.ts'
 
 test('stalled verification is derived from accepted age, not a stored status', () => {
@@ -35,4 +38,72 @@ test('stalled verification is derived from accepted age, not a stored status', (
 		),
 	).toBe(false)
 	expect(isAdminUserVerificationFilter('accepted')).toBe(false)
+})
+
+test('accepted delivery waits honestly and keeps polling', () => {
+	const missing = describeEmailVerificationDelivery(null)
+	expect(missing.indicator).toBe('waiting')
+	expect(missing.headline).toBeNull()
+	expect(shouldPollEmailVerificationDelivery(null)).toBe(true)
+
+	const accepted = describeEmailVerificationDelivery(
+		acceptedEmailVerificationDelivery(),
+	)
+	expect(accepted.indicator).toBe('waiting')
+	expect(accepted.headline).toMatch(/waiting for delivery confirmation/i)
+	expect(accepted.detail).toMatch(/accepted the message/i)
+	expect(accepted.helpHref).toBeNull()
+	expect(
+		shouldPollEmailVerificationDelivery(acceptedEmailVerificationDelivery()),
+	).toBe(true)
+})
+
+test('delivered and failed map to terminal indicator phases', () => {
+	const delivered = describeEmailVerificationDelivery({
+		status: 'delivered',
+		class: null,
+		at: '2026-10-15T12:00:00.000Z',
+	})
+	expect(delivered.indicator).toBe('delivered')
+	expect(
+		shouldPollEmailVerificationDelivery({
+			status: 'delivered',
+			class: null,
+			at: '2026-10-15T12:00:00.000Z',
+		}),
+	).toBe(false)
+
+	const failed = describeEmailVerificationDelivery({
+		status: 'bounced',
+		class: null,
+		at: '2026-10-15T12:00:00.000Z',
+	})
+	expect(failed.indicator).toBe('failed')
+	expect(failed.tone).toBe('error')
+	expect(failed.helpHref).toBe(emailVerificationDeliveryHelpPath)
+	expect(failed.helpLabel).toMatch(/can't open kody\.codes/i)
+	expect(failed.detail).toMatch(/social login/i)
+	expect(
+		shouldPollEmailVerificationDelivery({
+			status: 'bounced',
+			class: null,
+			at: '2026-10-15T12:00:00.000Z',
+		}),
+	).toBe(false)
+})
+
+test('deferred delivery shows delayed and keeps polling', () => {
+	const delayed = describeEmailVerificationDelivery({
+		status: 'deferred',
+		class: null,
+		at: '2026-10-15T12:00:00.000Z',
+	})
+	expect(delayed.indicator).toBe('delayed')
+	expect(
+		shouldPollEmailVerificationDelivery({
+			status: 'deferred',
+			class: null,
+			at: '2026-10-15T12:00:00.000Z',
+		}),
+	).toBe(true)
 })

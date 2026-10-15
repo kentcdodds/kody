@@ -194,7 +194,10 @@ update that status. A Fastmail-style sender-domain/IP block (`RLR613`, `RLR813`,
 "blacklisted") is classified as `sender_block`. The pending-verification,
 account, and OAuth authorize UIs surface the bounce instead of staying silently
 pending, and `POST /account/resend-verification.json` refuses to retry into a
-known `sender_block`. The first terminal failure fans
+known `sender_block`. `/pending-verification` polls
+`GET /account/email-verification-delivery.json` (session cookie only; no email
+query param) for spinner / delivered / failed indicators without exposing other
+users' delivery state. The first terminal failure fans
 `user.email_verification.failed` to admin-owned packages. When a send stays
 `accepted` for an hour with no lifecycle event, the hourly
 `email_verification_stall_alert` lane fans `user.email_verification.stalled`.

@@ -118,6 +118,7 @@ export const routes = route({
 	accountEmailClaimRelease: post('/account/email-claim-release.json'),
 	accountPassword: post('/account/password.json'),
 	accountResendVerification: post('/account/resend-verification.json'),
+	accountEmailVerificationDelivery: '/account/email-verification-delivery.json',
 	accountExport: '/account/export.json',
 	admin: '/admin',
 	adminUsers: '/admin/users',

@@ -25,11 +25,27 @@ export type EmailVerificationDelivery = {
 	at: string | null
 }
 
+/** Public help doc for DNS filters and missing verification mail. */
+export const emailVerificationDeliveryHelpPath = '/docs/cant-open-or-get-mail'
+
+export const emailVerificationDeliveryIndicatorValues = [
+	'waiting',
+	'delivered',
+	'delayed',
+	'failed',
+] as const
+
+export type EmailVerificationDeliveryIndicator =
+	(typeof emailVerificationDeliveryIndicatorValues)[number]
+
 export const emailVerificationSenderBlockMessage =
-	'Your mailbox provider rejected mail from kody.codes (sender domain or IP block). Resending the same message will not get through and can make delivery worse. Contact support or use a different email address.'
+	'Your mailbox provider rejected mail from kody.codes (sender domain or IP block). Resending the same message will not get through and can make delivery worse. Try social login on the signup page, or contact support with the address you used.'
 
 const emailVerificationDeliveryFailedMessage =
-	'The verification email could not be delivered. You can try resending, or contact support if it keeps failing.'
+	'The verification email could not be delivered. Try social login on the signup page, or contact support with the address you used.'
+
+const emailVerificationDeliveryWaitingDetail =
+	'Our mail provider accepted the message. Delivery confirmation can take a minute — check your inbox and spam folder while we wait.'
 
 export function isEmailVerificationDeliveryStatus(
 	value: string | null | undefined,
@@ -118,79 +134,127 @@ export function isEmailVerificationResendBlocked(
 	return delivery?.class === 'sender_block'
 }
 
-export function describeEmailVerificationDelivery(
-	delivery: EmailVerificationDelivery | null,
-): {
+export type EmailVerificationDeliveryDescription = {
 	headline: string | null
 	detail: string | null
 	canResend: boolean
 	tone: 'info' | 'error'
-} {
+	/** Visual phase for the signup delivery indicator. */
+	indicator: EmailVerificationDeliveryIndicator
+	/** Next-step help page when delivery failed or was blocked. */
+	helpHref: string | null
+	helpLabel: string | null
+}
+
+const emailVerificationDeliveryHelpLabel =
+	"If you can't open kody.codes or get mail from us"
+
+function describeDelivery(input: {
+	headline: string | null
+	detail: string | null
+	canResend: boolean
+	tone: 'info' | 'error'
+	indicator: EmailVerificationDeliveryIndicator
+	includeHelp?: boolean
+}): EmailVerificationDeliveryDescription {
+	return {
+		headline: input.headline,
+		detail: input.detail,
+		canResend: input.canResend,
+		tone: input.tone,
+		indicator: input.indicator,
+		helpHref: input.includeHelp ? emailVerificationDeliveryHelpPath : null,
+		helpLabel: input.includeHelp ? emailVerificationDeliveryHelpLabel : null,
+	}
+}
+
+export function describeEmailVerificationDelivery(
+	delivery: EmailVerificationDelivery | null,
+): EmailVerificationDeliveryDescription {
 	if (!delivery) {
-		return {
+		return describeDelivery({
 			headline: null,
 			detail: null,
 			canResend: true,
 			tone: 'info',
-		}
+			indicator: 'waiting',
+		})
 	}
 	if (delivery.class === 'sender_block') {
-		return {
+		return describeDelivery({
 			headline: 'Verification email blocked',
 			detail: emailVerificationSenderBlockMessage,
 			canResend: false,
 			tone: 'error',
-		}
+			indicator: 'failed',
+			includeHelp: true,
+		})
 	}
 	switch (delivery.status) {
 		case 'bounced':
 		case 'failed':
 		case 'rejected':
-			return {
+			return describeDelivery({
 				headline: 'Verification email was not delivered',
 				detail: emailVerificationDeliveryFailedMessage,
 				canResend: true,
 				tone: 'error',
-			}
+				indicator: 'failed',
+				includeHelp: true,
+			})
 		case 'complained':
-			return {
+			return describeDelivery({
 				headline: 'Verification email was marked as spam',
 				detail: emailVerificationDeliveryFailedMessage,
 				canResend: true,
 				tone: 'error',
-			}
+				indicator: 'failed',
+				includeHelp: true,
+			})
 		case 'delivered':
-			return {
+			return describeDelivery({
 				headline: 'Verification email delivered',
 				detail:
 					'The message reached your mailbox. Check your inbox and spam folder for the link.',
 				canResend: true,
 				tone: 'info',
-			}
+				indicator: 'delivered',
+			})
 		case 'deferred':
-			return {
+			return describeDelivery({
 				headline: 'Verification email delayed',
 				detail:
 					'Your mailbox provider delayed the message. Wait a bit, or resend if it still has not arrived.',
 				canResend: true,
 				tone: 'info',
-			}
+				indicator: 'delayed',
+			})
 		case 'accepted':
-			return {
-				headline: null,
-				detail: null,
+			return describeDelivery({
+				headline: 'Waiting for delivery confirmation',
+				detail: emailVerificationDeliveryWaitingDetail,
 				canResend: true,
 				tone: 'info',
-			}
+				indicator: 'waiting',
+			})
 		default: {
 			const exhaustive: never = delivery.status
 			void exhaustive
-			return {
-				headline: null,
-				detail: null,
+			return describeDelivery({
+				headline: 'Waiting for delivery confirmation',
+				detail: emailVerificationDeliveryWaitingDetail,
 				canResend: true,
 				tone: 'info',
-			}
+				indicator: 'waiting',
+			})
 		}
 	}
+}
+
+/** Keep polling while Cloudflare may still emit a lifecycle update. */
+export function shouldPollEmailVerificationDelivery(
+	delivery: EmailVerificationDelivery | null,
+) {
+	const indicator = describeEmailVerificationDelivery(delivery).indicator
+	return indicator === 'waiting' || indicator === 'delayed'
 }

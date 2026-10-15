@@ -10,6 +10,7 @@ import {
 } from '#client/routes/account-management-components.tsx'
 import {
 	buildPendingVerificationPath,
+	fetchEmailVerificationDelivery,
 	renderEmailVerificationPrompt,
 	requestResendVerification,
 } from '#client/routes/email-verification-prompt.tsx'
@@ -25,6 +26,7 @@ import { layoutMaxWidths } from '#universal/styles/style-primitives.ts'
 import { readRouterSearch } from '#client/router-location.tsx'
 import {
 	acceptedEmailVerificationDelivery,
+	shouldPollEmailVerificationDelivery,
 	type EmailVerificationDelivery,
 } from '#universal/email-verification-delivery.ts'
 import { type PendingVerificationLoaderData } from '#universal/loader-data.ts'
@@ -112,22 +114,24 @@ export function PendingVerificationRoute(handle: Handle) {
 	async function pollVerificationDelivery() {
 		deliveryPollScheduled = false
 		try {
-			const session = await fetchSessionInfo()
-			if (!session) {
+			const result = await fetchEmailVerificationDelivery()
+			if (!result.ok) {
+				if (result.unauthorized) {
+					window.location.assign(buildLoginRedirectForPending(handle))
+					return
+				}
 				handle.update()
 				return
 			}
-			if (session.emailVerified) {
+			if (result.emailVerified) {
 				window.location.assign(
 					resolvePostVerificationRedirect(readPendingRedirectTo(handle)),
 				)
 				return
 			}
-			emailVerificationDelivery = session.emailVerificationDelivery
-			deliveryPollScheduled = false
+			emailVerificationDelivery = result.delivery
 			handle.update()
 		} catch {
-			deliveryPollScheduled = false
 			handle.update()
 		}
 	}
@@ -199,7 +203,8 @@ export function PendingVerificationRoute(handle: Handle) {
 		if (
 			status === 'ready' &&
 			!deliveryPollScheduled &&
-			typeof document !== 'undefined'
+			typeof document !== 'undefined' &&
+			shouldPollEmailVerificationDelivery(emailVerificationDelivery)
 		) {
 			deliveryPollScheduled = true
 			handle.queueTask(() => {
