@@ -280,6 +280,20 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 			),
 		),
 	).toBeNull()
+	// D1 Sentry filter uses the all-messages rule: a recovery wrapper around a
+	// startup-reset (or other D1 blip) cause must stay visible.
+	const recoveryAroundStartupReset = exceptionEvent(
+		'artifact rebuild failed after partial writes',
+		'Internal error while starting up Durable Object storage caused object to be reset; reference = abc123',
+	)
+	expect(filterSentryEvent(recoveryAroundStartupReset)).toBe(
+		recoveryAroundStartupReset,
+	)
+	const recoveryAroundD1Busy = exceptionEvent(
+		'serveMcp could not recover after retries',
+		'D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY',
+	)
+	expect(filterSentryEvent(recoveryAroundD1Busy)).toBe(recoveryAroundD1Busy)
 	// KODY-8F: retry wrapper + bare opaque cause (or recovery wrap + cause).
 	expect(
 		filterSentryEvent(

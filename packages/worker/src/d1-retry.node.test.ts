@@ -1,10 +1,21 @@
+import { type ErrorEvent } from '@sentry/core'
 import { expect, test, vi } from 'vitest'
 import {
 	d1LockRetryBaseDelayMs,
 	isRetryableD1LockError,
 	isRetryableD1LockMessage,
+	isRetryableD1LockSentryEvent,
 	runD1WithRetry,
 } from './d1-retry.ts'
+
+function exceptionEvent(...values: Array<string>): ErrorEvent {
+	return {
+		type: undefined,
+		exception: {
+			values: values.map((value) => ({ value })),
+		},
+	}
+}
 
 // KODY-81: live Cloudflare `reference =` tokens include `_`.
 const underscoredD1InternalErrorReference =
@@ -179,4 +190,52 @@ test('runD1WithRetry retries hung attempts when attemptTimeoutMs is set', async 
 		}),
 	).rejects.toThrow('D1 attempt timed out after 15ms')
 	expect(alwaysHung).toHaveBeenCalledTimes(2)
+})
+
+test('isRetryableD1LockSentryEvent drops bare D1 blips and keeps recovery wrappers', () => {
+	const startupReset =
+		'Internal error while starting up Durable Object storage caused object to be reset; reference = abc123'
+	expect(
+		isRetryableD1LockSentryEvent(
+			exceptionEvent('D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY'),
+		),
+	).toBe(true)
+	expect(isRetryableD1LockSentryEvent(exceptionEvent(startupReset))).toBe(true)
+	expect(
+		isRetryableD1LockSentryEvent(
+			exceptionEvent(
+				'Currently processing a long-running export.',
+				'D1_ERROR: Currently processing a long-running export.',
+			),
+		),
+	).toBe(true)
+	expect(
+		isRetryableD1LockSentryEvent(
+			exceptionEvent(
+				'artifact rebuild failed after partial writes',
+				startupReset,
+			),
+		),
+	).toBe(false)
+	expect(
+		isRetryableD1LockSentryEvent(
+			exceptionEvent(
+				'serveMcp could not recover after retries',
+				'D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY',
+			),
+		),
+	).toBe(false)
+	expect(
+		isRetryableD1LockSentryEvent({
+			type: undefined,
+			message: startupReset,
+		}),
+	).toBe(true)
+	expect(
+		isRetryableD1LockSentryEvent({
+			type: undefined,
+			message: 'artifact rebuild failed after partial writes',
+			exception: { values: [{ value: startupReset }] },
+		}),
+	).toBe(false)
 })
