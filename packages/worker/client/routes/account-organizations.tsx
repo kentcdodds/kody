@@ -7,7 +7,6 @@ import {
 	handleFormatHint,
 	suggestHandle,
 } from '@kody-internal/shared/handle-rules.ts'
-import { getReservedUsernameError } from '@kody-internal/shared/reserved-usernames.ts'
 import { type Handle, type RemixNode, css } from 'remix/component'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
@@ -222,15 +221,13 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 									handle.update()
 									return
 								}
-								const formatError = getHandleFormatError(draftSlug.trim(), {
+								// Format only on the client (same as signup). Reserved
+								// names — including admin KV unreserves — are enforced by
+								// server createOrg; a built-in-only block would reject
+								// handles the server would accept.
+								const slugError = getHandleFormatError(draftSlug.trim(), {
 									label: 'Handle',
 								})
-								// Built-in reserved list only (hint). Server
-								// createOrg remains authoritative for KV overrides.
-								const reservedError = getReservedUsernameError(
-									draftSlug.trim().toLowerCase(),
-								)
-								const slugError = formatError ?? reservedError
 								if (slugError) {
 									event.preventDefault()
 									clientError = slugError
