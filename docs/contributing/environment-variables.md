@@ -220,6 +220,17 @@ confirmed non-production runtimes; see `packages/worker/src/app-base-url.ts` and
   this GitHub Actions repository variable to `true` only when enabling those
   GET/HEAD redirects. Production leaves this unset.
 
+Worker secret (optional; see `packages/worker/src/app/package-app-ticket.ts`):
+
+- `PACKAGE_APP_TICKET_KEYS` — comma-separated HMAC keys (each at least 32
+  characters) for package-app access tickets: the short-lived (90 s) host-only
+  cookie that lets repeat requests skip the access check. Every listed key
+  verifies a ticket and the first one signs new tickets. Synced to the origin
+  and runtime Workers by `deploy.yml`. When unset, a key is derived from
+  `COOKIE_SECRET` under a purpose label, which is what preview, tests, and E2E
+  use. Rotation:
+  [secret-rotation.md](./secret-rotation.md#rotating-package_app_ticket_keys).
+
 ## MCP `execute` and outbound HTTP
 
 MCP `execute` runs sandboxed JavaScript with a global `fetch`. Calls to

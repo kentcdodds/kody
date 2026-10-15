@@ -135,6 +135,26 @@ const optionalSentryTracesSampleRateSchema = createSchema<
 	return fail('Expected number or numeric string', context.path)
 })
 
+const optionalPackageAppTicketKeysSchema = createSchema<
+	unknown,
+	string | undefined
+>((value, context) => {
+	if (value === undefined) return { value: undefined }
+	if (typeof value !== 'string') return fail('Expected string', context.path)
+	const keys = value
+		.split(',')
+		.map((key) => key.trim())
+		.filter((key) => key.length > 0)
+	if (keys.length === 0) return { value: undefined }
+	if (keys.some((key) => key.length < 32)) {
+		return fail(
+			'Every PACKAGE_APP_TICKET_KEYS entry must be at least 32 characters.',
+			context.path,
+		)
+	}
+	return { value: keys.join(',') }
+})
+
 const secretStoreKeySchema = createSchema<unknown, string>((value, context) => {
 	if (typeof value !== 'string') {
 		return fail(
@@ -231,6 +251,10 @@ export const EnvSchema = object({
 	// `/` on a dual-served package-app host goes to the app origin; it is
 	// never redirected onto the canonical package-app apex.
 	PACKAGE_APP_LEGACY_REDIRECT: optionalNonEmptyStringSchema,
+	// Comma-separated HMAC keys for package-app access tickets. The first key
+	// signs; every key verifies (rotation: docs/contributing/secret-rotation.md).
+	// Unset derives one key from COOKIE_SECRET.
+	PACKAGE_APP_TICKET_KEYS: optionalPackageAppTicketKeysSchema,
 	USER_EMAIL_DOMAIN: optionalNonEmptyStringSchema,
 	// Overrides the system email domain derived from APP_BASE_URL. Committed
 	// in production so email and the web origin can move independently.

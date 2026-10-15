@@ -10,6 +10,7 @@ saved-secret confidentiality.
 | `COOKIE_SECRET`                                        | Signs auth session cookies (Remix `createCookie`)  | Invalidates all active browser sessions; users must re-authenticate.                                                                                                                                             |
 | `SECRET_STORE_KEY`                                     | Derives the AES-GCM KEK for saved secrets in D1    | Bricks all saved secrets encrypted under the old key unless a re-encryption migration runs.                                                                                                                      |
 | `OIDC_SIGNING_PRIVATE_KEY_PEM` / `OIDC_SIGNING_KEY_ID` | RS256 ID token signing for the MCP OpenID Provider | Existing ID tokens verify only against the published JWKS. Rotate by minting a new RSA key + `kid`, deploying both secrets together, then discarding the old private key once outstanding ID tokens expire (1h). |
+| `PACKAGE_APP_TICKET_KEYS`                              | Signs 90 s package-app access tickets              | None when rotated as below. Dropping a key early only sends visitors holding its tickets through one fresh access check.                                                                                         |
 
 ## Separate cookie and secret-store keys
 
@@ -23,6 +24,21 @@ Cookie signing and saved-secret encryption use separate Worker secrets:
 1. Deploy the new `COOKIE_SECRET` value.
 2. All active browser sessions are invalidated (expected).
 3. Saved secrets remain intact — they are encrypted under `SECRET_STORE_KEY`.
+
+## Rotating `PACKAGE_APP_TICKET_KEYS`
+
+The secret is a comma-separated list. Every key verifies tickets and the first
+key signs new ones, so rotation never invalidates a ticket in flight:
+
+1. Prepend the new key: `PACKAGE_APP_TICKET_KEYS=<new>,<old>`. Deploy.
+2. Wait at least one ticket lifetime (90 s) after the deploy finishes, so no
+   ticket signed with the old key is still valid.
+3. Drop the old key: `PACKAGE_APP_TICKET_KEYS=<new>`. Deploy.
+
+When the secret is unset, tickets are signed with a key derived from
+`COOKIE_SECRET`, and rotating `COOKIE_SECRET` replaces it too. Tickets are also
+bound to the package-app session they were minted under, so invalidating
+sessions invalidates their tickets.
 
 ## Rotating `SECRET_STORE_KEY`
 
