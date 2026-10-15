@@ -114,6 +114,22 @@ test('scanCredentialStamp fails credential.named() in stamped packages', () => {
 	})
 	expect(computedMember.failures).toEqual([])
 	expect(computedMember.keys).toEqual(['API_KEY'])
+
+	const bound = scanCredentialStamp({
+		'package.json': manifest({
+			credentials: {
+				API_KEY: { kind: 'secret', description: 'API key.' },
+			},
+		}),
+		'src/index.ts': [
+			"import { kody } from 'kody:runtime'",
+			'const get = kody.credential.bind(kody)',
+			'export default async function run() { return get("API_KEY") }',
+		].join('\n'),
+	})
+	expect(bound.failures.some((f) => f.code === 'non_literal')).toBe(true)
+	expect(bound.failures[0]?.message).toMatch(/passes credential/)
+	expect(bound.keys).toEqual([])
 })
 
 test('scanCredentialStamp fails missing descriptions without inventing placeholders', () => {

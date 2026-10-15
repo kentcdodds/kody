@@ -316,17 +316,12 @@ export function buildCredentialPatternCheck(
 		stamp.keys.length > 0
 			? `Credential stamp keys (sorted): ${stamp.keys.join(', ')}.`
 			: 'Credential stamp keys: (none).'
-	const addedLine =
-		merged.addedKeys.length > 0
-			? `Added missing kody.credentials keys for this publish snapshot (existing descriptions preserved): ${merged.addedKeys.join(', ')}.`
-			: null
 	return {
 		kind: 'credentials',
 		ok: true,
 		message: [
 			credentialStampGateHeading,
 			stampLine,
-			addedLine,
 			...(lines.length > 0
 				? [
 						credentialPatternFindingsHeading,

@@ -342,6 +342,28 @@ function scanParsedCredentialKeys(
 			if (!called) scan.named()
 			return
 		}
+		// `kody.credential.bind(kody)`, `const get = kody.credential`, etc. —
+		// any non-call use of the credential function value escapes the stamp.
+		if (
+			(node.type === 'MemberExpression' ||
+				node.type === 'OptionalMemberExpression') &&
+			isCredentialFunctionValue(node, bindings)
+		) {
+			const parent = ancestors.at(-1)
+			const called =
+				parent &&
+				(parent.type === 'CallExpression' ||
+					parent.type === 'OptionalCallExpression') &&
+				parent.callee === node
+			const namedAccess =
+				parent &&
+				(parent.type === 'MemberExpression' ||
+					parent.type === 'OptionalMemberExpression') &&
+				parent.object === node &&
+				memberPropertyName(parent) === 'named'
+			if (!called && !namedAccess) scan.indirect()
+			return
+		}
 		if (node.type !== 'Identifier') return
 		if (!bindings.functions.has(getNodeName(node) ?? '')) return
 		const parent = ancestors.at(-1)
