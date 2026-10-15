@@ -2,11 +2,21 @@ import { type ErrorEvent } from '@sentry/core'
 import { expect, test, vi } from 'vitest'
 import {
 	d1LockRetryBaseDelayMs,
+	isBareRetryableD1LockMessage,
 	isRetryableD1LockError,
 	isRetryableD1LockMessage,
 	isRetryableD1LockSentryEvent,
 	runD1WithRetry,
 } from './d1-retry.ts'
+
+const d1SqliteBusy = 'D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY'
+const d1StartupReset =
+	'Internal error while starting up Durable Object storage caused object to be reset; reference = abc123'
+
+/** Same shape as `buildRebuildFailureMessage` when a target fails with a D1 blip. */
+function rebuildFailureWrapper(causeMessage: string) {
+	return `Package source publish succeeded, but bundle artifact rebuild failed for source "source-1" at commit "commit-1". Succeeded: none. Failed: { kind "app", artifact "<default>", entry "index.ts", bundle "app" }: ${causeMessage}. Re-run the publish capability to repair artifacts.`
+}
 
 function exceptionEvent(...values: Array<string>): ErrorEvent {
 	return {
@@ -192,15 +202,39 @@ test('runD1WithRetry retries hung attempts when attemptTimeoutMs is set', async 
 	expect(alwaysHung).toHaveBeenCalledTimes(2)
 })
 
-test('isRetryableD1LockSentryEvent drops bare D1 blips and keeps recovery wrappers', () => {
-	const startupReset =
-		'Internal error while starting up Durable Object storage caused object to be reset; reference = abc123'
+test('isBareRetryableD1LockMessage rejects wrappers that embed lock or export text', () => {
+	expect(isBareRetryableD1LockMessage(d1SqliteBusy)).toBe(true)
+	expect(isBareRetryableD1LockMessage('D1_ERROR: database is locked')).toBe(
+		true,
+	)
 	expect(
-		isRetryableD1LockSentryEvent(
-			exceptionEvent('D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY'),
+		isBareRetryableD1LockMessage(
+			'D1_ERROR: Currently processing a long-running export.',
 		),
 	).toBe(true)
-	expect(isRetryableD1LockSentryEvent(exceptionEvent(startupReset))).toBe(true)
+	expect(isBareRetryableD1LockMessage(d1StartupReset)).toBe(true)
+	// Substring retry matcher still accepts embedded text; bare Sentry matcher must not.
+	expect(isRetryableD1LockMessage(rebuildFailureWrapper(d1SqliteBusy))).toBe(
+		true,
+	)
+	expect(
+		isBareRetryableD1LockMessage(rebuildFailureWrapper(d1SqliteBusy)),
+	).toBe(false)
+	expect(
+		isBareRetryableD1LockMessage(rebuildFailureWrapper(d1StartupReset)),
+	).toBe(false)
+	expect(
+		isBareRetryableD1LockMessage(
+			`serveMcp could not recover after retries: ${d1SqliteBusy}`,
+		),
+	).toBe(false)
+})
+
+test('isRetryableD1LockSentryEvent drops bare D1 blips and keeps recovery wrappers', () => {
+	expect(isRetryableD1LockSentryEvent(exceptionEvent(d1SqliteBusy))).toBe(true)
+	expect(isRetryableD1LockSentryEvent(exceptionEvent(d1StartupReset))).toBe(
+		true,
+	)
 	expect(
 		isRetryableD1LockSentryEvent(
 			exceptionEvent(
@@ -213,29 +247,37 @@ test('isRetryableD1LockSentryEvent drops bare D1 blips and keeps recovery wrappe
 		isRetryableD1LockSentryEvent(
 			exceptionEvent(
 				'artifact rebuild failed after partial writes',
-				startupReset,
+				d1StartupReset,
 			),
 		),
 	).toBe(false)
 	expect(
 		isRetryableD1LockSentryEvent(
-			exceptionEvent(
-				'serveMcp could not recover after retries',
-				'D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY',
-			),
+			exceptionEvent('serveMcp could not recover after retries', d1SqliteBusy),
+		),
+	).toBe(false)
+	// Real rebuild failure: wrapper embeds the D1 text and attaches it as cause.
+	expect(
+		isRetryableD1LockSentryEvent(
+			exceptionEvent(rebuildFailureWrapper(d1SqliteBusy), d1SqliteBusy),
+		),
+	).toBe(false)
+	expect(
+		isRetryableD1LockSentryEvent(
+			exceptionEvent(rebuildFailureWrapper(d1StartupReset), d1StartupReset),
 		),
 	).toBe(false)
 	expect(
 		isRetryableD1LockSentryEvent({
 			type: undefined,
-			message: startupReset,
+			message: d1StartupReset,
 		}),
 	).toBe(true)
 	expect(
 		isRetryableD1LockSentryEvent({
 			type: undefined,
-			message: 'artifact rebuild failed after partial writes',
-			exception: { values: [{ value: startupReset }] },
+			message: rebuildFailureWrapper(d1SqliteBusy),
+			exception: { values: [{ value: d1SqliteBusy }] },
 		}),
 	).toBe(false)
 })

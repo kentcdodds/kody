@@ -1,5 +1,5 @@
 import { type ErrorEvent } from '@sentry/core'
-import { isRetryableD1LockMessage } from '@kody-internal/shared/d1-retry.ts'
+import { isBareRetryableD1LockMessage } from '@kody-internal/shared/d1-retry.ts'
 
 export * from '@kody-internal/shared/d1-retry.ts'
 
@@ -11,11 +11,12 @@ export function isRetryableD1LockSentryEvent(event: ErrorEvent) {
 		(message): message is string =>
 			typeof message === 'string' && message.trim().length > 0,
 	)
-	// Drop only when every reported message is a bare D1 platform blip. A
-	// chained cause that pairs a recovery/wrapper value with an inner lock or
-	// startup-reset must stay visible (same all-messages rule as DO resets).
+	// Drop only when every reported message is a bare D1 platform blip.
+	// Use the anchored/exact predicate (not the substring retry matcher) so
+	// rebuild/recovery wrappers that embed SQLITE_BUSY, export, or reset text
+	// stay Sentry-visible even when the cause is a matching D1 blip.
 	return (
 		messages.length > 0 &&
-		messages.every((message) => isRetryableD1LockMessage(message))
+		messages.every((message) => isBareRetryableD1LockMessage(message))
 	)
 }
