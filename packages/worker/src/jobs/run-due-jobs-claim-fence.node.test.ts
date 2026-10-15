@@ -2,6 +2,7 @@ import {
 	ownerIdFromStored,
 	personIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
+import { type EnablementSkip } from '#worker/enablements/run-gate.ts'
 import { type EnablementRun } from '#worker/request-context/request-context.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleInfo } from '#worker/test-support/console-spies.ts'
@@ -24,6 +25,7 @@ const finalizeClaimedJobRow = vi.fn()
 const retryClaimedJobRow = vi.fn()
 const renewClaimedJobRow = vi.fn()
 const claimRunRecord = vi.fn()
+const upsertJobRunObservability = vi.fn()
 const getEntitySourceByIdForUser = vi.fn()
 const getSavedPackageById = vi.fn()
 
@@ -33,7 +35,10 @@ const enablementRun: EnablementRun = {
 	role: 'owner',
 }
 const planEnablementRuns = vi.fn(
-	async (): Promise<{ runs: Array<EnablementRun>; skipped: [] }> => ({
+	async (): Promise<{
+		runs: Array<EnablementRun>
+		skipped: Array<EnablementSkip>
+	}> => ({
 		runs: [enablementRun],
 		skipped: [],
 	}),
@@ -73,6 +78,8 @@ vi.mock('#worker/run-records/service.ts', async (importOriginal) => {
 		...actual,
 		claimRunRecord: (...args: Array<unknown>) =>
 			claimRunRecord(...(args as [never])),
+		upsertJobRunObservability: (...args: Array<unknown>) =>
+			upsertJobRunObservability(...(args as [never])),
 		abandonRunRecord: vi.fn(),
 		finishRunRecord: vi.fn(),
 		getRunRecord: vi.fn(),
@@ -362,26 +369,38 @@ test('scheduled package job claims carry package identity and the published sour
 	)
 })
 
-test('a scheduled slot with no enablement on records no run and does not use up a once job', async () => {
+test('a scheduled slot with no enablement on surfaces the skip and does not use up a once job', async () => {
 	planEnablementRuns.mockResolvedValueOnce({ runs: [], skipped: [] })
 	planEnablementRuns.mockResolvedValueOnce({ runs: [], skipped: [] })
 	claimRunRecord.mockClear()
+	upsertJobRunObservability.mockClear()
 	finalizeClaimedJobRow.mockReset()
 	retryClaimedJobRow.mockReset()
 	finalizeClaimedJobRow.mockResolvedValue(true)
 	retryClaimedJobRow.mockResolvedValue(true)
-	const skipped = {
-		dueJobCount: 1,
-		successCount: 0,
-		errorCount: 0,
-		jobOutcomes: [],
-	}
+	upsertJobRunObservability.mockResolvedValue(null)
+	const skipError =
+		'Scheduled tick skipped: no on enablement for cron job "Fenced job". Turn it on with enablementEnable (triggerKind: "cron", triggerName: "Fenced job").'
 
 	const recurring = createJobRecord({
 		id: 'package-job:pkg-fenced:recurring-skip',
 	})
 	seedDueClaim(recurring)
-	await expect(runDue(recurring.userId)).resolves.toEqual(skipped)
+	await expect(runDue(recurring.userId)).resolves.toEqual({
+		dueJobCount: 1,
+		successCount: 0,
+		errorCount: 1,
+		jobOutcomes: [
+			{
+				jobId: recurring.id,
+				scheduleType: 'interval',
+				outcome: 'failure',
+				nextRunAt: '2026-07-30T20:00:00.000Z',
+				deleted: false,
+				error: skipError,
+			},
+		],
+	})
 	expect(finalizeClaimedJobRow).toHaveBeenCalledOnce()
 	const finalized = finalizeClaimedJobRow.mock.calls[0]?.[0] as {
 		job: JobRecord
@@ -389,18 +408,47 @@ test('a scheduled slot with no enablement on records no run and does not use up 
 	expect(finalized.job).toMatchObject({
 		enabled: true,
 		nextRunAt: '2026-07-30T20:00:00.000Z',
+		lastRunStatus: 'error',
+		lastRunError: skipError,
+		lastRunAt: now.toISOString(),
 	})
-	expect(finalized.job.lastRunAt).toBeUndefined()
-	expect(finalized.job.lastRunStatus).toBeUndefined()
 	expect(retryClaimedJobRow).not.toHaveBeenCalled()
+	expect(upsertJobRunObservability).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: recurring.userId,
+			outcome: {
+				jobId: recurring.id,
+				status: 'error',
+				ranAt: now.toISOString(),
+				error: skipError,
+				durationMs: 0,
+			},
+		}),
+	)
+	expect(claimRunRecord).not.toHaveBeenCalled()
 
 	finalizeClaimedJobRow.mockClear()
+	upsertJobRunObservability.mockClear()
 	const once = createJobRecord({
 		id: 'package-job:pkg-fenced:once-skip',
 		schedule: { type: 'once', runAt: '2026-07-30T19:00:00.000Z' },
 	})
 	seedDueClaim(once)
-	await expect(runDue(once.userId)).resolves.toEqual(skipped)
+	await expect(runDue(once.userId)).resolves.toEqual({
+		dueJobCount: 1,
+		successCount: 0,
+		errorCount: 1,
+		jobOutcomes: [
+			{
+				jobId: once.id,
+				scheduleType: 'once',
+				outcome: 'failure',
+				nextRunAt: '2026-07-30T19:00:05.000Z',
+				deleted: false,
+				error: skipError,
+			},
+		],
+	})
 	expect(finalizeClaimedJobRow).not.toHaveBeenCalled()
 	expect(retryClaimedJobRow).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -408,7 +456,55 @@ test('a scheduled slot with no enablement on records no run and does not use up 
 			nextRunAt: '2026-07-30T19:00:05.000Z',
 		}),
 	)
+	expect(upsertJobRunObservability).toHaveBeenCalledWith(
+		expect.objectContaining({
+			outcome: expect.objectContaining({
+				jobId: once.id,
+				status: 'error',
+				error: skipError,
+			}),
+		}),
+	)
 	expect(claimRunRecord).not.toHaveBeenCalled()
+})
+
+test('a scheduled slot with only paused enablements names the pause in last_run_error', async () => {
+	planEnablementRuns.mockResolvedValueOnce({
+		runs: [],
+		skipped: [
+			{
+				enablementId: 'en-paused',
+				enablerUserId: personIdFromStored('user-fenced'),
+				reason: 'paused',
+			},
+		],
+	})
+	claimRunRecord.mockClear()
+	upsertJobRunObservability.mockClear()
+	finalizeClaimedJobRow.mockReset()
+	finalizeClaimedJobRow.mockResolvedValue(true)
+	upsertJobRunObservability.mockResolvedValue(null)
+	const pausedError =
+		'Scheduled tick skipped: every enablement for cron job "Fenced job" is paused. Fix the pause, then the next tick will run.'
+
+	const recurring = createJobRecord({
+		id: 'package-job:pkg-fenced:paused-skip',
+	})
+	seedDueClaim(recurring)
+	await expect(runDue(recurring.userId)).resolves.toMatchObject({
+		dueJobCount: 1,
+		successCount: 0,
+		errorCount: 1,
+		jobOutcomes: [expect.objectContaining({ error: pausedError })],
+	})
+	expect(upsertJobRunObservability).toHaveBeenCalledWith(
+		expect.objectContaining({
+			outcome: expect.objectContaining({
+				status: 'error',
+				error: pausedError,
+			}),
+		}),
+	)
 })
 
 test('each further enablement run renews the shared claim and stops once it is lost', async () => {
@@ -432,7 +528,7 @@ test('each further enablement run renews the shared claim and stops once it is l
 	finalizeClaimedJobRow.mockResolvedValue(true)
 	const twoRuns = {
 		runs: [enablementRun, secondEnablement],
-		skipped: [] as [],
+		skipped: [] as Array<EnablementSkip>,
 	}
 
 	planEnablementRuns.mockResolvedValueOnce(twoRuns)
