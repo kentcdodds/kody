@@ -58,8 +58,8 @@ type PostChange = (
 
 /**
  * A personal org has no members or teams, so its owner shares one package by
- * inviting someone: the invite form, the one-time handoff, pending invites,
- * and a pointer to team orgs for anything bigger.
+ * inviting someone: the invite form with a pointer to team orgs for anything
+ * bigger, the one-time handoff, and pending invites.
  */
 export function createPackageCollaboratorInvites(
 	handle: Handle,
@@ -86,7 +86,7 @@ export function createPackageCollaboratorInvites(
 		const result = await input.postChange(
 			'invite',
 			{ intent: 'invite', invitee: invitee.trim(), preset },
-			'Invite created. Send it to them; it is shown only once.',
+			'Invite created.',
 		)
 		if (result?.invite) {
 			invitee = ''
@@ -209,6 +209,7 @@ export function createPackageCollaboratorInvites(
 					</div>
 				</form>
 				{created ? renderCreated(created) : null}
+				{renderTeamOrgCallout()}
 			</AccountManagementPanel>
 		)
 	}
@@ -317,7 +318,6 @@ export function createPackageCollaboratorInvites(
 				<>
 					{renderInviteForm()}
 					{renderPendingInvites(view)}
-					{renderTeamOrgCallout()}
 				</>
 			)
 		},
