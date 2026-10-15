@@ -111,3 +111,46 @@ test('0014 detect is clean when the package has no credential uses', () => {
 	)
 	expect(findings).toEqual([])
 })
+
+test('0014 seals a nested package against its own manifest path and source root', () => {
+	const nestedManifest = `${JSON.stringify(
+		{
+			name: '@acme/nested',
+			exports: { '.': './index.ts' },
+			kody: { description: 'Nested package.' },
+		},
+		null,
+		'\t',
+	)}\n`
+	const files = {
+		'package.json': manifest(),
+		'packages/nested/package.json': nestedManifest,
+		'packages/nested/index.ts': [
+			"import { credential } from 'kody:runtime'",
+			'export default async function run() {',
+			'\treturn credential("NESTED_KEY")',
+			'}',
+		].join('\n'),
+	}
+	const context = {
+		packageName: '@acme/nested',
+		manifestPath: 'packages/nested/package.json',
+		sourceRoot: 'packages/nested',
+	}
+	const findings = sealCredentialStampsCodemod.detect(files, context)
+	expect(findings).toEqual([
+		{
+			path: 'package.json',
+			message: sealCredentialStampsMessages.declare,
+		},
+	])
+	const result = sealCredentialStampsCodemod.transform(files, context)
+	expect(result.changed).toBe(true)
+	expect(result.changedPaths).toContain('packages/nested/package.json')
+	const nestedSlots = JSON.parse(result.files['packages/nested/package.json']!)
+		.kody.credentials as Record<string, { description: string } | undefined>
+	expect(nestedSlots.NESTED_KEY?.description).toMatch(/NESTED_KEY/)
+	const rootSlots = JSON.parse(result.files['package.json']!).kody
+		.credentials as Record<string, unknown> | undefined
+	expect(rootSlots).toBeUndefined()
+})

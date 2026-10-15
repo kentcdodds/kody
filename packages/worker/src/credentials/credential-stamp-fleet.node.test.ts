@@ -74,9 +74,13 @@ function sourceRow(id: string, publishedCommit: string | null) {
 	}
 }
 
-function loadedSource(id: string, files: Record<string, string>) {
+function loadedSource(
+	id: string,
+	files: Record<string, string>,
+	publishedCommit = 'commit',
+) {
 	return {
-		source: sourceRow(id, 'commit'),
+		source: sourceRow(id, publishedCommit),
 		manifest: {
 			name: `@acme/${id}`,
 			exports: { '.': './index.ts' },
@@ -100,44 +104,56 @@ test('credential stamp fleet dry-run classifies stamped, needs_manifest, and unc
 		.mockResolvedValueOnce(sourceRow('draft', null) as never)
 	loadSource
 		.mockResolvedValueOnce(
-			loadedSource('clean', {
-				'package.json': JSON.stringify({
-					name: '@acme/clean',
-					exports: { '.': './index.ts' },
-					kody: { description: 'Clean.', credentials: {} },
-				}),
-				'index.ts': 'export default async function run() { return 1 }',
-			}) as never,
+			loadedSource(
+				'clean',
+				{
+					'package.json': JSON.stringify({
+						name: '@acme/clean',
+						exports: { '.': './index.ts' },
+						kody: { description: 'Clean.', credentials: {} },
+					}),
+					'index.ts': 'export default async function run() { return 1 }',
+				},
+				'commit-clean',
+			) as never,
 		)
 		.mockResolvedValueOnce(
-			loadedSource('needs', {
-				'package.json': JSON.stringify({
-					name: '@acme/needs',
-					exports: { '.': './index.ts' },
-					kody: { description: 'Needs.' },
-				}),
-				'index.ts': [
-					"import { credential } from 'kody:runtime'",
-					'export default async function run() {',
-					'\treturn credential("API_KEY")',
-					'}',
-				].join('\n'),
-			}) as never,
+			loadedSource(
+				'needs',
+				{
+					'package.json': JSON.stringify({
+						name: '@acme/needs',
+						exports: { '.': './index.ts' },
+						kody: { description: 'Needs.' },
+					}),
+					'index.ts': [
+						"import { credential } from 'kody:runtime'",
+						'export default async function run() {',
+						'\treturn credential("API_KEY")',
+						'}',
+					].join('\n'),
+				},
+				'commit-needs',
+			) as never,
 		)
 		.mockResolvedValueOnce(
-			loadedSource('bad', {
-				'package.json': JSON.stringify({
-					name: '@acme/bad',
-					exports: { '.': './index.ts' },
-					kody: { description: 'Bad.' },
-				}),
-				'index.ts': [
-					"import { credential } from 'kody:runtime'",
-					'export default async function run(key: string) {',
-					'\treturn credential(key)',
-					'}',
-				].join('\n'),
-			}) as never,
+			loadedSource(
+				'bad',
+				{
+					'package.json': JSON.stringify({
+						name: '@acme/bad',
+						exports: { '.': './index.ts' },
+						kody: { description: 'Bad.' },
+					}),
+					'index.ts': [
+						"import { credential } from 'kody:runtime'",
+						'export default async function run(key: string) {',
+						'\treturn credential(key)',
+						'}',
+					].join('\n'),
+				},
+				'commit-bad',
+			) as never,
 		)
 	readStamp.mockResolvedValueOnce({
 		version: 1,
@@ -170,18 +186,130 @@ test('credential stamp fleet dry-run classifies stamped, needs_manifest, and unc
 	expect(storeStamp).not.toHaveBeenCalled()
 })
 
+test('credential stamp fleet scopes nested package files before seal planning', async () => {
+	listPage.mockResolvedValueOnce([savedPackage('nested')] as never)
+	const nestedSource = {
+		...sourceRow('nested', 'commit-nested'),
+		manifest_path: 'packages/nested/package.json',
+		source_root: 'packages/nested',
+	}
+	loadRow.mockResolvedValueOnce(nestedSource as never)
+	loadSource.mockResolvedValueOnce({
+		source: nestedSource,
+		manifest: {
+			name: '@acme/nested',
+			exports: { '.': './index.ts' },
+			kody: { id: 'nested', description: 'Nested.' },
+		},
+		files: {
+			'package.json': JSON.stringify({
+				name: '@acme/root',
+				exports: { '.': './index.ts' },
+				kody: { description: 'Root workspace.' },
+			}),
+			'packages/nested/package.json': JSON.stringify({
+				name: '@acme/nested',
+				exports: { '.': './index.ts' },
+				kody: {
+					description: 'Nested.',
+					credentials: {
+						NESTED_KEY: {
+							description: 'Nested credential.',
+						},
+					},
+				},
+			}),
+			'packages/nested/index.ts': [
+				"import { credential } from 'kody:runtime'",
+				'export default async function run() {',
+				'\treturn credential("NESTED_KEY")',
+				'}',
+			].join('\n'),
+		},
+	} as never)
+	readStamp.mockResolvedValueOnce(null)
+
+	const result = await runCredentialStampFleet({
+		env: {} as Env,
+		baseUrl: 'https://heykody.dev',
+		dryRun: true,
+		limit: 5,
+	})
+
+	expect(result.outcomes[0]?.outcome).toBe('would_restamp')
+	expect(result.outcomes[0]?.stampKeyCount).toBe(1)
+	expect(result.unconvertiblePackages).toBe(0)
+	expect(result.needsManifestPackages).toBe(0)
+})
+
+test('credential stamp fleet restamps when existing stamp keys are stale', async () => {
+	listPage.mockResolvedValueOnce([savedPackage('stale')] as never)
+	loadRow.mockResolvedValueOnce(sourceRow('stale', 'commit-stale') as never)
+	loadSource.mockResolvedValueOnce(
+		loadedSource(
+			'stale',
+			{
+				'package.json': JSON.stringify({
+					name: '@acme/stale',
+					exports: { '.': './index.ts' },
+					kody: {
+						description: 'Stale stamp.',
+						credentials: {
+							linear: {
+								kind: 'mcp',
+								description: 'Calls tools on the attached MCP server "linear".',
+							},
+						},
+					},
+				}),
+				'index.ts': [
+					"import { kody } from 'kody:runtime'",
+					'export default async function run() {',
+					'\treturn kody.mcp.linear.list_issues({})',
+					'}',
+				].join('\n'),
+			},
+			'commit-stale',
+		) as never,
+	)
+	// Phase-1 stamp omitted the MCP server key.
+	readStamp.mockResolvedValueOnce({
+		version: 1,
+		keys: [],
+		depStamps: [],
+		stampHash: 'old',
+	})
+
+	const result = await runCredentialStampFleet({
+		env: {} as Env,
+		baseUrl: 'https://heykody.dev',
+		dryRun: true,
+		limit: 5,
+	})
+
+	expect(result.stampedPackages).toBe(0)
+	expect(result.missingStampPackages).toBe(1)
+	expect(result.outcomes[0]?.outcome).toBe('would_restamp')
+})
+
 test('credential stamp fleet apply restamps seal-ready packages missing a stamp', async () => {
 	listPage.mockResolvedValueOnce([savedPackage('missing')] as never)
-	loadRow.mockResolvedValueOnce(sourceRow('missing', 'commit-missing') as never)
+	loadRow
+		.mockResolvedValueOnce(sourceRow('missing', 'commit-missing') as never)
+		.mockResolvedValueOnce(sourceRow('missing', 'commit-missing') as never)
 	loadSource.mockResolvedValueOnce(
-		loadedSource('missing', {
-			'package.json': JSON.stringify({
-				name: '@acme/missing',
-				exports: { '.': './index.ts' },
-				kody: { description: 'Missing stamp.' },
-			}),
-			'index.ts': 'export default async function run() { return 1 }',
-		}) as never,
+		loadedSource(
+			'missing',
+			{
+				'package.json': JSON.stringify({
+					name: '@acme/missing',
+					exports: { '.': './index.ts' },
+					kody: { description: 'Missing stamp.' },
+				}),
+				'index.ts': 'export default async function run() { return 1 }',
+			},
+			'commit-missing',
+		) as never,
 	)
 	readStamp.mockResolvedValueOnce(null)
 	storeStamp.mockResolvedValueOnce({

@@ -652,8 +652,17 @@ export function scanLiteralMcpServerKeys(files: Record<string, string>): {
 				}
 			}
 		}
-		walkAst(parsed, (node) => {
+		walkAst(parsed, (node, ancestors) => {
 			if (node.type === 'VariableDeclarator') {
+				// `const mcp = kody.mcp` / `const mcp = runtime.mcp`
+				if (
+					node.id?.type === 'Identifier' &&
+					node.init &&
+					isKodyMcpRoot(node.init, kodyAliases, mcpAliases)
+				) {
+					const local = getNodeName(node.id)
+					if (local) mcpAliases.add(local)
+				}
 				if (
 					node.id?.type === 'ObjectPattern' &&
 					node.init?.type === 'Identifier' &&
@@ -661,20 +670,36 @@ export function scanLiteralMcpServerKeys(files: Record<string, string>): {
 				) {
 					for (const property of node.id.properties ?? []) {
 						if (property.type !== 'ObjectProperty') continue
-						if (getNodeName(property.key) !== 'mcp') continue
-						const value = property.value as AstNode | undefined
-						const local =
-							value?.type === 'Identifier'
-								? getNodeName(value)
-								: getNodeName(property.key)
-						if (local) mcpAliases.add(local)
-						else {
+						if (property.computed === true) {
 							failures.push({
 								code: 'non_literal',
 								path,
-								message: `${path}: destructuring kody.mcp must bind a simple local name, then call that name with a literal server (mcp.SERVER).`,
+								message: `${path}: destructuring kody must use literal property names (including mcp). Rewrite to a literal binding.`,
 							})
+							continue
 						}
+						if (getNodeName(property.key) !== 'mcp') continue
+						const value = property.value as AstNode | undefined
+						if (value?.type === 'Identifier') {
+							const local = getNodeName(value)
+							if (local) mcpAliases.add(local)
+							continue
+						}
+						if (value?.type === 'ObjectPattern') {
+							// `const { mcp: { linear } } = kody`
+							collectLiteralMcpServersFromObjectPattern({
+								pattern: value,
+								path,
+								keys,
+								failures,
+							})
+							continue
+						}
+						failures.push({
+							code: 'non_literal',
+							path,
+							message: `${path}: destructuring kody.mcp must bind a simple local name (then mcp.SERVER) or a literal server ObjectPattern.`,
+						})
 					}
 				}
 				if (
@@ -682,46 +707,72 @@ export function scanLiteralMcpServerKeys(files: Record<string, string>): {
 					node.init &&
 					isKodyMcpRoot(node.init, kodyAliases, mcpAliases)
 				) {
-					for (const property of node.id.properties ?? []) {
-						if (property.type !== 'ObjectProperty') continue
-						const server = getNodeName(property.key)
-						if (server && packageCredentialSlotNamePattern.test(server)) {
-							keys.add(server)
-						} else {
-							failures.push({
-								code: 'non_literal',
-								path,
-								message: `${path}: destructuring kody.mcp must use literal server names. Declare each server as a kind "mcp" kody.credentials slot.`,
-							})
-						}
-					}
+					collectLiteralMcpServersFromObjectPattern({
+						pattern: node.id,
+						path,
+						keys,
+						failures,
+					})
 				}
 				return
 			}
 			if (
-				node.type !== 'MemberExpression' &&
-				node.type !== 'OptionalMemberExpression'
+				node.type === 'MemberExpression' ||
+				node.type === 'OptionalMemberExpression'
+			) {
+				const server = mcpServerFromMember(node, kodyAliases, mcpAliases)
+				if (server === null) {
+					failures.push({
+						code: 'non_literal',
+						path,
+						message: `${path}: kody.mcp was accessed with a non-literal server name. Use kody.mcp.SERVER or kody.mcp["SERVER"] and declare a kind "mcp" slot for each server.`,
+					})
+					return
+				}
+				if (server !== undefined) {
+					if (packageCredentialSlotNamePattern.test(server)) keys.add(server)
+					else {
+						failures.push({
+							code: 'invalid_key',
+							path,
+							message: `${path}: MCP server "${server}" is not a valid kody.credentials key. Rename the attached server or declare it under a valid slot key.`,
+						})
+					}
+					return
+				}
+			}
+			// Fail closed when a bare kody.mcp / mcp alias escapes as a value
+			// (passed to a call, returned, stored in a container, …) instead of
+			// a literal member access or supported alias/destructure binding.
+			if (!isKodyMcpRoot(node, kodyAliases, mcpAliases)) return
+			const parent = ancestors.at(-1)
+			if (!parent) return
+			if (parent.type.startsWith('Import')) return
+			if (isNonReferenceName(node, parent)) return
+			if (
+				(parent.type === 'MemberExpression' ||
+					parent.type === 'OptionalMemberExpression') &&
+				parent.object === node
 			) {
 				return
 			}
-			const server = mcpServerFromMember(node, kodyAliases, mcpAliases)
-			if (server === undefined) return
-			if (server === null) {
-				failures.push({
-					code: 'non_literal',
-					path,
-					message: `${path}: kody.mcp was accessed with a non-literal server name. Use kody.mcp.SERVER or kody.mcp["SERVER"] and declare a kind "mcp" slot for each server.`,
-				})
+			if (parent.type === 'VariableDeclarator') {
+				// Binding site (`const mcp = …`) or supported init (`= kody.mcp`
+				// / `= { linear } = kody.mcp`).
+				if (parent.id === node || parent.init === node) return
+			}
+			if (
+				(parent.type === 'ObjectProperty' || parent.type === 'Property') &&
+				parent.value === node
+			) {
+				// Destructuring binding: `const { mcp } = kody` / `const { linear } = kody.mcp`.
 				return
 			}
-			if (packageCredentialSlotNamePattern.test(server)) keys.add(server)
-			else {
-				failures.push({
-					code: 'invalid_key',
-					path,
-					message: `${path}: MCP server "${server}" is not a valid kody.credentials key. Rename the attached server or declare it under a valid slot key.`,
-				})
-			}
+			failures.push({
+				code: 'non_literal',
+				path,
+				message: `${path}: kody.mcp escaped as a value. Keep MCP access as literal kody.mcp.SERVER (or a local alias used only as mcp.SERVER) and declare each server as a kind "mcp" kody.credentials slot.`,
+			})
 		})
 	}
 	return { keys: [...keys].sort(), failures: dedupeFailures(failures) }
@@ -744,6 +795,35 @@ function isKodyMcpRoot(
 	if (node.object?.type !== 'Identifier') return false
 	if (!kodyAliases.has(getNodeName(node.object) ?? '')) return false
 	return memberPropertyName(node) === 'mcp'
+}
+
+function collectLiteralMcpServersFromObjectPattern(input: {
+	pattern: AstNode
+	path: string
+	keys: Set<string>
+	failures: Array<CredentialStampGateFailure>
+}) {
+	for (const property of input.pattern.properties ?? []) {
+		if (property.type !== 'ObjectProperty') continue
+		if (property.computed === true) {
+			input.failures.push({
+				code: 'non_literal',
+				path: input.path,
+				message: `${input.path}: destructuring kody.mcp must use literal server names. Declare each server as a kind "mcp" kody.credentials slot.`,
+			})
+			continue
+		}
+		const server = getNodeName(property.key)
+		if (server && packageCredentialSlotNamePattern.test(server)) {
+			input.keys.add(server)
+		} else {
+			input.failures.push({
+				code: 'non_literal',
+				path: input.path,
+				message: `${input.path}: destructuring kody.mcp must use literal server names. Declare each server as a kind "mcp" kody.credentials slot.`,
+			})
+		}
+	}
 }
 
 /**
@@ -823,18 +903,38 @@ export function planCredentialStampSeal(
 	const oauthKeySet = new Set(scanned.oauthKeys)
 	const updates: Array<CredentialStampSealSlot> = []
 	const uninferableKeys: Array<string> = []
+	const kindMismatches: Array<CredentialStampGateFailure> = []
 	for (const key of scanned.keys) {
 		const existing = slots[key]
-		if (existing?.description != null) continue
-		const kind: PackageCredentialKind | undefined =
-			existing?.kind ??
-			(mcpKeySet.has(key)
-				? 'mcp'
-				: jwtKeySet.has(key)
-					? 'signing'
-					: oauthKeySet.has(key)
-						? 'oauth'
-						: undefined)
+		const inferredKind: PackageCredentialKind | undefined = mcpKeySet.has(key)
+			? 'mcp'
+			: oauthKeySet.has(key)
+				? 'oauth'
+				: // secretJwtSign resolves a Key/secret by name — do not force kind
+					// "signing" (that is for credential(key).sign()).
+					undefined
+		if (existing?.description != null) {
+			if (
+				inferredKind === 'mcp' &&
+				existing.kind != null &&
+				existing.kind !== 'mcp'
+			) {
+				kindMismatches.push({
+					code: 'unstampable_pattern',
+					message: `kody.credentials slot for an MCP server is declared with kind "${existing.kind}" instead of "mcp". Change the kind to "mcp" (or omit kind only for fetch-capable credentials that are not MCP servers).`,
+				})
+				continue
+			}
+			if (inferredKind === 'mcp' && existing.kind == null) {
+				updates.push({
+					key,
+					description: existing.description,
+					kind: 'mcp',
+				})
+			}
+			continue
+		}
+		const kind = existing?.kind ?? inferredKind
 		updates.push({
 			key,
 			description: inferCredentialStampDescription({
@@ -847,9 +947,12 @@ export function planCredentialStampSeal(
 			...(kind ? { kind } : {}),
 		})
 	}
-	const blockingFailures = scanned.failures.filter(
-		(failure) => failure.code !== 'missing_description',
-	)
+	const blockingFailures = [
+		...scanned.failures.filter(
+			(failure) => failure.code !== 'missing_description',
+		),
+		...kindMismatches,
+	]
 	const sealReady =
 		blockingFailures.length === 0 &&
 		scanned.keys.every((key) => {
@@ -901,12 +1004,17 @@ export function applyCredentialStampSealPlan(
 			prior.description.trim().length > 0
 				? prior.description.trim()
 				: null
-		if (priorDescription != null) continue
-		const next: Record<string, unknown> = {
-			...prior,
-			description: update.description,
+		const next: Record<string, unknown> = { ...prior }
+		let slotChanged = false
+		if (priorDescription == null) {
+			next.description = update.description
+			slotChanged = true
 		}
-		if (update.kind && prior.kind == null) next.kind = update.kind
+		if (update.kind && prior.kind == null) {
+			next.kind = update.kind
+			slotChanged = true
+		}
+		if (!slotChanged) continue
 		existing[update.key] = next
 		changed = true
 	}

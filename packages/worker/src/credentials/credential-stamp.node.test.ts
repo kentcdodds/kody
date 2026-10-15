@@ -148,6 +148,19 @@ test('scanLiteralMcpServerKeys stamps literal servers and fails dynamic access',
 	expect(literal.keys).toEqual(['home', 'linear'])
 	expect(literal.failures).toEqual([])
 
+	const viaAlias = scanLiteralMcpServerKeys({
+		'package.json': manifest(),
+		'src/index.ts': [
+			"import { kody } from 'kody:runtime'",
+			'const mcp = kody.mcp',
+			'export default async function run() {',
+			'\treturn mcp.linear.list_issues({})',
+			'}',
+		].join('\n'),
+	})
+	expect(viaAlias.keys).toEqual(['linear'])
+	expect(viaAlias.failures).toEqual([])
+
 	const dynamic = scanLiteralMcpServerKeys({
 		'package.json': manifest(),
 		'src/index.ts': [
@@ -159,6 +172,46 @@ test('scanLiteralMcpServerKeys stamps literal servers and fails dynamic access',
 	})
 	expect(dynamic.keys).toEqual([])
 	expect(dynamic.failures.some((f) => f.code === 'non_literal')).toBe(true)
+
+	const computedDestructure = scanLiteralMcpServerKeys({
+		'package.json': manifest(),
+		'src/index.ts': [
+			"import { kody } from 'kody:runtime'",
+			'export default async function run(server: string) {',
+			'\tconst { [server]: tool } = kody.mcp',
+			'\treturn tool',
+			'}',
+		].join('\n'),
+	})
+	expect(computedDestructure.keys).toEqual([])
+	expect(
+		computedDestructure.failures.some((f) => f.code === 'non_literal'),
+	).toBe(true)
+
+	const nestedDestructure = scanLiteralMcpServerKeys({
+		'package.json': manifest(),
+		'src/index.ts': [
+			"import { kody } from 'kody:runtime'",
+			'export default async function run() {',
+			'\tconst { mcp: { linear } } = kody',
+			'\treturn linear.list_issues({})',
+			'}',
+		].join('\n'),
+	})
+	expect(nestedDestructure.keys).toEqual(['linear'])
+	expect(nestedDestructure.failures).toEqual([])
+
+	const escapedRoot = scanLiteralMcpServerKeys({
+		'package.json': manifest(),
+		'src/index.ts': [
+			"import { kody } from 'kody:runtime'",
+			'export default async function run(call: (mcp: unknown) => unknown) {',
+			'\treturn call(kody.mcp)',
+			'}',
+		].join('\n'),
+	})
+	expect(escapedRoot.keys).toEqual([])
+	expect(escapedRoot.failures.some((f) => f.code === 'non_literal')).toBe(true)
 })
 
 test('planCredentialStampSeal infers MCP and OAuth descriptions without overwriting', () => {
@@ -191,6 +244,68 @@ test('planCredentialStampSeal infers MCP and OAuth descriptions without overwrit
 		description: 'OAuth access for google.',
 	})
 	expect(plan.sealReady).toBe(true)
+})
+
+test('planCredentialStampSeal fills mcp kind on described slots and never forces signing for secretJwtSign', () => {
+	const fillKind = planCredentialStampSeal({
+		'package.json': manifest({
+			credentials: {
+				linear: { description: 'Linear MCP server.' },
+			},
+		}),
+		'src/index.ts': [
+			"import { kody } from 'kody:runtime'",
+			'export default async function run() {',
+			'\treturn kody.mcp.linear.list_issues({})',
+			'}',
+		].join('\n'),
+	})
+	expect(fillKind.blockingFailures).toEqual([])
+	expect(fillKind.updates).toEqual([
+		{
+			key: 'linear',
+			description: 'Linear MCP server.',
+			kind: 'mcp',
+		},
+	])
+	expect(fillKind.sealReady).toBe(true)
+
+	const jwt = planCredentialStampSeal({
+		'package.json': manifest(),
+		'src/index.ts': [
+			"import { secretJwtSign } from 'kody:runtime'",
+			'export default async function run() {',
+			'\treturn secretJwtSign({ private_key_secret_name: "JWT_KEY", claims: {} })',
+			'}',
+		].join('\n'),
+	})
+	expect(jwt.blockingFailures).toEqual([])
+	expect(jwt.updates.find((slot) => slot.key === 'JWT_KEY')).toMatchObject({
+		description: 'Signs tokens with the "JWT_KEY" signing credential.',
+	})
+	expect(jwt.updates.find((slot) => slot.key === 'JWT_KEY')?.kind).toBe(
+		undefined,
+	)
+
+	const kindMismatch = planCredentialStampSeal({
+		'package.json': manifest({
+			credentials: {
+				linear: { kind: 'oauth', description: 'Wrong kind for MCP.' },
+			},
+		}),
+		'src/index.ts': [
+			"import { kody } from 'kody:runtime'",
+			'export default async function run() {',
+			'\treturn kody.mcp.linear.list_issues({})',
+			'}',
+		].join('\n'),
+	})
+	expect(kindMismatch.sealReady).toBe(false)
+	expect(
+		kindMismatch.blockingFailures.some(
+			(failure) => failure.code === 'unstampable_pattern',
+		),
+	).toBe(true)
 })
 
 test('scanCredentialStamp fails missing descriptions without inventing placeholders', () => {

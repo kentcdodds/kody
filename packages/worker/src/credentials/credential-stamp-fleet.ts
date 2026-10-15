@@ -17,7 +17,9 @@ import {
 } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { readPublishedCredentialStamp } from '#worker/package-runtime/published-runtime-artifacts.ts'
+import { packageSourceFiles } from './credential-needs-closure.ts'
 import {
+	buildCredentialStamp,
 	planCredentialStampSeal,
 	type CredentialStamp,
 	type CredentialStampGateFailure,
@@ -96,6 +98,30 @@ function isCredentialStamp(value: unknown): value is CredentialStamp {
 		Array.isArray(record.keys) &&
 		Array.isArray(record.depStamps)
 	)
+}
+
+function sortedKeyList(keys: ReadonlyArray<unknown>): Array<string> {
+	return keys
+		.filter((key): key is string => typeof key === 'string')
+		.slice()
+		.sort()
+}
+
+function stampKeysMatchPlan(
+	stamp: CredentialStamp,
+	planKeys: ReadonlyArray<string>,
+): boolean {
+	const left = sortedKeyList(stamp.keys)
+	const right = sortedKeyList(planKeys)
+	if (left.length !== right.length) return false
+	return left.every((key, index) => key === right[index])
+}
+
+function stampHasEmptyDepFallback(
+	stamp: CredentialStamp,
+	emptyStampHash: string,
+): boolean {
+	return stamp.depStamps.some((dep) => dep.stampHash === emptyStampHash)
 }
 
 function matchesOptionalFilters(
@@ -206,6 +232,7 @@ export async function runCredentialStampFleet(input: {
 		sourceIds,
 	})
 
+	const emptyStampHash = (await buildCredentialStamp({ keys: [] })).stampHash
 	const outcomes: Array<CredentialStampFleetOutcome> = []
 	const unconvertibleFailureCodes = new Set<
 		CredentialStampGateFailure['code']
@@ -249,7 +276,19 @@ export async function runCredentialStampFleet(input: {
 				userId: savedPackage.userId,
 				sourceId: savedPackage.sourceId,
 			})
-			const plan = planCredentialStampSeal(loaded.files)
+			const loadedCommit = loaded.source.published_commit?.trim() || null
+			if (loadedCommit !== publishedCommit) {
+				throw new Error(
+					`Published commit changed from "${publishedCommit}" to "${loadedCommit ?? 'unpublished'}" while scanning; retry this package.`,
+				)
+			}
+			// Nested packages arrive keyed from the repo root; scope like
+			// storePublishedCredentialStamp / packageSourceFiles before seal.
+			const { files: packageFiles } = packageSourceFiles({
+				source: loaded.source,
+				files: loaded.files,
+			})
+			const plan = planCredentialStampSeal(packageFiles)
 			const stampKeyCount = plan.keys.length
 			if (plan.blockingFailures.length > 0) {
 				unconvertiblePackages += 1
@@ -287,7 +326,11 @@ export async function runCredentialStampFleet(input: {
 				sourceId: source.id,
 				publishedCommit,
 			})
-			if (isCredentialStamp(existing)) {
+			const stampCurrent =
+				isCredentialStamp(existing) &&
+				stampKeysMatchPlan(existing, plan.keys) &&
+				!stampHasEmptyDepFallback(existing, emptyStampHash)
+			if (stampCurrent) {
 				stampedPackages += 1
 				outcomes.push({
 					packageId: savedPackage.id,
@@ -315,9 +358,20 @@ export async function runCredentialStampFleet(input: {
 				})
 				continue
 			}
+			const sourceAgain = await loadPackageSourceRowForUser({
+				env: input.env,
+				userId: savedPackage.userId,
+				sourceId: savedPackage.sourceId,
+			})
+			const commitAgain = sourceAgain.published_commit?.trim() || null
+			if (commitAgain !== publishedCommit) {
+				throw new Error(
+					`Published commit changed from "${publishedCommit}" to "${commitAgain ?? 'unpublished'}" before restamp; retry this package.`,
+				)
+			}
 			const stored = await storePublishedCredentialStamp({
 				env: input.env,
-				source,
+				source: sourceAgain,
 				publishedCommit,
 				files: loaded.files,
 			})

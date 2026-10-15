@@ -18,6 +18,8 @@ import {
 
 export const sealCredentialStampsCodemodId = '0014-seal-credential-stamps'
 
+const packageManifestPath = 'package.json'
+
 /**
  * Fixed messages only: findings reach the fleet operator, so they never
  * carry a credential name, file contents, or manifest values.
@@ -31,15 +33,101 @@ export const sealCredentialStampsMessages = {
 		'Has stamped credential keys whose purpose cannot be inferred from source. Write a real description in kody.credentials for each, then republish.',
 } as const
 
+function normalizeSnapshotPath(path: string) {
+	return path.trim().replace(/^\/+/, '')
+}
+
+/**
+ * The package's own files keyed as in the snapshot (same locate rules as
+ * 0013). Nested packages may arrive keyed from the repo root or from their
+ * source root.
+ */
+function locatePackage(
+	files: Record<string, string>,
+	context: PackageCodemodContext,
+) {
+	const root = normalizeSnapshotPath(context.sourceRoot ?? '').replace(
+		/\/+$/,
+		'',
+	)
+	const manifestPath = normalizeSnapshotPath(
+		context.manifestPath ?? packageManifestPath,
+	)
+	const prefix = `${root}/`
+	const keyFor = (path: string) =>
+		Object.keys(files).find((key) => normalizeSnapshotPath(key) === path)
+	const underRoot = root !== '' && manifestPath.startsWith(prefix)
+	const repoKey = keyFor(manifestPath)
+	if (underRoot && repoKey !== undefined) {
+		const scoped = Object.fromEntries(
+			Object.entries(files).filter(([key]) =>
+				normalizeSnapshotPath(key).startsWith(prefix),
+			),
+		)
+		const remapped: Record<string, string> = {}
+		for (const [key, value] of Object.entries(scoped)) {
+			const relative = normalizeSnapshotPath(key).slice(prefix.length)
+			remapped[relative === '' ? packageManifestPath : relative] = value
+		}
+		if (remapped[packageManifestPath] == null && scoped[repoKey] != null) {
+			remapped[packageManifestPath] = scoped[repoKey]!
+		}
+		return { files: remapped }
+	}
+	const relativeManifest = underRoot
+		? manifestPath.slice(prefix.length)
+		: manifestPath
+	const manifestKey = keyFor(relativeManifest) ?? relativeManifest
+	if (manifestKey === packageManifestPath) return { files }
+	const remapped: Record<string, string> = { ...files }
+	if (files[manifestKey] != null) {
+		remapped[packageManifestPath] = files[manifestKey]!
+	}
+	return { files: remapped }
+}
+
+function remapSealFilesToSnapshot(
+	original: Record<string, string>,
+	sealed: Record<string, string>,
+	context: PackageCodemodContext,
+): Record<string, string> {
+	const root = normalizeSnapshotPath(context.sourceRoot ?? '').replace(
+		/\/+$/,
+		'',
+	)
+	const manifestPath = normalizeSnapshotPath(
+		context.manifestPath ?? packageManifestPath,
+	)
+	const prefix = `${root}/`
+	const underRoot = root !== '' && manifestPath.startsWith(prefix)
+	const next = { ...original }
+	const sealedManifest = sealed[packageManifestPath]
+	if (sealedManifest == null) return next
+	if (underRoot) {
+		next[manifestPath] = sealedManifest
+		return next
+	}
+	const relativeManifest =
+		root !== '' && manifestPath.startsWith(prefix)
+			? manifestPath.slice(prefix.length)
+			: manifestPath
+	next[relativeManifest] = sealedManifest
+	if (relativeManifest !== packageManifestPath) {
+		next[packageManifestPath] = sealedManifest
+	}
+	return next
+}
+
 function detectSealCredentialStamps(
 	files: Record<string, string>,
-	_context: PackageCodemodContext,
+	context: PackageCodemodContext,
 ): Array<PackageCodemodFinding> {
-	const plan = planCredentialStampSeal(files)
+	const located = locatePackage(files, context)
+	const plan = planCredentialStampSeal(located.files)
 	const findings: Array<PackageCodemodFinding> = []
 	if (plan.updates.length > 0) {
 		findings.push({
-			path: 'package.json',
+			path: packageManifestPath,
 			message: sealCredentialStampsMessages.declare,
 		})
 	}
@@ -51,7 +139,7 @@ function detectSealCredentialStamps(
 	}
 	if (plan.uninferableKeys.length > 0) {
 		findings.push({
-			path: 'package.json',
+			path: packageManifestPath,
 			message: sealCredentialStampsMessages.uninferable,
 		})
 	}
@@ -60,9 +148,10 @@ function detectSealCredentialStamps(
 
 function transformSealCredentialStamps(
 	files: Record<string, string>,
-	_context: PackageCodemodContext,
+	context: PackageCodemodContext,
 ): PackageCodemodTransformResult {
-	const plan = planCredentialStampSeal(files)
+	const located = locatePackage(files, context)
+	const plan = planCredentialStampSeal(located.files)
 	const needsManual: Array<PackageCodemodFinding> = []
 	if (plan.blockingFailures.length > 0) {
 		needsManual.push({
@@ -72,7 +161,7 @@ function transformSealCredentialStamps(
 	}
 	if (plan.uninferableKeys.length > 0) {
 		needsManual.push({
-			path: 'package.json',
+			path: packageManifestPath,
 			message: sealCredentialStampsMessages.uninferable,
 		})
 	}
@@ -84,7 +173,7 @@ function transformSealCredentialStamps(
 			needsManual,
 		}
 	}
-	const applied = applyCredentialStampSealPlan(files, plan)
+	const applied = applyCredentialStampSealPlan(located.files, plan)
 	if (!applied.changed) {
 		return {
 			files: { ...files },
@@ -93,10 +182,19 @@ function transformSealCredentialStamps(
 			needsManual,
 		}
 	}
+	const nextFiles = remapSealFilesToSnapshot(files, applied.files, context)
+	const changedPaths = [
+		...new Set(
+			[
+				normalizeSnapshotPath(context.manifestPath ?? packageManifestPath),
+				packageManifestPath,
+			].filter((path) => nextFiles[path] !== files[path]),
+		),
+	]
 	return {
-		files: applied.files,
+		files: nextFiles,
 		changed: true,
-		changedPaths: ['package.json'],
+		changedPaths,
 		needsManual,
 	}
 }
