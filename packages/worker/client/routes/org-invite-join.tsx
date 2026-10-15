@@ -14,6 +14,7 @@ import {
 	cardCss,
 	getPrimaryButtonCss,
 	getSecondaryButtonCss,
+	mergeCss,
 	mutedLinkCss,
 	nativeDisclosureCss,
 	pageDescriptionCss,
@@ -326,7 +327,7 @@ export function OrgInviteJoinRoute(handle: Handle) {
 								disabled={joining || declining}
 								data-testid="org-invite-join-confirm"
 								mix={[
-									css(getPrimaryButtonCss()),
+									css(mergeCss(getPrimaryButtonCss(), iconButtonCss)),
 									on('click', () => void join(data.token)),
 								]}
 							>
@@ -428,6 +429,12 @@ const actionsCss = {
 	flexWrap: 'wrap' as const,
 	gap: spacing.sm,
 	alignItems: 'center',
+}
+
+const iconButtonCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	gap: spacing.xs,
 }
 
 const infoMessageCss = {
