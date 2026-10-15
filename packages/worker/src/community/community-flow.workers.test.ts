@@ -36,7 +36,6 @@ import { type EntitySourceRow } from '#worker/repo/types.ts'
 import { createArtifactsMswHandlers } from '#worker/test-support/artifacts-msw-handlers.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { type CommunityActivityDispatchQueueMessage } from './activity-dispatch-queue-producer.ts'
-import { dispatchCommunityForkUpstreamUpdatedSubscriptionEvents } from './fork-upstream-updated-package-subscriptions.ts'
 import {
 	type CommunityForkUpstreamUpdatedDispatchQueueMessage,
 	type CommunityListingPublishedDispatchQueueMessage,
@@ -463,29 +462,9 @@ test('public package flow works end-to-end through capability handlers', async (
 		sourceId,
 	)
 	expect((await publish()).pinned_commit).toBe(republishedCommit)
-	const forkUpstreamUpdated = {
-		kind: 'fork_upstream_updated',
-		eventId: expect.any(String),
-		listingId,
-		previous: { pinnedCommit: publishedCommit, packageVersion: '1.0.4' },
-		current: { pinnedCommit: republishedCommit, packageVersion: '1.0.4' },
-		publishedAt: expect.any(String),
-	}
-	expect(queuedListingPublished).toEqual([forkUpstreamUpdated])
-	const [queuedForkUpstreamUpdated] = queuedListingPublished
-	if (!queuedForkUpstreamUpdated || !('kind' in queuedForkUpstreamUpdated)) {
-		throw new Error('Expected a fork upstream-updated queue message.')
-	}
-	const { kind: _kind, ...forkUpstreamMessage } = queuedForkUpstreamUpdated
-	queuedListingPublished.length = 0
-	// The inert fork is the forker's only package and it has no saved package
-	// row, so there is no subscriber to invoke.
-	await expect(
-		dispatchCommunityForkUpstreamUpdatedSubscriptionEvents({
-			env: testEnv,
-			message: forkUpstreamMessage,
-		}),
-	).resolves.toEqual([])
+	// Pin moves notify follows in-process. The retired fork-only queue
+	// message is no longer enqueued.
+	expect(queuedListingPublished).toEqual([])
 	expect((await publish()).pinned_commit).toBe(republishedCommit)
 	expect(queuedListingPublished).toEqual([])
 	// Featured survives republish — it is editorial placement, not trust.

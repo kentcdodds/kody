@@ -3,6 +3,7 @@ import { ensureUserStorageBucketsTestSchema } from '#worker/storage-buckets/test
 import { ensureSecretBucketsTestSchema } from '#worker/secrets-test-schema.ts'
 import { ensureSavedPackageInternetVisibleColumn } from '#worker/package-registry/internet-visible-column-test-schema.ts'
 import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
+import { ensureFollowTables } from '#worker/follow/repo.ts'
 import { communityForksDeleteCascadeStatements } from './community-forks-delete-cascade.ts'
 
 /**
@@ -270,4 +271,5 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 		// Column already present.
 	}
 	await ensureSoftDeleteTestColumns(db)
+	await ensureFollowTables(db)
 }

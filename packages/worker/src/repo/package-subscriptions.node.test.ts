@@ -29,9 +29,16 @@ const mocks = vi.hoisted(() => ({
 	>(async () => {}),
 }))
 
-vi.mock('#worker/package-invocations/service.ts', () => ({
-	invokePackageSubscription: mocks.invokePackageSubscription,
-}))
+vi.mock('#worker/package-invocations/service.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<
+			typeof import('#worker/package-invocations/service.ts')
+		>()
+	return {
+		...actual,
+		invokePackageSubscription: mocks.invokePackageSubscription,
+	}
+})
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	listSavedPackagesByUserId: mocks.listSavedPackagesByUserId,

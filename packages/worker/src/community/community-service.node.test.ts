@@ -18,7 +18,8 @@ const { mockModule, pickMocks } = vi.hoisted(() => {
 	const mockModule = {
 		enqueueCommunityActivityDispatch: vi.fn(),
 		enqueueCommunityListingPublishedDispatch: vi.fn(),
-		enqueueCommunityForkUpstreamUpdatedDispatch: vi.fn(),
+		notifyFollowsOfPublishedPackage: vi.fn(async () => undefined),
+		ensureFollowForCommunityFork: vi.fn(async () => undefined),
 		getSavedPackageById: vi.fn(),
 		loadPackageSourceBySourceId: vi.fn(),
 		getCommunityBan: vi.fn(),
@@ -84,10 +85,13 @@ vi.mock('./activity-dispatch-queue-producer.ts', () =>
 	pickMocks('enqueueCommunityActivityDispatch'),
 )
 vi.mock('./listing-published-dispatch-queue-producer.ts', () =>
-	pickMocks(
-		'enqueueCommunityListingPublishedDispatch',
-		'enqueueCommunityForkUpstreamUpdatedDispatch',
-	),
+	pickMocks('enqueueCommunityListingPublishedDispatch'),
+)
+vi.mock('#worker/follow/notify.ts', () =>
+	pickMocks('notifyFollowsOfPublishedPackage'),
+)
+vi.mock('#worker/follow/fork-follow.ts', () =>
+	pickMocks('ensureFollowForCommunityFork'),
 )
 vi.mock('#worker/package-registry/repo.ts', () =>
 	pickMocks(
@@ -881,23 +885,19 @@ test('publishCommunityListing enqueues listing.published only on first publish',
 	).not.toHaveBeenCalled()
 })
 
-test('publishCommunityListing enqueues fork upstream-updated only when a republish moves the pinned commit', async () => {
+test('publishCommunityListing notifies follows only when a republish moves the pinned commit', async () => {
 	mockPublishable()
 	mockModule.insertCommunityActivityEvent.mockResolvedValue(undefined)
 
 	await publish()
-	expect(
-		mockModule.enqueueCommunityForkUpstreamUpdatedDispatch,
-	).not.toHaveBeenCalled()
+	expect(mockModule.notifyFollowsOfPublishedPackage).not.toHaveBeenCalled()
 
 	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(
 		sampleListing({ pinnedCommit: 'commit-1', version: '1.0.4' }),
 	)
 	mockModule.updateCommunityListing.mockResolvedValue(true)
 	await publish()
-	expect(
-		mockModule.enqueueCommunityForkUpstreamUpdatedDispatch,
-	).not.toHaveBeenCalled()
+	expect(mockModule.notifyFollowsOfPublishedPackage).not.toHaveBeenCalled()
 
 	const republishedSource = validPublishSource()
 	republishedSource.source.published_commit = 'commit-2'
@@ -911,37 +911,40 @@ test('publishCommunityListing enqueues fork upstream-updated only when a republi
 	)
 	await publish()
 
-	expect(
-		mockModule.enqueueCommunityForkUpstreamUpdatedDispatch,
-	).toHaveBeenCalledTimes(1)
-	expect(
-		mockModule.enqueueCommunityForkUpstreamUpdatedDispatch,
-	).toHaveBeenCalledWith({
-		queue: testCommunityListingPublishedQueue,
-		listingId: 'listing-1',
-		previous: { pinnedCommit: 'commit-1', packageVersion: null },
-		current: { pinnedCommit: 'commit-2', packageVersion: '1.1.0' },
+	expect(mockModule.notifyFollowsOfPublishedPackage).toHaveBeenCalledTimes(1)
+	expect(mockModule.notifyFollowsOfPublishedPackage).toHaveBeenCalledWith({
+		env: expect.anything(),
+		ownerId: ownerIdFromStored('user-1'),
+		packageId: 'package-1',
+		previousCommit: 'commit-1',
+		publishedCommit: 'commit-2',
 		publishedAt: expect.any(String),
+		listing: {
+			listingId: 'listing-1',
+			previous: { pinnedCommit: 'commit-1', packageVersion: null },
+			current: { pinnedCommit: 'commit-2', packageVersion: '1.1.0' },
+		},
 	})
 	expect(
 		mockModule.enqueueCommunityListingPublishedDispatch,
 	).toHaveBeenCalledTimes(1)
 })
 
-test('publishCommunityListing does not fail when fork upstream-updated enqueue fails', async () => {
+test('publishCommunityListing does not fail when follow notify fails', async () => {
 	consoleError.mockImplementation(() => {})
 	mockPublishable()
 	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(
 		sampleListing({ pinnedCommit: 'commit-0' }),
 	)
 	mockModule.updateCommunityListing.mockResolvedValue(true)
-	mockModule.enqueueCommunityForkUpstreamUpdatedDispatch.mockRejectedValue(
-		new Error('queue unavailable'),
+	mockModule.notifyFollowsOfPublishedPackage.mockRejectedValueOnce(
+		new Error('follow notify failed'),
 	)
 
 	await expect(publish()).resolves.toMatchObject({ id: 'listing-1' })
 	expect(consoleError).toHaveBeenCalledWith(
-		'community-fork-upstream-updated-dispatch-enqueue-failed',
+		'follow-published-notify-failed',
+		'listing-1',
 		expect.any(Error),
 	)
 })

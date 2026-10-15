@@ -5,6 +5,7 @@ import {
 	readPreExecutionPackageInvocationInfrastructureCode,
 } from '#worker/package-invocations/admin-package-subscriptions.ts'
 import { invokePackageSubscription } from '#worker/package-invocations/service.ts'
+import { recordFollowDefaultBranchPush } from '#worker/follow/push-ingress.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
 	applyArtifactSourcePushToHeadCache,
@@ -390,26 +391,34 @@ export async function processCloudflareArtifactsRepoEvent(input: {
 		return { outcome: 'unmatched', providerEvent }
 	}
 
-	if (
-		providerEvent.type === 'cf.artifacts.repo.pushed' &&
-		source.entity_kind === 'repo'
-	) {
+	if (providerEvent.type === 'cf.artifacts.repo.pushed') {
 		try {
 			// Live HEAD, not the KV cache: applyArtifactSourcePushToHeadCache
 			// already wrote payload.after into that entry for viewed repos.
 			const head = await resolveArtifactSourceHead(input.env, source.repo_id)
 			const defaultBranchRef = `refs/heads/${head.branch}`
-			if (
+			const onDefaultBranch =
 				providerEvent.payload.ref === defaultBranchRef &&
 				!isDeletedArtifactRefCommit(providerEvent.payload.after) &&
 				head.commit === providerEvent.payload.after
-			) {
+			if (onDefaultBranch && source.entity_kind === 'repo') {
 				await refreshIdentityIconForSource({
 					env: input.env,
 					source,
 					iconCommit: providerEvent.payload.after,
 					indexLiveHead: true,
 				})
+			}
+			if (onDefaultBranch) {
+				try {
+					await recordFollowDefaultBranchPush({
+						env: input.env,
+						source,
+						event: providerEvent,
+					})
+				} catch (error) {
+					console.error('follow-push-ingress-failed', source.repo_id, error)
+				}
 			}
 		} catch (error) {
 			console.error('identity-icon-push-refresh-failed', source.repo_id, error)
