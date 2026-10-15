@@ -189,8 +189,10 @@ and the ball shatters real words, status dots, and day bars into falling debris.
 Red incident days explode, amber days split off another ball, and a card or the
 banner shatters once everything inside it is gone. While a game runs it polls
 `/status.json` every 20 seconds and shows a "Kody is back" toast when the
-overall status turns operational. Add `?play` to the URL to offer the game while
-everything is up (for testing).
+overall status turns operational. While everything is operational, the only
+entry point is a low-key **Play Breakout** link at the end of the footer. Add
+`?play` to the URL to show the full **Play while you wait** button anyway (for
+testing).
 
 The game is progressive enhancement in `public/status-breakout*.js` (plain
 browser modules, no dependencies, nothing loaded from the main worker). Without
