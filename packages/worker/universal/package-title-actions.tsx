@@ -159,7 +159,9 @@ function renderFollowControl(follow: PackageRepoFollowAction) {
 	const label = follow.following ? 'Following' : 'Follow'
 	const tooltip = follow.following
 		? 'Your workspace gets events from this. Change events or unfollow.'
-		: 'Get new versions and pushes from this in your workspace.'
+		: follow.kind === 'repo'
+			? 'Get pushes from this repository in your workspace.'
+			: 'Get new versions and pushes from this in your workspace.'
 	return (
 		<a
 			href={

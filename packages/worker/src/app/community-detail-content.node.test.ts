@@ -527,9 +527,16 @@ test('Follow opens the Repo tab panel, says Following, and sends signed-out visi
 		'href="/@kentcdodds/github-triage#follow"',
 		'data-icon="eye"',
 		'<span>Follow</span>',
+		'Get new versions and pushes from this in your workspace.',
 	])
 	expect(followHtml.indexOf(testId('package-follow-toggle'))).toBeLessThan(
 		followHtml.indexOf(testId('community-detail-install')),
+	)
+
+	expectMarkers(
+		await render({ follow: { kind: 'repo', viewerFollowing: false } }),
+		['Get pushes from this repository in your workspace.'],
+		['Get new versions and pushes'],
 	)
 
 	expectMarkers(
