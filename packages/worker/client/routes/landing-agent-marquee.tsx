@@ -147,6 +147,7 @@ function agentMarqueeMotion() {
 		// mouse, not by whether the mouse is over it, and the marks around
 		// the pointer make room. Centers come from layout (offsetLeft), so
 		// the transforms written here never feed back into the measurement.
+		const motionOk = matchMedia('(prefers-reduced-motion: no-preference)')
 		const style = getComputedStyle(node)
 		const iconSize = parseFloat(style.getPropertyValue('--agent-size')) || 64
 		const maxZoom = parseFloat(style.getPropertyValue('--agent-zoom')) || 1.25
@@ -209,18 +210,23 @@ function agentMarqueeMotion() {
 			(event) => {
 				if (!(event instanceof PointerEvent) || event.pointerType !== 'mouse')
 					return
+				if (!motionOk.matches) return
 				pointerX = event.clientX - node.getBoundingClientRect().left
 				node.classList.add('is-magnifying')
 				scheduleMagnify()
 			},
 			{ signal, passive: true },
 		)
-		node.addEventListener(
-			'pointerleave',
+		const stopMagnifying = () => {
+			pointerX = null
+			node.classList.remove('is-magnifying')
+			scheduleMagnify()
+		}
+		node.addEventListener('pointerleave', stopMagnifying, { signal })
+		motionOk.addEventListener(
+			'change',
 			() => {
-				pointerX = null
-				node.classList.remove('is-magnifying')
-				scheduleMagnify()
+				if (!motionOk.matches) stopMagnifying()
 			},
 			{ signal },
 		)
@@ -418,7 +424,6 @@ function agentMarqueeMotion() {
 			{ signal },
 		)
 
-		const motionOk = matchMedia('(prefers-reduced-motion: no-preference)')
 		let visible = false
 		let raf: number | null = null
 		let last = performance.now()

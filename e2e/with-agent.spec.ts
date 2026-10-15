@@ -149,7 +149,6 @@ test('agent marquee magnifies by pointer distance, gaps included', async ({
 	await expect(marquee).toHaveClass(/is-looping/)
 	const box = await marquee.boundingBox()
 	if (!box) throw new Error('marquee has no box')
-	await page.mouse.move(box.x + box.width / 2, box.y + 40)
 	const [left, right] = await marquee.evaluate((nav) => {
 		const navLeft = nav.getBoundingClientRect().left
 		const visible = [...nav.querySelectorAll('.landing-agent-icon')]
@@ -160,7 +159,6 @@ test('agent marquee magnifies by pointer distance, gaps included', async ({
 			.filter((x) => x > 150 && x < nav.clientWidth - 150)
 		return [visible[1] ?? 0, visible[2] ?? 0]
 	})
-	await page.mouse.move(box.x + (left + right) / 2, box.y + 40)
 	const scales = () =>
 		marquee.evaluate((nav) =>
 			[...nav.querySelectorAll('.landing-agent-icon')]
@@ -168,12 +166,39 @@ test('agent marquee magnifies by pointer distance, gaps included', async ({
 				.sort((a, b) => b - a)
 				.slice(0, 2),
 		)
+
+	// Reduced motion keeps the plain one-mark hover zoom.
+	await page.mouse.move(box.x + left, box.y + 40)
+	await expect.poll(scales).toEqual([1.25, 1])
+	await expect(marquee).not.toHaveClass(/is-magnifying/)
+	await page.mouse.move(box.x + box.width / 2, box.y + box.height + 300)
+
+	await page.emulateMedia({ reducedMotion: 'no-preference' })
+	await page.mouse.move(box.x + (left + right) / 2, box.y + 40)
+	await expect(marquee).toHaveClass(/is-magnifying/)
 	await expect
 		.poll(async () => Math.min(...(await scales())))
 		.toBeGreaterThan(1.15)
 
 	await page.mouse.move(box.x + box.width / 2, box.y + box.height + 300)
 	await expect.poll(async () => Math.max(...(await scales()))).toBe(1)
+
+	// Pressing a mark keeps the dock layout instead of the press zoom.
+	await page.mouse.move(box.x + left, box.y + 40)
+	await page.mouse.down()
+	await expect
+		.poll(() =>
+			marquee.evaluate((nav) =>
+				[...nav.querySelectorAll<HTMLElement>('.landing-agents-item')].every(
+					(item) =>
+						Math.abs(
+							(parseFloat(getComputedStyle(item).translate) || 0) -
+								(parseFloat(item.style.getPropertyValue('--agent-x')) || 0),
+						) < 0.5,
+				),
+			),
+		)
+		.toBe(true)
 })
 
 test('agent marquee scrolls endlessly in both directions', async ({ page }) => {
