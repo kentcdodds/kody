@@ -145,7 +145,20 @@ export const deps = { z, createRouter, other, AsyncLocalStorage, packageStorage 
 
 test('publish typecheck gives kody.mcp server tools callable types', async () => {
 	const typecheck = await runTypecheck({
-		'package.json': createManifest({}),
+		'package.json': JSON.stringify({
+			name: '@kody/typecheck-fixture',
+			exports: { '.': './src/index.ts' },
+			kody: {
+				id: 'typecheck-fixture',
+				description: 'Typecheck fixture package',
+				credentials: {
+					home: {
+						kind: 'mcp',
+						description: 'Calls tools on the attached MCP server "home".',
+					},
+				},
+			},
+		}),
 		'tsconfig.json': packageTsconfig,
 		'src/index.ts': `import { kody } from 'kody:runtime'
 export async function callTools() {
