@@ -4,8 +4,9 @@ title: Package lifecycle: reuse, execute, fork, or create
 summary:
   Choose between invoking existing behavior, temporary execute exploration,
   forking a close public package, deferred workflows, and creating a durable
-  repo-backed package; validate with `repoRunChecks` (every agent), and when
-  the host can run the CLI use `kody dev` / mocks / `--local` before publish.
+  repo-backed package; session/tool-only lane validates with `repoRunChecks`,
+  git lane with local checks plus `packagePublishExternalPush`; when the host
+  can run the CLI use `kody dev` / mocks / `--local` before publish.
 category: platform
 ---
 
@@ -158,9 +159,14 @@ When a normal filesystem and git client are available:
 2. Run the returned setup commands and clone into a temporary directory. Those
    commands set local git `user.email` and `user.name` from `git_author` (the
    signed-in Kody account). Do not invent a git identity.
-3. Edit and test through the normal local development loop.
+3. Edit and test through the normal local development loop (`kody dev` /
+   `kody dev check` when the CLI is available).
 4. Commit and push the package repository.
-5. Publish the pushed head with `packagePublishExternalPush`.
+5. Publish the pushed head with `packagePublishExternalPush`. That call runs the
+   server-side publish checks (manifest, docs, bundle, typecheck, lint,
+   credentials). Do **not** open a repo session to run `repoRunChecks` on the
+   pushed tree — `repoOpenSession` refuses unpublished HEAD, so the session
+   cannot see that commit.
 
 This lane supports binary assets, multi-file changes, local tests, and normal
 git review.
@@ -187,13 +193,14 @@ continuing in the tool-only lane.
 
 ## Validate and test before publish
 
-Every authoring lane must validate before publish. What you can run depends on
-the host:
+Every authoring lane must validate before publish. The gate depends on the
+**lane**, not only whether a shell exists:
 
-| Host capability                                 | Before publish                                                                                                                                 |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| **MCP / tool-only** (no shell, no git)          | `repoRunChecks` on the active repo session — required safety. No local mock runtime.                                                           |
-| **CLI available** (Node ≥22 + `@kodycodes/cli`) | Same publish checks conceptually, plus optional local surface tests below (`kody dev`, `.kody/mocks.ts`, `execute --local` / `--target mock`). |
+| Lane / host                                  | Before publish                                                                                                                                                                                               |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Tool-only / session** (MCP, no local git)  | `repoRunChecks` on the active repo session — required. Then `repoPublishSession`. No local mock runtime.                                                                                                     |
+| **Git lane** (filesystem + git)              | Local tests (`kody dev` / `kody dev check` when CLI available), push, then `packagePublishExternalPush` (server-side publish checks). Do **not** require `repoRunChecks` — sessions refuse unpublished HEAD. |
+| **CLI extras** (Node ≥22 + `@kodycodes/cli`) | Optional unpublished surface tests below (`kody dev`, `.kody/mocks.ts`, `execute --local` / `--target mock`) on top of the lane gate above.                                                                  |
 
 Do **not** assume every agent can run the CLI. Mobile MCP-only agents stop at
 `repoRunChecks`, then publish, then use post-publish smoke surfaces
@@ -285,9 +292,12 @@ export const handlers = [
 Scheduled behavior should not be its first real execution. When the CLI is
 available, prefer
 [`kody dev job`](#local-cli-testing-when-the-host-can-run-code) while
-unpublished; otherwise publish after `repoRunChecks`, then call the published
-`execute` import below before enabling the schedule. Package job manifests do
-not supply params to their entrypoints, so structure the package with:
+unpublished. Without the CLI, publish first — session/tool-only lane:
+`repoRunChecks` then `repoPublishSession`; git lane: push then
+`packagePublishExternalPush` (do **not** use `repoRunChecks` on an unpublished
+push; `repoOpenSession` refuses that HEAD) — then call the published `execute`
+import below before enabling the schedule. Package job manifests do not supply
+params to their entrypoints, so structure the package with:
 
 - a shared implementation that accepts explicit input
 - an optional callable export that passes representative input to that
