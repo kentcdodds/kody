@@ -112,11 +112,15 @@ User inboxes: `{username}@inbox.kody.codes`. System / transactional:
 
 Dashboard on the `kody.codes` zone: **Email → Email Routing** (MX, subdomain
 `inbox`, catch-all to the origin Worker) and **Email → Email Sending** (domain
-verification, `email.sending` event subscription on `kody-email-delivery`).
+verification, `email.sending` event subscriptions on `kody-email-delivery` for
+both `inbox.kody.codes` and `kody.codes`).
 
 Binding: `EMAIL` (`send_email`). REST fallback uses `CLOUDFLARE_API_TOKEN` +
 `CLOUDFLARE_ACCOUNT_ID`. Committed pins: `USER_EMAIL_DOMAIN=inbox.kody.codes`,
-`SYSTEM_EMAIL_DOMAIN=kody.codes` in `packages/worker/wrangler.jsonc`.
+`SYSTEM_EMAIL_DOMAIN=kody.codes` in `packages/worker/wrangler.jsonc`. Production
+deploy ensures two Queue event subscriptions when those domains differ:
+`kody-email-delivery-events` (user inbox) and
+`kody-system-email-delivery-events` (transactional `kody@`).
 
 ### Access (Zero Trust)
 

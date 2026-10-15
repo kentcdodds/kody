@@ -497,13 +497,18 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
   `USER_EMAIL_DOMAIN=inbox.kody.codes` in `packages/worker/wrangler.jsonc` so
   the domain can never silently rederive from `APP_BASE_URL`; the deploy tooling
   (`tools/ci/production-resources.ts`) reads the same committed pin when
-  configuring the Email Sending event subscription.
+  configuring the user-inbox Email Sending event subscription
+  (`kody-email-delivery-events`).
 - `SYSTEM_EMAIL_DOMAIN` — optional override for the system email domain (the
   `kody@<domain>` transactional sender and operator system inboxes). Defaults to
   the `APP_BASE_URL` hostname. Production commits
   `SYSTEM_EMAIL_DOMAIN=kody.codes`. Signup, email-change, and password-reset
   messages also put this host on their action and asset links. Local
   `npm run dev` keeps those links on the request origin so they stay clickable.
+  Deploy tooling reconciles a second `email.sending` subscription for this
+  domain (`kody-system-email-delivery-events`) when it differs from
+  `USER_EMAIL_DOMAIN`, so verification delivery status can advance past
+  `accepted`.
 - `LEGACY_USER_EMAIL_DOMAINS` / `LEGACY_SYSTEM_EMAIL_DOMAINS` — optional
   comma-separated additional email domains that inbound mail is accepted on
   alongside the canonical domains (see

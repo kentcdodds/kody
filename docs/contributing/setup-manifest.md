@@ -35,8 +35,14 @@ This project uses the following resources:
   - Route only aliases that should persist inbound mail to the Worker.
 - Cloudflare Queue for Email Sending delivery events
   - Production CI ensures `kody-email-delivery` and `kody-email-delivery-dlq`,
-    then reconciles an `email.sending` event subscription for the configured
-    user email domain.
+    then reconciles `email.sending` event subscriptions for both the user inbox
+    domain (`USER_EMAIL_DOMAIN`, e.g. `inbox.kody.codes` →
+    `kody-email-delivery-events`) and the system/transactional domain
+    (`SYSTEM_EMAIL_DOMAIN`, e.g. `kody.codes` →
+    `kody-system-email-delivery-events`) when they differ. Both point at the
+    same queue. Signup verification and other `kody@` mail only receive
+    delivered/bounced/failed lifecycle events when the system domain is
+    subscribed.
   - The API token needs `Workers Queues:Edit`; the domain must already be
     enabled for Cloudflare Email Sending.
 - Cloudflare Queue for Artifacts repository lifecycle events
@@ -737,15 +743,17 @@ How to get/set each value:
     each under its exact name.
 - `USER_EMAIL_DOMAIN` (optional GitHub Actions **variable**; overrides
   `inbox.<APP_BASE_URL hostname>` for user inboxes, outbound senders, and the
-  Email Sending event subscription).
+  user-inbox Email Sending event subscription).
   - In GitHub: **Settings → Secrets and variables → Actions → Variables**, add
     it only when the production user email domain differs from the default.
   - Production also commits `USER_EMAIL_DOMAIN=inbox.kody.codes` (and
     `SYSTEM_EMAIL_DOMAIN=kody.codes`) in `packages/worker/wrangler.jsonc` so the
     email domains can never silently rederive from `APP_BASE_URL`; the deploy
-    tooling reads the same committed pin. Optional `LEGACY_USER_EMAIL_DOMAINS` /
-    `LEGACY_SYSTEM_EMAIL_DOMAINS` accept inbound mail to additional addresses on
-    the same inboxes; production leaves those lists unset.
+    tooling reads the same committed pins and reconciles Email Sending event
+    subscriptions for both domains when they differ. Optional
+    `LEGACY_USER_EMAIL_DOMAINS` / `LEGACY_SYSTEM_EMAIL_DOMAINS` accept inbound
+    mail to additional addresses on the same inboxes; production leaves those
+    lists unset.
 - `APP_LEGACY_HOSTS` / `APP_LEGACY_REDIRECT` (optional GitHub Actions
   **variables** for dual-served app hosts; see
   [environment-variables.md](./environment-variables.md#app-origin-and-domain-migration)).
