@@ -1,19 +1,22 @@
 # Follow CLI contract
 
-Contract between origin (`followAdd` / `followList`) and `@kodycodes/cli`
-(`kody follow add` / `kody follow list`). The CLI lives in kody-bot/cli and
-lands in a separate PR. Origin exposes the capabilities on MCP and the Open API.
-Product keyword: `follow_repo`. Domain: `follow`.
+Contract between origin (`followAdd` / `followList` / `followRemove`) and
+`@kodycodes/cli` (`kody follow add` / `kody follow list` /
+`kody follow remove`). The CLI lives in kody-bot/cli and lands in a separate PR.
+Origin exposes the capabilities on MCP and the Open API. Product keyword:
+`follow_repo`. Domain: `follow`.
 
 Related to #3810.
 
 ## Commands
 
-| CLI                                                 | Open API           | Capability   |
-| --------------------------------------------------- | ------------------ | ------------ |
-| `kody follow add @handle/name`                      | `POST /v1/follows` | `followAdd`  |
-| `kody follow add @handle/name --kind package\|repo` | `POST /v1/follows` | `followAdd`  |
-| `kody follow list`                                  | `GET /v1/follows`  | `followList` |
+| CLI                                                 | Open API             | Capability     |
+| --------------------------------------------------- | -------------------- | -------------- |
+| `kody follow add @handle/name`                      | `POST /v1/follows`   | `followAdd`    |
+| `kody follow add @handle/name --kind package\|repo` | `POST /v1/follows`   | `followAdd`    |
+| `kody follow add @handle/name --events pushed`      | `POST /v1/follows`   | `followAdd`    |
+| `kody follow list`                                  | `GET /v1/follows`    | `followList`   |
+| `kody follow remove @handle/name`                   | `DELETE /v1/follows` | `followRemove` |
 
 Both calls use the org the credential is bound to. That org owns the follow.
 There is no feature flag.
@@ -21,12 +24,24 @@ There is no feature flag.
 ### `followAdd`
 
 ```json
-{ "name": "@ada/notes", "kind": "package" }
+{ "name": "@ada/notes", "kind": "package", "events": ["published", "pushed"] }
 ```
 
 `name` is required and must be `@handle/name` (`handle` is the owner org slug).
 `kind` is optional: `package` or `repo`. When omitted, a package with that name
 wins over a plain repo.
+
+`events` is optional. A new follow without it gets every event the target can
+send; repeating add without it keeps the stored choice. A plain repo only sends
+`pushed`. Errors (no follow is written):
+
+```text
+Choose at least one event to follow.
+Plain repos are never published, so @ada/notes can only be followed for pushes.
+Pushes from @ada/notes need read access to it. A Use grant includes read; run-only access does not.
+```
+
+Changing events on an existing follow does not consume the create rate limit.
 
 ```json
 {
@@ -34,8 +49,10 @@ wins over a plain repo.
 		"name": "@ada/notes",
 		"kind": "package",
 		"status": "active",
+		"events": ["published", "pushed"],
 		"created_at": "2026-10-15T00:00:00.000Z",
 		"paused_at": null,
+		"paused_reason": null,
 		"last_delivery_skip_reason": null
 	}
 }
@@ -47,10 +64,30 @@ Repeating add for a target this org already follows returns that follow and does
 not consume the create rate limit. If the row is paused and the caller still has
 create-level access, add resumes it.
 
+`paused_reason` is `target_missing` (the target was deleted or can no longer be
+found) or `access_lost` (the follow's creator lost create-level access), or
+null.
+
 ### `followList`
 
 No inputs. Returns `{ "follows": [ ...same object as followAdd... ] }` for the
 bound org, newest first.
+
+### `followRemove`
+
+```json
+{ "name": "@ada/notes", "kind": "package" }
+```
+
+Deletes the bound org's follow of that target and returns
+`{ "removed": { "name": "@ada/notes", "kind": "package" } }`. The name matches
+the live target first, then the name stored on the follow, so a follow whose
+target was deleted can still be removed. Removing a target the org does not
+follow is an error:
+
+```text
+This org does not follow "@ada/notes".
+```
 
 ## Access
 
@@ -74,9 +111,10 @@ create looks like not found, and push does not fire. Checks use
 grant on one package does not grant push (or private create) for a plain repo.
 Package owners cannot disable push follows.
 
-Losing create-level access pauses the follow (`status: "paused"`, `paused_at`).
-Paused follows are deleted after 30 days. Push that is not allowed does not
-pause the row.
+Losing create-level access pauses the follow (`status: "paused"`, `paused_at`,
+`paused_reason: "access_lost"`); a target that no longer exists pauses it with
+`target_missing`. Paused follows are deleted after 30 days. Push that is not
+allowed does not pause the row.
 
 ## Limits
 

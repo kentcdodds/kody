@@ -674,8 +674,12 @@ type FollowPublishedEvent = {
 ```
 
 `target.name` is `@handle/name`. The payload does not include internal ids.
-Create and list follows with `followAdd` / `followList` (`kody follow add` /
-`kody follow list` on the CLI). See the
+Create, list, and remove follows with `followAdd` / `followList` /
+`followRemove` (`kody follow add` / `kody follow list` on the CLI), or with
+**Follow** on the package or repo page. Each follow chooses its events
+(`published`, `pushed`, or both); a follow only delivers the events it chose.
+The workspace's Follows page (`/@<slug>/-/follows`) lists them with status and
+pause reason. See the
 [follow CLI contract](../contributing/contracts/follow-cli.md).
 
 ## `follow.pushed`

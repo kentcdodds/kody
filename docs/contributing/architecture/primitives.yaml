@@ -734,6 +734,11 @@ primitives:
     code:
       - packages/worker/src/follow/
       - packages/worker/src/mcp/capabilities/follow/
+      - packages/worker/src/app/follows-web.ts
+      - packages/worker/src/app/handlers/org-follows.ts
+      - packages/worker/universal/follows.ts
+      - packages/worker/client/routes/org-follows.tsx
+      - packages/worker/client/routes/package-follow-controller.tsx
       - packages/worker/src/community/fork-upstream-updated-package-subscriptions
       - packages/worker/src/community/fork-upstream-updated-subscription-event
     docs:
