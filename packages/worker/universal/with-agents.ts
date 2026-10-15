@@ -20,16 +20,19 @@ import {
 
 /**
  * Agents with a `/with/:agent` page and a spot in the homepage agent
- * marquee. Each one has a working Kody connect path today (the walkthrough
- * catalog in `walkthrough-hosts.ts`). Steps are the shortest production
- * path from `docs/use/connect-your-agent.md`; Get started and the
- * connect docs keep every alternative.
+ * marquee: the walkthrough catalog in `walkthrough-hosts.ts`. Official
+ * agents get the shortest production path from
+ * `docs/use/connect-your-agent.md`; the rest get the setup prompt and the
+ * MCP URL and connect themselves. Get started and the connect docs keep
+ * every alternative.
  */
 
 export type WithAgentStep = {
 	text: string
 	code?: string
 	link?: { label: string; href: string }
+	/** Renders the copy-setup-prompt button. */
+	prompt?: true
 }
 
 export type WithAgent = {
@@ -37,11 +40,37 @@ export type WithAgent = {
 	name: string
 	/** Monochrome SVG in `public/images/icons/`. */
 	icon: string
+	/** False when the agent has no Kody connect path of its own yet. */
+	official: boolean
 	pitch: string
 	steps: ReadonlyArray<WithAgentStep>
 }
 
 const mcpUrl = defaultKodyMcpUrl
+
+function genericAgent<const Slug extends string>(
+	agent: Pick<WithAgent, 'name' | 'icon' | 'pitch'> & { slug: Slug },
+	extraSteps: ReadonlyArray<WithAgentStep> = [],
+) {
+	return {
+		...agent,
+		official: false,
+		steps: [
+			{
+				text: `Copy this setup prompt and paste it into ${agent.name}. It points ${agent.name} at Kody\u2019s connection docs so it can connect itself.`,
+				prompt: true,
+			},
+			{
+				text: `If ${agent.name} asks for an MCP server, give it this URL (Streamable HTTP with OAuth sign-in):`,
+				code: mcpUrl,
+			},
+			...extraSteps,
+			{
+				text: `Sign in to Kody and approve access when asked, then ask ${agent.name} to list its Kody tools.`,
+			},
+		],
+	} satisfies WithAgent
+}
 
 const chatGptPluginStep = {
 	text: 'Add the Kody plugin from the ChatGPT plugin directory.',
@@ -53,6 +82,7 @@ export const withAgents = [
 		slug: 'cursor',
 		name: 'Cursor',
 		icon: 'cursor',
+		official: true,
 		pitch:
 			'Keep building in Cursor. Kody gives it your team\u2019s credentials, packages, and workflows, and anything it saves runs from every other agent your team uses.',
 		steps: [
@@ -70,6 +100,7 @@ export const withAgents = [
 		slug: 'claude-code',
 		name: 'Claude Code',
 		icon: 'claudecode',
+		official: true,
 		pitch:
 			'Claude Code writes the package. Kody keeps it, runs it on a trigger, and shares it with the rest of your team.',
 		steps: [
@@ -84,6 +115,7 @@ export const withAgents = [
 		slug: 'codex',
 		name: 'Codex',
 		icon: 'codex',
+		official: true,
 		pitch:
 			'Let Codex build tools your whole team can run, with credentials it uses but never sees.',
 		steps: [
@@ -95,6 +127,7 @@ export const withAgents = [
 		slug: 'chatgpt',
 		name: 'ChatGPT',
 		icon: 'chatgpt',
+		official: true,
 		pitch:
 			'Use your team\u2019s packages and connected accounts from a ChatGPT conversation, on the web or on your phone.',
 		steps: [
@@ -108,6 +141,7 @@ export const withAgents = [
 		slug: 'claude',
 		name: 'Claude',
 		icon: 'claude',
+		official: true,
 		pitch:
 			'Bring your team\u2019s tools and connected accounts into Claude conversations on desktop, web, and mobile.',
 		steps: [
@@ -124,6 +158,7 @@ export const withAgents = [
 		slug: 'copilot',
 		name: 'GitHub Copilot',
 		icon: 'githubcopilot',
+		official: true,
 		pitch:
 			'Give Copilot in VS Code or the terminal the same credentials and packages the rest of your team uses.',
 		steps: [
@@ -140,6 +175,7 @@ export const withAgents = [
 		slug: 'devin',
 		name: 'Devin',
 		icon: 'devin',
+		official: true,
 		pitch:
 			'Let Devin use your team\u2019s credentials and packages without pasting a single key into a session.',
 		steps: [
@@ -154,6 +190,7 @@ export const withAgents = [
 		slug: 'gemini',
 		name: 'Gemini',
 		icon: 'gemini',
+		official: true,
 		pitch:
 			'Run your team\u2019s packages from the Gemini app, with credentials Gemini never sees.',
 		steps: [
@@ -168,6 +205,7 @@ export const withAgents = [
 		slug: 'grok',
 		name: 'Grok',
 		icon: 'grok',
+		official: true,
 		pitch:
 			'Bring your team\u2019s tools into Grok conversations through one custom connector.',
 		steps: [
@@ -182,6 +220,7 @@ export const withAgents = [
 		slug: 'grok-bot',
 		name: 'Grok Bot',
 		icon: 'grokbot',
+		official: true,
 		pitch:
 			'Add Kody to Grok Bot in one click and reach your team\u2019s packages from your desktop assistant.',
 		steps: [
@@ -196,6 +235,7 @@ export const withAgents = [
 		slug: 'opencode',
 		name: 'OpenCode',
 		icon: 'opencode',
+		official: true,
 		pitch:
 			'Point OpenCode at Kody, and every package it writes becomes something your whole team can run.',
 		steps: [
@@ -210,6 +250,7 @@ export const withAgents = [
 		slug: 'openclaw',
 		name: 'OpenClaw',
 		icon: 'openclaw',
+		official: true,
 		pitch:
 			'Give your local-first OpenClaw agent the shared credentials and workflows your team keeps in Kody.',
 		steps: [
@@ -224,6 +265,7 @@ export const withAgents = [
 		slug: 'muse',
 		name: 'Muse',
 		icon: 'muse',
+		official: true,
 		pitch:
 			'Connect Muse Code to Kody so the tools it builds outlive the session and reach the rest of your team.',
 		steps: [
@@ -234,6 +276,77 @@ export const withAgents = [
 			{ text: 'Then sign in:', code: museMcpLoginCommand },
 		],
 	},
+	genericAgent({
+		slug: 'amp',
+		name: 'Amp',
+		icon: 'amp',
+		pitch:
+			'Let Amp build packages your whole team can run, with credentials it uses but never sees.',
+	}),
+	genericAgent({
+		slug: 'warp',
+		name: 'Warp',
+		icon: 'warp',
+		pitch:
+			'Give Warp\u2019s agents the same credentials, packages, and workflows the rest of your team uses.',
+	}),
+	genericAgent({
+		slug: 'goose',
+		name: 'Goose',
+		icon: 'goose',
+		pitch:
+			'Point Goose at Kody, and the tools it builds stay around for the rest of your team.',
+	}),
+	genericAgent({
+		slug: 'zed',
+		name: 'Zed',
+		icon: 'zed',
+		pitch:
+			'Bring your team\u2019s credentials, packages, and workflows into Zed\u2019s agent panel.',
+	}),
+	genericAgent({
+		slug: 'pi',
+		name: 'Pi',
+		icon: 'pi',
+		pitch:
+			'Give Pi the shared credentials and workflows your team keeps in Kody.',
+	}),
+	genericAgent({
+		slug: 'wajo',
+		name: 'Wajo',
+		icon: 'wajo',
+		pitch:
+			'Reach your team\u2019s packages and connected accounts from Wajo, wherever you chat.',
+	}),
+	genericAgent({
+		slug: 'cue',
+		name: 'Cue',
+		icon: 'cue',
+		pitch:
+			'Let your Cue agents use your team\u2019s tools and connected accounts without ever seeing a key.',
+	}),
+	genericAgent(
+		{
+			slug: 'openmuse',
+			name: 'OpenMuse',
+			icon: 'openmuse',
+			pitch:
+				'Wire Kody into your OpenMuse harness so the work it does reaches the rest of your team.',
+		},
+		[
+			{
+				text: 'Self-hosting OpenMuse? Wire Kody into your fork\u2019s harness instead.',
+				link: { label: 'Read OpenMuse and Kody', href: '/docs/openmuse' },
+			},
+		],
+	),
+	genericAgent({
+		slug: 'dots',
+		name: 'Dots',
+		icon: 'dots',
+		pitch:
+			'Bring your team\u2019s tools and connected accounts into Dots through one MCP connection.',
+	}),
 ] as const satisfies ReadonlyArray<WithAgent>
 
 export type WithAgentSlug = (typeof withAgents)[number]['slug']

@@ -46,16 +46,19 @@ export function WithAgentRoute(handle: Handle) {
 
 				<section aria-labelledby="with-connect-title" mix={css(connectCss)}>
 					<h2 id="with-connect-title">Connect {agent.name}</h2>
+					{agent.official ? null : (
+						<p mix={css(genericNoteCss)}>
+							{agent.name} doesn&rsquo;t have an official Kody setup yet. Most
+							agents that support remote MCP servers can connect themselves.
+						</p>
+					)}
 					<ol>{agent.steps.map((step, index) => renderStep(step, index))}</ol>
-					<div mix={css(promptCss)}>
-						<p>Rather let {agent.name} handle it? Paste this setup prompt.</p>
-						<BuildWithAgentButton
-							label="Copy setup prompt"
-							variant="pill"
-							onboardingPage={false}
-							icons={false}
-						/>
-					</div>
+					{agent.official ? (
+						<div mix={css(promptCss)}>
+							<p>Rather let {agent.name} handle it? Paste this setup prompt.</p>
+							{renderPromptButton()}
+						</div>
+					) : null}
 					<p mix={css(moreCss)}>
 						<a href={docHref('connect-your-agent')}>More ways to connect</a>
 					</p>
@@ -94,6 +97,9 @@ function renderStep(step: WithAgentStep, index: number) {
 	return (
 		<li key={index}>
 			<p>{step.text}</p>
+			{step.prompt ? (
+				<div mix={css(stepPromptCss)}>{renderPromptButton()}</div>
+			) : null}
 			{step.link ? (
 				<a href={step.link.href} mix={css(stepLinkCss)}>
 					{step.link.label} <span aria-hidden="true">↗</span>
@@ -115,6 +121,17 @@ function renderStep(step: WithAgentStep, index: number) {
 				</div>
 			) : null}
 		</li>
+	)
+}
+
+function renderPromptButton() {
+	return (
+		<BuildWithAgentButton
+			label="Copy setup prompt"
+			variant="pill"
+			onboardingPage={false}
+			icons={false}
+		/>
 	)
 }
 
@@ -237,6 +254,16 @@ const codeRowCss = {
 		fontSize: '0.85rem',
 		lineHeight: 1.5,
 	},
+}
+
+const genericNoteCss = {
+	margin: '0.6rem 0 0',
+	color: colors.textMuted,
+	lineHeight: 1.55,
+}
+
+const stepPromptCss = {
+	marginTop: '0.6rem',
 }
 
 const promptCss = {

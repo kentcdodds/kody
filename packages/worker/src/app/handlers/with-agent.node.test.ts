@@ -59,6 +59,22 @@ test('/with/:agent highlights the agent and its shortest connect path', async ()
 	expect(html).toContain('href="/with/cursor"')
 	expect(html).not.toContain('href="/with/claude-code"')
 	expect(html).not.toContain('\u2014')
+	expect(html).toContain('Rather let Claude Code handle it?')
+	expect(html).not.toContain('official Kody setup')
+})
+
+test('/with/:agent leads with the setup prompt and MCP URL for agents without an official path', async () => {
+	const { status, html } = await renderWith('amp')
+	expect(status).toBe(200)
+	expect(html).toContain('<title>Kody for Amp | Kody</title>')
+	expect(html).toContain('Kody for <em>Amp</em>')
+	expect(html).toMatch(/Amp doesn(&rsquo;|\u2019)t have an official Kody setup/)
+	expect(
+		html.match(/aria-label="Copy setup prompt, copy setup prompt"/g),
+	).toHaveLength(1)
+	expect(html).toContain('<code>https://kody.codes/mcp</code>')
+	expect(html).not.toContain('Rather let Amp')
+	expect(html).toContain('href="/with/cursor"')
 })
 
 test('/with/:agent 404s for agents outside the catalog', async () => {

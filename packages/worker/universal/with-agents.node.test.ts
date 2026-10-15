@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
+import { defaultKodyMcpUrl } from '#universal/onboarding-mcp-clients.ts'
 import { walkthroughHostCatalog } from '#universal/walkthrough-hosts.ts'
 import {
 	findWithAgentByPathname,
@@ -23,6 +24,31 @@ test('every agent with a /with page has an icon, steps, and a walkthrough host',
 		expect(existsSync(icon), icon).toBe(true)
 		expect(agent.steps.length).toBeGreaterThan(0)
 		expect(agent.pitch).not.toContain('\u2014')
+	}
+})
+
+test('agents without an official path get the setup prompt and MCP URL', () => {
+	const generic = withAgents.filter((agent) => !agent.official)
+	expect(generic.map((agent) => agent.slug).sort()).toEqual(
+		[
+			'amp',
+			'cue',
+			'dots',
+			'goose',
+			'openmuse',
+			'pi',
+			'wajo',
+			'warp',
+			'zed',
+		].sort(),
+	)
+	for (const agent of generic) {
+		const [first, ...rest] = agent.steps
+		expect(first).toMatchObject({ prompt: true })
+		expect(rest.some((step) => step.code === defaultKodyMcpUrl)).toBe(true)
+	}
+	for (const agent of withAgents.filter((agent) => agent.official)) {
+		expect(agent.steps.some((step) => 'prompt' in step)).toBe(false)
 	}
 })
 

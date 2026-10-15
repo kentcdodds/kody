@@ -11,7 +11,7 @@ test('homepage agent marquee links each agent to its /with page', async ({
 		name: 'Agents that work with Kody',
 	})
 	// The loop copy is aria-hidden, so only one link per agent is exposed.
-	await expect(marquee.getByRole('link')).toHaveCount(13)
+	await expect(marquee.getByRole('link')).toHaveCount(22)
 	// Hovering pauses the loop so the mark holds still for the click.
 	await marquee.hover()
 	await marquee.getByRole('link', { name: 'Cursor', exact: true }).click()
@@ -25,4 +25,13 @@ test('homepage agent marquee links each agent to its /with page', async ({
 	await page.getByRole('button', { name: 'Copy step 1' }).click()
 	const command = await page.evaluate(() => navigator.clipboard.readText())
 	expect(command).toMatch(/^claude mcp add --transport http -s user kody /)
+
+	await page.goto('/with/amp')
+	await waitForClientHydration(page)
+	await page.getByRole('button', { name: /Copy setup prompt/ }).click()
+	const prompt = await page.evaluate(() => navigator.clipboard.readText())
+	expect(prompt).toContain('https://kody.codes/docs/connect-your-agent')
+	await page.getByRole('button', { name: 'Copy step 2' }).click()
+	const mcpUrl = await page.evaluate(() => navigator.clipboard.readText())
+	expect(mcpUrl).toMatch(/\/mcp$/)
 })
