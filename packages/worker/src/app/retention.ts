@@ -11,6 +11,7 @@ import { agentPackagePopularityMaxAgeDays } from '#worker/usage/agent-package-co
 import {
 	buildPublishedSourceManifestSnapshotKvKey,
 	buildPublishedCredentialNeedsKvKey,
+	buildPublishedCredentialStampKvKey,
 	buildPublishedSourceSnapshotKvKey,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { hasActiveRepoSessionForSource } from '#worker/repo/repo-sessions.ts'
@@ -433,6 +434,7 @@ export async function prunePublishedBundleArtifactsForRetention(input: {
 			buildPublishedSourceSnapshotKvKey(pair),
 			buildPublishedSourceManifestSnapshotKvKey(pair),
 			buildPublishedCredentialNeedsKvKey(pair),
+			buildPublishedCredentialStampKvKey(pair),
 		]) {
 			try {
 				await input.env.BUNDLE_ARTIFACTS_KV.delete(kvKey)

@@ -5,6 +5,10 @@ import {
 	legacyCredentialPatternFromMessage,
 } from '#worker/package-codemods/codemods/0010-detect-legacy-credential-patterns.ts'
 import {
+	mergeCredentialStampIntoManifestFiles,
+	scanCredentialStamp,
+} from '#worker/credentials/credential-stamp.ts'
+import {
 	scanPackageCredentials,
 	type CredentialReference,
 } from '#worker/credentials/credential-inventory-scan.ts'
@@ -16,7 +20,9 @@ import {
 import { normalizeRepoWorkspacePath } from './manifest.ts'
 
 const credentialPatternCheckLabel = `codemod ${detectLegacyCredentialPatternsCodemodId}`
-const credentialPatternFindingsHeading = `Credential placeholder references (${credentialPatternCheckLabel}, informational; publish is unaffected):`
+const credentialStampGateHeading =
+	'Credential stamp publish gate (issue #3836 phase 1):'
+const credentialPatternFindingsHeading = `Credential placeholder references (${credentialPatternCheckLabel}):`
 const credentialPatternLabelsDoc =
 	'Labels are described under "Credential slots" in the packages docs.'
 
@@ -76,8 +82,6 @@ function credentialTypeHintFor(
 	const { placement } = reference
 	switch (placement.type) {
 		case 'header':
-			// The OAuth client always sends Authorization: Bearer. Another
-			// header or scheme would change the request, so it is not a fit.
 			if (reference.nameKind === 'integration') {
 				return placement.name === 'authorization' &&
 					placement.format === 'Bearer {value}'
@@ -88,18 +92,11 @@ function credentialTypeHintFor(
 		case 'query':
 			return reference.nameKind === 'integration' ? null : 'inject'
 		case 'basic':
-			// `{{secret-basic:username=…,password=…}}` is two secrets. A Key
-			// basic inject holds one value and a literal, so neither name fits.
 			return null
 		case 'path':
 		case 'url':
 			return 'url'
 		case 'body': {
-			// A login client exchanges a password or token, then sends the
-			// session. A password field on some other request does not fit,
-			// and neither does an unrelated field on a login URL. When the
-			// scanner nulls a field that matched the secret name (for example
-			// `password: '{{secret:PASSWORD}}'`), fall back to the name.
 			if (placement.endpoint !== 'login') return null
 			const field = placement.field ?? reference.name
 			return loginBodyFieldPattern.test(field) ? 'login' : null
@@ -125,7 +122,6 @@ function credentialTypeHintLines(sourceFiles: Record<string, string>) {
 			slots: readDeclaredCredentialSlots(sourceFiles['package.json']),
 		})
 	} catch {
-		// Hints are optional; a scan failure must never touch the check or publish.
 		return []
 	}
 	const declaredKinds = declaredSlotKinds(scan.slots)
@@ -135,14 +131,11 @@ function credentialTypeHintLines(sourceFiles: Record<string, string>) {
 		const hint = credentialTypeHintFor(reference)
 		if (hint) found.add(hint)
 	}
-	// secretJwtSign takes a secret name string, not a {{secret:…}} placeholder.
-	// Suggest signing only when that name is not already a declared secret slot.
 	for (const name of scan.jwtSignSecretNames) {
 		if (declaredKinds.get(name) === 'secret') continue
 		found.add('signing')
 		break
 	}
-	// Calls whose secret name is not a string literal still need a hint.
 	if (scan.jwtSignCalls > scan.jwtSignSecretNames.length) {
 		found.add('signing')
 	}
@@ -152,10 +145,6 @@ function credentialTypeHintLines(sourceFiles: Record<string, string>) {
 	return hints.length > 0 ? [credentialTypeHintsHeading, ...hints] : []
 }
 
-/**
- * Slot name → declared kind, or `null` when the need omits kind (any
- * fetch-capable credential). Matches codemod 0010's `readDeclaredSlotKinds`.
- */
 function declaredSlotKinds(
 	slots: ReadonlyArray<{ name: string; kind?: PackageCredentialKind }>,
 ) {
@@ -166,12 +155,6 @@ function declaredSlotKinds(
 	return kinds
 }
 
-/**
- * True when codemod 0010 would omit this placeholder because it already names
- * a declared slot of the matching kind (or an omitted-kind fetch-capable
- * slot). Hints follow that list: a type with no visible reference is not a
- * suggestion.
- */
 function referenceNamesDeclaredSlot(
 	reference: CredentialReference,
 	declared: ReadonlyMap<string, PackageCredentialKind | null>,
@@ -192,12 +175,6 @@ function isPackageCredentialKind(
 	return packageCredentialKinds.has(value)
 }
 
-/**
- * Declared `kody.credentials` slots, read the same way codemod 0010 does:
- * any plain object with a known kind counts, even when publish would still
- * ask for a description. Passed into the placement scan so hint filtering
- * uses the slots the scan recorded.
- */
 function readDeclaredCredentialSlots(
 	manifestSource: string | undefined,
 ): Record<string, PackageCredentialSlot> | undefined {
@@ -226,7 +203,8 @@ function credentialSlotFromManifest(
 	const description =
 		typeof slot.description === 'string' && slot.description.trim().length > 0
 			? slot.description
-			: 'Declared credential slot.'
+			: null
+	if (description == null) return null
 	const declared: PackageCredentialSlot = { description }
 	if (typeof slot.kind === 'string') {
 		if (!isPackageCredentialKind(slot.kind)) return null
@@ -239,31 +217,94 @@ function credentialSlotFromManifest(
 	return declared
 }
 
+export type CredentialPatternCheckResult = {
+	kind: 'credentials'
+	ok: boolean
+	message: string
+	/** Manifest may gain auto-written stamp keys (never overwrites descriptions). */
+	sourceFiles: Record<string, string>
+	stampKeys: Array<string>
+}
+
 /**
- * Owner-facing codemod 0010: a neutral list of credential placeholder
- * references, as path and pattern label only, with optional notes and
- * optional credential type hints. Never fails the run.
+ * Credential stamp publish gate: fail closed on non-literal / unstampable
+ * credential patterns and on eval / new Function / non-literal import() in
+ * server-runtime entry graphs. Auto-writes missing `kody.credentials` keys
+ * from the stamp and fails when any stamped key lacks a description.
  */
 export function buildCredentialPatternCheck(
 	sourceFiles: Record<string, string>,
-): { kind: 'credentials'; ok: true; message: string } {
+): CredentialPatternCheckResult {
+	const preliminary = scanCredentialStamp(sourceFiles)
+	const merged = mergeCredentialStampIntoManifestFiles(
+		sourceFiles,
+		preliminary.keys,
+	)
+	const stamp = scanCredentialStamp(merged.files)
 	const patternsByPath = new Map<string, Array<string>>()
 	for (const finding of detectLegacyCredentialPatternsCodemod.detect(
-		sourceFiles,
-		{ packageName: readPackageName(sourceFiles) },
+		merged.files,
+		{ packageName: readPackageName(merged.files) },
 	)) {
 		const pattern = legacyCredentialPatternFromMessage(finding.message)
 		if (pattern == null) continue
 		const path = finding.path ?? 'package'
 		patternsByPath.set(path, [...(patternsByPath.get(path) ?? []), pattern])
 	}
-	if (patternsByPath.size === 0) {
+
+	if (stamp.failures.length > 0) {
+		const failureLines = stamp.failures.map((failure) => `- ${failure.message}`)
+		const staleNote =
+			stamp.staleManifestKeys.length > 0
+				? [
+						`Stale kody.credentials keys with no stamped use (runtime will ignore them after phase 3): ${stamp.staleManifestKeys.join(', ')}.`,
+					]
+				: []
+		const addedNote =
+			merged.addedKeys.length > 0
+				? [
+						`Auto-wrote missing kody.credentials keys (descriptions still required): ${merged.addedKeys.join(', ')}.`,
+					]
+				: []
+		return {
+			kind: 'credentials',
+			ok: false,
+			message: [
+				credentialStampGateHeading,
+				'Publish failed. Fix each item below, then publish again.',
+				...failureLines,
+				...addedNote,
+				...staleNote,
+				...credentialTypeHintLines(merged.files),
+			].join('\n'),
+			sourceFiles: merged.files,
+			stampKeys: stamp.keys,
+		}
+	}
+
+	const staleNote =
+		stamp.staleManifestKeys.length > 0
+			? [
+					`Stale kody.credentials keys with no stamped use: ${stamp.staleManifestKeys.join(', ')}. Remove them when you no longer need the descriptions, or keep them; runtime will allow only stamped keys after phase 3.`,
+				]
+			: []
+
+	if (patternsByPath.size === 0 && stamp.keys.length === 0) {
 		return {
 			kind: 'credentials',
 			ok: true,
-			message: `No credential placeholder references to list (${credentialPatternCheckLabel}).`,
+			message: [
+				credentialStampGateHeading,
+				`Credential stamp is empty (${credentialPatternCheckLabel}): no literal credential uses to seal.`,
+				...staleNote,
+			]
+				.filter(Boolean)
+				.join('\n'),
+			sourceFiles: merged.files,
+			stampKeys: stamp.keys,
 		}
 	}
+
 	const lines = [...patternsByPath].map(
 		([path, patterns]) => `- ${path}: ${patterns.join(', ')}`,
 	)
@@ -271,20 +312,36 @@ export function buildCredentialPatternCheck(
 	const notes = Object.entries(credentialPatternNotes)
 		.filter(([pattern]) => foundPatterns.has(pattern))
 		.map(([, note]) => note)
-	const footer =
-		notes.length > 0
-			? `These references keep working, except as noted below. ${credentialPatternLabelsDoc}`
-			: `These references keep working; nothing here needs to change. ${credentialPatternLabelsDoc}`
+	const stampLine =
+		stamp.keys.length > 0
+			? `Credential stamp keys (sorted): ${stamp.keys.join(', ')}.`
+			: 'Credential stamp keys: (none).'
+	const addedLine =
+		merged.addedKeys.length > 0
+			? `Auto-wrote missing kody.credentials keys (existing descriptions preserved): ${merged.addedKeys.join(', ')}.`
+			: null
 	return {
 		kind: 'credentials',
 		ok: true,
 		message: [
-			credentialPatternFindingsHeading,
-			...lines,
-			footer,
-			...notes,
-			...credentialTypeHintLines(sourceFiles),
-		].join('\n'),
+			credentialStampGateHeading,
+			stampLine,
+			addedLine,
+			...(lines.length > 0
+				? [
+						credentialPatternFindingsHeading,
+						...lines,
+						`Remaining listed references are stampable literals or notes. ${credentialPatternLabelsDoc}`,
+						...notes,
+					]
+				: []),
+			...staleNote,
+			...credentialTypeHintLines(merged.files),
+		]
+			.filter((line): line is string => line != null && line.length > 0)
+			.join('\n'),
+		sourceFiles: merged.files,
+		stampKeys: stamp.keys,
 	}
 }
 
@@ -318,10 +375,17 @@ export function credentialPatternNoticeForFiles(
 
 /** The credentials check message when it found something, for publish output. */
 export function credentialPatternFindingsNotice(
-	results: ReadonlyArray<{ kind: string; message: string }> | null,
+	results: ReadonlyArray<{
+		kind: string
+		message: string
+		ok?: boolean
+	}> | null,
 ) {
 	const check = results?.find((result) => result.kind === 'credentials')
-	return check?.message.startsWith(credentialPatternFindingsHeading)
+	if (check == null) return null
+	if (check.ok === false) return check.message
+	return check.message.startsWith(credentialStampGateHeading) ||
+		check.message.startsWith(credentialPatternFindingsHeading)
 		? check.message
 		: null
 }

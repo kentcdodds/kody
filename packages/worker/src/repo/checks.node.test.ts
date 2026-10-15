@@ -1143,7 +1143,7 @@ test('runRepoChecks validates package skills and fails publish on malformed SKIL
 	})
 })
 
-test('runRepoChecks lists credential placeholder references neutrally by path and pattern without failing', async () => {
+test('runRepoChecks hard-fails unstampable credential patterns (issue #3836 phase 1)', async () => {
 	const { result } = await runChecks(
 		packageFiles(
 			manifest('legacy-credentials', {
@@ -1158,31 +1158,21 @@ test('runRepoChecks lists credential placeholder references neutrally by path an
 			},
 		),
 	)
-	expect(result.ok).toBe(true)
+	expect(result.ok).toBe(false)
 	const check = findCheck(result, 'credentials')
-	expect(check).toEqual({
-		kind: 'credentials',
-		ok: true,
-		message: [
-			'Credential placeholder references (codemod 0010-detect-legacy-credential-patterns, informational; publish is unaffected):',
-			'- package.json: secretMounts',
-			'- src/index.ts: literal secret, computed integration',
-			'These references keep working; nothing here needs to change. Labels are described under "Credential slots" in the packages docs.',
-			'Optional, if you want a scoped credential type for these (ADR 0068):',
-			"- Header, query, or basic auth placeholders: a Key with an inject (credentialUpdate) can be opened with credential(key), and its client places the value and sends it only to the Key's hosts.",
-		].join('\n'),
-	})
+	expect(check?.ok).toBe(false)
+	expect(check?.message).toMatch(/Credential stamp publish gate/)
+	expect(check?.message).toMatch(/secretMounts|computed integration/)
 	expect(credentialPatternFindingsNotice(result.results)).toBe(check!.message)
-	expect(check!.message).not.toContain('TOKEN')
 
 	const clean = await runChecks(packageFiles(manifest('clean-credentials')))
-	expect(findCheck(clean.result, 'credentials')).toEqual({
-		kind: 'credentials',
-		ok: true,
-		message:
-			'No credential placeholder references to list (codemod 0010-detect-legacy-credential-patterns).',
-	})
-	expect(credentialPatternFindingsNotice(clean.result.results)).toBeNull()
+	expect(findCheck(clean.result, 'credentials')?.ok).toBe(true)
+	expect(findCheck(clean.result, 'credentials')?.message).toMatch(
+		/Credential stamp is empty/,
+	)
+	expect(findCheck(clean.result, 'credentials')?.message).toMatch(
+		/Credential stamp publish gate/,
+	)
 
 	const { result: docsFailed } = await runChecks(
 		packageFiles(manifest('docs-fail-credentials'), {
@@ -1190,9 +1180,9 @@ test('runRepoChecks lists credential placeholder references neutrally by path an
 			'src/send.ts': "export const h = { a: '{{secret:OLD_KEY}}' }",
 		}),
 	)
-	expect(findCheck(docsFailed, 'docs')?.ok).toBe(false)
-	expect(findCheck(docsFailed, 'credentials')?.message).toContain(
-		'- src/send.ts: literal secret',
+	expect(findCheck(docsFailed, 'credentials')?.ok).toBe(false)
+	expect(findCheck(docsFailed, 'credentials')?.message).toMatch(
+		/missing a description|OLD_KEY/,
 	)
 
 	const { result: migrated } = await runChecks(
@@ -1212,8 +1202,9 @@ test('runRepoChecks lists credential placeholder references neutrally by path an
 			},
 		),
 	)
-	expect(findCheck(migrated, 'credentials')?.message).toBe(
-		'No credential placeholder references to list (codemod 0010-detect-legacy-credential-patterns).',
+	expect(findCheck(migrated, 'credentials')?.ok).toBe(true)
+	expect(findCheck(migrated, 'credentials')?.message).toMatch(
+		/Credential stamp keys \(sorted\): RESEND_API_KEY/,
 	)
 	expect(migrated.ok).toBe(true)
 	expect(
@@ -1234,102 +1225,123 @@ test('runRepoChecks lists credential placeholder references neutrally by path an
 	])
 })
 
-test('runRepoChecks adds the plain http note only when that pattern is found', async () => {
+test('runRepoChecks fails plain http credential fetches', async () => {
 	const { result } = await runChecks(
-		packageFiles(manifest('plain-http-credentials'), {
-			'src/send.ts': [
-				"export const h = { Authorization: 'Bearer {{secret:TOKEN}}' }",
-				"export const send = () => fetch('http://api.example.com', { headers: h })",
-			].join('\n'),
-		}),
+		packageFiles(
+			manifest('plain-http-credentials', {
+				credentials: {
+					TOKEN: { kind: 'secret', description: 'API token.' },
+				},
+			}),
+			{
+				'src/send.ts': [
+					"export const h = { Authorization: 'Bearer {{secret:TOKEN}}' }",
+					"export const send = () => fetch('http://api.example.com', { headers: h })",
+				].join('\n'),
+			},
+		),
 	)
-	expect(result.ok).toBe(true)
+	expect(result.ok).toBe(false)
 	const message = findCheck(result, 'credentials')?.message
-	expect(message).toContain('- src/send.ts: literal secret, plain http')
-	expect(message?.split('\n').slice(-2)).toEqual([
-		'These references keep working, except as noted below. Labels are described under "Credential slots" in the packages docs.',
-		'plain http: the fetch gateway refuses a request that carries a placeholder over http://; use https:// for those requests.',
-	])
+	expect(message).toMatch(/plain http/)
+	expect(message).toMatch(/https:\/\//)
 
 	const { result: https } = await runChecks(
-		packageFiles(manifest('https-credentials'), {
-			'src/send.ts': "export const h = { a: '{{secret:TOKEN}}' }",
-		}),
+		packageFiles(
+			manifest('https-credentials', {
+				credentials: {
+					TOKEN: { kind: 'secret', description: 'API token.' },
+				},
+			}),
+			{
+				'src/send.ts': "export const h = { a: '{{secret:TOKEN}}' }",
+			},
+		),
 	)
-	expect(findCheck(https, 'credentials')?.message).not.toContain('plain http:')
+	expect(findCheck(https, 'credentials')?.ok).toBe(true)
+	expect(findCheck(https, 'credentials')?.message).not.toContain('plain http')
 })
 
 test('runRepoChecks offers optional credential types only for placements one fits', async () => {
 	const { result } = await runChecks(
-		packageFiles(manifest('typed-credentials'), {
-			'src/send.ts': [
-				"export const hook = () => fetch('https://hooks.example.com/{{secret:HOOK_PATH}}')",
-				// LOGIN_SECRET, not PASSWORD: a body field that spells the
-				// credential name is dropped, and the login hint needs the field.
-				"export const login = () => fetch('https://api.example.com/login', { method: 'POST', body: JSON.stringify({ password: '{{secret:LOGIN_SECRET}}' }) })",
-				"export const gh = () => fetch('https://api.github.com/user', { headers: { Authorization: 'Bearer {{integration-token:github}}' } })",
-			].join('\n'),
-		}),
+		packageFiles(
+			manifest('typed-credentials', {
+				credentials: {
+					HOOK_PATH: { kind: 'secret', description: 'Hook path.' },
+					LOGIN_SECRET: { kind: 'secret', description: 'Login secret.' },
+					github: { kind: 'oauth', description: 'GitHub.' },
+				},
+			}),
+			{
+				'src/send.ts': [
+					"export const hook = () => fetch('https://hooks.example.com/{{secret:HOOK_PATH}}')",
+					"export const login = () => fetch('https://api.example.com/login', { method: 'POST', body: JSON.stringify({ password: '{{secret:LOGIN_SECRET}}' }) })",
+					"export const gh = () => fetch('https://api.github.com/user', { headers: { Authorization: 'Bearer {{integration-token:github}}' } })",
+				].join('\n'),
+			},
+		),
 	)
 	expect(result.ok).toBe(true)
 	const message = findCheck(result, 'credentials')!.message
-	const hints = message
-		.split('\n')
-		.slice(
-			message
-				.split('\n')
-				.indexOf(
-					'Optional, if you want a scoped credential type for these (ADR 0068):',
-				),
-		)
-	expect(hints).toEqual([
-		'Optional, if you want a scoped credential type for these (ADR 0068):',
-		'- Integration token headers: credential(key) for an OAuth connection sends Authorization: Bearer and refreshes the token for you.',
-		'- Path or whole-URL placeholders: a url credential (secretSet kind "url") holds the whole URL, and its client fetches it without the URL entering code.',
-		'- Password or token exchange bodies: a login credential (secretSet kind "login") runs the exchange on the host and places the session token.',
-	])
-	expect(message).toContain(
-		'These references keep working; nothing here needs to change.',
+	expect(message).toMatch(
+		/Credential stamp keys \(sorted\): HOOK_PATH, LOGIN_SECRET, github/,
 	)
-	expect(message).not.toMatch(/HOOK_PATH|LOGIN_SECRET|github/)
+	// Declared slots of the matching kind are omitted from optional type hints.
+	expect(message).not.toContain(
+		'Optional, if you want a scoped credential type for these (ADR 0068):',
+	)
 
 	const { result: signing } = await runChecks(
-		packageFiles(manifest('signing-credentials'), {
-			'src/sign.ts': [
-				"import { kody } from 'kody:runtime'",
-				"export const sign = () => kody.secretJwtSign({ private_key_secret_name: 'APNS_KEY', claims: {} })",
-			].join('\n'),
-		}),
+		packageFiles(
+			manifest('signing-credentials', {
+				credentials: {
+					APNS_KEY: { kind: 'secret', description: 'APNS key.' },
+				},
+			}),
+			{
+				'src/sign.ts': [
+					"import { kody } from 'kody:runtime'",
+					"export const sign = () => kody.secretJwtSign({ private_key_secret_name: 'APNS_KEY', claims: {} })",
+				].join('\n'),
+			},
+		),
 	)
-	expect(findCheck(signing, 'credentials')?.message).toContain(
-		'- Signing (secretJwtSign or signature key material): a signing credential',
-	)
+	expect(findCheck(signing, 'credentials')?.ok).toBe(true)
 
 	const { result: unfit } = await runChecks(
-		packageFiles(manifest('sdk-credentials'), {
-			'src/sdk.ts':
-				"export const client = (make: (o: object) => unknown) => make({ apiKey: '{{secret:SDK_KEY}}' })",
-		}),
+		packageFiles(
+			manifest('sdk-credentials', {
+				credentials: {
+					SDK_KEY: { kind: 'secret', description: 'SDK key.' },
+				},
+			}),
+			{
+				'src/sdk.ts':
+					"export const client = (make: (o: object) => unknown) => make({ apiKey: '{{secret:SDK_KEY}}' })",
+			},
+		),
 	)
 	const unfitMessage = findCheck(unfit, 'credentials')?.message ?? ''
-	expect(unfitMessage).toContain('- src/sdk.ts: literal secret')
+	expect(findCheck(unfit, 'credentials')?.ok).toBe(true)
+	expect(unfitMessage).toMatch(/Credential stamp keys \(sorted\): SDK_KEY/)
 	expect(unfitMessage).not.toContain('Optional, if you want')
 })
 
 test('credentialPatternNoticeForFiles reads repo paths under the source root', () => {
 	const files = {
 		'packages/app/package.json': manifest('rooted', {
-			secretMounts: { t: { name: 'T' } },
+			credentials: {
+				T: { kind: 'secret', description: 'Token.' },
+			},
 		}),
 		'packages/app/src/send.ts': "export const h = { a: '{{secret:T}}' }",
 		'other/src/x.ts': "export const h = { a: '{{secret:X}}' }",
 	}
 	const notice = credentialPatternNoticeForFiles(files, '/packages/app/')
-	expect(notice).toContain(
-		'- package.json: secretMounts\n- src/send.ts: literal secret\n',
-	)
+	expect(notice).toMatch(/Credential stamp/)
+	expect(notice).toMatch(/T/)
 	expect(notice).not.toContain('other/')
 	expect(
 		credentialPatternNoticeForFiles({ 'package.json': manifest('clean') }),
-	).toBeNull()
+	).toMatch(/Credential stamp is empty/)
 })

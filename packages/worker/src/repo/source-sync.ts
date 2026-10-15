@@ -14,6 +14,7 @@ import {
 } from './large-file-policy.ts'
 import { PackageCredentialNeedsApprovalError } from '#worker/credentials/credential-needs-approval.ts'
 import { storePublishedCredentialNeeds } from '#worker/credentials/credential-needs-closure.ts'
+import { storePublishedCredentialStamp } from '#worker/credentials/credential-stamp-store.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import {
 	loadLockedSavedPackage,
@@ -300,6 +301,12 @@ export async function syncArtifactSourceSnapshot(
 							publishedCommit: snapshot.published_commit,
 							files: input.files,
 						})
+						await storePublishedCredentialStamp({
+							env: input.env,
+							source,
+							publishedCommit: snapshot.published_commit,
+							files: input.files,
+						})
 						return snapshot.published_commit
 					},
 				)
@@ -352,6 +359,12 @@ export async function syncArtifactSourceSnapshot(
 				}),
 			)
 			await storePublishedCredentialNeeds({
+				env: input.env,
+				source,
+				publishedCommit: bootstrapResult.publishedCommit,
+				files: snapshotFiles,
+			})
+			await storePublishedCredentialStamp({
 				env: input.env,
 				source,
 				publishedCommit: bootstrapResult.publishedCommit,

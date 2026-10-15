@@ -10,6 +10,7 @@ import {
 } from '#worker/package-registry/package-publish-lock.ts'
 import { requireCredentialNeedsApproval } from '#worker/credentials/credential-needs-approval.ts'
 import { storePublishedCredentialNeeds } from '#worker/credentials/credential-needs-closure.ts'
+import { storePublishedCredentialStamp } from '#worker/credentials/credential-stamp-store.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
 import {
 	deletePublishedSourceSnapshot,
@@ -148,6 +149,12 @@ export async function finalizePublishedEntitySource(
 	if (input.source.entity_kind !== 'package') return
 	if (wrotePublishedSnapshot) {
 		await storePublishedCredentialNeeds({
+			env: input.env,
+			source: input.source,
+			publishedCommit: input.publishedCommit,
+			files: input.files,
+		})
+		await storePublishedCredentialStamp({
 			env: input.env,
 			source: input.source,
 			publishedCommit: input.publishedCommit,

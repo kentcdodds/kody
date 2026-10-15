@@ -1655,9 +1655,21 @@ export async function runRepoChecks(input: {
 			sourceFiles: {},
 		})
 	}
-	const sourceFiles = sourceWalk.collected
+	let sourceFiles = sourceWalk.collected
 	// Before any gate that returns early, so owners see it while fixing others.
-	results.push(buildCredentialPatternCheck(sourceFiles))
+	// May auto-write missing kody.credentials keys into sourceFiles (never
+	// overwrites descriptions). Hard-fails on unstampable patterns / server eval
+	// / missing descriptions (issue #3836 phase 1).
+	const credentialPatternCheck = buildCredentialPatternCheck(sourceFiles)
+	sourceFiles = credentialPatternCheck.sourceFiles
+	results.push({
+		kind: credentialPatternCheck.kind,
+		ok: credentialPatternCheck.ok,
+		message: credentialPatternCheck.message,
+	})
+	if (!credentialPatternCheck.ok) {
+		return toRepoCheckRunResult({ results, manifest, sourceFiles })
+	}
 	const credentialNeedsCheck = await buildCredentialNeedsCheck({
 		env: input.env,
 		userId: input.userId,

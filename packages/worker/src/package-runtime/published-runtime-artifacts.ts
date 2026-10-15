@@ -10,6 +10,8 @@ const sourceManifestSnapshotPrefix = 'source-manifest-snapshot'
 const bundleArtifactPrefix = 'bundle-artifact'
 const credentialNeedsVersion = 1
 const credentialNeedsPrefix = 'credential-needs'
+const credentialStampVersion = 1
+const credentialStampPrefix = 'credential-stamp'
 
 /**
  * `app` is the Worker fetch bundle loaded into the package-app isolate;
@@ -266,6 +268,38 @@ export async function readPublishedCredentialNeeds(input: {
 }): Promise<unknown> {
 	return await getBundleArtifactsKv(input.env).get(
 		buildPublishedCredentialNeedsKvKey(input),
+		'json',
+	)
+}
+
+/** A package's sealed credential stamp at one publish (issue #3836). */
+export function buildPublishedCredentialStampKvKey(input: {
+	sourceId: string
+	publishedCommit: string
+}) {
+	return `${credentialStampPrefix}:v${credentialStampVersion}:${input.sourceId}:${input.publishedCommit}`
+}
+
+export async function writePublishedCredentialStamp(input: {
+	env: Env
+	sourceId: string
+	publishedCommit: string
+	stamp: unknown
+}) {
+	await getBundleArtifactsKv(input.env).put(
+		buildPublishedCredentialStampKvKey(input),
+		JSON.stringify(input.stamp),
+	)
+}
+
+/** The stored stamp as written, or null when that publish stored none. */
+export async function readPublishedCredentialStamp(input: {
+	env: Env
+	sourceId: string
+	publishedCommit: string
+}): Promise<unknown> {
+	return await getBundleArtifactsKv(input.env).get(
+		buildPublishedCredentialStampKvKey(input),
 		'json',
 	)
 }

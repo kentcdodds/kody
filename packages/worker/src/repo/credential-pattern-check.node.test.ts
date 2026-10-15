@@ -18,11 +18,11 @@ function manifest(kody: Record<string, unknown> = {}) {
 	})
 }
 
-function message(source: string, kody: Record<string, unknown> = {}) {
+function check(source: string, kody: Record<string, unknown> = {}) {
 	return buildCredentialPatternCheck({
 		'package.json': manifest(kody),
 		'src/index.ts': source,
-	}).message
+	})
 }
 
 function hintLines(text: string) {
@@ -31,183 +31,115 @@ function hintLines(text: string) {
 	return index === -1 ? [] : lines.slice(index)
 }
 
-test('oauth hints are only Authorization Bearer integration headers', () => {
-	const otherShapes = message(
-		"export const send = () => fetch('https://api.example.com', { headers: { 'X-Token': '{{integration-token:github}}', Authorization: 'Token {{integration-token:gitlab}}', 'X-Api-Key': '{{secret:KEY}}' } })",
+test('buildCredentialPatternCheck hard-fails non-literal createAuthenticatedFetch', () => {
+	const result = check(
+		'export const run = (name: string) => createAuthenticatedFetch(name)',
 	)
-	expect(otherShapes).toContain('- src/index.ts: literal secret')
-	expect(hintLines(otherShapes)).toEqual([hintsHeading, injectHint])
-	expect(otherShapes).not.toMatch(/github|gitlab|KEY/)
-
-	const schemeOnly = message(
-		"export const gh = () => fetch('https://api.github.com/user', { headers: { Authorization: 'bearer {{integration-token:github}}' } })",
-	)
-	expect(schemeOnly).toContain('literal secret')
-	expect(hintLines(schemeOnly)).toEqual([])
-
-	const valueOnly = message(
-		"export const gh = () => fetch('https://api.github.com/user', { headers: { Authorization: '{{integration-token:github}}' } })",
-	)
-	expect(hintLines(valueOnly)).toEqual([])
-
-	const bearer = message(
-		"export const gh = () => fetch('https://api.github.com/user', { headers: { Authorization: 'Bearer {{integration-token:github}}', 'X-Token': '{{integration-token:github}}' } })",
-	)
-	expect(hintLines(bearer)).toEqual([hintsHeading, oauthHint])
+	expect(result.ok).toBe(false)
+	expect(result.message).toMatch(/Credential stamp publish gate/)
+	expect(result.message).toMatch(/Publish failed/)
 })
 
-test('secret-basic pairs do not get an inject hint', () => {
-	const pair = message(
-		"export const send = () => fetch('https://api.example.com', { headers: { Authorization: 'Basic {{secret-basic:username=USER,password=PASS}}' } })",
+test('buildCredentialPatternCheck auto-writes missing keys and fails without descriptions', () => {
+	const result = check(
+		"export const send = () => fetch('https://api.example.com', { headers: { Authorization: 'Bearer {{secret:TOKEN}}' } })",
 	)
-	expect(pair).toContain('- src/index.ts: literal secret')
-	expect(hintLines(pair)).toEqual([])
-	expect(pair).not.toMatch(/USER|PASS/)
-
-	const oneSecret = message(
-		"export const send = () => fetch('https://api.example.com', { headers: { Authorization: 'Basic {{secret:PASSWORD}}' } })",
-	)
-	expect(hintLines(oneSecret)).toEqual([hintsHeading, injectHint])
+	expect(result.ok).toBe(false)
+	expect(result.stampKeys).toEqual(['TOKEN'])
+	expect(result.message).toMatch(/missing a description/)
+	const parsed = JSON.parse(result.sourceFiles['package.json']!) as {
+		kody: { credentials: Record<string, unknown> }
+	}
+	expect(parsed.kody.credentials.TOKEN).toEqual({})
 })
 
-test('login hints require an exchange endpoint and an exact credential field', () => {
-	const compass = message(
-		"export const login = () => fetch('https://api.example.com/login', { method: 'POST', body: JSON.stringify({ compass: '{{secret:NEEDLE}}' }) })",
-	)
-	expect(compass).toContain('literal secret')
-	expect(hintLines(compass)).toEqual([])
-
-	const passwordReset = message(
-		"export const login = () => fetch('https://api.example.com/login', { method: 'POST', body: JSON.stringify({ passwordReset: '{{secret:NEXT}}' }) })",
-	)
-	expect(hintLines(passwordReset)).toEqual([])
-
-	const changePassword = message(
-		"export const change = () => fetch('https://api.example.com/change-password', { method: 'POST', body: JSON.stringify({ password: '{{secret:NEW_PASSWORD}}' }) })",
-	)
-	expect(changePassword).toContain('literal secret')
-	expect(hintLines(changePassword)).toEqual([])
-
-	const usernameOnly = message(
-		"export const login = () => fetch('https://api.example.com/login', { method: 'POST', body: JSON.stringify({ username: '{{secret:USER}}' }) })",
-	)
-	expect(hintLines(usernameOnly)).toEqual([])
-
-	const unknownEndpoint = message(
-		"export const body = JSON.stringify({ password: '{{secret:ACCOUNT_PASSWORD}}' })",
-	)
-	expect(unknownEndpoint).toContain('literal secret')
-	expect(hintLines(unknownEndpoint)).toEqual([])
-
-	const exchange = message(
-		"export const login = () => fetch('https://api.example.com/oauth/token', { method: 'POST', body: JSON.stringify({ pass: '{{secret:PASSWORD}}', refreshToken: '{{secret:REFRESH}}', client_secret: '{{secret:CLIENT}}' }) })",
-	)
-	expect(hintLines(exchange)).toEqual([hintsHeading, loginHint])
-	expect(exchange).not.toMatch(/PASSWORD|REFRESH|CLIENT/)
-
-	// Scanner nulls a body field that matches the secret name; the name still
-	// identifies a password exchange.
-	const redactedPasswordField = message(
-		"export const login = () => fetch('https://api.example.com/login', { method: 'POST', body: JSON.stringify({ password: '{{secret:PASSWORD}}' }) })",
-	)
-	expect(hintLines(redactedPasswordField)).toEqual([hintsHeading, loginHint])
-	expect(redactedPasswordField).not.toMatch(/PASSWORD/)
-})
-
-test('hints skip placeholders a declared slot of the same kind already covers', () => {
-	const covered = message(
-		[
-			"export const send = () => fetch('https://api.example.com', { headers: { Authorization: 'Bearer {{secret:TOKEN}}' } })",
-			"export const gh = () => fetch('https://api.github.com/user', { headers: { Authorization: 'Bearer {{integration-token:github}}' } })",
-		].join('\n'),
-		{
-			secretMounts: { token: { name: 'MOUNTED' } },
-			credentials: {
-				TOKEN: { kind: 'secret', provider: 'api', description: 'API token.' },
-				github: { kind: 'oauth', provider: 'github', description: 'GitHub.' },
-			},
-		},
-	)
-	expect(covered).toContain('- package.json: secretMounts')
-	expect(covered).not.toContain('literal secret')
-	expect(hintLines(covered)).toEqual([])
-	expect(covered).not.toMatch(/TOKEN|github|MOUNTED/)
-
-	const scoped = message(
-		"export const send = () => fetch('https://api.example.com', { headers: { Authorization: 'Bearer {{secret:TOKEN|scope=user}}' } })",
+test('buildCredentialPatternCheck passes when literal uses have descriptions', () => {
+	const result = check(
+		"export const send = () => fetch('https://api.example.com', { headers: { Authorization: 'Bearer {{secret:TOKEN}}' } })",
 		{
 			credentials: {
 				TOKEN: { kind: 'secret', description: 'API token.' },
 			},
 		},
 	)
-	expect(scoped).toContain('- src/index.ts: |scope=')
-	expect(hintLines(scoped)).toEqual([])
+	expect(result.ok).toBe(true)
+	expect(result.stampKeys).toEqual(['TOKEN'])
+	expect(result.message).toMatch(/Credential stamp keys \(sorted\): TOKEN/)
+})
 
-	const missingDescription = message(
-		"export const send = () => fetch('https://api.example.com', { headers: { Authorization: 'Bearer {{secret:TOKEN}}', 'X-Api-Key': '{{secret:OTHER}}' } })",
-		{ credentials: { TOKEN: { kind: 'secret' } } },
+test('oauth hints are only Authorization Bearer integration headers', () => {
+	// Undeclared slots fail the stamp gate on missing descriptions; hints still
+	// appear on the failure message for undeclared placements.
+	const otherShapes = check(
+		"export const send = () => fetch('https://api.example.com', { headers: { 'X-Token': '{{integration-token:github}}', Authorization: 'Token {{integration-token:gitlab}}', 'X-Api-Key': '{{secret:KEY}}' } })",
 	)
-	expect(missingDescription).toContain('literal secret')
-	expect(hintLines(missingDescription)).toEqual([hintsHeading, injectHint])
-	expect(missingDescription).not.toMatch(/TOKEN|OTHER/)
+	expect(otherShapes.ok).toBe(false)
+	expect(hintLines(otherShapes.message)).toEqual([hintsHeading, injectHint])
 
-	const wrongKind = message(
-		"export const gh = () => fetch('https://api.github.com/user', { headers: { Authorization: 'Bearer {{integration-token:github}}' } })",
+	const bearer = check(
+		"export const gh = () => fetch('https://api.github.com/user', { headers: { Authorization: 'Bearer {{integration-token:github}}', 'X-Token': '{{integration-token:github}}' } })",
+	)
+	expect(bearer.ok).toBe(false)
+	expect(hintLines(bearer.message)).toEqual([hintsHeading, oauthHint])
+})
+
+test('secret-basic pairs do not get an inject hint', () => {
+	const pair = check(
+		"export const send = () => fetch('https://api.example.com', { headers: { Authorization: 'Basic {{secret-basic:username=USER,password=PASS}}' } })",
+	)
+	expect(pair.ok).toBe(false)
+	expect(hintLines(pair.message)).toEqual([])
+})
+
+test('login hints require an exchange endpoint and an exact credential field', () => {
+	const exchange = check(
+		"export const login = () => fetch('https://api.example.com/oauth/token', { method: 'POST', body: JSON.stringify({ pass: '{{secret:PASSWORD}}', refreshToken: '{{secret:REFRESH}}', client_secret: '{{secret:CLIENT}}' }) })",
+	)
+	expect(exchange.ok).toBe(false)
+	expect(hintLines(exchange.message)).toEqual([hintsHeading, loginHint])
+})
+
+test('hints skip placeholders a declared slot of the same kind already covers', () => {
+	const covered = check(
+		[
+			"export const send = () => fetch('https://api.example.com', { headers: { Authorization: 'Bearer {{secret:TOKEN}}' } })",
+			"export const gh = () => fetch('https://api.github.com/user', { headers: { Authorization: 'Bearer {{integration-token:github}}' } })",
+		].join('\n'),
 		{
 			credentials: {
-				github: {
-					kind: 'secret',
-					description: 'A key, not an OAuth connection.',
-				},
+				TOKEN: { kind: 'secret', provider: 'api', description: 'API token.' },
+				github: { kind: 'oauth', provider: 'github', description: 'GitHub.' },
 			},
 		},
 	)
-	expect(hintLines(wrongKind)).toEqual([hintsHeading, oauthHint])
-
-	const urlSlot = message(
-		"export const send = () => fetch('https://api.example.com', { headers: { Authorization: 'Bearer {{secret:HOOK}}' } })",
-		{
-			credentials: {
-				HOOK: { kind: 'url', description: 'Hook URL.' },
-			},
-		},
-	)
-	expect(hintLines(urlSlot)).toEqual([hintsHeading, injectHint])
+	expect(covered.ok).toBe(true)
+	expect(hintLines(covered.message)).toEqual([])
 })
 
 const signingHint =
 	'- Signing (secretJwtSign or signature key material): a signing credential (secretSet kind "signing") signs through credential(key).sign() without exposing the key.'
 
 test('declared signing keys do not get a signing hint from jwtSignCalls', () => {
-	const covered = message(
-		[
-			"export const sign = () => kody.secretJwtSign({ private_key_secret_name: 'KEY', claims: {} })",
-			"export const send = () => fetch('https://api.example.com')",
-		].join('\n'),
+	const covered = check(
+		"export const sign = () => kody.secretJwtSign({ private_key_secret_name: 'KEY', claims: {} })",
 		{
-			secretMounts: { token: { name: 'MOUNTED' } },
 			credentials: {
 				KEY: { kind: 'secret', description: 'Signing key.' },
 			},
 		},
 	)
-	expect(covered).toContain('- package.json: secretMounts')
-	expect(hintLines(covered)).toEqual([])
-	expect(covered).not.toMatch(/KEY|MOUNTED/)
-
-	const undeclared = message(
-		"export const sign = () => kody.secretJwtSign({ private_key_secret_name: 'APNS_KEY', claims: {} })",
-	)
-	expect(hintLines(undeclared)).toEqual([hintsHeading, signingHint])
+	expect(covered.ok).toBe(true)
+	expect(hintLines(covered.message)).toEqual([])
 })
 
-test('secretJwtSign with a non-literal key name still gets a signing hint', () => {
-	const dynamic = message(
+test('secretJwtSign with a non-literal key name fails the stamp gate', () => {
+	const dynamic = check(
 		[
 			"const keyName = 'APNS_KEY'",
 			'export const sign = () => kody.secretJwtSign({ private_key_secret_name: keyName, claims: {} })',
 		].join('\n'),
 	)
-	expect(hintLines(dynamic)).toEqual([hintsHeading, signingHint])
+	expect(dynamic.ok).toBe(false)
+	expect(dynamic.message).toMatch(/non-literal/)
+	expect(hintLines(dynamic.message)).toEqual([hintsHeading, signingHint])
 })

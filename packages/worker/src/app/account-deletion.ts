@@ -1647,6 +1647,7 @@ export async function purgeOwnerOutOfBandSurfaces(input: {
 					`source-snapshot:v1:${source.sourceId}:`,
 					`source-manifest-snapshot:v1:${source.sourceId}:`,
 					`credential-needs:v1:${source.sourceId}:`,
+					`credential-stamp:v1:${source.sourceId}:`,
 				]),
 				...inventory.communityListings.flatMap((listing) =>
 					communityIconKvListingPrefixes(listing.id),
@@ -1975,6 +1976,7 @@ export async function deleteUserAccount(input: {
 					`source-snapshot:v1:${source.sourceId}:`,
 					`source-manifest-snapshot:v1:${source.sourceId}:`,
 					`credential-needs:v1:${source.sourceId}:`,
+					`credential-stamp:v1:${source.sourceId}:`,
 				]),
 				...inventory.communityListings.flatMap((listing) =>
 					communityIconKvListingPrefixes(listing.id),

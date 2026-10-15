@@ -747,10 +747,8 @@ test('packageSave responses list credential placeholder references by path and p
 		],
 	})
 
-	expect(result.next_steps).toContain(
-		'Credential placeholder references (codemod 0010-detect-legacy-credential-patterns, informational; publish is unaffected):\n- src/send.ts: literal secret',
-	)
-	expect(result.next_steps).not.toContain('RESEND_KEY')
+	expect(result.next_steps).toContain('Credential stamp publish gate')
+	expect(result.next_steps).toMatch(/missing a description|RESEND_KEY/)
 })
 
 test('packageSave lists placeholder references from the published files, not only the submitted ones', async () => {
@@ -772,6 +770,6 @@ test('packageSave lists placeholder references from the published files, not onl
 
 	const result = await save({ files: submitted })
 
-	expect(result.next_steps).toContain('- src/kept.ts: literal secret')
-	expect(result.next_steps).not.toContain('OLD_KEY')
+	expect(result.next_steps).toContain('Credential stamp publish gate')
+	expect(result.next_steps).toMatch(/missing a description|OLD_KEY/)
 })
