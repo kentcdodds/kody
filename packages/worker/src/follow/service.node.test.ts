@@ -200,6 +200,59 @@ test('followAdd retargets an active follow whose creator was anonymized', async 
 	expect(row?.status).toBe('active')
 })
 
+test('followAdd that loses a create race still applies the requested events', async () => {
+	const db = followDb()
+	await ensureFollowTables(db)
+	const prepare = db.prepare.bind(db)
+	let raced = false
+	db.prepare = (sql: string) => {
+		if (!raced && sql.trimStart().startsWith('INSERT INTO follows (')) {
+			raced = true
+			return {
+				bind: () => ({
+					run: async () => {
+						await insertFollow(db, {
+							id: 'follow-winner',
+							followerOrgId: 'org-race-events',
+							creatorUserId: 'person-1',
+							targetKind: 'package',
+							targetOwnerId: ownerId,
+							targetId: 'pkg-notes',
+							targetName: '@ada/notes',
+							createdAt: '2026-10-15T00:00:00.000Z',
+						})
+						throw new Error('UNIQUE constraint failed: follows')
+					},
+				}),
+			} as unknown as D1PreparedStatement
+		}
+		return prepare(sql)
+	}
+	serviceMocks.getOrgBySlug.mockResolvedValue({ id: ownerId, slug: 'ada' })
+	serviceMocks.getSavedPackageByName.mockResolvedValue(
+		savedPackage({ id: 'pkg-notes', name: '@ada/notes', isPrivate: false }),
+	)
+	serviceMocks.loadFollowTargetPermissions.mockResolvedValue(null)
+
+	const view = await addFollow({
+		env: { APP_DB: db } as Env,
+		followerOrgId: 'org-race-events',
+		creatorUserId: 'person-1',
+		name: '@ada/notes',
+		events: ['published'],
+	})
+
+	expect(raced).toBe(true)
+	expect(view.events).toEqual(['published'])
+	const stored = await getFollowByTarget(db, {
+		followerOrgId: 'org-race-events',
+		targetKind: 'package',
+		targetId: 'pkg-notes',
+	})
+	expect(stored?.id).toBe('follow-winner')
+	expect(stored?.pushedEnabled).toBe(false)
+})
+
 test('retargetFollowCreator returns false after a concurrent pause', async () => {
 	const db = followDb()
 	await ensureFollowTables(db)

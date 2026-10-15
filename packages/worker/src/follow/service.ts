@@ -201,7 +201,17 @@ export async function addFollow(input: {
 				input.env.APP_DB,
 				followCreateRateLimitKey(input.followerOrgId),
 			).catch(() => undefined)
-			return followView(raced)
+			return await settleExistingFollow({
+				db: input.env.APP_DB,
+				followerOrgId: input.followerOrgId,
+				creatorUserId: input.creatorUserId,
+				targetKind: target.kind,
+				targetId: target.id,
+				requested,
+				existing: raced,
+				events,
+				now,
+			})
 		}
 		throw error
 	}
