@@ -574,10 +574,14 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		table: 'community_forks',
 		columns: ['forker_user_id'],
 	},
+	// Follows belong to the follower org. Deleting the person who created one
+	// anonymizes attribution and leaves the row for the rest of the org.
 	{
-		kind: 'user_columns',
+		kind: 'replace_user_column',
 		table: 'follows',
-		columns: ['creator_user_id'],
+		matchColumn: 'creator_user_id',
+		setColumn: 'creator_user_id',
+		value: 'deleted-user',
 	},
 	{
 		kind: 'user_columns',
@@ -586,7 +590,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		includeInExport: false,
 		surface: 'follows_owned_by_org',
 		reason:
-			'Org hard purge deletes follows owned by the org. Account export uses creator_user_id so the creating person receives the row.',
+			'Org hard purge deletes follows owned by the org. Account export uses creator_user_id so the creating person receives the row. Deleting a member anonymizes creator_user_id and leaves the org follow in place.',
 	},
 	{
 		kind: 'community_listing_child',

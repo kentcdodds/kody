@@ -141,7 +141,7 @@ test('a push after the window replaces the pending row', async () => {
 			at: '2026-10-15T00:00:00.000Z',
 		},
 	})
-	await upsertFollowPushPending(db, first.pending)
+	expect(await upsertFollowPushPending(db, first.pending, null)).toBe(true)
 	const replaced = mergeFollowPushWindow({
 		...base,
 		existing: first.pending,
@@ -157,9 +157,47 @@ test('a push after the window replaces the pending row', async () => {
 	})
 	expect(replaced.action).toBe('replace')
 	if (replaced.action !== 'replace') return
-	await upsertFollowPushPending(db, replaced.pending)
+	expect(
+		await upsertFollowPushPending(
+			db,
+			replaced.pending,
+			first.pending.updatedAt,
+		),
+	).toBe(true)
 	const stored = await getFollowPushPending(db, base)
 	expect(stored?.windowStartedAt).toBe('2026-10-15T00:06:00.000Z')
 	expect(stored?.afterCommit).toBe('after-2')
 	expect(stored?.commits.map((entry) => entry.id)).toEqual(['c2'])
+})
+
+test('upsertFollowPushPending leaves a row whose updated_at moved', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	const db = createD1FromSqlite(sqlite)
+	await ensureFollowTables(db)
+	const stored = {
+		...base,
+		windowStartedAt: '2026-10-15T00:00:00.000Z',
+		beforeCommit: 'before-1',
+		afterCommit: 'after-1',
+		ref: 'refs/heads/main',
+		commits: [commit('c1')],
+		totalCommitsCount: 1,
+		updatedAt: '2026-10-15T00:00:00.000Z',
+	}
+	expect(await upsertFollowPushPending(db, stored, null)).toBe(true)
+	const raced = {
+		...stored,
+		afterCommit: 'after-raced',
+		commits: [commit('c1'), commit('c-race')],
+		totalCommitsCount: 2,
+		updatedAt: '2026-10-15T00:01:00.000Z',
+	}
+	expect(
+		await upsertFollowPushPending(db, raced, '2026-10-14T00:00:00.000Z'),
+	).toBe(false)
+	expect((await getFollowPushPending(db, base))?.afterCommit).toBe('after-1')
+	expect(await upsertFollowPushPending(db, raced, stored.updatedAt)).toBe(true)
+	const next = await getFollowPushPending(db, base)
+	expect(next?.afterCommit).toBe('after-raced')
+	expect(next?.commits.map((entry) => entry.id)).toEqual(['c1', 'c-race'])
 })

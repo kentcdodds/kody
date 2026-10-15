@@ -55,7 +55,7 @@ export const orgTransferTables: Record<string, OrgTransferTableDisposition> = {
 		'forker_user_id re-pointed for forks that produced a moved package.',
 	),
 	follows: keep(
-		'Follows stay with the follower org. Transferring packages/repos does not move another org’s follow rows; followers keep watching the same target ids under the destination owner.',
+		'Follow rows stay with the follower org (follower_org_id is not re-pointed). The transfer batch rewrites denormalized target_owner_id and target_name so followers keep watching the same target ids under the destination owner.',
 	),
 	mcp_memories: move('user_id re-pointed; vectors reindexed under the target.'),
 	mcp_memory_conversation_suppressions: move(

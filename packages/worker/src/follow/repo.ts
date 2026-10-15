@@ -157,15 +157,15 @@ export async function pauseFollow(
 
 export async function resumeFollow(
 	db: D1Database,
-	input: { id: string; updatedAt: string },
+	input: { id: string; updatedAt: string; creatorUserId: string },
 ): Promise<void> {
 	await db
 		.prepare(
 			`UPDATE follows
-			SET status = 'active', paused_at = NULL, updated_at = ?
+			SET status = 'active', paused_at = NULL, creator_user_id = ?, updated_at = ?
 			WHERE id = ? AND status = 'paused'`,
 		)
-		.bind(input.updatedAt, input.id)
+		.bind(input.creatorUserId, input.updatedAt, input.id)
 		.run()
 }
 
@@ -248,11 +248,17 @@ export async function getFollowPushPending(
 	return row ? mapPending(row) : null
 }
 
+/**
+ * Insert or replace the open window only when `expectedUpdatedAt` is still
+ * the stored `updated_at` (`null` when the row is absent). A miss means a
+ * concurrent push won the race; the caller re-reads and merges.
+ */
 export async function upsertFollowPushPending(
 	db: D1Database,
 	row: FollowPushPending,
-): Promise<void> {
-	await db
+	expectedUpdatedAt: string | null,
+): Promise<boolean> {
+	const result = await db
 		.prepare(
 			`INSERT INTO follow_push_pending (
 				target_kind, target_id, window_started_at, before_commit, after_commit,
@@ -265,7 +271,8 @@ export async function upsertFollowPushPending(
 				ref = excluded.ref,
 				commits_json = excluded.commits_json,
 				total_commits_count = excluded.total_commits_count,
-				updated_at = excluded.updated_at`,
+				updated_at = excluded.updated_at
+			WHERE follow_push_pending.updated_at = ?`,
 		)
 		.bind(
 			row.targetKind,
@@ -277,8 +284,10 @@ export async function upsertFollowPushPending(
 			JSON.stringify(row.commits),
 			row.totalCommitsCount,
 			row.updatedAt,
+			expectedUpdatedAt,
 		)
 		.run()
+	return (result.meta.changes ?? 0) > 0
 }
 
 export async function listDueFollowPushPending(
@@ -334,6 +343,8 @@ export async function ensureFollowTables(db: D1Database) {
 			ON follows (target_kind, target_id, status)`,
 		`CREATE INDEX IF NOT EXISTS follows_paused_idx
 			ON follows (status, paused_at)`,
+		`CREATE INDEX IF NOT EXISTS follows_follower_idx
+			ON follows (follower_org_id, created_at)`,
 		`CREATE TABLE IF NOT EXISTS follow_push_pending (
 			target_kind TEXT NOT NULL CHECK (target_kind IN ('package', 'repo')),
 			target_id TEXT NOT NULL,

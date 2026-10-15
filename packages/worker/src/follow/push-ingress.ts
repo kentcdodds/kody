@@ -10,11 +10,14 @@ import {
 } from './repo.ts'
 import { type FollowPushCommit, type FollowTargetKind } from './types.ts'
 
+const followPushCoalesceAttempts = 5
+
 /**
  * Record a default-branch push into the target's five-minute window.
  * No follows means no row. An expired window is flushed before the new
  * push replaces it; if that flush fails the new commits stay on the old
- * row so the maintenance lane can retry.
+ * row so the maintenance lane can retry. A compare-and-swap miss re-reads
+ * and merges so a concurrent push is not overwritten.
  */
 export async function recordFollowDefaultBranchPush(input: {
 	env: Env
@@ -33,23 +36,45 @@ export async function recordFollowDefaultBranchPush(input: {
 	})
 	if (follows.length === 0) return
 	const incoming = ingressFromEvent(input.event)
+	for (let attempt = 0; attempt < followPushCoalesceAttempts; attempt += 1) {
+		const wrote = await coalesceOneFollowPush({
+			env: input.env,
+			targetKind,
+			targetId: input.source.entity_id,
+			incoming,
+		})
+		if (wrote) return
+	}
+	console.error('follow-push-coalesce-contended', input.source.entity_id)
+}
+
+async function coalesceOneFollowPush(input: {
+	env: Env
+	targetKind: FollowTargetKind
+	targetId: string
+	incoming: ReturnType<typeof ingressFromEvent>
+}): Promise<boolean> {
 	const existing = await getFollowPushPending(input.env.APP_DB, {
-		targetKind,
-		targetId: input.source.entity_id,
+		targetKind: input.targetKind,
+		targetId: input.targetId,
 	})
 	const merged = mergeFollowPushWindow({
-		targetKind,
-		targetId: input.source.entity_id,
+		targetKind: input.targetKind,
+		targetId: input.targetId,
 		existing,
-		incoming,
-		now: new Date(incoming.at),
+		incoming: input.incoming,
+		now: new Date(input.incoming.at),
 	})
+	const expectedUpdatedAt = existing?.updatedAt ?? null
 	switch (merged.action) {
 		case 'unchanged':
-			return
+			return true
 		case 'merge':
-			await upsertFollowPushPending(input.env.APP_DB, merged.pending)
-			return
+			return await upsertFollowPushPending(
+				input.env.APP_DB,
+				merged.pending,
+				expectedUpdatedAt,
+			)
 		case 'replace': {
 			const flushed = await flushPendingWindow({
 				env: input.env,
@@ -57,17 +82,23 @@ export async function recordFollowDefaultBranchPush(input: {
 			})
 			if (!flushed) {
 				const kept = mergeFollowPushWindow({
-					targetKind,
-					targetId: input.source.entity_id,
+					targetKind: input.targetKind,
+					targetId: input.targetId,
 					existing: merged.expired,
-					incoming,
+					incoming: input.incoming,
 					now: new Date(merged.expired.windowStartedAt),
 				})
-				await upsertFollowPushPending(input.env.APP_DB, kept.pending)
-				return
+				return await upsertFollowPushPending(
+					input.env.APP_DB,
+					kept.pending,
+					expectedUpdatedAt,
+				)
 			}
-			await upsertFollowPushPending(input.env.APP_DB, merged.pending)
-			return
+			return await upsertFollowPushPending(
+				input.env.APP_DB,
+				merged.pending,
+				expectedUpdatedAt,
+			)
 		}
 		default: {
 			const exhaustive: never = merged

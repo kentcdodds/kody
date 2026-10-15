@@ -104,7 +104,11 @@ export async function addFollow(input: {
 	const now = new Date().toISOString()
 	if (existing) {
 		if (existing.status === 'paused') {
-			await resumeFollow(input.env.APP_DB, { id: existing.id, updatedAt: now })
+			await resumeFollow(input.env.APP_DB, {
+				id: existing.id,
+				updatedAt: now,
+				creatorUserId: input.creatorUserId,
+			})
 			return followView({
 				...existing,
 				status: 'active',

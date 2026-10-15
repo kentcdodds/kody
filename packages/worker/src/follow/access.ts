@@ -6,10 +6,10 @@ import {
 	packageResource,
 	type EffectivePermissions,
 } from '#worker/authorization/authorize.ts'
-import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
-import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import { getOrgById, loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
+import { getSavedPackageByIdInAnyOrg } from '#worker/package-registry/repo.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
-import { getUserRepoById } from '#worker/repo/user-repos.ts'
+import { getUserRepoByIdInAnyOrg } from '#worker/repo/user-repos.ts'
 import {
 	type FollowRecord,
 	type FollowTargetKind,
@@ -92,6 +92,11 @@ function orgWidePackageReadAllowed(access: EffectivePermissions | null) {
 	return checkOrgWide(access, 'package:read').allowed
 }
 
+/**
+ * Live package or repo for a follow. Lookup is by target id across orgs,
+ * not the denormalized owner, so an org transfer does not make the target
+ * look missing. Access checks use the live owner and live name.
+ */
 export async function loadFollowTargetSnapshot(
 	db: D1Database,
 	follow: Pick<
@@ -101,10 +106,7 @@ export async function loadFollowTargetSnapshot(
 ): Promise<FollowTargetSnapshot | null> {
 	switch (follow.targetKind) {
 		case 'package': {
-			const saved = await getSavedPackageById(db, {
-				userId: follow.targetOwnerId,
-				packageId: follow.targetId,
-			})
+			const saved = await getSavedPackageByIdInAnyOrg(db, follow.targetId)
 			if (!saved) return null
 			return {
 				kind: 'package',
@@ -115,16 +117,14 @@ export async function loadFollowTargetSnapshot(
 			}
 		}
 		case 'repo': {
-			const repo = await getUserRepoById(db, {
-				userId: follow.targetOwnerId,
-				repoId: follow.targetId,
-			})
+			const repo = await getUserRepoByIdInAnyOrg(db, follow.targetId)
 			if (!repo) return null
+			const org = await getOrgById(db, repo.userId)
 			return {
 				kind: 'repo',
 				ownerId: repo.userId,
 				id: repo.id,
-				name: follow.targetName,
+				name: org ? `@${org.slug}/${repo.name}` : follow.targetName,
 				isPrivate: repo.isPrivate,
 			}
 		}

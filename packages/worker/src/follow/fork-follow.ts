@@ -1,10 +1,16 @@
 import { getCommunityListingById } from '#worker/community/repo.ts'
-import { hasAppDb, getFollowByTarget, insertFollow } from './repo.ts'
+import {
+	getFollowByTarget,
+	hasAppDb,
+	insertFollow,
+	resumeFollow,
+} from './repo.ts'
 
 /**
  * Forking a listing follows the upstream package. Does not consume the
  * interactive follow-create rate limit (fork already has its own limits).
- * A second fork of the same listing keeps the existing follow.
+ * A second fork keeps an active follow and resumes a paused one, attributing
+ * delivery access to the person who forked.
  */
 export async function ensureFollowForCommunityFork(input: {
 	env: Env
@@ -24,7 +30,16 @@ export async function ensureFollowForCommunityFork(input: {
 			targetKind: 'package',
 			targetId: listing.packageId,
 		})
-		if (existing) return
+		if (existing) {
+			if (existing.status === 'paused') {
+				await resumeFollow(input.env.APP_DB, {
+					id: existing.id,
+					updatedAt: new Date().toISOString(),
+					creatorUserId: input.creatorUserId,
+				})
+			}
+			return
+		}
 		const now = new Date().toISOString()
 		await insertFollow(input.env.APP_DB, {
 			id: crypto.randomUUID(),

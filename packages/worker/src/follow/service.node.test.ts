@@ -176,7 +176,7 @@ test('followAdd resumes a paused follow without consuming a create slot', async 
 	const resumed = await addFollow({
 		env: { APP_DB: db } as Env,
 		followerOrgId: 'org-resume',
-		creatorUserId: 'person-1',
+		creatorUserId: 'person-2',
 		name: '@ada/notes',
 	})
 	expect(resumed.status).toBe('active')
@@ -188,4 +188,5 @@ test('followAdd resumes a paused follow without consuming a create slot', async 
 	})
 	expect(row?.status).toBe('active')
 	expect(row?.pausedAt).toBeNull()
+	expect(row?.creatorUserId).toBe('person-2')
 })

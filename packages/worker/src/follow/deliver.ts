@@ -150,7 +150,7 @@ async function deliverOneFollow(input: {
 		publishedCommit: input.published.publishedCommit,
 		publishedAt: input.published.publishedAt,
 	})
-	const publishedResult = await invokeFollowTopic({
+	await invokeFollowTopic({
 		env: input.env,
 		follow: input.follow,
 		nowIso: input.nowIso,
@@ -160,13 +160,6 @@ async function deliverOneFollow(input: {
 		idempotencyKey: (packageId) =>
 			`follow-published:${input.follow.id}:${input.published?.publishedCommit}:${packageId}`,
 	})
-	if (publishedResult === 'zero_credits') {
-		await markFollowDeliverySkip(input.env.APP_DB, {
-			id: input.follow.id,
-			reason: followZeroCreditsSkipReason,
-			skippedAt: input.nowIso,
-		})
-	}
 }
 
 /**
