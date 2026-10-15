@@ -14,7 +14,7 @@ import {
 } from './admin-shared.ts'
 
 const pagingHint =
-	'One page per execute/sandbox. Resume with the returned nextCursor until null — a filtered scan can return empty outcomes with a non-null nextCursor after exhausting the underlying page budget, so keep paging until nextCursor is null. dryRun default is true (scan only); set dryRun false to restamp seal-ready packages at the current published commit with no content change. Packages that need manifest edits: run adminPackageCodemodApply with codemodId 0014-seal-credential-stamps first. Packages reported unconvertible need an agent conversion attempt, then stop-and-notify Kent on issue #3836 if they still fail.'
+	'One page per execute/sandbox. Resume with the returned nextCursor until null — a filtered scan can return empty outcomes with a non-null nextCursor after exhausting the underlying page budget, so keep paging until nextCursor is null. dryRun default is true (scan only); set dryRun false to restamp seal-ready packages at the current published commit with no content change. Packages that need manifest edits: run adminPackageCodemodApply with codemodId 0014-seal-credential-stamps first. Packages reported unconvertible need an agent conversion attempt, then stop-and-notify Kent on issue #3836 if they still fail. Packages reported deferred_scan_budget hit the known Durable Object CPU blowup on large prebuilt client assets (e.g. world-builder public/client/main.js) — retry after the publish-seal CPU fix is live; do not treat them as unconvertible or stop-and-notify.'
 
 const outcomeSchema = z.discriminatedUnion('outcome', [
 	z.object({
@@ -42,6 +42,17 @@ const outcomeSchema = z.discriminatedUnion('outcome', [
 		publishedCommit: z.null(),
 		stampKeyCount: z.number().int().nonnegative(),
 		outcome: z.literal('skipped_unpublished'),
+	}),
+	z.object({
+		packageId: z.string(),
+		ownerUserId: z.string(),
+		packageName: z.string(),
+		kodyId: z.string(),
+		sourceId: z.string(),
+		publishedCommit: z.string().nullable(),
+		stampKeyCount: z.number().int().nonnegative(),
+		outcome: z.literal('deferred_scan_budget'),
+		error: z.string(),
 	}),
 	z.object({
 		packageId: z.string(),
@@ -107,6 +118,13 @@ const outputSchema = z.object({
 	missingStampPackages: z.number().int().nonnegative(),
 	needsManifestPackages: z.number().int().nonnegative(),
 	unconvertiblePackages: z.number().int().nonnegative(),
+	deferredScanBudgetPackages: z
+		.number()
+		.int()
+		.nonnegative()
+		.describe(
+			'Packages that hit Durable Object CPU / isolate-reset while scanning (known large-asset seal bug). Not unconvertible; do not stop-and-notify.',
+		),
 	restampedPackages: z.number().int().nonnegative(),
 	failedPackages: z.number().int().nonnegative(),
 	skippedUnpublished: z.number().int().nonnegative(),
@@ -172,7 +190,7 @@ export const adminCredentialStampBackfillCapability = defineDomainCapability(
 					}),
 				{
 					successReason: (result) =>
-						`dry_run=${result.dryRun};scanned=${result.scannedPackages};stamped=${result.stampedPackages};missing=${result.missingStampPackages};needs_manifest=${result.needsManifestPackages};unconvertible=${result.unconvertiblePackages};restamped=${result.restampedPackages};failed=${result.failedPackages}`,
+						`dry_run=${result.dryRun};scanned=${result.scannedPackages};stamped=${result.stampedPackages};missing=${result.missingStampPackages};needs_manifest=${result.needsManifestPackages};unconvertible=${result.unconvertiblePackages};deferred_scan_budget=${result.deferredScanBudgetPackages};restamped=${result.restampedPackages};failed=${result.failedPackages}`,
 				},
 			)
 		},

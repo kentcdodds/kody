@@ -24,7 +24,10 @@ import {
 	loadPackageSourceRowForUser,
 } from '#worker/package-registry/source.ts'
 import { readPublishedCredentialStamp } from '#worker/package-runtime/published-runtime-artifacts.ts'
-import { runCredentialStampFleet } from './credential-stamp-fleet.ts'
+import {
+	isCredentialStampScanBudgetFailure,
+	runCredentialStampFleet,
+} from './credential-stamp-fleet.ts'
 import { storePublishedCredentialStamp } from './credential-stamp-store.ts'
 
 const listPage = vi.mocked(listSavedPackagesPage)
@@ -327,4 +330,40 @@ test('credential stamp fleet apply restamps seal-ready packages missing a stamp'
 	expect(result.restampedPackages).toBe(1)
 	expect(result.outcomes[0]?.outcome).toBe('restamped')
 	expect(storeStamp).toHaveBeenCalledOnce()
+})
+
+test('isCredentialStampScanBudgetFailure recognizes Durable Object CPU resets', () => {
+	expect(
+		isCredentialStampScanBudgetFailure(
+			new Error('Durable Object reset because of CPU time limit'),
+		),
+	).toBe(true)
+	expect(
+		isCredentialStampScanBudgetFailure(new Error('BudgetLimitError: exceeded')),
+	).toBe(true)
+	expect(
+		isCredentialStampScanBudgetFailure(
+			new Error('credential("KEY") is non-literal'),
+		),
+	).toBe(false)
+})
+
+test('credential stamp fleet classifies DO CPU resets as deferred_scan_budget, not unconvertible', async () => {
+	listPage.mockResolvedValueOnce([savedPackage('huge')] as never)
+	loadRow.mockResolvedValueOnce(sourceRow('huge', 'commit-huge') as never)
+	loadSource.mockRejectedValueOnce(
+		new Error('Durable Object reset because of CPU time limit') as never,
+	)
+
+	const result = await runCredentialStampFleet({
+		env: {} as Env,
+		baseUrl: 'https://heykody.dev',
+		dryRun: true,
+		limit: 5,
+	})
+
+	expect(result.deferredScanBudgetPackages).toBe(1)
+	expect(result.unconvertiblePackages).toBe(0)
+	expect(result.failedPackages).toBe(0)
+	expect(result.outcomes[0]?.outcome).toBe('deferred_scan_budget')
 })

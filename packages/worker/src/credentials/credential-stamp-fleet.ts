@@ -7,6 +7,8 @@
  * no blocking gate failures). Packages that need manifest edits go through
  * codemod `0014-seal-credential-stamps`; packages with unconvertible patterns
  * are reported as `unconvertible` for an agent attempt then Kent notify.
+ * Durable Object CPU / isolate-reset failures (large prebuilt client assets)
+ * are `deferred_scan_budget` — a known publish-path bug, not stop-and-notify.
  */
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
@@ -66,6 +68,17 @@ export type CredentialStampFleetOutcome =
 			sourceId: string
 			publishedCommit: string | null
 			stampKeyCount: number
+			outcome: 'deferred_scan_budget'
+			error: string
+	  }
+	| {
+			packageId: string
+			ownerUserId: OwnerId
+			packageName: string
+			kodyId: string
+			sourceId: string
+			publishedCommit: string | null
+			stampKeyCount: number
 			outcome: 'failed'
 			error: string
 	  }
@@ -78,6 +91,8 @@ export type CredentialStampFleetResult = {
 	missingStampPackages: number
 	needsManifestPackages: number
 	unconvertiblePackages: number
+	/** DO CPU / isolate-reset failures — known bug, not stop-and-notify. */
+	deferredScanBudgetPackages: number
 	restampedPackages: number
 	failedPackages: number
 	skippedUnpublished: number
@@ -85,6 +100,18 @@ export type CredentialStampFleetResult = {
 	outcomes: Array<CredentialStampFleetOutcome>
 	/** Blocking failure codes seen on unconvertible packages this page. */
 	unconvertibleFailureCodes: Array<CredentialStampGateFailure['code']>
+}
+
+/**
+ * True when the failure is the known Durable Object CPU blowup on large
+ * prebuilt client assets (publish seal / fleet scan), not an unconvertible
+ * credential pattern. Do not stop-and-notify Kent for these.
+ */
+export function isCredentialStampScanBudgetFailure(error: unknown): boolean {
+	const message = getErrorMessage(error)
+	return /BudgetLimitError|Durable Object reset|isolate reset|CPU time limit|Worker exceeded(?:[\s\S]*?)CPU|script exceeded(?:[\s\S]*?)cpu|overloaded CPU/i.test(
+		message,
+	)
 }
 
 function isCredentialStamp(value: unknown): value is CredentialStamp {
@@ -242,6 +269,7 @@ export async function runCredentialStampFleet(input: {
 	let missingStampPackages = 0
 	let needsManifestPackages = 0
 	let unconvertiblePackages = 0
+	let deferredScanBudgetPackages = 0
 	let restampedPackages = 0
 	let failedPackages = 0
 	let skippedUnpublished = 0
@@ -392,6 +420,21 @@ export async function runCredentialStampFleet(input: {
 				outcome: 'restamped',
 			})
 		} catch (error) {
+			if (isCredentialStampScanBudgetFailure(error)) {
+				deferredScanBudgetPackages += 1
+				outcomes.push({
+					packageId: savedPackage.id,
+					ownerUserId: savedPackage.userId,
+					packageName: savedPackage.name,
+					kodyId: savedPackage.kodyId,
+					sourceId: savedPackage.sourceId,
+					publishedCommit,
+					stampKeyCount: 0,
+					outcome: 'deferred_scan_budget',
+					error: getErrorMessage(error),
+				})
+				continue
+			}
 			failedPackages += 1
 			outcomes.push({
 				packageId: savedPackage.id,
@@ -415,6 +458,7 @@ export async function runCredentialStampFleet(input: {
 		missingStampPackages,
 		needsManifestPackages,
 		unconvertiblePackages,
+		deferredScanBudgetPackages,
 		restampedPackages,
 		failedPackages,
 		skippedUnpublished,

@@ -2,7 +2,9 @@ import { expect, test } from 'vitest'
 import {
 	buildCredentialStamp,
 	collectServerRuntimeModulePaths,
+	credentialStampMaxModuleScanBytes,
 	mergeCredentialStampIntoManifestFiles,
+	omitOversizedCredentialStampModules,
 	planCredentialStampSeal,
 	scanCredentialStamp,
 	scanLiteralMcpServerKeys,
@@ -15,6 +17,28 @@ function manifest(kody: Record<string, unknown> = {}) {
 		kody: { id: 'stamp', description: 'Stamp test.', ...kody },
 	})
 }
+
+test('omitOversizedCredentialStampModules drops huge prebuilt client bundles from the stamp scan', () => {
+	const huge = `${'a'.repeat(credentialStampMaxModuleScanBytes + 1)}`
+	const files = {
+		'package.json': manifest(),
+		'index.ts': [
+			"import { credential } from 'kody:runtime'",
+			'export default async function run() { return credential("API_KEY") }',
+		].join('\n'),
+		'public/client/main.js': huge,
+	}
+	const filtered = omitOversizedCredentialStampModules(files)
+	expect(filtered['public/client/main.js']).toBeUndefined()
+	expect(filtered['index.ts']).toBe(files['index.ts'])
+	expect(filtered['package.json']).toBe(files['package.json'])
+
+	const scanned = scanCredentialStamp(files)
+	expect(scanned.keys).toEqual(['API_KEY'])
+	expect(scanned.failures.some((f) => f.code === 'missing_description')).toBe(
+		true,
+	)
+})
 
 test('scanCredentialStamp collects sorted literal keys from credential() and placeholders', () => {
 	const result = scanCredentialStamp({

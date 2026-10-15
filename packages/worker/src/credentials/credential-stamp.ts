@@ -49,6 +49,43 @@ import {
 export const credentialStampVersion = 1 as const
 export const credentialStampFileName = 'credential-stamp.json'
 
+/**
+ * Soft cap for AST-walking a single module during stamp seal. Larger
+ * prebuilt client bundles (e.g. @kentcdodds/world-builder's ~1.7MB
+ * `public/client/main.js`) reset the Durable Object CPU budget when parsed.
+ * Client/prebuilt assets never resolve credentials server-side; skipping them
+ * keeps publish and fleet restamp safe until the dedicated publish-path fix
+ * (agent bc-58c7f5e0) lands. UTF-8 byte length.
+ */
+export const credentialStampMaxModuleScanBytes = 256 * 1024
+
+const credentialStampUtf8Encoder = new TextEncoder()
+
+export function measureCredentialStampModuleBytes(source: string): number {
+	return credentialStampUtf8Encoder.encode(source).byteLength
+}
+
+/**
+ * Drop oversized scannable modules from a package file map before stamp
+ * planning / sealing. Non-module assets and package.json are kept.
+ */
+export function omitOversizedCredentialStampModules(
+	files: Record<string, string>,
+): Record<string, string> {
+	const next: Record<string, string> = {}
+	for (const [path, content] of Object.entries(files)) {
+		if (
+			scannableModuleFilePattern.test(path) &&
+			measureCredentialStampModuleBytes(content) >
+				credentialStampMaxModuleScanBytes
+		) {
+			continue
+		}
+		next[path] = content
+	}
+	return next
+}
+
 export type CredentialDepStamp = {
 	packageId: string
 	publishedCommit: string
@@ -610,6 +647,7 @@ export function scanLiteralMcpServerKeys(files: Record<string, string>): {
 	keys: Array<string>
 	failures: Array<CredentialStampGateFailure>
 } {
+	files = omitOversizedCredentialStampModules(files)
 	const keys = new Set<string>()
 	const failures: Array<CredentialStampGateFailure> = []
 	const modulePaths = listScannableModulePaths(files)
@@ -1038,6 +1076,7 @@ export function applyCredentialStampSealPlan(
 export function scanCredentialStamp(
 	files: Record<string, string>,
 ): CredentialStampScan {
+	files = omitOversizedCredentialStampModules(files)
 	const keys = new Set<string>()
 	const failures: Array<CredentialStampGateFailure> = []
 	const oauthKeys = new Set<string>()
