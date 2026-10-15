@@ -130,6 +130,7 @@ test('install publishes clean forks, keeps failed checks inert, and propagates e
 			userId: ownerIdFromStored('user-b'),
 			expectedPackageScope: 'userb',
 			requirePackageDocs: false,
+			enforceCredentialStamp: false,
 		}),
 	)
 	// The checks workspace serves the fork's rewritten snapshot files.

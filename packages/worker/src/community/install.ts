@@ -148,6 +148,8 @@ export async function installCommunityListing(input: {
 		userId: input.userId,
 		expectedPackageScope: input.expectedPackageScope,
 		requirePackageDocs: false,
+		// Phase 1 stamp is authoring-publish only; forks stay adaptable (#3836).
+		enforceCredentialStamp: false,
 	})
 	// Overlap is safe only if both sides finish before we return. Promise.all
 	// would reject as soon as checks throw and abandon an in-flight persist,
@@ -198,6 +200,7 @@ export async function installCommunityListing(input: {
 			userId: input.userId,
 			expectedPackageScope: input.expectedPackageScope,
 			requirePackageDocs: false,
+			enforceCredentialStamp: false,
 		})
 	}
 	const summary: InstallForkSummary = {

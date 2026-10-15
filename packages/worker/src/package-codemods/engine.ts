@@ -561,6 +561,9 @@ async function runChecksOnFiles(input: {
 		baseUrl: input.baseUrl,
 		userId: input.userId,
 		requirePackageDocs: false,
+		// Platform migrations must still transform legacy credential patterns
+		// before phase 2/3 stamp enforcement (#3836).
+		enforceCredentialStamp: false,
 	})
 }
 
@@ -907,9 +910,11 @@ async function processPackageForMode(input: {
 								: {}),
 							commitMessage,
 							// Align with runChecksOnFiles preflight (requirePackageDocs:
-							// false) so legacy packages without README/AGENTS can publish
-							// approved transforms. Other publish checks still run.
+							// false, enforceCredentialStamp: false) so legacy packages
+							// without README/AGENTS and pre-stamp credential shapes can
+							// publish approved transforms. Other publish checks still run.
 							requirePackageDocs: false,
+							enforceCredentialStamp: false,
 						})
 				if (afterCommit == null) {
 					return emptyItemResult({
@@ -1274,8 +1279,9 @@ async function processRevertStep(input: {
 												? { allowLockedPublish: true }
 												: {}),
 											commitMessage: `revert codemod(${input.codemod.id})`,
-											// Same docs exemption as apply and preflight.
+											// Same docs + stamp exemptions as apply and preflight.
 											requirePackageDocs: false,
+											enforceCredentialStamp: false,
 										})
 										if (afterCommit == null) {
 											result = emptyItemResult({

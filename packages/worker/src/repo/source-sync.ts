@@ -74,6 +74,12 @@ type SyncArtifactSourceInput = {
 	 */
 	requirePackageDocs?: boolean
 	/**
+	 * Forwarded to `runRepoChecks`. Platform codemods pass `false` so legacy
+	 * credential patterns stay migratable until phase 2/3 of #3836. Omit
+	 * (default true) for authoring publish.
+	 */
+	enforceCredentialStamp?: boolean
+	/**
 	 * When false, skip the throwing publish-check gate in bootstrap / loopback
 	 * / package update sync. Community install persists an inert fork first and
 	 * runs its own `runRepoChecks` to choose live vs `adaptation_required`;
@@ -260,6 +266,9 @@ export async function syncArtifactSourceSnapshot(
 								...(input.requirePackageDocs === false
 									? { requirePackageDocs: false }
 									: {}),
+								...(input.enforceCredentialStamp === false
+									? { enforceCredentialStamp: false }
+									: {}),
 							})
 							if (!checks.ok) {
 								throw createRepoChecksFailedError(checks.results)
@@ -329,6 +338,9 @@ export async function syncArtifactSourceSnapshot(
 							: {}),
 						...(input.requirePackageDocs === false
 							? { requirePackageDocs: false }
+							: {}),
+						...(input.enforceCredentialStamp === false
+							? { enforceCredentialStamp: false }
 							: {}),
 						...(input.runPublishChecks === false
 							? { runPublishChecks: false }
@@ -407,6 +419,9 @@ export async function syncArtifactSourceSnapshot(
 					: {}),
 				...(input.requirePackageDocs === false
 					? { requirePackageDocs: false }
+					: {}),
+				...(input.enforceCredentialStamp === false
+					? { enforceCredentialStamp: false }
 					: {}),
 			})
 			if (!checkRun.ok) {

@@ -1549,6 +1549,13 @@ export async function runRepoChecks(input: {
 	 * existing listings stay forkable and migratable.
 	 */
 	requirePackageDocs?: boolean
+	/**
+	 * When false, credential-stamp gate findings stay informational and do
+	 * not fail `runRepoChecks` early. Community install and platform
+	 * codemods pass false so legacy packages remain forkable and migratable
+	 * until phase 2/3 of #3836. Omit (default true) for authoring publish.
+	 */
+	enforceCredentialStamp?: boolean
 }): Promise<RepoCheckRunResult> {
 	const manifestContent = await input.workspace.readFile(input.manifestPath)
 	if (manifestContent == null) {
@@ -1659,15 +1666,17 @@ export async function runRepoChecks(input: {
 	// Before any gate that returns early, so owners see it while fixing others.
 	// May auto-write missing kody.credentials keys into sourceFiles (never
 	// overwrites descriptions). Hard-fails on unstampable patterns / server eval
-	// / missing descriptions (issue #3836 phase 1).
+	// / missing descriptions (issue #3836 phase 1) unless the caller opts out
+	// (community install / platform codemods).
 	const credentialPatternCheck = buildCredentialPatternCheck(sourceFiles)
 	sourceFiles = credentialPatternCheck.sourceFiles
+	const enforceCredentialStamp = input.enforceCredentialStamp !== false
 	results.push({
 		kind: credentialPatternCheck.kind,
-		ok: credentialPatternCheck.ok,
+		ok: enforceCredentialStamp ? credentialPatternCheck.ok : true,
 		message: credentialPatternCheck.message,
 	})
-	if (!credentialPatternCheck.ok) {
+	if (enforceCredentialStamp && !credentialPatternCheck.ok) {
 		return toRepoCheckRunResult({ results, manifest, sourceFiles })
 	}
 	const credentialNeedsCheck = await buildCredentialNeedsCheck({

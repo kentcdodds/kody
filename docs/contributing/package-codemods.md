@@ -377,7 +377,8 @@ package-scoped secret before the user one, and no static scan can see that, so
 rows with `scope = 'package'`. Publish seals literal credential uses into a
 credential stamp (issue #3836 phase 1) and **fails the build** on non-literal or
 unstampable patterns. This module yields a publish gate failure for `index.ts`
-(computed integration/secret names, `kody.mcp`, and `|scope=`):
+(computed integration/secret names and `|scope=`; `kody.mcp` is reported by this
+codemod but does not fail publish in phase 1):
 
 ```ts
 import { createAuthenticatedFetch, kody } from 'kody:runtime'
@@ -397,9 +398,10 @@ export default async function digest(input: { account: string; key: string }) {
 Publish error (credentials check `ok: false`): declare every credential this
 package can use as a `kody.credentials` slot with a real description, branch
 with literal `credential("KEY")` / `createAuthenticatedFetch("account")` only,
-and remove `|scope=` / computed names. `credential.named()` stays limited to ad
-hoc runs and unshared personal-org packages (not stamped). Migrating `kody.mcp`
-callers to mcp slots is phase 2 of #3836.
+and remove `|scope=` / computed names. The `kody.mcp.linear…` call is still a
+0010 finding for migration tracking; it does not fail the stamp gate until
+phase 2. `credential.named()` stays limited to ad hoc runs and unshared
+personal-org packages (not stamped).
 
 Save each scan step result as its own JSON file, then print the report over all
 of them:

@@ -179,8 +179,8 @@ test('buildCredentialStamp sorts keys and hashes dep stamp pins', async () => {
 	expect(again.stampHash).toBe(stamp.stampHash)
 })
 
-test('server eval / new Function / non-literal import fail; UI client entry is exempt', () => {
-	const serverEval = scanCredentialStamp({
+function appManifestFiles(extra: Record<string, string>) {
+	return {
 		'package.json': JSON.stringify({
 			name: '@kody/app',
 			exports: { '.': './src/server.ts' },
@@ -190,61 +190,73 @@ test('server eval / new Function / non-literal import fail; UI client entry is e
 				app: { entry: './src/server.ts', client: './src/client.ts' },
 			},
 		}),
-		'src/server.ts': 'export default { fetch() { return eval("1") } }',
-		'src/client.ts': 'eval("ok"); export {}',
-	})
+		...extra,
+	}
+}
+
+test('server eval / new Function / non-literal import fail; UI client entry is exempt', () => {
+	const serverEval = scanCredentialStamp(
+		appManifestFiles({
+			'src/server.ts': 'export default { fetch() { return eval("1") } }',
+			'src/client.ts': 'eval("ok"); export {}',
+		}),
+	)
 	expect(serverEval.failures.some((f) => f.code === 'server_eval')).toBe(true)
 	expect(serverEval.failures.some((f) => f.path === 'src/server.ts')).toBe(true)
 	expect(serverEval.failures.some((f) => f.path === 'src/client.ts')).toBe(
 		false,
 	)
 
-	const uiOnly = scanCredentialStamp({
-		'package.json': JSON.stringify({
-			name: '@kody/app',
-			exports: { '.': './src/server.ts' },
-			kody: {
-				id: 'app',
-				description: 'App.',
-				app: { entry: './src/server.ts', client: './src/client.ts' },
-			},
+	const uiOnly = scanCredentialStamp(
+		appManifestFiles({
+			'src/server.ts':
+				'export default { fetch() { return new Response("ok") } }',
+			'src/client.ts':
+				'const run = new Function("return 1"); import(name); export {}',
 		}),
-		'src/server.ts': 'export default { fetch() { return new Response("ok") } }',
-		'src/client.ts':
-			'const run = new Function("return 1"); import(name); export {}',
-	})
+	)
 	expect(uiOnly.failures.filter((f) => f.code === 'server_eval')).toEqual([])
 
-	const shared = scanCredentialStamp({
-		'package.json': JSON.stringify({
-			name: '@kody/app',
-			exports: { '.': './src/server.ts' },
-			kody: {
-				id: 'app',
-				description: 'App.',
-				app: { entry: './src/server.ts', client: './src/client.ts' },
-			},
+	const shared = scanCredentialStamp(
+		appManifestFiles({
+			'src/server.ts':
+				'import { boom } from "./shared.ts"; export default { fetch: boom }',
+			'src/client.ts': 'import { boom } from "./shared.ts"; boom()',
+			'src/shared.ts': 'export const boom = () => eval("1")',
 		}),
-		'src/server.ts':
-			'import { boom } from "./shared.ts"; export default { fetch: boom }',
-		'src/client.ts': 'import { boom } from "./shared.ts"; boom()',
-		'src/shared.ts': 'export const boom = () => eval("1")',
-	})
+	)
 	expect(shared.failures.some((f) => f.path === 'src/shared.ts')).toBe(true)
 
-	const serverPaths = collectServerRuntimeModulePaths({
-		'package.json': JSON.stringify({
-			name: '@kody/app',
-			exports: { '.': './src/server.ts' },
-			kody: {
-				id: 'app',
-				description: 'App.',
-				app: { entry: './src/server.ts', client: './src/client.ts' },
-			},
+	const aliases = [
+		'globalThis.eval("1")',
+		'window.eval("1")',
+		'globalThis["eval"]("1")',
+		'new globalThis.Function("return 1")',
+		'Function("return 1")()',
+		'globalThis.Function("return 1")()',
+	]
+	for (const expression of aliases) {
+		const aliased = scanCredentialStamp(
+			appManifestFiles({
+				'src/server.ts': `export default { fetch() { return ${expression} } }`,
+				'src/client.ts': 'export {}',
+			}),
+		)
+		expect(
+			aliased.failures.some(
+				(f) => f.code === 'server_eval' && f.path === 'src/server.ts',
+			),
+			expression,
+		).toBe(true)
+	}
+
+	const serverPaths = collectServerRuntimeModulePaths(
+		appManifestFiles({
+			'src/server.ts':
+				'export default { fetch() { return new Response("ok") } }',
+			'src/client.ts': 'export {}',
 		}),
-		'src/server.ts': 'export default { fetch() { return new Response("ok") } }',
-		'src/client.ts': 'export {}',
-	})
+	)
 	expect(serverPaths.has('src/server.ts')).toBe(true)
 	expect(serverPaths.has('src/client.ts')).toBe(false)
 })

@@ -1143,6 +1143,29 @@ test('runRepoChecks validates package skills and fails publish on malformed SKIL
 	})
 })
 
+test('runRepoChecks can keep credential stamp findings informational', async () => {
+	const { result } = await runChecks(
+		packageFiles(
+			manifest('legacy-credentials-informational', {
+				secretMounts: { token: { name: 'TOKEN' } },
+			}),
+			{
+				'src/index.ts': [
+					"import { createAuthenticatedFetch } from 'kody:runtime'",
+					'export const ready = true',
+					'export const run = (name: string) => createAuthenticatedFetch(name)',
+				].join('\n'),
+			},
+		),
+		{ enforceCredentialStamp: false },
+	)
+	expect(result.ok).toBe(true)
+	const check = findCheck(result, 'credentials')
+	expect(check?.ok).toBe(true)
+	expect(check?.message).toMatch(/Credential stamp publish gate/)
+	expect(check?.message).toMatch(/secretMounts|computed integration/)
+})
+
 test('runRepoChecks hard-fails unstampable credential patterns (issue #3836 phase 1)', async () => {
 	const { result } = await runChecks(
 		packageFiles(

@@ -450,6 +450,40 @@ export function collectServerRuntimeModulePaths(
 	return serverReachable
 }
 
+/**
+ * True when `node` is `eval` / `Function`, or a member access that ends in
+ * those names (`globalThis.eval`, `window['Function']`, `new globalThis.Function`).
+ * Call-form `Function("…")()` is covered the same way as `new Function`.
+ */
+function isEvalOrFunctionTarget(node: AstNode | null | undefined): boolean {
+	if (!node) return false
+	if (node.type === 'Identifier') {
+		const name = getNodeName(node)
+		return name === 'eval' || name === 'Function'
+	}
+	if (
+		node.type === 'MemberExpression' ||
+		node.type === 'OptionalMemberExpression'
+	) {
+		if (node.computed === true) {
+			const literal =
+				node.property?.type === 'Literal' ||
+				node.property?.type === 'StringLiteral'
+					? typeof node.property.value === 'string'
+						? node.property.value
+						: null
+					: null
+			return literal === 'eval' || literal === 'Function'
+		}
+		const name = getNodeName(node.property)
+		return name === 'eval' || name === 'Function'
+	}
+	return false
+}
+
+const serverEvalTextFallbackPattern =
+	/\b(?:globalThis|window|global|self)\s*(?:\?\.)?\s*(?:\.\s*(?:eval|Function)\b|\[\s*['"](?:eval|Function)['"]\s*\])|\beval\s*\(|\b(?:new\s+)?Function\s*\(|\bimport\s*\(\s*[^'"`]/
+
 function scanServerEvalFailures(
 	files: Record<string, string>,
 	serverPaths: ReadonlySet<string>,
@@ -460,9 +494,7 @@ function scanServerEvalFailures(
 		if (source == null) continue
 		const parsed = parseModule(source)
 		if (!parsed) {
-			if (
-				/\beval\s*\(|\bnew\s+Function\s*\(|\bimport\s*\(\s*[^'"`]/.test(source)
-			) {
+			if (serverEvalTextFallbackPattern.test(source)) {
 				failures.push({
 					code: 'server_eval',
 					path,
@@ -476,17 +508,9 @@ function scanServerEvalFailures(
 			if (foundEval) return
 			if (
 				(node.type === 'CallExpression' ||
-					node.type === 'OptionalCallExpression') &&
-				node.callee?.type === 'Identifier' &&
-				getNodeName(node.callee) === 'eval'
-			) {
-				foundEval = true
-				return
-			}
-			if (
-				node.type === 'NewExpression' &&
-				node.callee?.type === 'Identifier' &&
-				getNodeName(node.callee) === 'Function'
+					node.type === 'OptionalCallExpression' ||
+					node.type === 'NewExpression') &&
+				isEvalOrFunctionTarget(node.callee)
 			) {
 				foundEval = true
 			}
@@ -499,7 +523,7 @@ function scanServerEvalFailures(
 			failures.push({
 				code: 'server_eval',
 				path,
-				message: `${path}: server-runtime code must not use eval, new Function, or import() with a non-literal specifier. Move that code into a kody.app.client (UI) entry, or rewrite it to static imports. Shared modules imported by server entries follow the server rule.`,
+				message: `${path}: server-runtime code must not use eval, new Function (including globalThis/window aliases and Function("…")()), or import() with a non-literal specifier. Move that code into a kody.app.client (UI) entry, or rewrite it to static imports. Shared modules imported by server entries follow the server rule.`,
 			})
 		}
 	}

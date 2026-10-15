@@ -1654,6 +1654,11 @@ class RepoSessionBase extends DurableObject<Env> {
 		 */
 		requirePackageDocs?: boolean
 		/**
+		 * Forwarded to `runRepoChecks`. Platform codemods pass false so
+		 * legacy credential patterns stay migratable (#3836 phase 1).
+		 */
+		enforceCredentialStamp?: boolean
+		/**
 		 * When false, skip the throwing publish-check gate. Community install
 		 * persists first and evaluates checks separately.
 		 */
@@ -1827,6 +1832,9 @@ class RepoSessionBase extends DurableObject<Env> {
 							: {}),
 						...(input.requirePackageDocs === false
 							? { requirePackageDocs: false }
+							: {}),
+						...(input.enforceCredentialStamp === false
+							? { enforceCredentialStamp: false }
 							: {}),
 					})
 					if (!checks.ok) {
@@ -2486,6 +2494,11 @@ class RepoSessionBase extends DurableObject<Env> {
 		 * `false`; authoring publish defaults to requiring docs.
 		 */
 		requirePackageDocs?: boolean
+		/**
+		 * Forwarded to `runRepoChecks`. Codemod / community lanes may pass
+		 * `false`; authoring publish defaults to enforcing the stamp.
+		 */
+		enforceCredentialStamp?: boolean
 	}): Promise<RepoSessionCheckRun> {
 		const { sessionRow, source } = await this.getSessionState(
 			input.sessionId,
@@ -2512,6 +2525,9 @@ class RepoSessionBase extends DurableObject<Env> {
 			expectedPackageScope: input.expectedPackageScope,
 			...(input.requirePackageDocs === false
 				? { requirePackageDocs: false }
+				: {}),
+			...(input.enforceCredentialStamp === false
+				? { enforceCredentialStamp: false }
 				: {}),
 		})
 		const { sourceFiles: _sourceFiles, ...publicResult } = result

@@ -454,6 +454,28 @@ test('syncArtifactSourceSnapshot runs package checks before updating a published
 	expect(docsExempt.runChecks).toHaveBeenCalledWith(
 		expect.objectContaining({ requirePackageDocs: false }),
 	)
+
+	const stampExempt = setupSync(
+		sourceRow({
+			...packageSource,
+			published_commit: 'commit-existing-1',
+		}),
+		publishingSession('commit-stamp-exempt'),
+	)
+	await expect(
+		syncArtifactSourceSnapshot({
+			...syncInput,
+			requirePackageDocs: false,
+			enforceCredentialStamp: false,
+			files: { 'package.json': packageJson },
+		}),
+	).resolves.toBe('commit-stamp-exempt')
+	expect(stampExempt.runChecks).toHaveBeenCalledWith(
+		expect.objectContaining({
+			requirePackageDocs: false,
+			enforceCredentialStamp: false,
+		}),
+	)
 })
 
 test('syncArtifactSourceSnapshot keeps the session when the publish pauses for credential needs approval', async () => {
@@ -507,6 +529,24 @@ test('syncArtifactSourceSnapshot forwards bootstrap publish flags', async () => 
 	).resolves.toBe('commit-bootstrap-docs')
 	expect(docsExempt.bootstrapSource).toHaveBeenCalledWith(
 		expect.objectContaining({ requirePackageDocs: false }),
+	)
+
+	const stampExempt = setupSync(sourceRow(packageSource), {
+		bootstrapSource: bootstrapped('commit-bootstrap-stamp'),
+	})
+	await expect(
+		syncArtifactSourceSnapshot({
+			...syncInput,
+			requirePackageDocs: false,
+			enforceCredentialStamp: false,
+			files: { 'package.json': packageJson },
+		}),
+	).resolves.toBe('commit-bootstrap-stamp')
+	expect(stampExempt.bootstrapSource).toHaveBeenCalledWith(
+		expect.objectContaining({
+			requirePackageDocs: false,
+			enforceCredentialStamp: false,
+		}),
 	)
 
 	const scoped = setupSync(sourceRow(packageSource), {
