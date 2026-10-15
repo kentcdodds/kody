@@ -47,6 +47,8 @@ test('buildCredentialPatternCheck auto-writes missing keys and fails without des
 	expect(result.ok).toBe(false)
 	expect(result.stampKeys).toEqual(['TOKEN'])
 	expect(result.message).toMatch(/missing a description/)
+	expect(result.message).toMatch(/Missing kody.credentials keys/)
+	expect(result.message).not.toMatch(/Auto-wrote/)
 	const parsed = JSON.parse(result.sourceFiles['package.json']!) as {
 		kody: { credentials: Record<string, unknown> }
 	}

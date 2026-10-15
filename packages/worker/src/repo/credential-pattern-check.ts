@@ -263,7 +263,7 @@ export function buildCredentialPatternCheck(
 		const addedNote =
 			merged.addedKeys.length > 0
 				? [
-						`Auto-wrote missing kody.credentials keys (descriptions still required): ${merged.addedKeys.join(', ')}.`,
+						`Missing kody.credentials keys (add these with a real description; publish seals them into the stamp and never overwrites a description you already wrote): ${merged.addedKeys.join(', ')}.`,
 					]
 				: []
 		return {
@@ -318,7 +318,7 @@ export function buildCredentialPatternCheck(
 			: 'Credential stamp keys: (none).'
 	const addedLine =
 		merged.addedKeys.length > 0
-			? `Auto-wrote missing kody.credentials keys (existing descriptions preserved): ${merged.addedKeys.join(', ')}.`
+			? `Added missing kody.credentials keys for this publish snapshot (existing descriptions preserved): ${merged.addedKeys.join(', ')}.`
 			: null
 	return {
 		kind: 'credentials',

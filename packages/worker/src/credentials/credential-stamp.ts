@@ -11,7 +11,6 @@ import {
 	type AstNode,
 	constantsWithoutShadows,
 	createModuleConstantsReader,
-	getCalleeName,
 	getNodeName,
 	listScannableModulePaths,
 	parseModule,
@@ -211,25 +210,68 @@ function collectCredentialBindings(body: Array<AstNode>): CredentialBindings {
 	return { functions, runtimeObjects }
 }
 
+/** Property name of a member expression, including `obj['literal']`. */
+function memberPropertyName(node: AstNode | undefined): string | null {
+	if (
+		node?.type !== 'MemberExpression' &&
+		node?.type !== 'OptionalMemberExpression'
+	) {
+		return null
+	}
+	if (node.computed === true) {
+		const property = node.property
+		if (property?.type === 'StringLiteral' || property?.type === 'Literal') {
+			return getNodeName(property)
+		}
+		return null
+	}
+	return getNodeName(node.property)
+}
+
+/**
+ * `credential` / `credentials` as an imported binding or as
+ * `kody.credential` / `kody['credential']` on a tracked runtime object.
+ */
+function isCredentialFunctionValue(
+	node: AstNode | undefined,
+	bindings: CredentialBindings,
+): boolean {
+	if (node?.type === 'Identifier') {
+		return bindings.functions.has(getNodeName(node) ?? '')
+	}
+	if (
+		node?.type !== 'MemberExpression' &&
+		node?.type !== 'OptionalMemberExpression'
+	) {
+		return false
+	}
+	if (node.object?.type !== 'Identifier') return false
+	if (!bindings.runtimeObjects.has(getNodeName(node.object) ?? '')) {
+		return false
+	}
+	const property = memberPropertyName(node)
+	return property != null && credentialFunctionNames.has(property)
+}
+
 function isCredentialCallee(
 	callee: AstNode | undefined,
 	bindings: CredentialBindings,
 ) {
-	if (callee?.type === 'Identifier') {
-		return bindings.functions.has(getNodeName(callee) ?? '')
-	}
+	return isCredentialFunctionValue(callee, bindings)
+}
+
+function isCredentialNamedMember(
+	node: AstNode | undefined,
+	bindings: CredentialBindings,
+): boolean {
 	if (
-		(callee?.type === 'MemberExpression' ||
-			callee?.type === 'OptionalMemberExpression') &&
-		callee.computed !== true &&
-		callee.object?.type === 'Identifier'
+		node?.type !== 'MemberExpression' &&
+		node?.type !== 'OptionalMemberExpression'
 	) {
-		return (
-			bindings.runtimeObjects.has(getNodeName(callee.object) ?? '') &&
-			credentialFunctionNames.has(getCalleeName(callee) ?? '')
-		)
+		return false
 	}
-	return false
+	if (memberPropertyName(node) !== 'named') return false
+	return isCredentialFunctionValue(node.object, bindings)
 }
 
 function isNonReferenceName(node: AstNode, parent: AstNode) {
@@ -269,16 +311,35 @@ function scanParsedCredentialKeys(
 	const bindings = collectCredentialBindings(parsed.program?.body ?? [])
 	walkAst(parsed, (node, ancestors) => {
 		if (
-			(node.type === 'CallExpression' ||
-				node.type === 'OptionalCallExpression') &&
-			isCredentialCallee(node.callee, bindings)
+			node.type === 'CallExpression' ||
+			node.type === 'OptionalCallExpression'
 		) {
-			const key = resolveStringExpression(
-				node.arguments?.[0],
-				constantsWithoutShadows(constants, ancestors),
-			)
-			if (key == null) scan.computed()
-			else scan.key(key)
+			if (isCredentialNamedMember(node.callee, bindings)) {
+				scan.named()
+				return
+			}
+			if (isCredentialCallee(node.callee, bindings)) {
+				const key = resolveStringExpression(
+					node.arguments?.[0],
+					constantsWithoutShadows(constants, ancestors),
+				)
+				if (key == null) scan.computed()
+				else scan.key(key)
+				return
+			}
+		}
+		if (
+			(node.type === 'MemberExpression' ||
+				node.type === 'OptionalMemberExpression') &&
+			isCredentialNamedMember(node, bindings)
+		) {
+			const parent = ancestors.at(-1)
+			const called =
+				parent &&
+				(parent.type === 'CallExpression' ||
+					parent.type === 'OptionalCallExpression') &&
+				parent.callee === node
+			if (!called) scan.named()
 			return
 		}
 		if (node.type !== 'Identifier') return
@@ -294,7 +355,7 @@ function scanParsedCredentialKeys(
 			(parent.type === 'MemberExpression' ||
 				parent.type === 'OptionalMemberExpression') &&
 			parent.object === node &&
-			getNodeName(parent.property) === 'named'
+			memberPropertyName(parent) === 'named'
 		if (isNamedAccess) {
 			scan.named()
 			return
@@ -635,7 +696,7 @@ function missingDescriptionMessage(
 			]
 		}),
 	)
-	return `Credential stamp keys missing a description in kody.credentials: ${missing.join(', ')}. Placeholder descriptions are not allowed — write what each credential is for, then publish again. Example:\n\n"kody": {\n  "credentials": ${JSON.stringify(example, null, 2).replace(/\n/g, '\n  ')}\n}\n\nPublish auto-writes missing keys into kody.credentials and never overwrites a description you already wrote.`
+	return `Credential stamp keys missing a description in kody.credentials: ${missing.join(', ')}. Placeholder descriptions are not allowed — write what each credential is for in package.json, then publish again. Example:\n\n"kody": {\n  "credentials": ${JSON.stringify(example, null, 2).replace(/\n/g, '\n  ')}\n}\n\nPublish seals every stamped key into kody.credentials and never overwrites a description you already wrote.`
 }
 
 function dedupeFailures(failures: Array<CredentialStampGateFailure>) {

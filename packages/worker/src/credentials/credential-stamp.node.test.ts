@@ -87,6 +87,33 @@ test('scanCredentialStamp fails credential.named() in stamped packages', () => {
 	})
 	expect(result.failures.some((f) => f.code === 'credential_named')).toBe(true)
 	expect(result.failures[0]?.message).toMatch(/ad hoc execute/)
+
+	const viaKody = scanCredentialStamp({
+		'package.json': manifest(),
+		'src/index.ts': [
+			"import { kody } from 'kody:runtime'",
+			'export default async function run() {',
+			'  return kody.credential.named("API_KEY")',
+			'}',
+		].join('\n'),
+	})
+	expect(viaKody.failures.some((f) => f.code === 'credential_named')).toBe(true)
+
+	const computedMember = scanCredentialStamp({
+		'package.json': manifest({
+			credentials: {
+				API_KEY: { kind: 'secret', description: 'API key.' },
+			},
+		}),
+		'src/index.ts': [
+			"import { kody } from 'kody:runtime'",
+			'export default async function run() {',
+			'  return kody["credential"]("API_KEY")',
+			'}',
+		].join('\n'),
+	})
+	expect(computedMember.failures).toEqual([])
+	expect(computedMember.keys).toEqual(['API_KEY'])
 })
 
 test('scanCredentialStamp fails missing descriptions without inventing placeholders', () => {
