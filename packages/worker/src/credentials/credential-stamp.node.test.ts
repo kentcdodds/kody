@@ -304,7 +304,7 @@ function assetsAppFiles(extra: Record<string, string>) {
 	}
 }
 
-test('kody.app.assets modules are not scannable and stay off the server eval graph', () => {
+test('unreferenced kody.app.assets modules are not scannable; server-imported assets stay covered', () => {
 	expect(
 		readPackageAppAssetsDirectory(
 			JSON.stringify({ kody: { app: { assets: './public/' } } }),
@@ -313,20 +313,44 @@ test('kody.app.assets modules are not scannable and stay off the server eval gra
 	expect(isPackageAppAssetPath('public/client/main.js', 'public')).toBe(true)
 	expect(isPackageAppAssetPath('src/server.ts', 'public')).toBe(false)
 
-	const files = assetsAppFiles({
+	const unreferenced = assetsAppFiles({
 		'src/server.ts': 'export default { fetch() { return new Response("ok") } }',
 		'public/client/main.js':
 			'eval("asset"); new Function("return 1"); import(name); credential("LEAK")',
 	})
-	expect(listScannableModulePaths(files)).toEqual(['src/server.ts'])
-	expect(listScannableModulePaths(files)).not.toContain('public/client/main.js')
-	const serverPaths = collectServerRuntimeModulePaths(files)
-	expect(serverPaths.has('src/server.ts')).toBe(true)
-	expect(serverPaths.has('public/client/main.js')).toBe(false)
+	expect(listScannableModulePaths(unreferenced)).toEqual(['src/server.ts'])
+	expect(listScannableModulePaths(unreferenced)).not.toContain(
+		'public/client/main.js',
+	)
+	const unreferencedServer = collectServerRuntimeModulePaths(unreferenced)
+	expect(unreferencedServer.has('src/server.ts')).toBe(true)
+	expect(unreferencedServer.has('public/client/main.js')).toBe(false)
 
-	const stamp = scanCredentialStamp(files)
-	expect(stamp.failures.filter((f) => f.code === 'server_eval')).toEqual([])
-	expect(stamp.keys).not.toContain('LEAK')
+	const unreferencedStamp = scanCredentialStamp(unreferenced)
+	expect(
+		unreferencedStamp.failures.filter((f) => f.code === 'server_eval'),
+	).toEqual([])
+	expect(unreferencedStamp.keys).not.toContain('LEAK')
+
+	// A server import of an asset module must still stamp credentials and
+	// enforce server_eval (reviewers: do not exempt by directory alone).
+	const imported = assetsAppFiles({
+		'src/server.ts':
+			'import "../public/helper.js"; export default { fetch() { return new Response("ok") } }',
+		'public/helper.js':
+			'import { credential } from "kody:runtime"; export const leak = () => credential("LEAK"); eval("1")',
+	})
+	expect(listScannableModulePaths(imported)).toContain('public/helper.js')
+	expect(
+		collectServerRuntimeModulePaths(imported).has('public/helper.js'),
+	).toBe(true)
+	const importedStamp = scanCredentialStamp(imported)
+	expect(importedStamp.keys).toContain('LEAK')
+	expect(
+		importedStamp.failures.some(
+			(f) => f.code === 'server_eval' && f.path === 'public/helper.js',
+		),
+	).toBe(true)
 })
 
 test('large prebuilt client asset does not fail stamp and stays cheap to scan', () => {

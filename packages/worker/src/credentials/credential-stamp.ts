@@ -12,7 +12,6 @@ import {
 	constantsWithoutShadows,
 	createModuleConstantsReader,
 	getNodeName,
-	isPackageAppAssetPath,
 	listScannableModulePaths,
 	parseModule,
 	resolveStringExpression,
@@ -25,7 +24,6 @@ import {
 	type PackageCredentialScan,
 } from '#worker/credentials/credential-inventory-scan.ts'
 import {
-	getPackageAppAssetsDirectory,
 	getPackageAppClientEntryPath,
 	getPackageAppEntryPath,
 	listPackageSubscriptions,
@@ -460,7 +458,10 @@ export function collectServerRuntimeModulePaths(
 	}
 	void getPackageAppClientEntryPath(manifest)
 
-	const assetsDirectory = getPackageAppAssetsDirectory(manifest)
+	// Reachability alone keeps unreferenced static assets (multi-MB client
+	// bundles under kody.app.assets) off this set. Do not drop assets by
+	// directory prefix: a server import of an asset module must still follow
+	// the server_eval rule and stay stamp-scanned via listScannableModulePaths.
 	const serverReachable = new Set<string>()
 	for (const entry of serverEntries) {
 		for (const path of collectReachableSourceFilePaths({
@@ -468,10 +469,7 @@ export function collectServerRuntimeModulePaths(
 			entryPoint: entry,
 			rootPackage,
 		})) {
-			if (
-				scannableModuleFilePattern.test(path) &&
-				!isPackageAppAssetPath(path, assetsDirectory)
-			) {
+			if (scannableModuleFilePattern.test(path)) {
 				serverReachable.add(path)
 			}
 		}

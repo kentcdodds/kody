@@ -513,9 +513,13 @@ export function isPackageAppAssetPath(
 
 /**
  * Modules the package can run: every scannable file except test-named ones
- * and files under `kody.app.assets`, plus test-named files reachable from
- * package.json runtime entries (including app, job, and subscription
- * handlers) via static or bundler-resolved imports.
+ * and unreferenced files under `kody.app.assets`, plus test-named or asset
+ * files reachable from package.json runtime entries (including app, job, and
+ * subscription handlers) via static or bundler-resolved imports.
+ *
+ * Static prebuilt client bundles under assets are skipped for CPU (they are
+ * never imported). An asset that a server/runtime entry actually imports
+ * stays scannable so credential stamps and server_eval still cover it.
  */
 export function listScannableModulePaths(files: Record<string, string>) {
 	const assetsDirectory = readPackageAppAssetsDirectory(
@@ -523,9 +527,7 @@ export function listScannableModulePaths(files: Record<string, string>) {
 	)
 	const modulePaths = Object.keys(files).filter(
 		(path) =>
-			typeof files[path] === 'string' &&
-			scannableModuleFilePattern.test(path) &&
-			!isPackageAppAssetPath(path, assetsDirectory),
+			typeof files[path] === 'string' && scannableModuleFilePattern.test(path),
 	)
 	const modulePathSet = new Set(modulePaths)
 	const resolveEntry = (entry: string) => {
@@ -553,9 +555,12 @@ export function listScannableModulePaths(files: Record<string, string>) {
 			if (target) queue.push(target)
 		}
 	}
-	return modulePaths.filter(
-		(path) => !testFilePattern.test(path) || runtime.has(path),
-	)
+	return modulePaths.filter((path) => {
+		if (runtime.has(path)) return true
+		if (testFilePattern.test(path)) return false
+		if (isPackageAppAssetPath(path, assetsDirectory)) return false
+		return true
+	})
 }
 
 const packageManifestPath = 'package.json'
