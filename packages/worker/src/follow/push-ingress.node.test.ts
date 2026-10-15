@@ -66,6 +66,8 @@ function pushedEvent(
  * after this attempt has already read the row.
  */
 function missFirstPendingCas(db: D1Database): D1Database {
+	// Contended writes are a conditional UPDATE; fresh windows an INSERT.
+	const pendingWrite = /(?:INSERT INTO|UPDATE)\s+follow_push_pending/
 	let armed = true
 	const originalPrepare = db.prepare.bind(db)
 	return new Proxy(db, {
@@ -73,7 +75,7 @@ function missFirstPendingCas(db: D1Database): D1Database {
 			if (prop !== 'prepare') return Reflect.get(target, prop, receiver)
 			return (sql: string) => {
 				const statement = originalPrepare(sql)
-				if (!armed || !sql.includes('ON CONFLICT')) return statement
+				if (!armed || !pendingWrite.test(sql)) return statement
 				const originalBind = statement.bind.bind(statement)
 				return new Proxy(statement, {
 					get(stmtTarget, stmtProp, stmtReceiver) {
