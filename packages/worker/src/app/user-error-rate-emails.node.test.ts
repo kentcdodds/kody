@@ -95,11 +95,13 @@ function createKv() {
 function createEnv(input: {
 	users: Array<{
 		stable_user_id: string
+		org_id?: string
 		email: string
 		event_count: number
 		error_count: number
 	}>
 	kv?: KVNamespace
+	onUsageRollupsQuery?: (query: string) => void
 }) {
 	return {
 		APP_DB: {
@@ -111,7 +113,28 @@ function createEnv(input: {
 					},
 					async all<T>() {
 						if (normalized.includes('from usage_rollups')) {
-							return { results: input.users as Array<T> }
+							// Require the JOIN predicate, not only SELECT personal_org_id AS org_id.
+							const joinsOnPersonalOrg =
+								/inner join users u on coalesce\(nullif\(trim\(u\.personal_org_id\), ''\), u\.stable_user_id\) = r\.user_id/.test(
+									normalized,
+								)
+							if (
+								!joinsOnPersonalOrg ||
+								/inner join users u on u\.stable_user_id = r\.user_id/.test(
+									normalized,
+								)
+							) {
+								throw new Error(
+									`Error-rate sweep must JOIN users on personalOrgIdSql = r.user_id: ${query}`,
+								)
+							}
+							input.onUsageRollupsQuery?.(query)
+							return {
+								results: input.users.map((user) => ({
+									...user,
+									org_id: user.org_id ?? user.stable_user_id,
+								})) as Array<T>,
+							}
 						}
 						return { results: [] }
 					},
@@ -183,6 +206,56 @@ test('error-rate emails skip below-threshold users and claim once per month', as
 	const again = await sendUserErrorRateEmails({ env, now })
 	expect(again).toEqual({ status: 'no_warnings' })
 	expect(sendCloudflareEmail).not.toHaveBeenCalled()
+})
+
+test('error-rate sweep joins usage rollups by personal org id when distinct from person id', async () => {
+	sendCloudflareEmail.mockClear()
+	listRunRecords.mockResolvedValueOnce({ runs: [], nextCursor: null })
+	const personId = 'person-distinct'
+	const orgId = 'org-distinct'
+	expect(personId).not.toBe(orgId)
+	const { kv, store } = createKv()
+	const queries: Array<string> = []
+	const result = await sendUserErrorRateEmails({
+		env: createEnv({
+			users: [
+				{
+					stable_user_id: personId,
+					org_id: orgId,
+					email: 'ada@example.com',
+					event_count: 20,
+					error_count: 10,
+				},
+			],
+			kv,
+			onUsageRollupsQuery(query) {
+				queries.push(query)
+			},
+		}),
+		now: new Date('2026-08-15T12:00:00.000Z'),
+	})
+	expect(result).toEqual({ status: 'notified', emailedUsers: 1 })
+	expect(queries).toHaveLength(1)
+	expect(queries[0]).toMatch(
+		/INNER JOIN users u ON COALESCE\(NULLIF\(TRIM\(u\.personal_org_id\), ''\), u\.stable_user_id\) = r\.user_id/,
+	)
+	expect(queries[0]).not.toMatch(
+		/INNER JOIN users u ON u\.stable_user_id = r\.user_id/,
+	)
+	expect(sendCloudflareEmail.mock.calls[0]?.[1]).toMatchObject({
+		to: 'ada@example.com',
+	})
+	expect(listRunRecords).toHaveBeenCalledWith(
+		expect.objectContaining({ userId: ownerIdFromStored(orgId) }),
+	)
+	expect(
+		store.get(
+			userErrorRateEmailKvKey({
+				userId: personId,
+				month: '2026-08',
+			}),
+		),
+	).toBeTruthy()
 })
 
 test('error-rate email names each failing package once with its error and a run link', async () => {
