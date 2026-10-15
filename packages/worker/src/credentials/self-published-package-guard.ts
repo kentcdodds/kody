@@ -4,8 +4,6 @@ import { isSelfPublishRequest } from '#worker/package-capabilities/went-public-a
 import { getSavedPackageByIdInAnyOrg } from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { CredentialNeedUndeclaredError } from './credential-need-enforcement.ts'
-import { type PackageStamp } from './package-stamp.ts'
-
 const selfPublishedByRequest = new WeakMap<
 	RequestContext,
 	Map<string, Promise<SavedPackageRecord | null>>
@@ -53,10 +51,10 @@ function selfPublishedPackageFor(
 export async function assertSelfPublishedPackageResolvesNothing(input: {
 	env: Env
 	request: RequestContext | null
-	packageStamp: PackageStamp | null | undefined
+	packageId: string | null | undefined
 	credentialName: string
 }) {
-	const packageId = input.packageStamp?.packageId
+	const packageId = input.packageId?.trim()
 	if (!packageId) return
 	const saved = await selfPublishedPackageFor(
 		input.env,

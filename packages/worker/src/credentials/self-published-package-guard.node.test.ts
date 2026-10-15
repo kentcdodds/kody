@@ -8,6 +8,7 @@ import {
 import { afterEach, expect, test, vi } from 'vitest'
 import { expandSecretPlaceholders } from '#mcp/fetch-gateway.ts'
 import { saveSecret } from '#mcp/secrets/service.ts'
+import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import * as featureFlags from '#worker/feature-flags/service.ts'
 import { resolvePackageApprovalRequest } from '#worker/package-capabilities/approval-requests-repo.ts'
 import { enqueueWentPublicApproval } from '#worker/package-capabilities/went-public-approval.ts'
@@ -117,6 +118,25 @@ async function setup() {
 			now: at,
 		})
 	}
+	const request = deriveRequestContext({
+		user: { userId: personId, username: 'bea' },
+		source: { kind: 'mcp-oauth' },
+		orgBinding: { org: { id: orgId, slug: 'bea' }, role: 'owner' },
+	})
+	const resolveUnstamped = () =>
+		resolveCredential({
+			env,
+			orgId,
+			actor: request,
+			packageStamp: null,
+			runPackageId: packageId,
+			baseUrl: 'https://example.com',
+			credential: {
+				use: 'secret',
+				name: 'RESEND',
+				storageContext: { sessionId: null, appId: null, packageId: null },
+			},
+		})
 	const fill = () =>
 		expandSecretPlaceholders({
 			request: new Request('https://api.resend.com/emails', {
@@ -126,11 +146,7 @@ async function setup() {
 				baseUrl: 'https://example.com',
 				userId: orgId,
 				email: null,
-				request: deriveRequestContext({
-					user: { userId: personId, username: 'bea' },
-					source: { kind: 'mcp-oauth' },
-					orgBinding: { org: { id: orgId, slug: 'bea' }, role: 'owner' },
-				}),
+				request,
 				storageContext: {
 					sessionId: null,
 					appId: packageId,
@@ -141,7 +157,7 @@ async function setup() {
 			},
 			env,
 		}).then((expanded) => expanded.request.headers.get('Authorization'))
-	return { packageId, approveWentPublic, fill }
+	return { packageId, approveWentPublic, fill, resolveUnstamped }
 }
 
 test('a self-published package resolves no credential, even with enforcement off', async () => {
@@ -164,4 +180,14 @@ test('the owner approving going public again lifts the self-publish limit', asyn
 	await t.approveWentPublic(true)
 	await t.approveWentPublic(false)
 	await expect(t.fill()).resolves.toBe(`Bearer ${keyValue}`)
+})
+
+test('the unstamped credential-client door still refuses a self-published run package', async () => {
+	vi.spyOn(featureFlags, 'isFeatureGloballyEnabled').mockResolvedValue(false)
+	const t = await setup()
+	await t.approveWentPublic(true)
+	await expect(t.resolveUnstamped()).rejects.toMatchObject({
+		code: 'credential_need_undeclared',
+		key: 'RESEND',
+	})
 })

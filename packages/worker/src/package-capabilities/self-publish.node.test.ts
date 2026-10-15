@@ -369,7 +369,93 @@ test('selfPublishPackage pins the set, approves a marked went_public request, an
 	)
 })
 
-test('selfPublishPackage audits a failed approve and returns its error', async () => {
+const pendingMarkedRequest = {
+	id: 'request-1',
+	baseCommit: 'commit-source-root',
+	requestedByUserId: 'person-1',
+	details: { selfPublish: true, fingerprint: 'fp-1' },
+}
+
+function expectHandedBackToOwner() {
+	expect(mockModule.resolvePackageApprovalRequest).toHaveBeenCalledWith(
+		env.APP_DB,
+		expect.objectContaining({ id: 'request-1', status: 'superseded' }),
+	)
+	expect(mockModule.enqueueWentPublicApproval).toHaveBeenLastCalledWith({
+		env,
+		ownerUserId: ownerId,
+		savedPackage,
+		publishedCommit: 'commit-source-root',
+		fingerprint: 'fp-1',
+		requestedByUserId: 'person-1',
+	})
+}
+
+test('selfPublishPackage audits a failed approve, hands the request back to the owner, and returns its error', async () => {
+	mockModule.approvePackageCapabilitySet.mockResolvedValue({
+		approval: { id: 'approval-1', publishedCommit: 'commit-source-root' },
+	})
+	mockModule.getPendingWentPublicApproval
+		.mockResolvedValueOnce(null)
+		.mockResolvedValueOnce(pendingMarkedRequest)
+	mockModule.enqueueWentPublicApproval.mockResolvedValue(markedRequest)
+	mockModule.approveWentPublicRequest.mockResolvedValue({
+		ok: false,
+		status: 409,
+		error: 'Review and approve the capability summary first.',
+	})
+
+	await expect(
+		selfPublishPackage({
+			env,
+			request: sessionRequestContext('person-1', 'bea'),
+			requestUrl: 'https://heykody.dev',
+			ownerUserId: ownerId,
+			actorUserId: 'person-1',
+			savedPackage,
+			summary: summary(),
+		}),
+	).resolves.toEqual({
+		ok: false,
+		error: 'Review and approve the capability summary first.',
+	})
+	expectHandedBackToOwner()
+	expect(mockModule.logOrgAuditEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			action: selfPublishAuditAction,
+			result: 'failure',
+			details: expect.objectContaining({
+				error: 'Review and approve the capability summary first.',
+			}),
+		}),
+	)
+})
+
+test('selfPublishPackage hands the request back to the owner when approve throws', async () => {
+	mockModule.approvePackageCapabilitySet.mockResolvedValue({
+		approval: { id: 'approval-1', publishedCommit: 'commit-source-root' },
+	})
+	mockModule.getPendingWentPublicApproval
+		.mockResolvedValueOnce(null)
+		.mockResolvedValueOnce(pendingMarkedRequest)
+	mockModule.enqueueWentPublicApproval.mockResolvedValue(markedRequest)
+	mockModule.approveWentPublicRequest.mockRejectedValue(new Error('D1 down'))
+
+	await expect(
+		selfPublishPackage({
+			env,
+			request: sessionRequestContext('person-1', 'bea'),
+			requestUrl: 'https://heykody.dev',
+			ownerUserId: ownerId,
+			actorUserId: 'person-1',
+			savedPackage,
+			summary: summary(),
+		}),
+	).rejects.toThrow('D1 down')
+	expectHandedBackToOwner()
+})
+
+test('selfPublishPackage leaves a request the approval already resolved', async () => {
 	mockModule.approvePackageCapabilitySet.mockResolvedValue({
 		approval: { id: 'approval-1', publishedCommit: 'commit-source-root' },
 	})
@@ -393,6 +479,7 @@ test('selfPublishPackage audits a failed approve and returns its error', async (
 		}),
 	).resolves.toEqual({ ok: false, error: 'The published version changed.' })
 	expect(mockModule.resolvePackageApprovalRequest).not.toHaveBeenCalled()
+	expect(mockModule.enqueueWentPublicApproval).toHaveBeenCalledTimes(1)
 	expect(mockModule.logOrgAuditEvent).toHaveBeenCalledWith(
 		expect.objectContaining({
 			action: selfPublishAuditAction,

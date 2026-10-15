@@ -30,7 +30,10 @@ import {
 } from '#worker/package-registry/types.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { loadPublishedEntityManifest } from '#worker/repo/published-source.ts'
-import { resolvePackageApprovalRequest } from './approval-requests-repo.ts'
+import {
+	type PackageApprovalRequest,
+	resolvePackageApprovalRequest,
+} from './approval-requests-repo.ts'
 import {
 	approvePackageCapabilitySet,
 	type CapabilityApprovalSummary,
@@ -242,14 +245,21 @@ export async function selfPublishPackage(input: {
 		await audit('failure', { requestId: wentPublic.id, error })
 		return { ok: false, error }
 	}
-	const result = await approveWentPublicRequest({
-		env,
-		request: new Request(input.requestUrl),
-		savedPackage,
-		ownerUserId: input.ownerUserId,
-		actorUserId: input.actorUserId,
-		requestId: wentPublic.id,
-	})
+	let result: Awaited<ReturnType<typeof approveWentPublicRequest>>
+	try {
+		result = await approveWentPublicRequest({
+			env,
+			request: new Request(input.requestUrl),
+			savedPackage,
+			ownerUserId: input.ownerUserId,
+			actorUserId: input.actorUserId,
+			requestId: wentPublic.id,
+		})
+	} catch (error) {
+		await handBackToOwner(env, input, wentPublic)
+		throw error
+	}
+	if (!result.ok) await handBackToOwner(env, input, wentPublic)
 	await audit(
 		result.ok ? 'success' : 'failure',
 		result.ok
@@ -257,6 +267,43 @@ export async function selfPublishPackage(input: {
 			: { requestId: wentPublic.id, error: result.error },
 	)
 	return result.ok ? { ok: true } : { ok: false, error: result.error }
+}
+
+/**
+ * A self-publish request the approval left pending would read as
+ * self-published if the owner approved it later, so it is swapped for an
+ * owner-path request for the same version.
+ */
+async function handBackToOwner(
+	env: Env,
+	input: {
+		ownerUserId: OwnerId
+		actorUserId: string
+		savedPackage: SavedPackageRecord
+	},
+	selfPublishRequest: PackageApprovalRequest,
+) {
+	const pending = await getPendingWentPublicApproval({
+		env,
+		ownerUserId: input.ownerUserId,
+		packageId: input.savedPackage.id,
+	})
+	if (pending?.id !== selfPublishRequest.id) return
+	await resolvePackageApprovalRequest(env.APP_DB, {
+		id: pending.id,
+		status: 'superseded',
+		resolvedByUserId: input.actorUserId,
+	})
+	const fingerprint = pending.details['fingerprint']
+	if (!pending.baseCommit || typeof fingerprint !== 'string') return
+	await enqueueWentPublicApproval({
+		env,
+		ownerUserId: input.ownerUserId,
+		savedPackage: input.savedPackage,
+		publishedCommit: pending.baseCommit,
+		fingerprint,
+		requestedByUserId: pending.requestedByUserId,
+	})
 }
 
 /** Self-publish approves for the owner, so it takes publish permission. */

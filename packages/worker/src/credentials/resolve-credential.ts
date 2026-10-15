@@ -116,7 +116,7 @@ async function resolveWith<U extends CredentialUse>(
 		await assertSelfPublishedPackageResolvesNothing({
 			env: input.env,
 			request: input.actor,
-			packageStamp: input.packageStamp,
+			packageId: input.packageStamp?.packageId ?? input.runPackageId,
 			credentialName: subject.name,
 		})
 		const handle = await resolver.resolve({ input, credential, subject })

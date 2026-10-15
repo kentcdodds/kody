@@ -815,7 +815,7 @@ async function readHandle(
 }
 
 function doorInput<T extends CredentialTarget>(
-	ctx: Pick<CredentialClientContext, 'env' | 'callerContext'>,
+	ctx: Pick<CredentialClientContext, 'env' | 'callerContext' | 'packageId'>,
 	credential: T,
 ): ResolveCredentialInput<T> {
 	const request = ctx.callerContext.request!
@@ -824,6 +824,7 @@ function doorInput<T extends CredentialTarget>(
 		orgId: request.org.id,
 		actor: request,
 		packageStamp: null,
+		runPackageId: ctx.packageId,
 		baseUrl: ctx.callerContext.baseUrl,
 		credential,
 	}
@@ -957,6 +958,8 @@ export async function applyCredentialClient(input: {
 	env: Env
 	request: RequestContext | null
 	baseUrl: string
+	/** The run's package; only the self-publish guard reads it here. */
+	packageId: string | null
 	binding: string | null | undefined
 	token: string
 	requestUrl: URL
@@ -970,6 +973,7 @@ export async function applyCredentialClient(input: {
 		})
 		const ctx = {
 			env: input.env,
+			packageId: input.packageId,
 			callerContext: {
 				baseUrl: input.baseUrl,
 				request: input.request,
