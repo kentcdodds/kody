@@ -216,6 +216,33 @@ test('0013 reads a nested package from its source root', () => {
 	)
 	expect(rootKeyed.changedPaths).toEqual(['package.json'])
 	expect(declaredSlots(rootKeyed)).toEqual({ K: slot })
+	const sourceRelativeManifest = declareCredentialNeedsCodemod.transform(
+		{
+			'package.json': manifest(),
+			'index.ts': files['packages/demo/index.ts'],
+		},
+		{ ...nestedContext, manifestPath: 'package.json' },
+	)
+	expect(sourceRelativeManifest.changedPaths).toEqual(['package.json'])
+	expect(declaredSlots(sourceRelativeManifest)).toEqual({ K: slot })
+})
+
+test('0013 does not declare names read from a module it cannot parse', () => {
+	const result = transform(
+		[
+			"// createAuthenticatedFetch('commented') is not a call",
+			'export default async function run( {',
+		].join('\n'),
+	)
+	expect(result).toMatchObject({
+		changed: false,
+		needsManual: [
+			{
+				path: 'index.ts',
+				message: declareCredentialNeedsMessages.unparsedModule,
+			},
+		],
+	})
 })
 
 test('0013 keeps manifest indentation, other kody fields, and is idempotent', () => {

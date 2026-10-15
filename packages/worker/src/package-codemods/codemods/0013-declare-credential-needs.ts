@@ -51,6 +51,8 @@ export const declareCredentialNeedsMessages = {
 		'Passes credential or credentials around instead of calling it. Declare each key it reads as a kody.credentials slot by hand.',
 	invalidManifest:
 		'package.json or its kody.credentials is not valid. Fix it, then declare each credential the package uses.',
+	unparsedModule:
+		'A module could not be parsed, so the credential names it uses were not read reliably. Declare each credential it uses as a kody.credentials slot by hand.',
 } as const
 
 /**
@@ -99,8 +101,9 @@ function normalizeSnapshotPath(path: string) {
 
 /**
  * The package's manifest key and its own files, keyed as in the snapshot. A
- * nested package (`sourceRoot` below the repo root) may arrive keyed from
- * the repo root or from its source root.
+ * nested package (`sourceRoot` below the repo root) may arrive keyed from the
+ * repo root, so only files under its root are its own, or keyed from its
+ * source root, so every file is.
  */
 function locatePackage(
 	files: Record<string, string>,
@@ -116,10 +119,11 @@ function locatePackage(
 	const prefix = `${root}/`
 	const keyFor = (path: string) =>
 		Object.keys(files).find((key) => normalizeSnapshotPath(key) === path)
-	const nestedManifestKey = root ? keyFor(manifestPath) : undefined
-	if (root && nestedManifestKey !== undefined) {
+	const underRoot = root !== '' && manifestPath.startsWith(prefix)
+	const repoKey = keyFor(manifestPath)
+	if (underRoot && repoKey !== undefined) {
 		return {
-			manifestKey: nestedManifestKey,
+			manifestKey: repoKey,
 			files: Object.fromEntries(
 				Object.entries(files).filter(([key]) =>
 					normalizeSnapshotPath(key).startsWith(prefix),
@@ -127,10 +131,9 @@ function locatePackage(
 			),
 		}
 	}
-	const relativeManifest =
-		root && manifestPath.startsWith(prefix)
-			? manifestPath.slice(prefix.length)
-			: manifestPath
+	const relativeManifest = underRoot
+		? manifestPath.slice(prefix.length)
+		: manifestPath
 	return { manifestKey: keyFor(relativeManifest) ?? relativeManifest, files }
 }
 
@@ -319,10 +322,17 @@ function planDeclarations(
 		paths.add(path)
 		pathsByName.set(name, paths)
 	}
+	const modulePaths = listScannableModulePaths(files)
+	const parsedModules = new Map(
+		modulePaths.map((path) => [path, parseModule(files[path]!)]),
+	)
 	scanModuleCredentialReferences(files, (path) => ({
 		add: () => {},
 		named: (name, kind, via) => {
-			if (gatewayVias.has(via)) use(path, name, kind)
+			if (!gatewayVias.has(via)) return
+			// A text match in an unparsed module can sit in a comment or string.
+			if (parsedModules.get(path)) use(path, name, kind)
+			else flag(path, 'unparsedModule')
 		},
 		computed: (_kind, via) => {
 			if (gatewayVias.has(via)) flag(path, 'computed')
@@ -331,10 +341,6 @@ function planDeclarations(
 			if (via === 'placeholder') flag(path, 'vault')
 		},
 	}))
-	const modulePaths = listScannableModulePaths(files)
-	const parsedModules = new Map(
-		modulePaths.map((path) => [path, parseModule(files[path]!)]),
-	)
 	const moduleConstants = createModuleConstantsReader(parsedModules)
 	for (const path of modulePaths) {
 		const parsed = parsedModules.get(path)
