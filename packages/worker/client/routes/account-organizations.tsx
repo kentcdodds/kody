@@ -414,8 +414,19 @@ function renderOrganizationList(data: AccountOrganizationsLoaderData) {
 	)
 }
 
-function renderInvites(invites: AccountOrganizationsLoaderData['invites']) {
-	if (invites.length === 0) {
+type InviteLinkActions = {
+	busyLinkId: string | null
+	accept: (linkId: string) => void
+	decline: (linkId: string) => void
+}
+
+function renderInvites(
+	data: AccountOrganizationsLoaderData,
+	actions: InviteLinkActions,
+) {
+	const invites = data.invites
+	const inviteLinks = data.inviteLinks
+	if (invites.length === 0 && inviteLinks.length === 0) {
 		return (
 			<div mix={css(emptyStateCss)} data-testid="invites-empty">
 				<span aria-hidden="true" mix={css(emptyIconCss)}>
@@ -424,7 +435,8 @@ function renderInvites(invites: AccountOrganizationsLoaderData['invites']) {
 				<div mix={css({ display: 'grid', gap: spacing.xs })}>
 					<p mix={css(emptyTitleCss)}>No invites waiting</p>
 					<p mix={css(mutedCopyCss)}>
-						When someone invites you to an organization, it shows up here.
+						When someone invites you to an organization, team, or package, it
+						shows up here.
 					</p>
 				</div>
 			</div>
@@ -444,8 +456,76 @@ function renderInvites(invites: AccountOrganizationsLoaderData['invites']) {
 					testId: 'invite',
 				}),
 			)}
+			{inviteLinks.map((link) => {
+				const busy = actions.busyLinkId === link.linkId
+				return renderOrgRow({
+					key: `link:${link.linkId}`,
+					slug: link.orgSlug,
+					displayName: link.orgDisplayName,
+					personal: link.orgPersonal,
+					viewer: { displayName: '', avatarUrl: null },
+					detail: `${link.label} · Expires ${formatTimestampDate(link.expiresAt)}`,
+					pills: [],
+					testId: 'invite-link',
+					trailing: (
+						<span mix={css(inviteActionsCss)}>
+							<button
+								type="button"
+								disabled={actions.busyLinkId !== null}
+								data-testid="invite-link-accept"
+								mix={[
+									css(getPillButtonCss({ size: 'sm' })),
+									on('click', () => actions.accept(link.linkId)),
+								]}
+							>
+								{busy ? 'Working…' : 'Accept'}
+							</button>
+							<button
+								type="button"
+								disabled={actions.busyLinkId !== null}
+								data-testid="invite-link-decline"
+								mix={[
+									css(getGhostButtonCss({ size: 'sm' })),
+									on('click', () => actions.decline(link.linkId)),
+								]}
+							>
+								Decline
+							</button>
+						</span>
+					),
+				})
+			})}
 		</ul>
 	)
+}
+
+async function postInviteLinkAction(
+	linkId: string,
+	action: 'accept' | 'decline',
+) {
+	const href =
+		action === 'accept'
+			? routes.accountInviteLinkAcceptPost.href({ linkId })
+			: routes.accountInviteLinkDeclinePost.href({ linkId })
+	const response = await fetch(href, {
+		method: 'POST',
+		headers: { Accept: 'application/json' },
+		credentials: 'include',
+	})
+	const payload = await readJson<{
+		ok?: boolean
+		error?: string
+		redirectTo?: string
+	}>(response)
+	if (!response.ok || !payload?.ok) {
+		throw new Error(
+			payload?.error ||
+				(action === 'accept'
+					? 'Unable to accept this invite.'
+					: 'Unable to decline this invite.'),
+		)
+	}
+	return payload
 }
 
 /**
@@ -461,6 +541,42 @@ export function AccountOrganizationsRoute(handle: Handle) {
 			return payload
 		},
 	})
+	let busyLinkId: string | null = null
+	let linkMessage: string | null = null
+	let linkMessageTone: 'info' | 'error' = 'info'
+
+	async function runLinkAction(linkId: string, action: 'accept' | 'decline') {
+		if (busyLinkId) return
+		busyLinkId = linkId
+		linkMessage = null
+		handle.update()
+		try {
+			const payload = await postInviteLinkAction(linkId, action)
+			if (action === 'accept' && payload.redirectTo) {
+				window.location.assign(payload.redirectTo)
+				return
+			}
+			linkMessage =
+				action === 'accept' ? 'Invite accepted.' : 'Invite declined.'
+			linkMessageTone = 'info'
+			organizationsData.reload(handle, readCurrentRouterHref(handle))
+		} catch (error) {
+			linkMessage =
+				error instanceof Error ? error.message : 'Unable to update that invite.'
+			linkMessageTone = 'error'
+			organizationsData.reload(handle, readCurrentRouterHref(handle))
+		}
+		busyLinkId = null
+		handle.update()
+	}
+
+	const inviteLinkActions = {
+		get busyLinkId() {
+			return busyLinkId
+		},
+		accept: (linkId: string) => void runLinkAction(linkId, 'accept'),
+		decline: (linkId: string) => void runLinkAction(linkId, 'decline'),
+	}
 
 	return () => {
 		const href = readCurrentRouterHref(handle)
@@ -524,16 +640,28 @@ export function AccountOrganizationsRoute(handle: Handle) {
 						<AccountManagementPanel
 							id="invites"
 							title="Invites"
-							description="To accept an invite, paste the invite prompt you were sent into your agent."
+							description="Accept invite links you opened here. For an invite prompt you were sent, paste it into your agent."
 							ariaLabel="Invites"
 						>
-							{renderInvites(data.invites)}
+							{linkMessage ? (
+								<AccountManagementMessage tone={linkMessageTone}>
+									{linkMessage}
+								</AccountManagementMessage>
+							) : null}
+							{renderInvites(data, inviteLinkActions)}
 						</AccountManagementPanel>
 					</>
 				) : null}
 			</AccountManagementShell>
 		)
 	}
+}
+
+const inviteActionsCss = {
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	gap: spacing.sm,
+	flexShrink: 0,
 }
 
 const orgListCss = {

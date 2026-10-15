@@ -19,6 +19,7 @@ import {
 	accountFieldNoteCss,
 	accountInputCss,
 } from '#client/routes/account-management-components.tsx'
+import { createOrgTeamInviteLinks } from '#client/routes/org-teams-invite-links.tsx'
 import { renderIcon } from '#universal/icon.tsx'
 import {
 	type OrgTeamView,
@@ -109,6 +110,21 @@ export function OrgTeamsRoute(handle: Handle) {
 	let addByTeam = new Map<string, string>()
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
+	const teamInviteLinks = createOrgTeamInviteLinks(handle, {
+		async createLink(teamId) {
+			message = null
+			const payload = await postTeams('invite-link', { teamId })
+			return payload?.inviteLink ?? null
+		},
+		async revokeLink(linkId) {
+			message = null
+			await postTeams('invite-link-revoke', { linkId })
+		},
+		onMessage(next, tone) {
+			message = next
+			messageTone = tone
+		},
+	})
 
 	function removeCheckFor(key: string) {
 		const existing = removeChecks.get(key)
@@ -118,19 +134,11 @@ export function OrgTeamsRoute(handle: Handle) {
 		return created
 	}
 
-	async function postTeams(
-		path: 'create' | 'member-add' | 'member-remove',
-		body: Record<string, unknown>,
-	) {
+	async function postTeams(path: TeamsPostPath, body: Record<string, unknown>) {
 		const snapshot = teamsData.read(handle, readCurrentRouterHref(handle))
 		const data = snapshot.data
 		if (!data?.ok) return
-		const href =
-			path === 'create'
-				? routes.orgTeamsCreatePost.href({ orgSlug: data.org.slug })
-				: path === 'member-add'
-					? routes.orgTeamsMemberAddPost.href({ orgSlug: data.org.slug })
-					: routes.orgTeamsMemberRemovePost.href({ orgSlug: data.org.slug })
+		const href = teamsPostHref(path, data.org.slug)
 		const response = await fetch(href, {
 			method: 'POST',
 			headers: {
@@ -140,9 +148,9 @@ export function OrgTeamsRoute(handle: Handle) {
 			credentials: 'include',
 			body: JSON.stringify(body),
 		})
-		const payload = (await response
-			.json()
-			.catch(() => null)) as TeamsPayload | null
+		const payload = (await response.json().catch(() => null)) as
+			| (TeamsPayload & { inviteLink?: { url: string } })
+			| null
 		if (response.status === 401) {
 			window.location.assign('/login')
 			// Throw so callers do not clear the form or show a success banner
@@ -380,6 +388,9 @@ export function OrgTeamsRoute(handle: Handle) {
 													</button>
 												</div>
 											) : null}
+											{data.canCreateInviteLinks
+												? teamInviteLinks.render(team, data.inviteLinks)
+												: null}
 										</li>
 									))}
 								</ul>
@@ -465,6 +476,32 @@ export function OrgTeamsRoute(handle: Handle) {
 				) : null}
 			</AccountManagementShell>
 		)
+	}
+}
+
+type TeamsPostPath =
+	| 'create'
+	| 'member-add'
+	| 'member-remove'
+	| 'invite-link'
+	| 'invite-link-revoke'
+
+function teamsPostHref(path: TeamsPostPath, orgSlug: string) {
+	switch (path) {
+		case 'create':
+			return routes.orgTeamsCreatePost.href({ orgSlug })
+		case 'member-add':
+			return routes.orgTeamsMemberAddPost.href({ orgSlug })
+		case 'member-remove':
+			return routes.orgTeamsMemberRemovePost.href({ orgSlug })
+		case 'invite-link':
+			return routes.orgTeamsInviteLinksPost.href({ orgSlug })
+		case 'invite-link-revoke':
+			return routes.orgTeamsInviteLinksRevokePost.href({ orgSlug })
+		default: {
+			const exhaustive: never = path
+			throw new Error(`Unknown teams action: ${String(exhaustive)}`)
+		}
 	}
 }
 
