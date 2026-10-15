@@ -42,6 +42,8 @@ export type WithAgent = {
 	icon: string
 	/** False when the agent has no Kody connect path of its own yet. */
 	official: boolean
+	/** Replaces the default note shown above unofficial agents' steps. */
+	note?: string
 	pitch: string
 	steps: ReadonlyArray<WithAgentStep>
 }
@@ -50,7 +52,6 @@ const mcpUrl = defaultKodyMcpUrl
 
 function genericAgent<const Slug extends string>(
 	agent: Pick<WithAgent, 'name' | 'icon' | 'pitch'> & { slug: Slug },
-	extraSteps: ReadonlyArray<WithAgentStep> = [],
 ) {
 	return {
 		...agent,
@@ -64,7 +65,6 @@ function genericAgent<const Slug extends string>(
 				text: `If ${agent.name} asks for an MCP server, give it this URL (Streamable HTTP with OAuth sign-in):`,
 				code: mcpUrl,
 			},
-			...extraSteps,
 			{
 				text: `Sign in to Kody and approve access when asked, then ask ${agent.name} to list its Kody tools.`,
 			},
@@ -325,21 +325,29 @@ export const withAgents = [
 		pitch:
 			'Let your Cue agents use your team\u2019s tools and connected accounts without ever seeing a key.',
 	}),
-	genericAgent(
-		{
-			slug: 'openmuse',
-			name: 'OpenMuse',
-			icon: 'openmuse',
-			pitch:
-				'Wire Kody into your OpenMuse harness so the work it does reaches the rest of your team.',
-		},
-		[
+	{
+		slug: 'openmuse',
+		name: 'OpenMuse',
+		icon: 'openmuse',
+		official: false,
+		note: 'OpenMuse has no settings screen for MCP servers, so Kody connects through the harness behind your OpenMuse deployment. A chat prompt alone cannot add it.',
+		pitch:
+			'Wire Kody into your OpenMuse harness so the work it does reaches the rest of your team.',
+		steps: [
 			{
-				text: 'Self-hosting OpenMuse? Wire Kody into your fork\u2019s harness instead.',
+				text: 'Register Kody as an MCP server in the harness behind your OpenMuse fork. The guide covers both ways to wire it in.',
 				link: { label: 'Read OpenMuse and Kody', href: '/docs/openmuse' },
 			},
+			{
+				text: 'Point the harness at this URL (Streamable HTTP with OAuth sign-in):',
+				code: mcpUrl,
+			},
+			{
+				text: 'Once the harness is wired up, paste this setup prompt into OpenMuse to sign in and get started.',
+				prompt: true,
+			},
 		],
-	),
+	},
 	genericAgent({
 		slug: 'dots',
 		name: 'Dots',

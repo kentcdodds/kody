@@ -48,8 +48,13 @@ export function WithAgentRoute(handle: Handle) {
 					<h2 id="with-connect-title">Connect {agent.name}</h2>
 					{agent.official ? null : (
 						<p mix={css(genericNoteCss)}>
-							{agent.name} doesn&rsquo;t have an official Kody setup yet. Most
-							agents that support remote MCP servers can connect themselves.
+							{agent.note ?? (
+								<>
+									{agent.name} doesn&rsquo;t have an official Kody setup yet. It
+									needs to support remote MCP servers; if it does, it can
+									usually connect itself.
+								</>
+							)}
 						</p>
 					)}
 					<ol>{agent.steps.map((step, index) => renderStep(step, index))}</ol>

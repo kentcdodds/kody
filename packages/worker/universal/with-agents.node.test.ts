@@ -43,10 +43,15 @@ test('agents without an official path get the setup prompt and MCP URL', () => {
 		].sort(),
 	)
 	for (const agent of generic) {
-		const [first, ...rest] = agent.steps
-		expect(first).toMatchObject({ prompt: true })
-		expect(rest.some((step) => step.code === defaultKodyMcpUrl)).toBe(true)
+		expect(agent.steps.filter((step) => 'prompt' in step)).toHaveLength(1)
+		expect(agent.steps.some((step) => step.code === defaultKodyMcpUrl)).toBe(
+			true,
+		)
 	}
+	// OpenMuse needs its harness wired first; a chat prompt cannot add Kody.
+	const openMuse = generic.find((agent) => agent.slug === 'openmuse')
+	expect(openMuse?.steps[0]?.link?.href).toBe('/docs/openmuse')
+	expect(openMuse?.steps.at(-1)).toMatchObject({ prompt: true })
 	for (const agent of withAgents.filter((agent) => agent.official)) {
 		expect(agent.steps.some((step) => 'prompt' in step)).toBe(false)
 	}
