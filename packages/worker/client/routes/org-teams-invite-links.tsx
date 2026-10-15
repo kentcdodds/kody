@@ -39,7 +39,7 @@ function creatorLabel(link: ScopedInviteLinkView) {
 export function createOrgTeamInviteLinks(
 	handle: Handle,
 	options: {
-		createLink: (teamId: string) => Promise<{ url: string } | null>
+		createLink: (teamId: string) => Promise<{ id: string; url: string } | null>
 		revokeLink: (linkId: string) => Promise<void>
 		onMessage: (message: string, tone: 'info' | 'error') => void
 		/**
@@ -50,19 +50,18 @@ export function createOrgTeamInviteLinks(
 	},
 ) {
 	let busy: string | null = null
-	let created: { teamId: string; url: string } | null = null
+	let created: { teamId: string; linkId: string; url: string } | null = null
 
 	async function create(teamId: string) {
 		if (busy) return
 		busy = `create:${teamId}`
-		created = null
 		handle.update()
 		let changed = false
 		try {
 			const link = await options.createLink(teamId)
 			if (link) {
 				changed = true
-				created = { teamId, url: link.url }
+				created = { teamId, linkId: link.id, url: link.url }
 				const copied = await copyText(link.url)
 				options.onMessage(
 					copied
@@ -88,12 +87,12 @@ export function createOrgTeamInviteLinks(
 	async function revoke(linkId: string) {
 		if (busy) return
 		busy = `revoke:${linkId}`
-		created = null
 		handle.update()
 		let changed = false
 		try {
 			await options.revokeLink(linkId)
 			changed = true
+			if (created?.linkId === linkId) created = null
 			options.onMessage('Team invite link revoked.', 'info')
 		} catch (error) {
 			options.onMessage(

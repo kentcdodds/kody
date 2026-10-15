@@ -45,7 +45,7 @@ import {
 	selectCss,
 } from './package-collaborators-parts.tsx'
 
-type CreatedLink = { url: string }
+type CreatedLink = { id: string; url: string }
 
 type InviteLinksResponse =
 	| (PackageInviteLinksView & { inviteLink?: CreatedLink })
@@ -80,6 +80,7 @@ export function PackageInviteLinksPanel(
 	}>,
 ) {
 	let loadedFor: string | null = null
+	let requestGeneration = 0
 	let links: Array<ScopedInviteLinkView> = []
 	let loadError: string | null = null
 	let preset: PackageCollaboratorPreset = 'use'
@@ -87,6 +88,7 @@ export function PackageInviteLinksPanel(
 	let expiresInDays = '7'
 	let busy: string | null = null
 	let createdUrl: string | null = null
+	let createdLinkId: string | null = null
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
 
@@ -94,7 +96,17 @@ export function PackageInviteLinksPanel(
 		return { username: handle.props.username, kodyId: handle.props.kodyId }
 	}
 
+	function currentKey() {
+		return `${handle.props.username}/${handle.props.kodyId}`
+	}
+
+	/**
+	 * `current` is false when the package changed or a newer request started
+	 * while this one was in flight; its links are then dropped.
+	 */
 	async function request(body?: Record<string, unknown>) {
+		const key = currentKey()
+		const generation = ++requestGeneration
 		const response = await fetch(
 			body
 				? routes.communityPackageInviteLinksApiPost.href(page())
@@ -119,16 +131,18 @@ export function PackageInviteLinksPanel(
 					'Kody could not load invite links.',
 			)
 		}
-		links = payload.links
-		return payload
+		const current = key === loadedFor && generation === requestGeneration
+		if (current) links = payload.links
+		return { payload, current }
 	}
 
 	async function load(key: string) {
 		try {
-			await request()
+			const { current } = await request()
+			if (!current) return
 			loadError = null
 		} catch (error) {
-			if (handle.signal.aborted) return
+			if (handle.signal.aborted || loadedFor !== key) return
 			loadError =
 				error instanceof Error ? error.message : 'Unable to load invite links.'
 		}
@@ -139,17 +153,18 @@ export function PackageInviteLinksPanel(
 		event.preventDefault()
 		if (busy) return
 		busy = 'create'
-		createdUrl = null
 		message = null
 		handle.update()
 		try {
-			const payload = await request({
+			const { payload, current } = await request({
 				action: 'create',
 				preset,
 				maxUses: maxUses.trim() || null,
 				expiresInDays: expiresInDays.trim() || '7',
 			})
+			if (!current) return
 			createdUrl = payload.inviteLink?.url ?? null
+			createdLinkId = payload.inviteLink?.id ?? null
 			const copied = createdUrl ? await copyText(createdUrl) : false
 			message = copied
 				? 'Invite link copied to clipboard.'
@@ -170,11 +185,15 @@ export function PackageInviteLinksPanel(
 	async function revoke(linkId: string) {
 		if (busy) return
 		busy = `revoke:${linkId}`
-		createdUrl = null
 		message = null
 		handle.update()
 		try {
-			await request({ action: 'revoke', linkId })
+			const { current } = await request({ action: 'revoke', linkId })
+			if (!current) return
+			if (linkId === createdLinkId) {
+				createdUrl = null
+				createdLinkId = null
+			}
 			message = 'Invite link revoked.'
 			messageTone = 'info'
 		} catch (error) {
@@ -222,11 +241,12 @@ export function PackageInviteLinksPanel(
 	}
 
 	return () => {
-		const key = `${handle.props.username}/${handle.props.kodyId}`
+		const key = currentKey()
 		if (loadedFor !== key && typeof document !== 'undefined') {
 			loadedFor = key
 			links = []
 			createdUrl = null
+			createdLinkId = null
 			message = null
 			void load(key)
 		}

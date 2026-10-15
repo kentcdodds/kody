@@ -160,7 +160,7 @@ export function OrgTeamsRoute(handle: Handle) {
 			body: JSON.stringify(body),
 		})
 		const payload = (await response.json().catch(() => null)) as
-			| (TeamsPayload & { inviteLink?: { url: string } })
+			| (TeamsPayload & { inviteLink?: { id: string; url: string } })
 			| null
 		if (response.status === 401) {
 			window.location.assign('/login')
