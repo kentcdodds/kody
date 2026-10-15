@@ -842,7 +842,22 @@ function collectLiteralMcpServersFromObjectPattern(input: {
 	failures: Array<CredentialStampGateFailure>
 }) {
 	for (const property of input.pattern.properties ?? []) {
-		if (property.type !== 'ObjectProperty') continue
+		if (property.type === 'RestElement' || property.type === 'RestProperty') {
+			input.failures.push({
+				code: 'non_literal',
+				path: input.path,
+				message: `${input.path}: destructuring kody.mcp with a rest element cannot be stamped. Bind each server by literal name (const { linear } = kody.mcp) or use kody.mcp.SERVER.`,
+			})
+			continue
+		}
+		if (property.type !== 'ObjectProperty') {
+			input.failures.push({
+				code: 'non_literal',
+				path: input.path,
+				message: `${input.path}: destructuring kody.mcp must use literal server names. Declare each server as a kind "mcp" kody.credentials slot.`,
+			})
+			continue
+		}
 		if (property.computed === true) {
 			input.failures.push({
 				code: 'non_literal',

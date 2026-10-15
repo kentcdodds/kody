@@ -35,6 +35,20 @@ function isCredentialStamp(value: unknown): value is CredentialStamp {
 	)
 }
 
+/**
+ * Resolve live dependency stamp pins for a package file map (same pins
+ * `storePublishedCredentialStamp` writes). Exported so fleet can tell a
+ * current stamp from one that still pins a pre-stamp empty fallback.
+ */
+export async function resolvePublishedCredentialDepStamps(input: {
+	env: Env
+	userId: string
+	packageName: string
+	files: Record<string, string>
+}): Promise<Array<CredentialDepStamp>> {
+	return loadDependencyStamps(input)
+}
+
 async function loadDependencyStamps(input: {
 	env: Env
 	userId: string

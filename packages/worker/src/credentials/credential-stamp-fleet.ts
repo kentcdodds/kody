@@ -21,12 +21,14 @@ import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { readPublishedCredentialStamp } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { packageSourceFiles } from './credential-needs-closure.ts'
 import {
-	buildCredentialStamp,
 	planCredentialStampSeal,
 	type CredentialStamp,
 	type CredentialStampGateFailure,
 } from './credential-stamp.ts'
-import { storePublishedCredentialStamp } from './credential-stamp-store.ts'
+import {
+	resolvePublishedCredentialDepStamps,
+	storePublishedCredentialStamp,
+} from './credential-stamp-store.ts'
 
 export const credentialStampFleetScanPageSize = 50
 export const credentialStampFleetScanLimitDefault = 50
@@ -144,11 +146,26 @@ function stampKeysMatchPlan(
 	return left.every((key, index) => key === right[index])
 }
 
-function stampHasEmptyDepFallback(
+function depStampPinKey(dep: {
+	packageId: string
+	publishedCommit: string
+	stampHash: string
+}): string {
+	return `${dep.packageId}\0${dep.publishedCommit}\0${dep.stampHash}`
+}
+
+function stampDepPinsMatch(
 	stamp: CredentialStamp,
-	emptyStampHash: string,
+	liveDeps: ReadonlyArray<{
+		packageId: string
+		publishedCommit: string
+		stampHash: string
+	}>,
 ): boolean {
-	return stamp.depStamps.some((dep) => dep.stampHash === emptyStampHash)
+	const left = stamp.depStamps.map(depStampPinKey).sort()
+	const right = liveDeps.map(depStampPinKey).sort()
+	if (left.length !== right.length) return false
+	return left.every((key, index) => key === right[index])
 }
 
 function matchesOptionalFilters(
@@ -259,7 +276,6 @@ export async function runCredentialStampFleet(input: {
 		sourceIds,
 	})
 
-	const emptyStampHash = (await buildCredentialStamp({ keys: [] })).stampHash
 	const outcomes: Array<CredentialStampFleetOutcome> = []
 	const unconvertibleFailureCodes = new Set<
 		CredentialStampGateFailure['code']
@@ -354,10 +370,18 @@ export async function runCredentialStampFleet(input: {
 				sourceId: source.id,
 				publishedCommit,
 			})
+			const liveDepPins = isCredentialStamp(existing)
+				? await resolvePublishedCredentialDepStamps({
+						env: input.env,
+						userId: savedPackage.userId,
+						packageName: savedPackage.name,
+						files: packageFiles,
+					})
+				: []
 			const stampCurrent =
 				isCredentialStamp(existing) &&
 				stampKeysMatchPlan(existing, plan.keys) &&
-				!stampHasEmptyDepFallback(existing, emptyStampHash)
+				stampDepPinsMatch(existing, liveDepPins)
 			if (stampCurrent) {
 				stampedPackages += 1
 				outcomes.push({

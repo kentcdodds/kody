@@ -236,6 +236,21 @@ test('scanLiteralMcpServerKeys stamps literal servers and fails dynamic access',
 	})
 	expect(escapedRoot.keys).toEqual([])
 	expect(escapedRoot.failures.some((f) => f.code === 'non_literal')).toBe(true)
+
+	const restDestructure = scanLiteralMcpServerKeys({
+		'package.json': manifest(),
+		'src/index.ts': [
+			"import { kody } from 'kody:runtime'",
+			'export default async function run() {',
+			'\tconst { ...servers } = kody.mcp',
+			'\treturn servers',
+			'}',
+		].join('\n'),
+	})
+	expect(restDestructure.keys).toEqual([])
+	expect(restDestructure.failures.some((f) => f.code === 'non_literal')).toBe(
+		true,
+	)
 })
 
 test('planCredentialStampSeal infers MCP and OAuth descriptions without overwriting', () => {

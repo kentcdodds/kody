@@ -16,6 +16,7 @@ vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', () => ({
 
 vi.mock('./credential-stamp-store.ts', () => ({
 	storePublishedCredentialStamp: vi.fn(),
+	resolvePublishedCredentialDepStamps: vi.fn(async () => []),
 }))
 
 import { listSavedPackagesPage } from '#worker/package-registry/repo.ts'
@@ -28,13 +29,17 @@ import {
 	isCredentialStampScanBudgetFailure,
 	runCredentialStampFleet,
 } from './credential-stamp-fleet.ts'
-import { storePublishedCredentialStamp } from './credential-stamp-store.ts'
+import {
+	resolvePublishedCredentialDepStamps,
+	storePublishedCredentialStamp,
+} from './credential-stamp-store.ts'
 
 const listPage = vi.mocked(listSavedPackagesPage)
 const loadRow = vi.mocked(loadPackageSourceRowForUser)
 const loadSource = vi.mocked(loadPackageSourceBySourceId)
 const readStamp = vi.mocked(readPublishedCredentialStamp)
 const storeStamp = vi.mocked(storePublishedCredentialStamp)
+vi.mocked(resolvePublishedCredentialDepStamps)
 
 const ownerUserId = ownerIdFromStored('org-1')
 

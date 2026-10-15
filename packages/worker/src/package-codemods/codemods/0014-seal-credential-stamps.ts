@@ -45,7 +45,7 @@ function normalizeSnapshotPath(path: string) {
 function locatePackage(
 	files: Record<string, string>,
 	context: PackageCodemodContext,
-) {
+): { files: Record<string, string>; manifestWriteKey: string } {
 	const root = normalizeSnapshotPath(context.sourceRoot ?? '').replace(
 		/\/+$/,
 		'',
@@ -72,49 +72,34 @@ function locatePackage(
 		if (remapped[packageManifestPath] == null && scoped[repoKey] != null) {
 			remapped[packageManifestPath] = scoped[repoKey]!
 		}
-		return { files: remapped }
+		return { files: remapped, manifestWriteKey: repoKey }
 	}
 	const relativeManifest = underRoot
 		? manifestPath.slice(prefix.length)
 		: manifestPath
 	const manifestKey = keyFor(relativeManifest) ?? relativeManifest
-	if (manifestKey === packageManifestPath) return { files }
+	if (manifestKey === packageManifestPath) {
+		return { files, manifestWriteKey: packageManifestPath }
+	}
 	const remapped: Record<string, string> = { ...files }
 	if (files[manifestKey] != null) {
 		remapped[packageManifestPath] = files[manifestKey]!
 	}
-	return { files: remapped }
+	return { files: remapped, manifestWriteKey: manifestKey }
 }
 
 function remapSealFilesToSnapshot(
 	original: Record<string, string>,
 	sealed: Record<string, string>,
-	context: PackageCodemodContext,
+	manifestWriteKey: string,
 ): Record<string, string> {
-	const root = normalizeSnapshotPath(context.sourceRoot ?? '').replace(
-		/\/+$/,
-		'',
-	)
-	const manifestPath = normalizeSnapshotPath(
-		context.manifestPath ?? packageManifestPath,
-	)
-	const prefix = `${root}/`
-	const underRoot = root !== '' && manifestPath.startsWith(prefix)
 	const next = { ...original }
 	const sealedManifest = sealed[packageManifestPath]
 	if (sealedManifest == null) return next
-	if (underRoot) {
-		next[manifestPath] = sealedManifest
-		return next
-	}
-	const relativeManifest =
-		root !== '' && manifestPath.startsWith(prefix)
-			? manifestPath.slice(prefix.length)
-			: manifestPath
-	next[relativeManifest] = sealedManifest
-	if (relativeManifest !== packageManifestPath) {
-		next[packageManifestPath] = sealedManifest
-	}
+	// Write only the snapshot key locatePackage used. Do not mirror into a
+	// workspace-root package.json when sealing a nested package under a
+	// different path.
+	next[manifestWriteKey] = sealedManifest
 	return next
 }
 
@@ -182,13 +167,16 @@ function transformSealCredentialStamps(
 			needsManual,
 		}
 	}
-	const nextFiles = remapSealFilesToSnapshot(files, applied.files, context)
+	const nextFiles = remapSealFilesToSnapshot(
+		files,
+		applied.files,
+		located.manifestWriteKey,
+	)
 	const changedPaths = [
 		...new Set(
-			[
-				normalizeSnapshotPath(context.manifestPath ?? packageManifestPath),
-				packageManifestPath,
-			].filter((path) => nextFiles[path] !== files[path]),
+			[located.manifestWriteKey, packageManifestPath].filter(
+				(path) => nextFiles[path] !== files[path],
+			),
 		),
 	]
 	return {
