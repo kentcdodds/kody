@@ -983,3 +983,156 @@ test('soft_delete_failed is distinct from already_gone when the live row remains
 		updateSpy.mockRestore()
 	}
 })
+
+test('multi-page dry-run grant revoke counts match a real paged run', async () => {
+	const { db, sqlite } = await createDb()
+	const ada = testStableUserIdFromEmail('ada-purge-dry-page@example.com')
+	const guest = testStableUserIdFromEmail('guest-purge-dry-page@example.com')
+	insertUser(sqlite, {
+		id: 1,
+		username: 'ada-purge-dry-page',
+		email: 'ada-purge-dry-page@example.com',
+		personId: ada,
+	})
+	insertUser(sqlite, {
+		id: 2,
+		username: 'guest-purge-dry-page',
+		email: 'guest-purge-dry-page@example.com',
+		personId: guest,
+	})
+	await provisionPersonalOrg(db, {
+		stableUserId: ada,
+		username: 'ada-purge-dry-page',
+	})
+	await provisionPersonalOrg(db, {
+		stableUserId: guest,
+		username: 'guest-purge-dry-page',
+	})
+	const created = await createOrganization(db, {} as Env, {
+		personId: ada,
+		audit: createTestOrgAuditWriter(),
+		slug: 'purge-dry-page-co',
+		displayName: 'Purge Dry Page',
+	})
+	if (!created.ok) throw new Error(created.error)
+	const org = await db
+		.prepare(`SELECT id FROM orgs WHERE slug = 'purge-dry-page-co'`)
+		.first<{ id: string }>()
+	const firstId = 'mem-dry-page-1'
+	const secondId = 'mem-dry-page-2'
+	for (const [id, subject] of [
+		[firstId, 'First'],
+		[secondId, 'Second'],
+	] as const) {
+		sqlite
+			.prepare(
+				`INSERT INTO mcp_memories (
+					id, user_id, status, subject, summary, details, created_at, updated_at
+				) VALUES (?, ?, 'active', ?, 'summary', '', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+			)
+			.run(id, org!.id, subject)
+		sqlite
+			.prepare(
+				`INSERT INTO grants (
+					id, org_id, resource_type, resource_id, subject_type, subject_id,
+					created_by_user_id, created_at, updated_at
+				) VALUES (?, ?, 'memory', ?, 'user', ?, ?, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+			)
+			.run(`g-${id}`, org!.id, id, guest, ada)
+		sqlite
+			.prepare(
+				`INSERT INTO grant_permissions (grant_id, permission) VALUES (?, 'memory:read')`,
+			)
+			.run(`g-${id}`)
+	}
+
+	const meter = createInMemoryUserMeterEnv()
+	const env = {
+		APP_DB: db,
+		USER_METER: meter.env.USER_METER,
+	} as unknown as Env
+	const audit = createTestOrgAuditWriter()
+	const personalAda = personalOrgId(personIdFromStored(ada))
+	const personalGuest = personalOrgId(personIdFromStored(guest))
+	for (const memoryId of [firstId, secondId]) {
+		for (const personalOrg of [personalAda, personalGuest]) {
+			sqlite
+				.prepare(
+					`INSERT INTO mcp_memories (
+						id, user_id, status, subject, summary, details, source_uris_json,
+						created_at, updated_at
+					) VALUES (?, ?, 'active', 'copy', 'summary', '', ?, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+				)
+				.run(
+					`copy-${personalOrg}-${memoryId}`,
+					personalOrg,
+					JSON.stringify([legacyOrgMemoryProvenanceUri(org!.id, memoryId)]),
+				)
+		}
+	}
+
+	const dryPage1 = await runMemoryPersonalizePurge({
+		env,
+		audit,
+		dryRun: true,
+		orgIds: [org!.id],
+		memoryLimitPerOrg: 1,
+	})
+	expect(dryPage1.wouldPurge).toBe(1)
+	expect(dryPage1.grantsWouldRevoke).toBe(0)
+	expect(dryPage1.nextMemoryCursor).toBe(firstId)
+	expect(dryPage1.nextPlannedPurgeMemoryIds).toEqual([firstId])
+
+	const dryPage2 = await runMemoryPersonalizePurge({
+		env,
+		audit,
+		dryRun: true,
+		orgIds: [org!.id],
+		orgCursor: dryPage1.nextOrgCursor,
+		memoryCursor: dryPage1.nextMemoryCursor,
+		plannedPurgeMemoryIds: dryPage1.nextPlannedPurgeMemoryIds,
+		memoryLimitPerOrg: 1,
+	})
+	expect(dryPage2.wouldPurge).toBe(1)
+	expect(dryPage2.nextMemoryCursor).toBeNull()
+	expect(dryPage2.nextPlannedPurgeMemoryIds).toEqual([])
+	expect(dryPage2.grantsWouldRevoke).toBe(2)
+	expect(dryPage2.grantRows.map((row) => row.resourceId).sort()).toEqual(
+		[firstId, secondId].sort(),
+	)
+
+	const dryGrantsWouldRevoke =
+		dryPage1.grantsWouldRevoke + dryPage2.grantsWouldRevoke
+
+	const realPage1 = await runMemoryPersonalizePurge({
+		env,
+		audit,
+		dryRun: false,
+		orgIds: [org!.id],
+		memoryLimitPerOrg: 1,
+	})
+	expect(realPage1.purged).toBe(1)
+	expect(realPage1.grantsRevoked).toBe(0)
+
+	const realPage2 = await runMemoryPersonalizePurge({
+		env,
+		audit,
+		dryRun: false,
+		orgIds: [org!.id],
+		orgCursor: realPage1.nextOrgCursor,
+		memoryCursor: realPage1.nextMemoryCursor,
+		memoryLimitPerOrg: 1,
+	})
+	expect(realPage2.purged).toBe(1)
+	expect(realPage2.grantsRevoked).toBe(2)
+	expect(realPage2.grantRows.map((row) => row.resourceId).sort()).toEqual(
+		[firstId, secondId].sort(),
+	)
+
+	expect(dryGrantsWouldRevoke).toBe(
+		realPage1.grantsRevoked + realPage2.grantsRevoked,
+	)
+	expect(dryPage1.wouldPurge + dryPage2.wouldPurge).toBe(
+		realPage1.purged + realPage2.purged,
+	)
+})
