@@ -76,6 +76,18 @@ export function resolveDisplayName(input: { email: string; username: string }) {
 }
 
 /**
+ * Prefer a stored `users.display_name` when non-empty after trim; otherwise the
+ * fallback (username for OAuth grants, or {@link resolveDisplayName} for web
+ * sessions).
+ */
+export function resolveStoredDisplayName(
+	storedDisplayName: string | null | undefined,
+	fallback: string,
+) {
+	return storedDisplayName?.trim() || fallback
+}
+
+/**
  * Reserved names are checked before format so a reserved handle shorter than
  * the username minimum (`me`) still gets the reserved-name message.
  */

@@ -19,7 +19,7 @@ const session: AuthSession = {
 	rememberMe: false,
 }
 
-function createAuthCacheTestDb() {
+function createAuthCacheTestDb(displayName: string | null = null) {
 	return {
 		prepare(query: string) {
 			const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
@@ -39,6 +39,7 @@ function createAuthCacheTestDb() {
 									id: 7,
 									email: sessionEmail,
 									username: 'session-user',
+									display_name: displayName,
 									stable_user_id: stableUserId,
 								},
 							],
@@ -68,18 +69,24 @@ function createAuthCacheTestDb() {
 	} as unknown as D1Database
 }
 
-function createEnv() {
+function createEnv(displayName: string | null = null) {
 	return {
-		APP_DB: createAuthCacheTestDb(),
+		APP_DB: createAuthCacheTestDb(displayName),
 		COOKIE_SECRET: testCookieSecret,
 	} as Env
 }
 
-async function resolveCookie(cookie: string) {
+async function resolveCookie(
+	cookie: string,
+	displayName: string | null = null,
+) {
 	const request = new Request('https://example.com/account', {
 		headers: { Cookie: cookie.split(';')[0]! },
 	})
-	const resolved = await loadResolvedRequestAuth(request, createEnv())
+	const resolved = await loadResolvedRequestAuth(
+		request,
+		createEnv(displayName),
+	)
 	expect(hasResolvedRequestFeatureFlags(request)).toBe(false)
 	return resolved
 }
@@ -132,6 +139,7 @@ test('resolveRequestAuth rejects cookies past the absolute lifetime and legacy c
 	const fresh = await resolveCookie(await createAuthCookie(session, false, now))
 	expect(fresh.user).not.toBeNull()
 	expect(fresh.user?.username).toBe('session-user')
+	expect(fresh.user?.displayName).toBe('session-user')
 
 	const legacyCookie = createCookie('kody_session', {
 		httpOnly: true,
@@ -150,4 +158,14 @@ test('resolveRequestAuth rejects cookies past the absolute lifetime and legacy c
 			),
 		),
 	)
+})
+
+test('resolveRequestAuth prefers users.display_name over username', async () => {
+	setAuthSessionSecret(testCookieSecret)
+	const cookie = await createAuthCookie(session, false, Date.now())
+	const resolved = await resolveCookie(cookie, 'Kent C. Dodds')
+	expect(resolved.user).not.toBeNull()
+	expect(resolved.user?.username).toBe('session-user')
+	expect(resolved.user?.displayName).toBe('Kent C. Dodds')
+	expect(resolved.user?.mcpUser.displayName).toBe('Kent C. Dodds')
 })

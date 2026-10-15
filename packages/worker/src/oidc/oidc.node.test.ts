@@ -44,7 +44,7 @@ test('openid-configuration advertises authorization code OIDC only', () => {
 		grant_types_supported: ['authorization_code', 'refresh_token'],
 	})
 	expect(document.claims_supported).toEqual(
-		expect.arrayContaining(['sub', 'email']),
+		expect.arrayContaining(['sub', 'email', 'preferred_username', 'name']),
 	)
 })
 
@@ -89,7 +89,7 @@ test('minted id_token includes expected claims and verifies with JWKS key', asyn
 			userId: ownerIdFromStored('user-stable-id'),
 			email: 'user@example.com',
 			username: 'test-user',
-			displayName: 'test-user',
+			displayName: 'Test User',
 			authTime: 1_700_000_000,
 			nonce: 'nonce-123',
 		},
@@ -103,6 +103,7 @@ test('minted id_token includes expected claims and verifies with JWKS key', asyn
 		email: 'user@example.com',
 		email_verified: true,
 		preferred_username: 'test-user',
+		name: 'Test User',
 		auth_time: 1_700_000_000,
 		nonce: 'nonce-123',
 	})

@@ -29,7 +29,7 @@ function createOidcEnv(
 								userId: ownerIdFromStored('user-stable-id'),
 								email: 'user@example.com',
 								username: 'test-user',
-								displayName: 'test-user',
+								displayName: 'Test User',
 								authTime: 1_700_000_000,
 							},
 						},
@@ -57,6 +57,7 @@ test('userinfo returns claims for verified bearer tokens and 401 without bearer'
 		email: 'user@example.com',
 		email_verified: true,
 		preferred_username: 'test-user',
+		name: 'Test User',
 	})
 	expect((await userinfo(env)).status).toBe(401)
 })

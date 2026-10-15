@@ -41,6 +41,7 @@ export async function mintIdToken(input: {
 	}
 	if (input.scope.includes('profile')) {
 		claims.preferred_username = input.props.username
+		claims.name = input.props.displayName
 	}
 	if (input.includeNonce && input.props.nonce) {
 		claims.nonce = input.props.nonce

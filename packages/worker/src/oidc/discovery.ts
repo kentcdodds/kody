@@ -44,6 +44,7 @@ export function buildOpenIdConfiguration(input: {
 			'email',
 			'email_verified',
 			'preferred_username',
+			'name',
 		],
 		grant_types_supported: ['authorization_code', 'refresh_token'],
 		token_endpoint_auth_methods_supported: tokenEndpointAuthMethodsSupported,

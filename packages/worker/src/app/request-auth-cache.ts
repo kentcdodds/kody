@@ -23,7 +23,10 @@ import {
 	parseUserRolesAndPermissionRows,
 	type PermissionRow,
 } from '#worker/identity/permissions-db.ts'
-import { resolveDisplayName } from '#worker/identity/username.ts'
+import {
+	resolveDisplayName,
+	resolveStoredDisplayName,
+} from '#worker/identity/username.ts'
 import { isCredentialInvalidatedByStoredPasswordChange } from '#worker/password-change-lockout.ts'
 import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { personalOrgIdFromUserRow } from '#worker/orgs/personal-org-id.ts'
@@ -38,6 +41,7 @@ type AuthUserRow = {
 	id: number
 	email: string
 	username: string
+	display_name?: string | null
 	avatar_key?: string | null
 	email_verified_at?: string | null
 	email_verification_delivery_status?: string | null
@@ -180,10 +184,13 @@ async function resolveRequestAuth(
 	}
 
 	const stableUserId = personIdFromStored(userRecord.stable_user_id)
-	const displayName = resolveDisplayName({
-		email: userRecord.email,
-		username: userRecord.username,
-	})
+	const displayName = resolveStoredDisplayName(
+		userRecord.display_name,
+		resolveDisplayName({
+			email: userRecord.email,
+			username: userRecord.username,
+		}),
+	)
 	const accountDeleting = Boolean(userRecord.deleting_at)
 	const accountSuspended = Boolean(userRecord.suspended_at)
 

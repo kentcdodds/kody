@@ -121,6 +121,7 @@ export async function handleOidcUserinfoRequest(request: Request, env: Env) {
 	}
 	if (tokenSummary.scope.includes('profile')) {
 		claims.preferred_username = props.username
+		claims.name = props.displayName
 	}
 
 	const headers = {
