@@ -11,12 +11,18 @@ Internet-visible is a **package app** flag, independent of **forkable** (public
 Either, both, or neither. Enabling internet-visible requires the owner to
 approve a one-page credential and capability summary (stable credential ids,
 hosts, storage) for the **resolved dependency tree** (root + transitive `kody:@`
-packages). Approving the capability set **records** a lockfile-like dependency
-snapshot with the fingerprint and enqueues a `went_public` request on the shared
-`package_approval_requests` queue (same page as credential-needs pauses). The
-owner Approves that request to flip internet-visible on. Secret values never
-appear on that page or in package code. Regular packages keep floating on
-current `published_commit`
+packages). Each package in the tree contributes only what it declares or was
+given (`compute-package-capability-set.ts`): org credentials that fill its
+`kody.credentials` needs, its `kody.secretMounts`, its package-scoped
+credentials, credentials granted to it (`allowed_packages`), and package storage
+when its published source uses it. Implicit user-credential read for
+self-authored packages is not a declaration and adds nothing, so account-wide
+credentials do not move the fingerprint. Approving the capability set
+**records** a lockfile-like dependency snapshot with the fingerprint and
+enqueues a `went_public` request on the shared `package_approval_requests` queue
+(same page as credential-needs pauses). The owner Approves that request to flip
+internet-visible on. Secret values never appear on that page or in package code.
+Regular packages keep floating on current `published_commit`
 ([ADR 0069](./decisions/0069-internet-visible-capability-pinning.md)).
 
 Turning internet-visible on (settings toggle or `packageUpdate`) records the
@@ -34,6 +40,13 @@ reason; they share one queue
 ([ADR 0068 amendment](./decisions/0068-credentials-own-placement-scoped-clients.md)).
 An approval bundle's went-public item cannot be approved until the capability
 set is, so it points at the package's approval page instead.
+
+When the current published version has no security audit, the toggle response
+(`securityAudit`) and `packageUpdate` (`security_audit`) carry the agent's next
+step (`security-audit-next-step.ts`): audit, record with
+`packageSecurityAuditRecord` using the returned `package_id`,
+`published_commit`, and `fingerprint`, then hand the owner the approval link.
+The audit is informational and approves nothing.
 
 ## ADR 0001 exception
 

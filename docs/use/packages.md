@@ -871,12 +871,33 @@ changed. Platform codemods do not pause.
 ## Approval when a package goes internet-visible
 
 Turning on internet-visible serving in package settings, or with `packageUpdate`
-(`internet_visible: true`), sends you to the same approval page. It lists the
-credentials and other capabilities the package and its dependencies can reach.
+(`internet_visible: true`), sends you to the same approval page. It lists what
+the package and each of its dependencies declare or were given:
+
+- credentials that fill a `kody.credentials` need (the org's credentials for
+  that provider and kind)
+- credentials named in `kody.secretMounts`
+- the package's own package-scoped credentials
+- credentials you granted that package
+- package storage, when the published source uses `packageStorage()` or a
+  storage capability (or when the source cannot be read)
+
+Account credentials a package could read only because you wrote it are not
+listed; they are not a declaration. A package that declares nothing shows **This
+package uses no credentials or other capabilities.**
+
 One **Approve and make internet-visible** click approves that capability set and
 turns internet-visible serving on. Each of the two decisions is still checked
 and recorded in the org activity log on its own. If the capability set was
 already approved, the page shows only the request to go public.
+
+When the published version has no [security audit](#security-audit) yet, both
+responses also return the next step for the agent. `packageUpdate` returns
+`security_audit` next to `approval_url`; the settings toggle returns
+`securityAudit` next to `approvalUrl`. Each names the operation
+(`packageSecurityAuditRecord`), its Open API route, and the exact `package_id`,
+`published_commit`, and `fingerprint` to record. The agent runs the audit,
+records it, and then hands you the approval link.
 
 ## Approve many changes at once
 
@@ -922,16 +943,32 @@ The approval page has a **Security audit** field. It reads **No security audit
 performed** until an audit is recorded for the package's current published
 commit and capability fingerprint. Click it to copy a prompt for your agent. The
 prompt names the package, commit, and fingerprint. It asks the agent to review
-that version's code for declared vs used credentials, leaked secrets, unintended
-public exposure, risky network hosts, and package storage use.
+that version's code for declared vs used credentials, leaked credentials,
+unintended public exposure, risky network hosts, and package storage use. An
+agent that moves a package toward internet-visible gets the same request as the
+`security_audit` next step (see
+[Approval when a package goes internet-visible](#approval-when-a-package-goes-internet-visible)).
 
 The agent records the result with **`packageSecurityAuditRecord`**
 (`POST /v1/packages/{package_id}/security-audits`, `package:write` plus
 `package:read`). It passes `package_id`, `published_commit`, `fingerprint`, a
 `verdict` (`pass` or `concerns`), a plain-language `summary`, and an optional
-`auditor` name. The capability rejects a commit or fingerprint that no longer
-matches the current version, and redacts token-shaped strings from the summary.
-Each record stores who recorded it and when, and is audit-logged. The field then
+`auditor` name:
+
+```ts
+await kody.packageSecurityAuditRecord({
+	package_id: '…',
+	published_commit: '…',
+	fingerprint: '…',
+	verdict: 'pass',
+	summary: 'What was checked and found.',
+})
+```
+
+The capability rejects a commit or fingerprint that no longer matches the
+current version, and redacts token-shaped strings from the summary. Its response
+includes `approval_url` and a `next_step` to send the owner that link. Each
+record stores who recorded it and when, and is audit-logged. The field then
 reads **Audited {date} by {auditor}** and links to the summary. A new publish or
 a changed capability set reads as not audited again. The field covers only the
 published version, not a paused publish waiting on the same page. Capability
