@@ -249,8 +249,15 @@ async function reevaluatePendingSelfPublish(
 		packageId: input.savedPackage.id,
 	})
 	if (!pending) return null
+	// A request for an older publish can no longer be approved by anyone, so
+	// self-publish enqueues one for the audited commit instead, as a re-toggle
+	// would.
+	const pendingRequestId =
+		pending.baseCommit === input.summary.publishedCommit
+			? pending.id
+			: undefined
 	try {
-		return await attemptSelfPublish({ ...input, pendingRequestId: pending.id })
+		return await attemptSelfPublish({ ...input, pendingRequestId })
 	} catch (error) {
 		// The audit is already recorded; failing here would invite a duplicate on retry.
 		console.error('Self-publish re-evaluation after a security audit failed', {

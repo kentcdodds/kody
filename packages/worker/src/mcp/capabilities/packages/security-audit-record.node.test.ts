@@ -180,6 +180,7 @@ test('packageSecurityAuditRecord re-evaluates a pending internet-visible request
 	mockCurrentVersion()
 	mockModule.getPendingWentPublicApproval.mockResolvedValue({
 		id: 'request-1',
+		baseCommit: publishedCommit,
 	})
 	mockModule.attemptSelfPublish.mockResolvedValueOnce({
 		status: 'self_published',
@@ -225,10 +226,31 @@ test('packageSecurityAuditRecord re-evaluates a pending internet-visible request
 	mockModule.getPendingWentPublicApproval.mockReset()
 })
 
+test('packageSecurityAuditRecord does not bind self-publish to a pending request for an older publish', async () => {
+	mockCurrentVersion()
+	mockModule.getPendingWentPublicApproval.mockResolvedValue({
+		id: 'stale-request',
+		baseCommit: 'commit-older',
+	})
+	mockModule.attemptSelfPublish.mockReset()
+	mockModule.attemptSelfPublish.mockResolvedValueOnce({
+		status: 'self_published',
+	})
+	try {
+		await packageSecurityAuditRecordCapability.handler(validArgs, createCtx())
+		expect(mockModule.attemptSelfPublish).toHaveBeenCalledWith(
+			expect.objectContaining({ pendingRequestId: undefined }),
+		)
+	} finally {
+		mockModule.getPendingWentPublicApproval.mockReset()
+	}
+})
+
 test('packageSecurityAuditRecord keeps a recorded audit when the self-publish re-evaluation throws', async () => {
 	mockCurrentVersion()
 	mockModule.getPendingWentPublicApproval.mockResolvedValue({
 		id: 'request-1',
+		baseCommit: publishedCommit,
 	})
 	mockModule.attemptSelfPublish.mockRejectedValueOnce(new Error('D1 down'))
 	const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
