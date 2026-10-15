@@ -359,12 +359,46 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 				`${repoChecksFailedErrorName}: src/receive.js(12,3): type mismatch`,
 			),
 		),
+		// Missing delete/move targets (KODY-9B). Plain Error from DO RPC.
+		// Agents guess paths; the caller still receives the error.
+		handlerFailure(
+			'repoEditFiles',
+			'repo',
+			'Error',
+			new Error(
+				'repo session delete edit target "src/index.js" was not found.',
+			),
+		),
+		handlerFailure(
+			'repoEditFiles',
+			'repo',
+			'Error',
+			new Error('repo session move edit source "index.ts" was not found.'),
+		),
+		handlerFailure(
+			'repoEditFiles',
+			'repo',
+			'Error',
+			new Error('Durable Object RPC failed', {
+				cause: new Error(
+					'repo session delete edit target "index.js" was not found.',
+				),
+			}),
+		),
+		handlerFailure(
+			'repoEditFiles',
+			'repo',
+			'Error',
+			new Error(
+				'repo session edits cannot combine a delete/move touching "src/a.ts" with a write/replace/writeJson edit for the same path in one call. Split them into separate repoEditFiles calls.',
+			),
+		),
 	]
 	const payloads = captureMcpEvents(() => {
 		for (const event of callerFailures) logMcpEvent(event)
 	})
 
-	expect(payloads).toHaveLength(26)
+	expect(payloads).toHaveLength(30)
 	expect(JSON.parse(payloads[0]!)).toMatchObject({
 		tool: 'execute',
 		outcome: 'failure',
@@ -413,9 +447,35 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 				new Error('MCP tool "home:bond_shade_set_position" failed: timeout'),
 			),
 		)
+		// Unrelated "was not found" phrases stay platform-visible (KODY-9B
+		// must not swallow Source, Manifest, or Saved package misses).
+		logMcpEvent(
+			handlerFailure(
+				'repoReadFile',
+				'repo',
+				'Error',
+				new Error('Source "abc" was not found.'),
+			),
+		)
+		logMcpEvent(
+			handlerFailure(
+				'repoOpenSession',
+				'repo',
+				'Error',
+				new Error('Manifest "package.json" was not found.'),
+			),
+		)
+		logMcpEvent(
+			handlerFailure(
+				'packageSave',
+				'packages',
+				'Error',
+				new Error('Saved package "demo" was not found.'),
+			),
+		)
 	})
 
-	expect(sentryMock.captureException).toHaveBeenCalledTimes(4)
+	expect(sentryMock.captureException).toHaveBeenCalledTimes(7)
 	expect(sentryMock.captureException).toHaveBeenNthCalledWith(
 		1,
 		expect.objectContaining({ message: 'platform handler blew up' }),
@@ -435,6 +495,22 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 		4,
 		expect.objectContaining({
 			message: 'MCP tool "home:bond_shade_set_position" failed: timeout',
+		}),
+	)
+	expect(sentryMock.captureException).toHaveBeenNthCalledWith(
+		5,
+		expect.objectContaining({ message: 'Source "abc" was not found.' }),
+	)
+	expect(sentryMock.captureException).toHaveBeenNthCalledWith(
+		6,
+		expect.objectContaining({
+			message: 'Manifest "package.json" was not found.',
+		}),
+	)
+	expect(sentryMock.captureException).toHaveBeenNthCalledWith(
+		7,
+		expect.objectContaining({
+			message: 'Saved package "demo" was not found.',
 		}),
 	)
 	expect(sentryMock.scope.setLevel).toHaveBeenCalledWith('error')

@@ -4,6 +4,7 @@ import {
 	isGitPushNotFastForwardMessage,
 	isRepoSessionInactiveMessage,
 	isRepoSessionNotFoundMessage,
+	isRepoSessionStructuralEditCallerMessage,
 } from './repo-session-caller-error.ts'
 
 test('isGitPushNotFastForwardError matches isomorphic-git PushRejected non-FF only', () => {
@@ -62,4 +63,43 @@ test('isRepoSessionNotFoundMessage matches missing and wrong-user phrases only',
 			'Repo session "de72ddd6-e277-4f69-a5db-3d6ece06ca6b" is published; open a new session before continuing.',
 		),
 	).toBe(true)
+})
+
+test('isRepoSessionStructuralEditCallerMessage matches delete and move validation only', () => {
+	const callerMessages = [
+		'repo session delete edits require path.',
+		'repo session delete edit target "src/index.js" was not found.',
+		'repo session delete edit target "index.ts" was not found.',
+		'repo session delete edit target "index.js" was not found.',
+		'repo session move edits require path and to.',
+		'repo session move edit source and destination are the same: "src/a.ts".',
+		'repo session move edits cannot target the same destination twice: "src/b.ts".',
+		'repo session move edit source "src/index.js" was not found.',
+		'repo session move edit destination "src/b.ts" already exists.',
+		'repo session edits cannot combine a delete/move touching "src/a.ts" with a write/replace/writeJson edit for the same path in one call. Split them into separate repoEditFiles calls.',
+	]
+	expect(
+		callerMessages.filter(
+			(message) => !isRepoSessionStructuralEditCallerMessage(message),
+		),
+	).toEqual([])
+
+	const platformMessages = [
+		'Source "abc" was not found.',
+		'Manifest "package.json" was not found.',
+		'Saved package "demo" was not found.',
+		'Repo session "none" was not found.',
+		'Path "docs" was not found in the repo session workspace.',
+		'repo session write edits require content.',
+		'repo session replace edits require search.',
+		'repo session writeJson edits require a value.',
+		'Failed to read repo session file "index.ts" while collecting workspace snapshot.',
+		'repo session delete edit target "src/index.js" was not found. Source "abc" was not found.',
+		'repo session delete edit target "" was not found.',
+	]
+	expect(
+		platformMessages.filter((message) =>
+			isRepoSessionStructuralEditCallerMessage(message),
+		),
+	).toEqual([])
 })

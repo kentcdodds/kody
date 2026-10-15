@@ -126,3 +126,87 @@ export function buildRepoSearchInvalidRegexCallerMessage(
 		'for dotall matching use [\\s\\S] instead of `.` with (?s)).'
 	)
 }
+
+/**
+ * Structural delete/move validation thrown by RepoSession DO
+ * `applyWorkspaceEdits`. Agents guess paths (`index.ts`, `src/index.js`)
+ * before listing the tree. Those misses are caller-correctable, and a
+ * missing delete target stays an error. Subclass identity does not survive
+ * Durable Object RPC, so MCP observability matches these phrases. KODY-9B.
+ *
+ * Quoted-path phrases require the path to sit between one pair of double
+ * quotes, so unrelated "was not found" errors (Source, Manifest, Saved
+ * package, repo tree) stay platform-visible.
+ */
+function matchesQuotedRepoSessionPath(
+	message: string,
+	prefix: string,
+	suffix: string,
+) {
+	if (!message.startsWith(prefix) || !message.endsWith(suffix)) return false
+	const path = message.slice(prefix.length, message.length - suffix.length)
+	return path.length > 0 && !path.includes('"')
+}
+
+const repoSessionDeleteTargetPrefix = 'repo session delete edit target "'
+const repoSessionMoveSamePathPrefix =
+	'repo session move edit source and destination are the same: "'
+const repoSessionMoveDuplicateDestinationPrefix =
+	'repo session move edits cannot target the same destination twice: "'
+const repoSessionMoveSourcePrefix = 'repo session move edit source "'
+const repoSessionMoveDestinationPrefix = 'repo session move edit destination "'
+const repoSessionMixedEditPrefix =
+	'repo session edits cannot combine a delete/move touching "'
+const repoSessionMixedEditSuffix =
+	'" with a write/replace/writeJson edit for the same path in one call. Split them into separate repoEditFiles calls.'
+
+export function isRepoSessionStructuralEditCallerMessage(message: string) {
+	if (message === 'repo session delete edits require path.') return true
+	if (message === 'repo session move edits require path and to.') return true
+	if (
+		matchesQuotedRepoSessionPath(
+			message,
+			repoSessionDeleteTargetPrefix,
+			'" was not found.',
+		)
+	) {
+		return true
+	}
+	if (
+		matchesQuotedRepoSessionPath(message, repoSessionMoveSamePathPrefix, '".')
+	) {
+		return true
+	}
+	if (
+		matchesQuotedRepoSessionPath(
+			message,
+			repoSessionMoveDuplicateDestinationPrefix,
+			'".',
+		)
+	) {
+		return true
+	}
+	if (
+		matchesQuotedRepoSessionPath(
+			message,
+			repoSessionMoveSourcePrefix,
+			'" was not found.',
+		)
+	) {
+		return true
+	}
+	if (
+		matchesQuotedRepoSessionPath(
+			message,
+			repoSessionMoveDestinationPrefix,
+			'" already exists.',
+		)
+	) {
+		return true
+	}
+	return matchesQuotedRepoSessionPath(
+		message,
+		repoSessionMixedEditPrefix,
+		repoSessionMixedEditSuffix,
+	)
+}
