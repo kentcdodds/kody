@@ -42,6 +42,7 @@ import {
 } from './errors.ts'
 import { orgBillingPath } from '#universal/org-pages.ts'
 import { countLiveSeats } from '#worker/orgs/billing.ts'
+import { joinOrgsOnPersonalOrgIdSql } from '#worker/orgs/personal-org-sql.ts'
 import { getOrgById } from '#worker/orgs/repo.ts'
 import {
 	assertWithinOrgBudget,
@@ -364,34 +365,40 @@ export async function resolveLiveEntitlementForResource(input: {
  * paid access remains continuous. The credit wallet is `funded` only for
  * the purchasable Pro with a positive balance.
  */
+type UserEntitlementLookupRow = UserEntitlementRow & {
+	/** Personal (or team) org id for wallet / seat / override reads. */
+	org_id: string
+}
+
 async function loadEntitlementRowForStableUserId(
 	db: D1Database,
 	input: { stableUserId: string; email: string | null | undefined },
-): Promise<UserEntitlementRow | null> {
+): Promise<UserEntitlementLookupRow | null> {
 	const orgColumns = userEntitlementColumnsSql('o')
 	const email = input.email?.trim().toLowerCase()
 
 	// When email is provided, require a live users row for (email, stable id)
 	// before reading org billing — a mismatched caller context must not inherit
-	// another account's plan. Entitlement columns come from `orgs` only.
+	// another account's plan. Entitlement columns come from `orgs` only;
+	// `org_id` is the owner key for wallets, seats, and overrides.
 	if (email) {
 		return await db
 			.prepare(
-				`SELECT ${orgColumns}
+				`SELECT o.id AS org_id, ${orgColumns}
 				 FROM users u
-				 INNER JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)
-				 WHERE u.email = ? AND u.stable_user_id = ? AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}${andLiveDeletedAtSql('o')}`,
+				 ${joinOrgsOnPersonalOrgIdSql}${andLiveDeletedAtSql('o')}
+				 WHERE u.email = ? AND u.stable_user_id = ? AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}`,
 			)
 			.bind(email, input.stableUserId)
-			.first<UserEntitlementRow>()
+			.first<UserEntitlementLookupRow>()
 	}
 
 	return await db
 		.prepare(
-			`SELECT ${orgColumns} FROM orgs o WHERE o.id = ?${andLiveDeletedAtSql('o')}`,
+			`SELECT o.id AS org_id, ${orgColumns} FROM orgs o WHERE o.id = ?${andLiveDeletedAtSql('o')}`,
 		)
 		.bind(input.stableUserId)
-		.first<UserEntitlementRow>()
+		.first<UserEntitlementLookupRow>()
 }
 
 export async function getUserEntitlement(
@@ -406,10 +413,13 @@ export async function getUserEntitlement(
 		email,
 	})
 	if (!row) return publicFreeEntitlement
+	const { org_id: orgId, ...entitlementRow } = row
 	return await resolveUserEntitlementFromRow({
 		db,
-		stableUserId: input.userId,
-		row,
+		// Wallets, seats, and overrides are owner-keyed (orgs.id), which may
+		// differ from the person id when personal_org_id is distinct.
+		stableUserId: (orgId ?? '').trim() || input.userId,
+		row: entitlementRow,
 	})
 }
 
@@ -607,8 +617,8 @@ export async function findUserAccountByStableUserId(
 		.prepare(
 			`SELECT u.email, o.plan, u.email_verified_at
 			 FROM users u
-			 INNER JOIN orgs o ON o.id = COALESCE(NULLIF(TRIM(u.personal_org_id), ''), u.stable_user_id)
-			 WHERE u.stable_user_id = ?${andLiveDeletedAtSql('u')}${andLiveDeletedAtSql('o')}`,
+			 ${joinOrgsOnPersonalOrgIdSql}${andLiveDeletedAtSql('o')}
+			 WHERE u.stable_user_id = ?${andLiveDeletedAtSql('u')}`,
 		)
 		.bind(trimmed)
 		.first<{

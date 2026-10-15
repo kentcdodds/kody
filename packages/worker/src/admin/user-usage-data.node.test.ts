@@ -22,6 +22,8 @@ type UserRow = {
 	stripe_plan?: string | null
 	stripe_price_id?: string | null
 	stable_user_id: string
+	personal_org_id?: string | null
+	org_id?: string
 }
 
 type UsageRollupRow = {
@@ -114,8 +116,15 @@ function createAdminUserUsageTestDb(input: {
 						normalizedQuery.includes('stripe_price_id') &&
 						normalizedQuery.includes('stripe_credits_eligible')
 					) {
-						return (users.find((user) => user.stable_user_id === params[0]) ??
-							null) as T | null
+						const user = users.find((row) => row.stable_user_id === params[0])
+						if (!user) return null
+						const orgId =
+							user.org_id ?? user.personal_org_id ?? user.stable_user_id
+						return {
+							...user,
+							personal_org_id: user.personal_org_id ?? orgId,
+							org_id: orgId,
+						} as T
 					}
 					if (
 						normalizedQuery.includes('from credit_wallets where user_id = ?')
@@ -226,10 +235,13 @@ async function setupUsageUser(input: {
 	meter?: Partial<Record<DailyEntitlementResource, number>>
 	wrapDb?: (db: D1Database) => D1Database
 	extraEnv?: Record<string, unknown>
+	/** When set, personal org id differs from the person stable id. */
+	distinctPersonalOrgId?: string
 }) {
-	const usageUserId = testStableUserIdFromEmail(
+	const personId = testStableUserIdFromEmail(
 		`${input.plan}-${crypto.randomUUID()}@example.com`,
 	)
+	const usageUserId = input.distinctPersonalOrgId ?? personId
 	const resourceCounts = { [usageUserId]: input.resourceCounts ?? {} }
 	const db = createAdminUserUsageTestDb({
 		users: [
@@ -238,7 +250,9 @@ async function setupUsageUser(input: {
 				username: 'usage-user',
 				email: 'usage-user@example.com',
 				plan: input.plan,
-				stable_user_id: usageUserId,
+				stable_user_id: personId,
+				personal_org_id: usageUserId,
+				org_id: usageUserId,
 				...input.stripe,
 			},
 		],
@@ -271,9 +285,10 @@ async function setupUsageUser(input: {
 	}
 	return {
 		usageUserId,
+		personId,
 		env,
 		load: (now = defaultNow) =>
-			loadAdminUserUsageData(env as unknown as Env, usageUserId, now),
+			loadAdminUserUsageData(env as unknown as Env, personId, now),
 	}
 }
 
@@ -296,12 +311,12 @@ test('loadAdminUserUsageData returns null for unknown users and zeroed usage for
 		),
 	).toBeNull()
 
-	const { usageUserId, load } = await setupUsageUser({ plan: 'standard' })
+	const { personId, load } = await setupUsageUser({ plan: 'standard' })
 	const data = await load()
 
 	expect(data?.currentMonth).toBe('2026-07')
 	expect(data?.today).toBe('2026-07-05')
-	expect(data?.stableUserId).toBe(usageUserId)
+	expect(data?.stableUserId).toBe(personId)
 	expect(data?.currentMonthUsage.every((row) => row.eventCount === 0)).toBe(
 		true,
 	)
@@ -420,8 +435,23 @@ test('loadAdminUserUsageData converts Durable Object RPC duration to observe-onl
 	})
 })
 
+test('loadAdminUserUsageData reads owner-keyed rollups by personal org id when distinct', async () => {
+	const distinctOrgId = testStableUserIdFromEmail(
+		`distinct-org-${crypto.randomUUID()}@example.com`,
+	)
+	const { personId, usageUserId, load } = await setupUsageUser({
+		plan: 'standard',
+		distinctPersonalOrgId: distinctOrgId,
+		rollups: [['job_run', '2026-07', 4]],
+	})
+	expect(personId).not.toBe(usageUserId)
+	const data = await load()
+	expect(data?.stableUserId).toBe(personId)
+	expect(getEventCount(data?.currentMonthUsage, 'job_run')).toBe(4)
+})
+
 test('loadAdminUserUsageData warns above eighty percent of plan limits', async () => {
-	const { usageUserId, load } = await setupUsageUser({
+	const { personId, load } = await setupUsageUser({
 		plan: 'standard',
 		rollups: [
 			['job_run', '2026-07', 4],
@@ -432,7 +462,7 @@ test('loadAdminUserUsageData warns above eighty percent of plan limits', async (
 	})
 	const data = await load()
 
-	expect(data?.stableUserId).toBe(usageUserId)
+	expect(data?.stableUserId).toBe(personId)
 	expect(getEventCount(data?.currentMonthUsage, 'job_run')).toBe(4)
 	expect(data?.dynamicWorkerCost.uniqueWorkerDays).toBe(0)
 	expect(data?.monthUsage.map((month) => month.month)).toEqual([
