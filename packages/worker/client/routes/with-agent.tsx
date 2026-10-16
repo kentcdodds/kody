@@ -227,7 +227,14 @@ const connectCss = {
 		margin: '1.25rem 0 0',
 		paddingLeft: '1.4rem',
 		display: 'grid',
+		// An auto track sizes to the longest command, so the field and Copy
+		// spill past the card on every /with page that shares this list.
+		gridTemplateColumns: 'minmax(0, 1fr)',
 		gap: '1.1rem',
+		minWidth: 0,
+	},
+	'& li': {
+		minWidth: 0,
 	},
 	'& li::marker': { fontWeight: 700, color: colors.primaryText },
 	'& li > p': { margin: 0, lineHeight: 1.55 },
@@ -243,12 +250,13 @@ const stepLinkCss = {
 }
 
 const codeRowCss = {
-	display: 'flex',
-	alignItems: 'flex-start',
+	display: 'grid',
+	gridTemplateColumns: 'minmax(0, 1fr) auto',
+	alignItems: 'start',
 	gap: '0.6rem',
 	marginTop: '0.5rem',
+	minWidth: 0,
 	'& pre': {
-		flex: '1 1 auto',
 		minWidth: 0,
 		margin: 0,
 		padding: '0.65rem 0.85rem',
