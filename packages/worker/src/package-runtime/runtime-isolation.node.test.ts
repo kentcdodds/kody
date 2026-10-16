@@ -351,11 +351,19 @@ test('hosted package-app fetch path: deferred runtime import keeps credential ca
 				writeTempFiles,
 				installSharedStorage,
 				entrySource: `
-// Fixed package-app entry: no static import of runtime.js. Secret authority
-// readers use Symbol.for; first runtime eval is the user import inside ALS.
+// Fixed package-app entry: no static import of runtime.js. Preload inside
+// ALS before the user module so optional exports see the bound store and
+// secret-authority stamps use the module export (not a forgeable Symbol).
 const storage = globalThis[Symbol.for('kody.runtimeStorage')];
+let getSecretAuthority = null;
+async function ensureRuntimeLoaded() {
+	if (typeof getSecretAuthority === 'function') return;
+	const runtimeModule = await import('./.__kody_virtual__/runtime.js');
+	getSecretAuthority = runtimeModule.__kodyGetSecretAuthority;
+}
 export async function simulateFetch(runtime) {
 	return storage.run(runtime, async () => {
+		await ensureRuntimeLoaded();
 		const userModule = await import('./app.js');
 		return await userModule.default.fetch();
 	});
@@ -369,6 +377,81 @@ export async function simulateFetch(runtime) {
 			})
 		},
 	)
+})
+
+test('hosted package-app fetch path: host stamps ignore a forged Symbol.for authority', async () => {
+	const { Worker } = await import('node:worker_threads')
+	const result = await new Promise<{
+		forgedBeforeLoad: string | null
+		hostStamp: string
+		moduleStamp: string | null
+	}>((resolve, reject) => {
+		const worker = new Worker(
+			`
+import { parentPort } from 'node:worker_threads'
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { writeFileSync, mkdirSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { pathToFileURL } from 'node:url'
+
+const authoritySymbol = Symbol.for('kody.getSecretAuthority')
+Object.defineProperty(globalThis, authoritySymbol, {
+	value: () => 'pkg-forged-dependency',
+	writable: true,
+	configurable: true,
+	enumerable: false,
+})
+const storage = new AsyncLocalStorage()
+globalThis[Symbol.for('kody.runtimeStorage')] = storage
+const dir = join(tmpdir(), \`kody-host-stamp-\${Date.now()}\`)
+mkdirSync(join(dir, '.__kody_virtual__'), { recursive: true })
+writeFileSync(join(dir, '.__kody_virtual__/runtime.js'), ${JSON.stringify(runtimeSource)})
+writeFileSync(
+	join(dir, 'package-app-entry.js'),
+	\`
+let getSecretAuthority = null;
+function readSecretAuthority() {
+	return typeof getSecretAuthority === 'function' ? (getSecretAuthority() ?? '') : '';
+}
+async function ensureRuntimeLoaded() {
+	if (typeof getSecretAuthority === 'function') return;
+	const runtimeModule = await import('./.__kody_virtual__/runtime.js');
+	getSecretAuthority = runtimeModule.__kodyGetSecretAuthority;
+}
+const storage = globalThis[Symbol.for('kody.runtimeStorage')];
+export async function simulateFetch(runtime) {
+	const forgedBeforeLoad = globalThis[Symbol.for('kody.getSecretAuthority')]();
+	return storage.run(runtime, async () => {
+		await ensureRuntimeLoaded();
+		return {
+			forgedBeforeLoad,
+			hostStamp: readSecretAuthority(),
+			moduleStamp: getSecretAuthority(),
+		};
+	});
+}
+\`,
+)
+try {
+	const entry = await import(pathToFileURL(join(dir, 'package-app-entry.js')).href)
+	const outcome = await entry.simulateFetch({})
+	parentPort.postMessage(outcome)
+} finally {
+	rmSync(dir, { recursive: true, force: true })
+}
+`,
+			{ eval: true },
+		)
+		worker.on('message', resolve)
+		worker.on('error', reject)
+		worker.on('exit', (code) => {
+			if (code !== 0) reject(new Error(`worker exited ${code}`))
+		})
+	})
+	expect(result.forgedBeforeLoad).toBe('pkg-forged-dependency')
+	expect(result.hostStamp).toBe('')
+	expect(result.moduleStamp).toBeNull()
 })
 
 test('preloaded kody exports resolve from the active runtime store', async () => {

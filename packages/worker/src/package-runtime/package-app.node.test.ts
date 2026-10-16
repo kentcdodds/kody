@@ -811,16 +811,19 @@ test('buildPackageAppWorker serves an artifactName-null artifact hit and reuses 
 	expect(packageAppHostSource).toContain('x-kody-credential-client')
 	expect(packageAppHostSource).toContain('Leave x-kody-credential-client alone')
 	// Must not statically import runtime.js at entry load: optional exports
-	// (credential) freeze from empty ALS and stay undefined forever.
+	// (credential) freeze from empty ALS and stay undefined forever. Preload
+	// inside ALS.run via __kodyEnsureRuntimeLoaded and stamp with the module
+	// export (not a forgeable Symbol.for getter).
 	expect(packageAppHostSource).not.toMatch(
 		/import\s*\{[^}]*__kodyGetSecretAuthority[^}]*\}\s*from/,
 	)
-	expect(packageAppHostSource).not.toContain(
-		"from './.__kody_virtual__/runtime.js'",
+	expect(packageAppHostSource).not.toMatch(
+		/^import .+ from '\.\/\.__kody_virtual__\/runtime\.js'/m,
 	)
+	expect(packageAppHostSource).toContain('__kodyEnsureRuntimeLoaded')
 	expect(packageAppHostSource).toContain('__kodyReadSecretAuthority')
 	expect(packageAppHostSource).toContain(
-		"Symbol.for('kody.getSecretAuthority')",
+		'__kodyGetSecretAuthorityFn = runtimeModule.__kodyGetSecretAuthority',
 	)
 	const bridgeProps = packageAppRuntimeMock.packageAppRuntimeBridge.mock
 		.calls[0]?.[0] as { props?: { credentialClientBinding?: string } }

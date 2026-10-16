@@ -151,15 +151,26 @@ const __kodyRuntimeStorage = (() => {
 	return created;
 })();
 
-// Do not statically import ${JSON.stringify(`./${runtimeModulePath}`)} here.
-// That virtual module freezes optional exports (credential, credentials, …)
-// from __kodyInitialRuntime at first evaluation. Importing it at entry load
-// runs before any __kodyRuntimeStorage.run, so credential stays undefined
-// forever even after createRuntime binds it. User code imports kody:runtime
-// inside ALS.run; secret-authority readers use Symbol.for instead.
+// Do not statically import ${JSON.stringify(`./${runtimeModulePath}`)} at
+// entry load. That virtual module freezes optional exports (credential, …)
+// from __kodyInitialRuntime at first evaluation — before any
+// __kodyRuntimeStorage.run — so credential stayed undefined forever after
+// createRuntime bound it (#3886). Instead preload runtime inside ALS.run
+// (before the user module) so optional exports see the bound store, and
+// cache the module export for secret-authority stamps. Never trust
+// Symbol.for('kody.getSecretAuthority') alone: package code can seal a
+// forge before runtime installs the real getter.
+const __kodyRuntimeModuleSpecifier = ${JSON.stringify(`./${runtimeModulePath}`)};
+let __kodyGetSecretAuthorityFn = null;
 function __kodyReadSecretAuthority() {
-	const getter = globalThis[Symbol.for('kody.getSecretAuthority')];
-	return typeof getter === 'function' ? getter() : '';
+	return typeof __kodyGetSecretAuthorityFn === 'function'
+		? (__kodyGetSecretAuthorityFn() ?? '')
+		: '';
+}
+async function __kodyEnsureRuntimeLoaded() {
+	if (typeof __kodyGetSecretAuthorityFn === 'function') return;
+	const runtimeModule = await import(__kodyRuntimeModuleSpecifier);
+	__kodyGetSecretAuthorityFn = runtimeModule.__kodyGetSecretAuthority;
 }
 
 const __kodyEvaluateFetchPatchedSymbol = Symbol.for('kody.evaluateFetchPatched');
@@ -910,6 +921,7 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 		try {
 			consoleCapture.install();
 			const response = await __kodyRuntimeStorage.run(runtime, async () => {
+				await __kodyEnsureRuntimeLoaded();
 				const userModule = await import(${JSON.stringify(`./${input.mainModule}`)});
 				const runtimeEnv = createPackageAppEnv(this.env, userModule);
 				const candidate = userModule.default ?? userModule;
@@ -989,6 +1001,7 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 		try {
 			consoleCapture.install();
 			const result = await __kodyRuntimeStorage.run(runtime, async () => {
+				await __kodyEnsureRuntimeLoaded();
 				const userModule = await import(${JSON.stringify(`./${input.mainModule}`)});
 				const runtimeEnv = createPackageAppEnv(this.env, userModule);
 				const resolved = resolveRealtimeHandler(userModule, payload?.facet);
