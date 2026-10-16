@@ -118,6 +118,8 @@ function mintedUrl(overrides: Record<string, unknown> = {}) {
 		packageId: 'pkg-1',
 		packageKodyId: 'sentry-bridge',
 		name: 'sentry',
+		endpointId: 'ep-1',
+		instanceLabel: null,
 		handle: 'whh_ep-1',
 		urlHost: 'heykody.dev',
 		enabled: true,

@@ -20,7 +20,7 @@ export const webhookUrlMintCapability = defineDomainCapability(
 		name: 'webhookUrlMint',
 		orgPermission: 'package:write',
 		description:
-			'Mint (or remint) the URL secret for a package-declared webhook and return an opaque handle plus url_host. The credential URL is never returned — register it with webhookUrlApply. Minting does not turn the webhook on: deliveries fail with enablement_not_on until a person opens approval_url and clicks Approve, which runs it as them (and is where its credentials are mapped). Existing approvals are kept across remint and rotate.',
+			'Mint (or remint) the URL secret for a package-declared webhook and return an opaque handle plus url_host. Pass createInstance+instanceLabel to mint another URL under the same declared name (each URL needs its own Approve). The credential URL is never returned — register it with webhookUrlApply. Minting does not turn the webhook on: deliveries fail with enablement_not_on until a person opens approval_url and clicks Approve, which runs it as them (and is where its credentials are mapped). Existing approvals are kept across remint and rotate.',
 		keywords: ['webhook', 'mint', 'url', 'activate', 'handle', 'inbound'],
 		readOnly: false,
 		idempotent: false,
@@ -32,6 +32,20 @@ export const webhookUrlMintCapability = defineDomainCapability(
 					.string()
 					.min(1)
 					.describe('Webhook name from package.json#kody.webhooks[].name.'),
+				createInstance: z
+					.boolean()
+					.optional()
+					.describe(
+						'When true, mint another URL under the same declared name. Requires instanceLabel.',
+					),
+				instanceLabel: z
+					.string()
+					.min(1)
+					.max(64)
+					.optional()
+					.describe(
+						'Short label to tell this URL apart from others under the same name.',
+					),
 			})
 			.superRefine((input, ctx) => {
 				try {
@@ -42,6 +56,13 @@ export const webhookUrlMintCapability = defineDomainCapability(
 						path: ['packageId'],
 						message:
 							error instanceof Error ? error.message : 'Invalid package ref.',
+					})
+				}
+				if (input.createInstance && !input.instanceLabel?.trim()) {
+					ctx.addIssue({
+						code: 'custom',
+						path: ['instanceLabel'],
+						message: 'instanceLabel is required when createInstance is true.',
 					})
 				}
 			}),
@@ -60,6 +81,8 @@ export const webhookUrlMintCapability = defineDomainCapability(
 				kodyId: args.kodyId,
 				webhookName: args.webhookName,
 				requestUrl: ctx.callerContext.baseUrl,
+				createInstance: args.createInstance,
+				instanceLabel: args.instanceLabel,
 			})
 			return { webhook: toMintedWebhookCapability(minted) }
 		},

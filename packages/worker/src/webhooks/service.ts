@@ -103,6 +103,10 @@ export type ListedWebhook = {
 	replay: PackageWebhookManifestEntry['replay']
 	challenge: PackageWebhookManifestEntry['challenge']
 	minted: boolean
+	/** Endpoint id when minted; null when this row is the unminted declaration. */
+	endpointId: string | null
+	/** User-set label when several URLs share this declared name. */
+	instanceLabel: string | null
 	handle: string | null
 	urlHost: string | null
 	enabled: boolean | null
@@ -128,6 +132,8 @@ export type MintedWebhookHandle = {
 	packageId: string
 	packageKodyId: string
 	name: string
+	endpointId: string
+	instanceLabel: string | null
 	handle: string
 	urlHost: string
 	enabled: boolean
@@ -255,12 +261,22 @@ export async function listWebhooksForUser(input: {
 			)
 		: packages
 
-	const mintedByKey = new Map<string, WebhookEndpointRecord>()
+	const mintedByPackageName = new Map<string, Array<WebhookEndpointRecord>>()
 	for (const mint of await listWebhookEndpointsForUser({
 		db: input.env.APP_DB,
 		userId: input.userId,
 	})) {
-		mintedByKey.set(`${mint.packageId}:${mint.webhookName}`, mint)
+		const key = `${mint.packageId}:${mint.webhookName}`
+		const rows = mintedByPackageName.get(key) ?? []
+		rows.push(mint)
+		mintedByPackageName.set(key, rows)
+	}
+	for (const rows of mintedByPackageName.values()) {
+		rows.sort(
+			(left, right) =>
+				left.createdAt.localeCompare(right.createdAt) ||
+				left.id.localeCompare(right.id),
+		)
 	}
 
 	const manifests = await Promise.all(
@@ -281,9 +297,10 @@ export async function listWebhooksForUser(input: {
 		),
 	)
 
+	const allMints = [...mintedByPackageName.values()].flat()
 	const approvedEndpointIds = new Set<string>()
 	await Promise.all(
-		[...mintedByKey.values()].map(async (mint) => {
+		allMints.map(async (mint) => {
 			const enablements = await listEnablementsForInstance({
 				db: input.env.APP_DB,
 				orgId: mint.userId,
@@ -300,9 +317,9 @@ export async function listWebhooksForUser(input: {
 		const loaded = manifests[index]
 		if (!loaded) continue
 		for (const webhook of listPackageWebhooks(loaded.manifest)) {
-			const mint = mintedByKey.get(`${savedPackage.id}:${webhook.name}`)
-			const approved = mint !== undefined && approvedEndpointIds.has(mint.id)
-			listed.push({
+			const mints =
+				mintedByPackageName.get(`${savedPackage.id}:${webhook.name}`) ?? []
+			const base = {
 				packageId: savedPackage.id,
 				packageKodyId: savedPackage.kodyId,
 				packageName: savedPackage.name,
@@ -315,13 +332,37 @@ export async function listWebhooksForUser(input: {
 				verification: webhook.verification,
 				replay: webhook.replay,
 				challenge: webhook.challenge,
-				minted: mint !== undefined,
-				handle: mint ? formatWebhookUrlHandle(mint.id) : null,
-				urlHost: mint ? urlHost : null,
-				enabled: mint?.enabled ?? null,
-				approved,
-				approvalUrl:
-					mint && !approved
+			}
+			if (mints.length === 0) {
+				listed.push({
+					...base,
+					minted: false,
+					endpointId: null,
+					instanceLabel: null,
+					handle: null,
+					urlHost: null,
+					enabled: null,
+					approved: false,
+					approvalUrl: null,
+					urlRecoverable: false,
+					createdAt: null,
+					rotatedAt: null,
+					previousUrlActiveUntil: null,
+				})
+				continue
+			}
+			for (const mint of mints) {
+				const approved = approvedEndpointIds.has(mint.id)
+				listed.push({
+					...base,
+					minted: true,
+					endpointId: mint.id,
+					instanceLabel: mint.instanceLabel,
+					handle: formatWebhookUrlHandle(mint.id),
+					urlHost,
+					enabled: mint.enabled,
+					approved,
+					approvalUrl: !approved
 						? buildWebhookApprovalUrl({
 								baseUrl: input.baseUrl,
 								orgSlug: input.request.org.slug,
@@ -329,21 +370,23 @@ export async function listWebhooksForUser(input: {
 								webhookName: webhook.name,
 							})
 						: null,
-				urlRecoverable: mint?.urlSecretEncrypted != null,
-				createdAt: mint?.createdAt ?? null,
-				rotatedAt: mint?.rotatedAt ?? null,
-				previousUrlActiveUntil:
-					mint && isWebhookPreviousUrlLive(mint)
+					urlRecoverable: mint.urlSecretEncrypted != null,
+					createdAt: mint.createdAt,
+					rotatedAt: mint.rotatedAt,
+					previousUrlActiveUntil: isWebhookPreviousUrlLive(mint)
 						? mint.previousUrlSecretExpiresAt
 						: null,
-			})
+				})
+			}
 		}
 	}
 
 	return listed.sort(
 		(left, right) =>
 			left.packageKodyId.localeCompare(right.packageKodyId) ||
-			left.name.localeCompare(right.name),
+			left.name.localeCompare(right.name) ||
+			(left.createdAt ?? '').localeCompare(right.createdAt ?? '') ||
+			(left.endpointId ?? '').localeCompare(right.endpointId ?? ''),
 	)
 }
 
@@ -359,10 +402,26 @@ export async function mintWebhookUrlForUser(input: {
 	requestUrl?: string | null
 	/** When false, rotate secret without forcing enabled=true on conflict. */
 	activate?: boolean
+	/**
+	 * Mint another URL under the same declared name. Requires a short
+	 * `instanceLabel` so Settings and Triggers can tell the URLs apart.
+	 */
+	createInstance?: boolean
+	instanceLabel?: string | null
 }): Promise<MintedWebhookHandle> {
 	const webhookName = input.webhookName.trim()
 	if (!webhookName) throw new McpCallerError('webhookName is required.')
 	const activate = input.activate !== false
+	const createInstance = input.createInstance === true
+	const instanceLabel = input.instanceLabel?.trim() || null
+	if (createInstance && !instanceLabel) {
+		throw new McpCallerError(
+			'instanceLabel is required when minting another URL under the same webhook name.',
+		)
+	}
+	if (instanceLabel && instanceLabel.length > 64) {
+		throw new McpCallerError('instanceLabel must be at most 64 characters.')
+	}
 	const baseUrl = getAppBaseUrl({
 		env: input.env,
 		requestUrl: input.requestUrl,
@@ -391,12 +450,14 @@ export async function mintWebhookUrlForUser(input: {
 
 	const urlSecret = await generateWebhookUrlSecret()
 	const urlSecretHash = await hashWebhookUrlSecret(urlSecret)
-	const existing = await getWebhookEndpointByKey({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		packageId: savedPackage.id,
-		webhookName,
-	})
+	const existing = createInstance
+		? null
+		: await getWebhookEndpointByKey({
+				db: input.env.APP_DB,
+				userId: input.userId,
+				packageId: savedPackage.id,
+				webhookName,
+			})
 	let endpointId = existing?.id ?? crypto.randomUUID()
 	let stored: WebhookEndpointRecord | null = null
 	for (let attempt = 0; attempt < 2; attempt++) {
@@ -427,6 +488,8 @@ export async function mintWebhookUrlForUser(input: {
 				...(hmacSecretEncrypted !== undefined ? { hmacSecretEncrypted } : {}),
 				enabled: true,
 				updateEnabledOnConflict: activate,
+				createInstance,
+				instanceLabel,
 			})
 			break
 		} catch (error) {
@@ -436,6 +499,7 @@ export async function mintWebhookUrlForUser(input: {
 				continue
 			}
 			if (!getUniqueConstraintField(error)) throw error
+			if (createInstance) throw error
 			const raced = await getWebhookEndpointByKey({
 				db: input.env.APP_DB,
 				userId: input.userId,
@@ -507,6 +571,8 @@ export async function mintWebhookUrlForUser(input: {
 		packageId: savedPackage.id,
 		packageKodyId: savedPackage.kodyId,
 		name: webhookName,
+		endpointId: stored.id,
+		instanceLabel: stored.instanceLabel,
 		handle: formatWebhookUrlHandle(stored.id),
 		urlHost: webhookUrlHostFromOrigin(baseUrl),
 		enabled: stored.enabled,

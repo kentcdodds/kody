@@ -34,6 +34,8 @@ const listCommands: PackageWebhookListItem = {
 	replay: null,
 	challenge: null,
 	minted: false,
+	endpointId: null,
+	instanceLabel: null,
 	handle: null,
 	urlHost: null,
 	enabled: null,
@@ -53,6 +55,8 @@ const run: PackageWebhookListItem = {
 	description: null,
 	replay: { deliveryIdHeader: 'X-Delivery-Id' },
 	minted: true,
+	endpointId: '11111111-1111-1111-1111-111111111111',
+	instanceLabel: null,
 	handle: 'whh_11111111-1111-1111-1111-111111111111',
 	urlHost: 'kody.example',
 	enabled: true,
@@ -156,6 +160,8 @@ test('the settings section loads one package’s webhooks, then mints, reveals, 
 			listCommandsState = {
 				...listCommands,
 				minted: true,
+				endpointId: '22222222-2222-2222-2222-222222222222',
+				instanceLabel: null,
 				enabled: true,
 				approved: false,
 				approvalUrl: approveUrl,
@@ -198,7 +204,9 @@ test('the settings section loads one package’s webhooks, then mints, reveals, 
 	const readyHtml = await render()
 	expect(readyHtml).toContain('2 declared · 1 minted')
 	expect(readyHtml).toContain('id="webhook-list-commands"')
-	expect(readyHtml).toContain('id="webhook-run"')
+	expect(readyHtml).toContain(
+		'id="webhook-run-11111111-1111-1111-1111-111111111111"',
+	)
 	expect(readyHtml).toContain('data-testid="package-webhook-mint"')
 	expect(readyHtml).toContain('aria-label="Mint URL for raycast/list-commands"')
 	expect(readyHtml).toContain('data-testid="package-webhook-reveal"')
@@ -283,7 +291,9 @@ test('the settings section reports a failed intent and keeps the rows', async ()
 	const html = await render()
 	expect(html).toContain('role="alert"')
 	expect(html).toContain('Rotate it to issue a new one.')
-	expect(html).toContain('id="webhook-run"')
+	expect(html).toContain(
+		'id="webhook-run-11111111-1111-1111-1111-111111111111"',
+	)
 })
 
 test('a failed load reports the error once and does not refetch on the re-render it triggers', async () => {

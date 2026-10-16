@@ -22,7 +22,10 @@
   [Amendment 2026-10-12](#amendment-2026-10-12)); 2026-10-15 (Kent, approved
   2026-10-14: a package run by anyone but its author uses only declared
   credentials, behind a flag — see
-  [Amendment 2026-10-15](#amendment-2026-10-15-credential-need-enforcement))
+  [Amendment 2026-10-15](#amendment-2026-10-15-credential-need-enforcement));
+  2026-10-16 (Kent: multiple minted URLs per declared webhook name with instance
+  labels and separate Approve each — see
+  [Amendment 2026-10-16](#amendment-2026-10-16-webhook-multi-instance))
 - **Supersedes in part:** [0021](./0021-publish-gated-package-composition.md)
   (credential authority for the opt-in types used through scoped clients), and
   credentials plan v4 section 3.3 (assignments) and section 3.4 (placeholder
@@ -544,8 +547,23 @@ Kent: manifest credential need `kind` becomes **optional**.
   error that includes the link. Existing enablements, including migrated ones
   and any an earlier mint created, stay untouched; remint and rotate never
   change them. **Webhook URLs are identities;** the declared webhook name is
-  display metadata only. One name does not map to multiple URLs; each URL is its
-  own instance with its own credential mappings.
+  display metadata only. (Amended 2026-10-16: several URLs may share one name —
+  see [Amendment 2026-10-16](#amendment-2026-10-16-webhook-multi-instance).)
+
+## Amendment 2026-10-16: webhook multi-instance per declared name
+
+Kent decided (2026-10-16): webhooks support multiple instances under the same
+declared webhook name.
+
+- Each additional instance **mints its own new URL** under that name.
+- A short **user-set instance label** tells URLs apart in Settings and Triggers.
+- Each new URL needs its **own separate Approve** after minting (same Approve
+  path as a first mint; enablement still binds to the endpoint id).
+- Existing webhooks and their URLs stay untouched; the migration is **additive
+  only** (relax the unique `(user, package, name)` index so several endpoints
+  may share a name; do not delete rows).
+- The **URL (endpoint id) is the identity**; the declared name remains display
+  metadata. Raw URLs and IDs stay behind the Details disclosure.
 
 ## Amendment 2026-10-13: call maps and pinned needs
 

@@ -170,10 +170,16 @@ export function renderPackageWebhookCard(input: {
 		deliveriesHref,
 	} = input
 	const webhookLabel = `${webhook.packageKodyId}/${webhook.name}`
-	const titleId = `${packageWebhookCardId(webhook.name)}-title`
+	const cardDomId = packageWebhookCardId(
+		webhook.endpointId ? `${webhook.name}-${webhook.endpointId}` : webhook.name,
+	)
+	const titleId = `${cardDomId}-title`
+	const titleText = webhook.instanceLabel
+		? `${webhook.name} · ${webhook.instanceLabel}`
+		: webhook.name
 	return (
 		<article
-			id={packageWebhookCardId(webhook.name)}
+			id={cardDomId}
 			aria-labelledby={titleId}
 			mix={css(cardCss)}
 			data-testid="package-webhook-card"
@@ -182,7 +188,7 @@ export function renderPackageWebhookCard(input: {
 			<div mix={css({ display: 'grid', gap: spacing.xs })}>
 				<div mix={css(cardHeadCss)}>
 					<h3 id={titleId} mix={css(cardTitleCss)}>
-						{webhook.name}
+						{titleText}
 					</h3>
 					<span
 						mix={css({ ...statusPillCss, color: webhookStatusColor(webhook) })}

@@ -670,3 +670,41 @@ test('listing webhooks loads package manifests concurrently', async () => {
 			.filter((kodyId) => kodyId !== 'many-03'),
 	)
 })
+
+test('createInstance mints a second URL under the same declared webhook name', async () => {
+	const owner = await setupOwner('multi@example.com', 'multi')
+	const { env, userId } = owner
+	const request = sessionRequestContext(userId)
+	const first = await mintWebhookUrlForUser({
+		env,
+		request,
+		userId: ownerIdFromStored(userId),
+		email: 'multi@example.com',
+		username: 'multi',
+		...sentryHook,
+	})
+	const second = await mintWebhookUrlForUser({
+		env,
+		request,
+		userId: ownerIdFromStored(userId),
+		email: 'multi@example.com',
+		username: 'multi',
+		...sentryHook,
+		createInstance: true,
+		instanceLabel: 'staging',
+	})
+	expect(second.handle).not.toBe(first.handle)
+	expect(second.endpointId).not.toBe(first.endpointId)
+	expect(second.instanceLabel).toBe('staging')
+	const listed = await owner.list()
+	const sentry = listed.filter((row) => row.name === 'sentry')
+	expect(sentry).toHaveLength(2)
+	expect(sentry.map((row) => row.instanceLabel).sort()).toEqual([
+		null,
+		'staging',
+	])
+	expect(sentry.every((row) => row.minted)).toBe(true)
+	expect(sentry.find((row) => row.instanceLabel === 'staging')?.approved).toBe(
+		false,
+	)
+})

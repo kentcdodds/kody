@@ -88,6 +88,15 @@ export const mintedWebhookHandleSchema = z.object({
 	package_id: z.string(),
 	package_kody_id: z.string(),
 	name: z.string(),
+	endpoint_id: z
+		.string()
+		.describe('Webhook endpoint id. The URL identity for this mint.'),
+	instance_label: z
+		.string()
+		.nullable()
+		.describe(
+			'Short label when several URLs share the declared webhook name. Null on the first mint without a label.',
+		),
 	handle: z
 		.string()
 		.describe(
@@ -189,6 +198,8 @@ export function toMintedWebhookCapability(minted: {
 	packageId: string
 	packageKodyId: string
 	name: string
+	endpointId: string
+	instanceLabel: string | null
 	handle: string
 	urlHost: string
 	enabled: boolean
@@ -201,6 +212,8 @@ export function toMintedWebhookCapability(minted: {
 		package_id: minted.packageId,
 		package_kody_id: minted.packageKodyId,
 		name: minted.name,
+		endpoint_id: minted.endpointId,
+		instance_label: minted.instanceLabel,
 		handle: minted.handle,
 		url_host: minted.urlHost,
 		enabled: minted.enabled,

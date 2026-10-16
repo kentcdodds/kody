@@ -72,6 +72,11 @@ export type WebhookEndpointRecord = {
 	enabled: boolean
 	createdAt: string
 	rotatedAt: string
+	/**
+	 * Short user-set label when several URLs share one declared webhook name.
+	 * Null for older mints and for the first URL when no label was given.
+	 */
+	instanceLabel: string | null
 }
 
 /**

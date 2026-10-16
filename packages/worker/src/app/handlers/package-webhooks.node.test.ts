@@ -120,11 +120,11 @@ async function setup(sessionUsername = 'owner') {
 			previous_url_secret_expires_at TEXT,
 			enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
 			deleted_at TEXT,
-
+			instance_label TEXT,
 			created_at TEXT NOT NULL,
 			rotated_at TEXT NOT NULL
 		);
-		CREATE UNIQUE INDEX idx_webhook_endpoints_user_package_name
+		CREATE INDEX idx_webhook_endpoints_user_package_name
 		ON webhook_endpoints(user_id, package_id, webhook_name);
 		CREATE TABLE enablements (
 			id TEXT PRIMARY KEY NOT NULL,

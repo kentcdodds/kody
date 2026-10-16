@@ -24,6 +24,7 @@ type WebhookEndpointRow = {
 	enabled: number
 	created_at: string
 	rotated_at: string
+	instance_label?: string | null
 }
 
 function mapEndpointRow(row: WebhookEndpointRow): WebhookEndpointRecord {
@@ -46,6 +47,9 @@ function mapEndpointRow(row: WebhookEndpointRow): WebhookEndpointRecord {
 		enabled: row.enabled === 1,
 		createdAt: row.created_at,
 		rotatedAt: row.rotated_at,
+		instanceLabel: row.instance_label?.trim()
+			? row.instance_label.trim()
+			: null,
 	}
 }
 
@@ -77,15 +81,31 @@ export async function upsertWebhookEndpointSecret(input: {
 	updateEnabledOnConflict?: boolean
 	now?: string
 	previousExpiresAt?: string
+	/**
+	 * When true, always insert a new endpoint under this name (multi-instance).
+	 * Ignores any existing row for the same declared name.
+	 */
+	createInstance?: boolean
+	instanceLabel?: string | null
 }): Promise<WebhookEndpointRecord> {
 	const now = input.now ?? new Date().toISOString()
 	const enabled = input.enabled === false ? 0 : 1
-	const existing = await getWebhookEndpointByKey({
+	const instanceLabel = input.instanceLabel?.trim() || null
+	const existingById = await getWebhookEndpointByIdForUser({
 		db: input.db,
 		userId: input.userId,
-		packageId: input.packageId,
-		webhookName: input.webhookName,
+		endpointId: input.id,
 	})
+	const existing =
+		existingById ??
+		(input.createInstance
+			? null
+			: await getWebhookEndpointByKey({
+					db: input.db,
+					userId: input.userId,
+					packageId: input.packageId,
+					webhookName: input.webhookName,
+				}))
 	if (existing) {
 		if (existing.id !== input.id) {
 			throw new WebhookEndpointIdRaceError(existing.id)
@@ -189,8 +209,9 @@ export async function upsertWebhookEndpointSecret(input: {
 			.prepare(
 				`INSERT INTO webhook_endpoints (
 					id, user_id, package_id, webhook_name, url_secret_hash,
-					url_secret_encrypted, hmac_secret_encrypted, enabled, created_at, rotated_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					url_secret_encrypted, hmac_secret_encrypted, enabled, created_at, rotated_at,
+					instance_label
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			)
 			.bind(
 				input.id,
@@ -203,14 +224,14 @@ export async function upsertWebhookEndpointSecret(input: {
 				enabled,
 				now,
 				now,
+				instanceLabel,
 			)
 			.run()
 	}
-	const record = await getWebhookEndpointByKey({
+	const record = await getWebhookEndpointByIdForUser({
 		db: input.db,
 		userId: input.userId,
-		packageId: input.packageId,
-		webhookName: input.webhookName,
+		endpointId: input.id,
 	})
 	if (!record) {
 		throw new Error('Unable to upsert webhook endpoint.')
@@ -408,6 +429,10 @@ export async function listWebhookEndpointsForUser(input: {
 	return (result.results ?? []).map(mapEndpointRow)
 }
 
+/**
+ * Oldest live endpoint for a declared webhook name (stable “primary” mint).
+ * Prefer {@link listWebhookEndpointsByName} when every URL under the name matters.
+ */
 export async function getWebhookEndpointByKey(input: {
 	db: D1Database
 	userId: string
@@ -419,11 +444,33 @@ export async function getWebhookEndpointByKey(input: {
 			`SELECT *
 			FROM webhook_endpoints
 			WHERE user_id = ? AND package_id = ? AND webhook_name = ?
-			${andLiveDeletedAtSql()} LIMIT 1`,
+			${andLiveDeletedAtSql()}
+			ORDER BY created_at ASC, id ASC
+			LIMIT 1`,
 		)
 		.bind(input.userId, input.packageId, input.webhookName)
 		.first<WebhookEndpointRow>()
 	return row ? mapEndpointRow(row) : null
+}
+
+/** Every live minted URL under one declared webhook name, oldest first. */
+export async function listWebhookEndpointsByName(input: {
+	db: D1Database
+	userId: string
+	packageId: string
+	webhookName: string
+}): Promise<Array<WebhookEndpointRecord>> {
+	const result = await input.db
+		.prepare(
+			`SELECT *
+			FROM webhook_endpoints
+			WHERE user_id = ? AND package_id = ? AND webhook_name = ?
+			${andLiveDeletedAtSql()}
+			ORDER BY created_at ASC, id ASC`,
+		)
+		.bind(input.userId, input.packageId, input.webhookName)
+		.all<WebhookEndpointRow>()
+	return (result.results ?? []).map(mapEndpointRow)
 }
 
 export async function getWebhookEndpointByIdForUser(input: {

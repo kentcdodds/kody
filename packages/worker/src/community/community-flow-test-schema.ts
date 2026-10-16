@@ -214,6 +214,7 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			webhook_name TEXT NOT NULL,
 			url_secret_hash TEXT NOT NULL DEFAULT '',
 			enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+			instance_label TEXT,
 			created_at TEXT NOT NULL,
 			rotated_at TEXT NOT NULL
 		)`,

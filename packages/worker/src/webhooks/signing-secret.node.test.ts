@@ -86,6 +86,7 @@ function endpoint(
 		enabled: true,
 		createdAt: '2026-07-24T00:00:00.000Z',
 		rotatedAt: '2026-07-24T00:00:00.000Z',
+		instanceLabel: null,
 		...overrides,
 	}
 }

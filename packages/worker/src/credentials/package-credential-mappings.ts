@@ -523,10 +523,7 @@ export async function buildPackageCredentialsView(
 			mappings,
 			instances,
 			canAddInstance:
-				canEditPrimary &&
-				trigger.kind !== 'webhook' &&
-				!emailTopic &&
-				trigger.instanceId !== null,
+				canEditPrimary && !emailTopic && trigger.instanceId !== null,
 		}
 	})
 	const listed = await listCredentialsForViewer({

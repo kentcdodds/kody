@@ -29,6 +29,7 @@ import { buildWebhookApprovalUrl } from '#worker/webhooks/approval.ts'
 import {
 	buildSetWebhookEndpointHmacSecretStatement,
 	getWebhookEndpointByKey,
+	listWebhookEndpointsByName,
 } from '#worker/webhooks/repo.ts'
 import { mintPackageOwnedWebhookHmacCiphertext } from '#worker/webhooks/signing-secret.ts'
 import {
@@ -222,19 +223,20 @@ export async function listDeclaredTriggers(input: {
 			instanceId: savedPackage.id,
 		})),
 		...(await Promise.all(
-			listPackageWebhooks(manifest).map(async (webhook) => ({
-				kind: 'webhook' as const,
-				name: webhook.name,
-				instanceId:
-					(
-						await getWebhookEndpointByKey({
-							db,
-							userId: orgId,
-							packageId: savedPackage.id,
-							webhookName: webhook.name,
-						})
-					)?.id ?? null,
-			})),
+			listPackageWebhooks(manifest).map(async (webhook) => {
+				// Primary = oldest mint; Triggers loads sibling URLs separately.
+				const endpoints = await listWebhookEndpointsByName({
+					db,
+					userId: orgId,
+					packageId: savedPackage.id,
+					webhookName: webhook.name,
+				})
+				return {
+					kind: 'webhook' as const,
+					name: webhook.name,
+					instanceId: endpoints[0]?.id ?? null,
+				}
+			}),
 		)),
 	]
 	return await Promise.all(
