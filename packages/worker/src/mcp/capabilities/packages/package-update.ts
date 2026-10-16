@@ -25,11 +25,11 @@ import {
 import { getCommunityListingByOwnerAndPackage } from '#worker/community/repo.ts'
 import { buildPackageCapabilityApprovalUrl } from '#worker/package-capabilities/capability-approval-url.ts'
 import {
-	approvePackageCapabilitySet,
 	clearInternetVisible,
 	loadCapabilityApprovalSummary,
 } from '#worker/package-capabilities/capability-approval-service.ts'
 import {
+	applyMatchingPinInternetVisible,
 	attemptSelfPublish,
 	type SelfPublishAttempt,
 } from '#worker/package-capabilities/self-publish.ts'
@@ -96,7 +96,7 @@ const packageUpdateChangesSchema = z
 			.boolean()
 			.optional()
 			.describe(
-				`Internet-visible app serving. Independent of visibility/forkable. Setting true makes the package internet-visible right away (self-publish, logged) when credential-need enforcement is on, nothing in its dependency tree declares a credential or another capability (kody.credentials, secretMounts, secretProvider, subscriptions, emits, jobs, retrievers, webhooks), a security audit with verdict pass is recorded for the current published commit + fingerprint, and the caller may publish the package (package:publish). An unpublished package is refused with an error: publish it first. Otherwise agents cannot approve: it returns an approval_url for the owner website and self_publish_blocker (or self_publish_error when the approval itself failed) says why. When the published version has no security audit, it also returns security_audit: run that audit and record it with ${packageSecurityAuditRecordOperation} using security_audit.args. Recording verdict pass re-evaluates the pending request and self-publishes when everything else allows it; otherwise hand the owner approval_url. Calling this again with internet_visible true also re-evaluates. Setting false turns off public app serving (requires confirm_name).`,
+				`Internet-visible app serving. Independent of visibility/forkable. Setting true makes the package internet-visible right away when either (1) self-publish applies (credential-need enforcement on, nothing in the dependency tree declares a credential or another capability, a security audit with verdict pass is recorded for the current published commit + fingerprint, and the caller may package:publish), or (2) the owner already approved the current capability set (matching pin) — then went_public is approved without another Approve click. An unpublished package is refused with an error: publish it first. Otherwise agents cannot approve the capability set: it returns an approval_url for the owner website and self_publish_blocker (or self_publish_error when applying a matching pin failed) says why. When the published version has no security audit, it also returns security_audit: run that audit and record it with ${packageSecurityAuditRecordOperation} using security_audit.args. Recording verdict pass re-evaluates the pending request and self-publishes when everything else allows it; otherwise hand the owner approval_url. Calling this again with internet_visible true also re-evaluates. Setting false turns off public app serving (requires confirm_name).`,
 			),
 	})
 	.refine(
@@ -346,16 +346,19 @@ export const packageUpdateCapability = defineDomainCapability(
 				} else if (selfPublishError) {
 					// Its pending request already waits on the owner's Approve click.
 				} else if (summary.fingerprintMatchesApproval) {
-					// Record/refresh the pin for the current published commit, then
-					// leave went_public pending for the owner's Approve click.
-					await approvePackageCapabilitySet({
+					// The owner already approved this capability set — turn
+					// internet-visible on now without another Approve click.
+					const applied = await applyMatchingPinInternetVisible({
 						env: ctx.env,
+						requestUrl: ctx.callerContext.baseUrl,
 						ownerUserId: owner.ownerUserId,
 						actorUserId: owner.actorUserId,
 						savedPackage: existing,
-						requestUrl: ctx.callerContext.baseUrl,
-						expectedFingerprint: summary.capabilitySet.fingerprint,
+						fingerprint: summary.capabilitySet.fingerprint,
 					})
+					if (!applied.ok) {
+						selfPublishError = applied.error
+					}
 				} else {
 					// Agents cannot approve capabilities. Record the ask so the
 					// owner's one Approve covers the capability set and going public.
@@ -368,7 +371,20 @@ export const packageUpdateCapability = defineDomainCapability(
 						requestedByUserId: owner.actorUserId,
 					})
 				}
-				internetVisiblePending = !selfPublished
+				// Pending when the owner still must Approve (no matching pin yet,
+				// or applying a matching pin's went_public failed). A matching
+				// pin that applied successfully is already internet-visible.
+				if (attempt.status === 'self_published') {
+					internetVisiblePending = false
+				} else if (
+					summary.fingerprintMatchesApproval &&
+					!selfPublishError &&
+					attempt.status !== 'failed'
+				) {
+					internetVisiblePending = false
+				} else {
+					internetVisiblePending = true
+				}
 				if (internetVisiblePending) {
 					securityAudit = await loadPackageSecurityAuditNextStep({
 						db: ctx.env.APP_DB,

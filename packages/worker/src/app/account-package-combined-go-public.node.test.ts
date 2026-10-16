@@ -246,7 +246,7 @@ test('approving the capability set alone leaves went_public on the combined Appr
 	).toBe(false)
 })
 
-test('asking to go public when the capability set is already approved still folds into one Approve', async () => {
+test('asking to go public when the capability set is already approved turns serving on immediately', async () => {
 	const t = await setup()
 	const before = await t.loadPage()
 	expect(
@@ -258,8 +258,8 @@ test('asking to go public when the capability set is already approved still fold
 		)?.status,
 	).toBe(200)
 
-	// Withdraw the auto-enqueued ask so the toggle records a fresh one against
-	// an already-matching pin (the world-builder failure mode).
+	// Withdraw the auto-enqueued ask so the toggle applies against an
+	// already-matching pin (the world-builder failure mode).
 	await t.toggle({
 		action: 'set-internet-visible',
 		internetVisible: false,
@@ -272,50 +272,7 @@ test('asking to go public when the capability set is already approved still fold
 		internetVisible: true,
 		confirmName: 'digest',
 	})
-	expect(asked?.status).toBe(400)
-
-	const page = await t.loadPage()
-	expect(page.fingerprintMatchesApproval).toBe(true)
-	expect(page.goPublicRequestId).toEqual(expect.any(String))
-	expect(page.pendingApprovals.map((approval) => approval.id)).toEqual([
-		page.goPublicRequestId,
-	])
-
-	const listed = await approvalPendingListCapability.handler(
-		{ packages: [t.savedPackage.id] },
-		{
-			env: t.env,
-			callerContext: createMcpCallerContext({
-				source: { kind: 'mcp-oauth' },
-				baseUrl: mappingFixtureBaseUrl,
-				oauthClientId: 'client-a',
-				user: {
-					userId: t.people.bea.personId,
-					email: 'bea@example.com',
-					displayName: 'bea',
-				},
-				orgBinding: {
-					org: { id: t.acmeId, slug: 'acme-clients' },
-					role: 'owner',
-				},
-			}),
-		},
-	)
-	expect(listed.items).toEqual([
-		expect.objectContaining({
-			type: 'publish',
-			key: `publish:${page.goPublicRequestId}`,
-			title: 'Serve on the public internet',
-			package: expect.objectContaining({ id: t.savedPackage.id }),
-		}),
-	])
-
-	const approved = await t.approve({
-		action: 'approve-capabilities-and-go-public',
-		fingerprint: page.fingerprint,
-		requestId: page.goPublicRequestId,
-	})
-	expect(approved.status).toBe(200)
+	expect(asked?.status).toBe(200)
 	expect(
 		(
 			await getSavedPackageById(t.db, {
@@ -349,6 +306,50 @@ test('asking to go public when the capability set is already approved still fold
 			)
 		).items,
 	).toEqual([])
+})
+
+test('approvalPendingList shows a went_public ask the approve page also shows', async () => {
+	const t = await setup()
+	const asked = await t.toggle({
+		action: 'set-internet-visible',
+		internetVisible: true,
+		confirmName: 'digest',
+	})
+	expect(asked?.status).toBe(400)
+	const page = await t.loadPage()
+	expect(page.goPublicRequestId).toEqual(expect.any(String))
+	expect(page.pendingApprovals.map((approval) => approval.id)).toEqual([
+		page.goPublicRequestId,
+	])
+
+	const listed = await approvalPendingListCapability.handler(
+		{ packages: [t.savedPackage.id] },
+		{
+			env: t.env,
+			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
+				baseUrl: mappingFixtureBaseUrl,
+				oauthClientId: 'client-a',
+				user: {
+					userId: t.people.bea.personId,
+					email: 'bea@example.com',
+					displayName: 'bea',
+				},
+				orgBinding: {
+					org: { id: t.acmeId, slug: 'acme-clients' },
+					role: 'owner',
+				},
+			}),
+		},
+	)
+	expect(listed.items).toEqual([
+		expect.objectContaining({
+			type: 'publish',
+			key: `publish:${page.goPublicRequestId}`,
+			title: 'Serve on the public internet',
+			package: expect.objectContaining({ id: t.savedPackage.id }),
+		}),
+	])
 })
 
 test('a stale combined click after going public was turned off changes nothing', async () => {

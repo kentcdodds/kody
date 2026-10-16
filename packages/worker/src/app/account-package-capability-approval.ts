@@ -19,6 +19,7 @@ import {
 	loadCapabilityApprovalSummary,
 } from '#worker/package-capabilities/capability-approval-service.ts'
 import { buildPackageCapabilityApprovalUrl } from '#worker/package-capabilities/capability-approval-url.ts'
+import { applyMatchingPinInternetVisible } from '#worker/package-capabilities/self-publish.ts'
 import {
 	enqueueWentPublicApproval,
 	getPendingWentPublicApproval,
@@ -433,29 +434,38 @@ export async function handleAccountPackageInternetVisibleAction(input: {
 			)
 		}
 		if (summary.fingerprintMatchesApproval) {
-			// Refresh the pin for the current published commit (same
-			// fingerprint can still need a new snapshot row) and enqueue
-			// went_public.
-			await approvePackageCapabilitySet({
+			// Capability set already approved — turn internet-visible on now
+			// (same as packageUpdate when the pin matches).
+			const applied = await applyMatchingPinInternetVisible({
 				env: input.env,
+				requestUrl: input.request.url,
 				ownerUserId,
 				actorUserId,
 				savedPackage,
-				requestUrl: input.request.url,
-				expectedFingerprint: summary.capabilitySet.fingerprint,
-			})
-		} else {
-			// Record the ask so the approval page offers one Approve for the
-			// capability set and going public together.
-			await enqueueWentPublicApproval({
-				env: input.env,
-				ownerUserId,
-				savedPackage,
-				publishedCommit: summary.publishedCommit,
 				fingerprint: summary.capabilitySet.fingerprint,
-				requestedByUserId: actorUserId,
 			})
+			if (!applied.ok) {
+				await audit('package.went_public.approve', 'failure', {
+					error: applied.error,
+				})
+				return jsonResponse(
+					{ ok: false, error: applied.error, approvalUrl },
+					400,
+				)
+			}
+			await audit('package.went_public.approve', 'success', {})
+			return await reloaded()
 		}
+		// Record the ask so the approval page offers one Approve for the
+		// capability set and going public together.
+		await enqueueWentPublicApproval({
+			env: input.env,
+			ownerUserId,
+			savedPackage,
+			publishedCommit: summary.publishedCommit,
+			fingerprint: summary.capabilitySet.fingerprint,
+			requestedByUserId: actorUserId,
+		})
 		const securityAudit = await loadPackageSecurityAuditNextStep({
 			db: input.env.APP_DB,
 			ownerUserId,
@@ -465,9 +475,8 @@ export async function handleAccountPackageInternetVisibleAction(input: {
 			fingerprint: summary.capabilitySet.fingerprint,
 			approvalUrl,
 		})
-		const approvalStep = summary.fingerprintMatchesApproval
-			? 'Approve making this package internet-visible on the approval page.'
-			: 'Review the credentials and capabilities on the approval page. One Approve records them and makes this package internet-visible.'
+		const approvalStep =
+			'Review the credentials and capabilities on the approval page. One Approve records them and makes this package internet-visible.'
 		return jsonResponse(
 			{
 				ok: false,

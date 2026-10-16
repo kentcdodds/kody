@@ -110,7 +110,12 @@ function packageView(
 	}
 }
 
-/** The package when the viewer may approve its publishes (`package:publish`). */
+/**
+ * The package when the viewer may manage it (`package:write`). Same bar as the
+ * approve-capabilities page. Callers that need `package:publish` to decide
+ * still check that for `canApprove`; write-only agents (typical API tokens)
+ * must still see went_public rows that the page shows.
+ */
 async function loadPublishablePackage(
 	viewer: ApprovalViewer,
 	packageId: string,
@@ -126,7 +131,7 @@ async function loadPublishablePackage(
 	})
 	const allowed = checkPermission(
 		access,
-		'package:publish',
+		'package:write',
 		packageResource({
 			id: savedPackage.id,
 			userId: savedPackage.userId,
@@ -134,6 +139,26 @@ async function loadPublishablePackage(
 		}),
 	).allowed
 	return allowed ? savedPackage : null
+}
+
+/** Whether the viewer may approve publish / went_public items. */
+async function viewerCanApprovePublish(
+	viewer: ApprovalViewer,
+	savedPackage: SavedPackageRecord,
+) {
+	const access = await computeEffectivePermissions({
+		env: viewer.env,
+		request: viewer.request,
+	})
+	return checkPermission(
+		access,
+		'package:publish',
+		packageResource({
+			id: savedPackage.id,
+			userId: savedPackage.userId,
+			label: savedPackage.kodyId,
+		}),
+	).allowed
 }
 
 function unavailable(
@@ -297,12 +322,25 @@ async function publishItemView(
 		decision: decisionView(decision),
 	}
 	const state = publishItemState(request, publishedCommit, decision)
+	const mayApprove =
+		state.canApprove && (await viewerCanApprovePublish(viewer, savedPackage))
+	const publishState = mayApprove
+		? state
+		: state.status === 'pending'
+			? {
+					...state,
+					canApprove: false,
+					statusMessage:
+						state.statusMessage ??
+						'You can review this on the package’s approval page; approving needs package:publish.',
+				}
+			: state
 	switch (request.reason) {
 		case 'credential_needs_changed': {
 			const changes = readCredentialNeedChanges(request.details)
 			return {
 				...base,
-				...state,
+				...publishState,
 				detailLabel: 'Paused commit',
 				title: 'Publish with changed credential needs',
 				summary:
@@ -315,15 +353,15 @@ async function publishItemView(
 		case 'went_public':
 			return {
 				...base,
-				...(state.canApprove &&
+				...(publishState.canApprove &&
 				!(await wentPublicCapabilitiesApproved(viewer, savedPackage))
 					? {
-							...state,
+							...publishState,
 							canApprove: false,
 							statusMessage:
 								'Its credentials and capabilities are not approved yet. Review them on the package’s approval page, where one Approve also turns on internet-visible serving.',
 						}
-					: state),
+					: publishState),
 				detailLabel: 'Published commit',
 				title: 'Serve on the public internet',
 				summary: `${readWentPublicSummary(request.details)} Approving turns on internet-visible serving for this version. Denying leaves it off.`,

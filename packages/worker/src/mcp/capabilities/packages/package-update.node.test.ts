@@ -17,11 +17,14 @@ const mockModule = vi.hoisted(() => ({
 	getPendingWentPublicApproval: vi.fn(),
 	loadCurrentPackageSecurityAudit: vi.fn(),
 	attemptSelfPublish: vi.fn(),
+	applyMatchingPinInternetVisible: vi.fn(),
 }))
 
 vi.mock('#worker/package-capabilities/self-publish.ts', () => ({
 	attemptSelfPublish: (...args: Array<unknown>) =>
 		mockModule.attemptSelfPublish(...args),
+	applyMatchingPinInternetVisible: (...args: Array<unknown>) =>
+		mockModule.applyMatchingPinInternetVisible(...args),
 }))
 
 vi.mock('#worker/package-capabilities/security-audit-state.ts', () => ({
@@ -271,18 +274,22 @@ test('packageUpdate internet_visible without an approved capability set records 
 	expect(mockModule.updateSavedPackage).not.toHaveBeenCalled()
 })
 
-test('packageUpdate internet_visible with a matching pin still records went_public when self-publish is blocked', async () => {
+test('packageUpdate internet_visible with a matching pin turns serving on without another Approve', async () => {
 	mockModule.approvePackageCapabilitySet.mockReset()
 	mockModule.enqueueWentPublicApproval.mockReset()
-	mockModule.getSavedPackageById.mockResolvedValue(createSavedPackage())
+	mockModule.applyMatchingPinInternetVisible.mockReset()
+	mockModule.getSavedPackageById
+		.mockResolvedValueOnce(createSavedPackage())
+		.mockResolvedValueOnce({
+			...createSavedPackage(),
+			isInternetVisible: true,
+		})
 	mockModule.loadCapabilityApprovalSummary.mockResolvedValue({
 		capabilitySet: { entries: [], fingerprint: 'fp-1' },
 		publishedCommit: 'commit-1',
 		fingerprintMatchesApproval: true,
 	})
-	mockModule.approvePackageCapabilitySet.mockResolvedValue({
-		wentPublicRequest: { id: 'request-1' },
-	})
+	mockModule.applyMatchingPinInternetVisible.mockResolvedValue({ ok: true })
 	mockModule.attemptSelfPublish.mockResolvedValue({
 		status: 'blocked',
 		blocker: 'enforcement_off',
@@ -298,15 +305,17 @@ test('packageUpdate internet_visible with a matching pin still records went_publ
 	const result = await update({ internet_visible: true })
 	expect(result).toMatchObject({
 		ok: true,
-		approval_url: 'https://heykody.dev/@user/notes/approve-capabilities',
-		internet_visible_pending: true,
-		self_publish_blocker: 'enforcement_off',
+		package: expect.objectContaining({ internet_visible: true }),
 	})
-	expect(mockModule.approvePackageCapabilitySet).toHaveBeenCalledWith(
+	expect(result).not.toHaveProperty('internet_visible_pending')
+	expect(result).not.toHaveProperty('approval_url')
+	expect(mockModule.applyMatchingPinInternetVisible).toHaveBeenCalledWith(
 		expect.objectContaining({
-			expectedFingerprint: 'fp-1',
+			fingerprint: 'fp-1',
+			ownerUserId: 'user-1',
 		}),
 	)
+	expect(mockModule.approvePackageCapabilitySet).not.toHaveBeenCalled()
 	expect(mockModule.enqueueWentPublicApproval).not.toHaveBeenCalled()
 })
 

@@ -36,6 +36,7 @@ import {
 } from './capability-approval-service.ts'
 import {
 	enqueueWentPublicApproval,
+	getPendingWentPublicApproval,
 	isSelfPublishRequest,
 	setSelfPublishMark,
 } from './went-public-approval.ts'
@@ -294,6 +295,54 @@ async function mayPublishPackage(
 		if (error instanceof AuthorizationError) return false
 		throw error
 	}
+}
+
+/**
+ * When the owner already approved the current capability set, refresh the pin
+ * and approve went_public so internet-visible turns on without another Approve
+ * click. Used by packageUpdate and the settings toggle.
+ */
+export async function applyMatchingPinInternetVisible(input: {
+	env: Env
+	requestUrl: string
+	ownerUserId: OwnerId
+	actorUserId: string
+	savedPackage: SavedPackageRecord
+	fingerprint: string
+}): Promise<SelfPublishResult> {
+	const pinned = await approvePackageCapabilitySet({
+		env: input.env,
+		ownerUserId: input.ownerUserId,
+		actorUserId: input.actorUserId,
+		savedPackage: input.savedPackage,
+		requestUrl: input.requestUrl,
+		expectedFingerprint: input.fingerprint,
+	})
+	const requestId =
+		pinned.wentPublicRequest?.id ??
+		(
+			await getPendingWentPublicApproval({
+				env: input.env,
+				ownerUserId: input.ownerUserId,
+				packageId: input.savedPackage.id,
+			})
+		)?.id
+	if (!requestId) {
+		return {
+			ok: false,
+			error:
+				'Could not record the request to make this package internet-visible.',
+		}
+	}
+	const applied = await approveWentPublicRequest({
+		env: input.env,
+		request: new Request(input.requestUrl),
+		savedPackage: input.savedPackage,
+		ownerUserId: input.ownerUserId,
+		actorUserId: input.actorUserId,
+		requestId,
+	})
+	return applied.ok ? { ok: true } : { ok: false, error: applied.error }
 }
 
 export type SelfPublishAttempt =

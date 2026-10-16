@@ -272,7 +272,7 @@ test('turning on internet-visible on an audited version adds no audit step', asy
 	)
 })
 
-test('turning on internet-visible with matching approval refreshes pin and enqueues went_public', async () => {
+test('turning on internet-visible with matching approval turns serving on without another Approve', async () => {
 	const env = { APP_DB: {} } as Env
 	const user = createUser()
 	const request = new Request('https://example.com/account/packages.json', {
@@ -306,6 +306,8 @@ test('turning on internet-visible with matching approval refreshes pin and enque
 		capabilitySet: { entries: [], fingerprint: 'abc' },
 		wentPublicRequest: { id: 'req-1' },
 	})
+	mockModule.approveWentPublicRequest.mockResolvedValue({ ok: true })
+	mockModule.reloadAccountPackagesAfterWrite.mockResolvedValue({ ok: true })
 
 	const response = await handleAccountPackageInternetVisibleAction({
 		env,
@@ -318,17 +320,17 @@ test('turning on internet-visible with matching approval refreshes pin and enque
 			confirmName: 'notes',
 		},
 	})
-	expect(response?.status).toBe(400)
-	await expect(response?.json()).resolves.toMatchObject({
-		ok: false,
-		error: expect.stringContaining('internet-visible'),
-		approvalUrl: expect.stringContaining('/approve-capabilities'),
-	})
+	expect(response?.status).toBe(200)
+	await expect(response?.json()).resolves.toMatchObject({ ok: true })
 	expect(mockModule.approvePackageCapabilitySet).toHaveBeenCalledWith(
 		expect.objectContaining({
 			expectedFingerprint: 'abc',
 		}),
 	)
+	expect(mockModule.approveWentPublicRequest).toHaveBeenCalledWith(
+		expect.objectContaining({ requestId: 'req-1' }),
+	)
+	expect(mockModule.enqueueWentPublicApproval).not.toHaveBeenCalled()
 })
 
 test('approve-capabilities binds the reviewed fingerprint', async () => {

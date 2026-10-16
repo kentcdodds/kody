@@ -910,9 +910,8 @@ package uses no credentials or other capabilities.**
 One **Approve and make internet-visible** click approves that capability set and
 turns internet-visible serving on. Each of the two decisions is still checked
 and recorded in the org activity log on its own. If the capability set was
-already approved, the same button still turns internet-visible on (it does not
-fall back to a separate card that is easy to miss beside “Approve capability
-set”).
+already approved, `packageUpdate` and the settings toggle turn internet-visible
+on immediately without another Approve click.
 
 When the published version has no [security audit](#security-audit) yet, both
 responses also return the next step for the agent. `packageUpdate` returns
