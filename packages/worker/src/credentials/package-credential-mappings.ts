@@ -435,6 +435,7 @@ export async function buildPackageCredentialsView(
 		const ownRows = trigger.enablements.filter(
 			(row) => String(row.enablerUserId) === scope.actorId,
 		)
+		const liveOwnCount = ownRows.filter((row) => row.state !== 'off').length
 		const mappingRowsFor = (
 			row: EnablementRecord | null,
 			options: { recordIncomplete: boolean },
@@ -463,7 +464,8 @@ export async function buildPackageCredentialsView(
 								where: {
 									type: 'trigger',
 									trigger: ref,
-									enablementId: row.id,
+									// Disambiguate only when the viewer has several live instances.
+									...(liveOwnCount > 1 ? { enablementId: row.id } : {}),
 								},
 								status: effective.status,
 							})
