@@ -24,7 +24,9 @@ if (
 	const forced = new URLSearchParams(location.search).has('play')
 	const waiting =
 		forced || document.body.dataset.overallStatus !== 'operational'
-	const trigger = waiting ? startButton : footerStart
+	// Operational pages prefer the footer control; fall back to the banner
+	// when a cached older template has no footer control yet.
+	const trigger = waiting ? startButton : (footerStart ?? startButton)
 	if (trigger instanceof HTMLElement) {
 		trigger.hidden = false
 		const control = trigger.querySelector('button') ?? trigger
