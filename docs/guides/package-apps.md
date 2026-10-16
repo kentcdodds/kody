@@ -92,18 +92,66 @@ A one-file fetch handler is a complete app (see
 ## Session handoff
 
 Production-hosted apps live at
-`https://{username}.kody.run/packages/<package-name>/…`. Opening the app from
-the signed-in kody.codes origin (**Open Package App**, the publish
-`hosted_app_url`, or the equivalent package page control) attaches a short-lived
-session, then the subdomain loads. Plan QA around that path: signed-in origin
-first, then confirm the app on `*.kody.run/packages/…`.
+`https://{username}.kody.run/packages/<package-name>/…` (and on verified custom
+domains). Opening the app from the signed-in kody.codes origin (**Open Package
+App**, the publish `hosted_app_url`, or the equivalent package page control)
+still attaches a short-lived handoff session, then the subdomain loads. Prefer
+the OAuth helper below for in-app Sign in / Sign out.
+
+### Auth with Kody (OAuth)
+
+Hosted packages need no client registration: the package identity (`owner/leaf`)
+is the client. Consent and sign-in stay on kody.codes; authorization codes +
+PKCE land a host-only `__Host-kody_pkg_session` on the app origin (`*.kody.run`
+or a verified custom domain). Redirect URIs are limited to
+`/_kody/auth/callback` on those origins. The legacy handoff remains for **Open
+Package App** until the OAuth path is fully proven.
+
+Near-zero-config helper:
+
+```ts
+import { packageContext } from 'kody:runtime'
+import { createPackageAppAuth } from 'kody:@kentcdodds/package-app-kit/auth'
+
+const auth = createPackageAppAuth({
+	mode: 'optional', // or 'required'
+	scopes: ['email'], // optional; email needs consent
+	hostedUrl: packageContext?.hostedUrl,
+})
+
+export async function loader({ request }: { request: Request }) {
+	const user = await auth.resolveUser(request)
+	return {
+		user,
+		loginUrl: auth.loginUrl({ returnTo: '/notes', request }),
+		logoutUrl: auth.logoutUrl({ returnTo: '/', request }),
+	}
+}
+```
+
+Platform routes on every package-app host (host root, not under
+`/packages/{leaf}`):
+
+| Path                                           | Role                               |
+| ---------------------------------------------- | ---------------------------------- |
+| `GET /_kody/auth/login?app={leaf}&return_to=…` | Start PKCE; redirect to kody.codes |
+| `GET /_kody/auth/callback`                     | Exchange code; set session cookie  |
+| `GET\|POST /_kody/auth/logout`                 | Clear session                      |
+| `GET /_kody/auth/me`                           | Current user JSON                  |
+
+Default claims: user id, name, avatar, and access level for the app. Email only
+when requested and consented. Consent is skipped for apps the user (or their
+org) already owns/can execute, except when requesting `email` without a prior
+email grant. A lapsed or unbound custom domain stops being an allowed redirect
+target. Outstanding access tickets (90s) still gate edge authorization after
+sign-in.
 
 `packageAppFetch` exercises the fetch handler without that browser session. Use
 it for handler smoke tests after publish. When the host can run the CLI, prefer
 [Local testing with `kody dev`](#local-testing-with-kody-dev) while the package
 is still unpublished. MCP-only agents (no shell) validate with `repoRunChecks`,
-publish, then smoke with `packageAppFetch`. Use the handed-off URL for cookies,
-layout, OAuth redirects, and websocket facets.
+publish, then smoke with `packageAppFetch`. Use the handed-off or OAuth URL for
+cookies, layout, redirects, and websocket facets.
 
 ## Local testing with `kody dev`
 

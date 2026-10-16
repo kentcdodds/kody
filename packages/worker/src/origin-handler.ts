@@ -11,6 +11,8 @@ import {
 	handleOAuthProtectedApiMe,
 	oauthPaths,
 } from './oauth-handlers.ts'
+import { handlePackageAppOauthAuthorizeRequest } from '#app/package-app-oauth-authorize.ts'
+import { packageAppOauthPaths } from '#universal/package-app-oauth-paths.ts'
 import {
 	createSharedOAuthProviderOptions,
 	mcpOAuthResourceUri,
@@ -306,6 +308,18 @@ const appHandler = withCors({
 				{ error: 'Unknown maintenance endpoint.' },
 				{ status: 404 },
 			)
+		}
+
+		if (url.pathname === packageAppOauthPaths.authorize) {
+			try {
+				return await handlePackageAppOauthAuthorizeRequest(request, env)
+			} catch (error) {
+				Sentry.captureException(error)
+				return new Response('Authorization failed.', {
+					status: 500,
+					headers: { 'Cache-Control': 'no-store' },
+				})
+			}
 		}
 
 		if (url.pathname === oauthPaths.authorize) {
