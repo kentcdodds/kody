@@ -149,6 +149,10 @@ function createAdminUserUsageTestDb(input: {
 					}
 					const count = countForQuery(normalizedQuery, String(params[0]))
 					if (count !== null) return { count } as T
+					// Cold storage bootstrap seeds from calculateUserD1StorageBytes.
+					if (normalizedQuery.includes('sum(')) {
+						return { count: 0 } as T
+					}
 					throw new Error(`Unsupported first query: ${query}`)
 				},
 				async all<T>() {
