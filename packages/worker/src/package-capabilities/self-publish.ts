@@ -1,16 +1,16 @@
 /**
  * Self-publish (issue #3822): an agent's request to make a package
- * internet-visible is approved without the owner's click when nothing in the
+ * internet-visible is approved without the owner's click when the resolved
+ * capability set is empty (nothing for the owner to approve), nothing in the
  * package's resolved dependency tree declares a credential or any other
  * capability, and a security audit with verdict `pass` is recorded for the
  * package's current published commit and capability fingerprint. It is tried
- * when `packageUpdate` turns internet-visible on, and again when
- * `packageSecurityAuditRecord` records a pass while a `went_public` request is
- * pending. It needs credential-need enforcement on, because only then does
- * declaring nothing mean the fetch gateway and `credential()` fill nothing for
- * it. The credential door refuses every credential to a self-published package
- * (`assertSelfPublishedPackageResolvesNothing`), which covers the by-name
- * helpers enforcement does not reach.
+ * when `packageUpdate` or the settings toggle turns internet-visible on, and
+ * again when `packageSecurityAuditRecord` records a pass while a `went_public`
+ * request is pending. The credential door refuses every credential to a
+ * self-published package (`assertSelfPublishedPackageResolvesNothing`), which
+ * covers the by-name helpers credential-need enforcement does not reach — so
+ * self-publish does not wait on that flag.
  */
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
@@ -20,9 +20,7 @@ import {
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { approveWentPublicRequest } from '#app/account-package-approval-requests.ts'
-import { credentialNeedEnforcementFlagKey } from '#universal/feature-flags/registry.ts'
 import { loadPublishedCredentialNeeds } from '#worker/credentials/credential-needs-closure.ts'
-import { isFeatureGloballyEnabled } from '#worker/feature-flags/service.ts'
 import { logOrgAuditEvent } from '#worker/orgs/org-audit.ts'
 import {
 	type AuthoredPackageJson,
@@ -45,7 +43,6 @@ import { loadCurrentPackageSecurityAudit } from './security-audit-state.ts'
 export const selfPublishAuditAction = 'package.went_public.self_publish'
 
 export type SelfPublishBlocker =
-	| 'enforcement_off'
 	| 'unpublished'
 	| 'stale_dependencies'
 	| 'declares_credentials'
@@ -110,26 +107,30 @@ async function evaluateTreePackage(
 }
 
 /**
- * Whether going internet-visible may skip the owner's Approve: enforcement is
- * on, the package and every package in its resolved dependency tree are
- * published and declare no credential and no capability, and the current
- * published commit + fingerprint has a passing security audit.
+ * Whether going internet-visible may skip the owner's Approve: the capability
+ * set the owner would see is empty, the package and every package in its
+ * resolved dependency tree are published and declare no credential and no
+ * capability, and the current published commit + fingerprint has a passing
+ * security audit.
  */
 export async function evaluateSelfPublish(input: {
 	env: Env
 	savedPackage: SavedPackageRecord
 	summary: CapabilityApprovalSummary
 }): Promise<SelfPublishEligibility> {
-	if (
-		!(await isFeatureGloballyEnabled(
-			input.env.APP_DB,
-			credentialNeedEnforcementFlagKey,
-		))
-	) {
-		return { eligible: false, blocker: 'enforcement_off' }
-	}
 	if (!input.summary.publishedCommit) {
 		return { eligible: false, blocker: 'unpublished' }
+	}
+	// The approval page lists these entries. Anything here is something for
+	// the owner to approve (credentials, hosts, or storage); agents must not.
+	const entries = input.summary.capabilitySet.entries
+	if (entries.length > 0) {
+		return {
+			eligible: false,
+			blocker: entries.some((entry) => entry.kind === 'credential')
+				? 'declares_credentials'
+				: 'declares_capabilities',
+		}
 	}
 	const pinned = new Map([
 		[input.savedPackage.sourceId, input.summary.publishedCommit],

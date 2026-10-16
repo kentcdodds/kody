@@ -60,12 +60,12 @@ The audit is informational and approves nothing.
 
 ## Self-publish
 
-`packageUpdate` (`internet_visible: true`) approves going public itself when
-`evaluateSelfPublish`
+`packageUpdate` (`internet_visible: true`) and the settings toggle approve going
+public themselves when `evaluateSelfPublish`
 (`packages/worker/src/package-capabilities/self-publish.ts`) finds all of these:
 
-- the global `credential-need-enforcement` flag is on, so declaring nothing
-  means the fetch gateway and `credential()` fill nothing for the package;
+- the resolved capability set the owner would approve is empty (no credentials,
+  hosts, or storage on the approval page — nothing for the owner to click);
 - the package and every package in its resolved dependency snapshot are
   published, each still at the commit the snapshot pins (otherwise
   `stale_dependencies`), since only the current publish is read;
@@ -77,10 +77,17 @@ The audit is informational and approves nothing.
   capability fingerprint;
 - the caller has `package:publish` on the package.
 
-It is evaluated in two places, both through `attemptSelfPublish`: when
-`packageUpdate` sets `internet_visible: true` (again on every re-toggle), and
-when `packageSecurityAuditRecord` records a `pass` while a `went_public` request
-is pending. Anything that fails a check stays pending for the owner, and the
+It does not wait on the `credential-need-enforcement` flag. The credential door
+refuses every credential to a self-published package
+(`self-published-package-guard.ts`), so declaring nothing stays equivalent to
+using nothing while public this way. Agents still cannot self-approve a
+non-empty capability set.
+
+It is evaluated in three places, all through `attemptSelfPublish`: when
+`packageUpdate` sets `internet_visible: true` (again on every re-toggle), when
+the settings toggle turns internet-visible on, and when
+`packageSecurityAuditRecord` records a `pass` while a `went_public` request is
+pending. Anything that fails a check stays pending for the owner, and the
 response's `self_publish_blocker` names the first failed check (`not_audited`
 and `audit_concerns` for the audit).
 
@@ -103,8 +110,8 @@ self-publish one, with `credential_need_undeclared`
 (`self-published-package-guard.ts`). That covers by-name helpers that
 credential-need enforcement does not limit (`secretJwtSign`,
 `integrationTokenRefresh`, `kody.mcp`). It holds whatever the package declares
-later, and whether or not the flag stays on, until the owner approves going
-public again (turn internet-visible off, then on).
+later, and whether or not credential-need enforcement is on, until the owner
+approves going public again (turn internet-visible off, then on).
 
 ## Owner credentials for visitors
 

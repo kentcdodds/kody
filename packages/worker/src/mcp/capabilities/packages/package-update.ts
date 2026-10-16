@@ -96,7 +96,7 @@ const packageUpdateChangesSchema = z
 			.boolean()
 			.optional()
 			.describe(
-				`Internet-visible app serving. Independent of visibility/forkable. Setting true makes the package internet-visible right away when either (1) self-publish applies (credential-need enforcement on, nothing in the dependency tree declares a credential or another capability, a security audit with verdict pass is recorded for the current published commit + fingerprint, and the caller may package:publish), or (2) the owner already approved the current capability set (matching pin) — then went_public is approved without another Approve click. An unpublished package is refused with an error: publish it first. Otherwise agents cannot approve the capability set: it returns an approval_url for the owner website and self_publish_blocker (or self_publish_error when applying a matching pin failed) says why. When the published version has no security audit, it also returns security_audit: run that audit and record it with ${packageSecurityAuditRecordOperation} using security_audit.args. Recording verdict pass re-evaluates the pending request and self-publishes when everything else allows it; otherwise hand the owner approval_url. Calling this again with internet_visible true also re-evaluates. Setting false turns off public app serving (requires confirm_name).`,
+				`Internet-visible app serving. Independent of visibility/forkable. Setting true makes the package internet-visible right away when either (1) self-publish applies (the resolved capability set is empty, nothing in the dependency tree declares a credential or another capability, a security audit with verdict pass is recorded for the current published commit + fingerprint, and the caller may package:publish), or (2) the owner already approved the current capability set (matching pin) — then went_public is approved without another Approve click. An unpublished package is refused with an error: publish it first. Otherwise agents cannot approve the capability set: it returns an approval_url for the owner website and self_publish_blocker (or self_publish_error when applying a matching pin failed) says why. When the published version has no security audit, it also returns security_audit: run that audit and record it with ${packageSecurityAuditRecordOperation} using security_audit.args. Recording verdict pass re-evaluates the pending request and self-publishes when everything else allows it; otherwise hand the owner approval_url. Calling this again with internet_visible true also re-evaluates. Setting false turns off public app serving (requires confirm_name).`,
 			),
 	})
 	.refine(
@@ -171,7 +171,6 @@ export const packageUpdateCapability = defineDomainCapability(
 				),
 			self_publish_blocker: z
 				.enum([
-					'enforcement_off',
 					'unpublished',
 					'stale_dependencies',
 					'declares_credentials',
@@ -182,7 +181,7 @@ export const packageUpdateCapability = defineDomainCapability(
 				])
 				.optional()
 				.describe(
-					`Why internet_visible waits on owner Approve instead of self-publishing: credential-need enforcement is off, a package in the tree is unpublished, a dependency republished since this package's publish (stale_dependencies: publish this package again), the tree declares credentials, the tree declares other capabilities, the current published commit + fingerprint has no security audit (not_audited) or one with verdict concerns (audit_concerns), or the caller may not publish this package. For not_audited: audit, record verdict pass with ${packageSecurityAuditRecordOperation}; that re-evaluates the pending request.`,
+					`Why internet_visible waits on owner Approve instead of self-publishing: the capability set has credentials or storage to approve, a package in the tree is unpublished, a dependency republished since this package's publish (stale_dependencies: publish this package again), the tree declares credentials, the tree declares other capabilities, the current published commit + fingerprint has no security audit (not_audited) or one with verdict concerns (audit_concerns), or the caller may not publish this package. For not_audited: audit, record verdict pass with ${packageSecurityAuditRecordOperation}; that re-evaluates the pending request.`,
 				),
 			self_publish_error: z
 				.string()

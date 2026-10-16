@@ -19,11 +19,15 @@ import {
 	loadCapabilityApprovalSummary,
 } from '#worker/package-capabilities/capability-approval-service.ts'
 import { buildPackageCapabilityApprovalUrl } from '#worker/package-capabilities/capability-approval-url.ts'
-import { applyMatchingPinInternetVisible } from '#worker/package-capabilities/self-publish.ts'
+import {
+	applyMatchingPinInternetVisible,
+	attemptSelfPublish,
+} from '#worker/package-capabilities/self-publish.ts'
 import {
 	enqueueWentPublicApproval,
 	getPendingWentPublicApproval,
 } from '#worker/package-capabilities/went-public-approval.ts'
+import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 import { loadPackageSecurityAuditState } from '#worker/package-capabilities/security-audit-state.ts'
 import { loadPackageSecurityAuditNextStep } from '#worker/package-capabilities/security-audit-next-step.ts'
 import { type AccountPackageApproveCapabilitiesLoaderData } from '#universal/loader-data.ts'
@@ -477,6 +481,27 @@ export async function handleAccountPackageInternetVisibleAction(input: {
 				},
 				400,
 			)
+		}
+		// Same evaluation as packageUpdate: empty capability set + passing
+		// audit self-publishes and clears a pending went_public ask.
+		const selfPublishRequest = binding
+			? deriveRequestContext({
+					user: input.user.mcpUser,
+					source: { kind: 'session' },
+					orgBinding: binding,
+				})
+			: input.user.request
+		const attempt = await attemptSelfPublish({
+			env: input.env,
+			request: selfPublishRequest,
+			requestUrl: input.request.url,
+			ownerUserId,
+			actorUserId,
+			savedPackage,
+			summary,
+		})
+		if (attempt.status === 'self_published') {
+			return await reloaded()
 		}
 		if (summary.fingerprintMatchesApproval) {
 			// Capability set already approved — turn internet-visible on now

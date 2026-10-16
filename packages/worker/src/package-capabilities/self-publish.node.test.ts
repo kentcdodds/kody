@@ -5,7 +5,6 @@ import type * as Authorize from '#worker/authorization/authorize.ts'
 import type * as WentPublicApproval from './went-public-approval.ts'
 
 const mockModule = vi.hoisted(() => ({
-	isFeatureGloballyEnabled: vi.fn(),
 	getEntitySourceById: vi.fn(),
 	loadPublishedEntityManifest: vi.fn(),
 	loadPublishedCredentialNeeds: vi.fn(),
@@ -18,10 +17,6 @@ const mockModule = vi.hoisted(() => ({
 	authorizePackageWrite: vi.fn(),
 }))
 
-vi.mock('#worker/feature-flags/service.ts', () => ({
-	isFeatureGloballyEnabled: (...args: Array<unknown>) =>
-		mockModule.isFeatureGloballyEnabled(...args),
-}))
 vi.mock('#worker/repo/entity-sources.ts', () => ({
 	getEntitySourceById: (...args: Array<unknown>) =>
 		mockModule.getEntitySourceById(...args),
@@ -143,7 +138,6 @@ const markedRequest = { id: 'request-1', details: { selfPublish: true } }
 
 beforeEach(() => {
 	for (const mock of Object.values(mockModule)) mock.mockReset()
-	mockModule.isFeatureGloballyEnabled.mockResolvedValue(true)
 	mockModule.loadPublishedCredentialNeeds.mockResolvedValue([])
 	mockModule.logOrgAuditEvent.mockResolvedValue(undefined)
 	mockModule.loadCurrentPackageSecurityAudit.mockResolvedValue({
@@ -183,21 +177,62 @@ test('a tree that declares nothing is eligible, checked per package owner with t
 	])
 })
 
-test('self-publish is blocked with enforcement off, credentials, or other capabilities anywhere in the tree', async () => {
+test('self-publish is blocked when the capability set has entries or the tree declares credentials or capabilities', async () => {
 	const evaluate = (dependencies: Array<string> = ['source-dep']) =>
 		evaluateSelfPublish({ env, savedPackage, summary: summary(dependencies) })
-
-	mockModule.isFeatureGloballyEnabled.mockResolvedValueOnce(false)
-	publishTree({ 'source-root': {}, 'source-dep': {} })
-	await expect(evaluate()).resolves.toEqual({
-		eligible: false,
-		blocker: 'enforcement_off',
-	})
 
 	publishTree({ 'source-root': {} })
 	await expect(evaluate()).resolves.toEqual({
 		eligible: false,
 		blocker: 'unpublished',
+	})
+
+	publishTree({ 'source-root': {}, 'source-dep': {} })
+	await expect(
+		evaluateSelfPublish({
+			env,
+			savedPackage,
+			summary: {
+				...summary(),
+				capabilitySet: {
+					entries: [
+						{
+							kind: 'credential',
+							credentialId: 'cred-1',
+							hosts: ['api.example.com'],
+							via: ['landing'],
+						},
+					],
+					fingerprint: 'fp-with-cred',
+				},
+			},
+		}),
+	).resolves.toEqual({
+		eligible: false,
+		blocker: 'declares_credentials',
+	})
+	await expect(
+		evaluateSelfPublish({
+			env,
+			savedPackage,
+			summary: {
+				...summary(),
+				capabilitySet: {
+					entries: [
+						{
+							kind: 'storage',
+							storageId: 'pkg-1',
+							hosts: [],
+							via: ['landing'],
+						},
+					],
+					fingerprint: 'fp-with-storage',
+				},
+			},
+		}),
+	).resolves.toEqual({
+		eligible: false,
+		blocker: 'declares_capabilities',
 	})
 
 	publishTree({

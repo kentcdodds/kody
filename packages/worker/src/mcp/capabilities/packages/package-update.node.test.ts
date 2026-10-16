@@ -292,7 +292,7 @@ test('packageUpdate internet_visible with a matching pin turns serving on withou
 	mockModule.applyMatchingPinInternetVisible.mockResolvedValue({ ok: true })
 	mockModule.attemptSelfPublish.mockResolvedValue({
 		status: 'blocked',
-		blocker: 'enforcement_off',
+		blocker: 'declares_capabilities',
 	})
 	mockModule.loadCurrentPackageSecurityAudit.mockResolvedValue({
 		verdict: 'pass',
@@ -331,7 +331,7 @@ test('packageUpdate internet_visible with a matching pin asks to retry when appl
 	})
 	mockModule.attemptSelfPublish.mockResolvedValue({
 		status: 'blocked',
-		blocker: 'enforcement_off',
+		blocker: 'declares_capabilities',
 	})
 	mockModule.applyMatchingPinInternetVisible.mockResolvedValue({
 		ok: false,
