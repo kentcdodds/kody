@@ -69,7 +69,11 @@ function createHandler(appDb: D1Database, auditDb: D1Database) {
 		COOKIE_SECRET: testCookieSecret,
 		APP_DB: appDb,
 		AUDIT_DB: auditDb,
+		// Non-`test` so auditDatabaseFromEnv keeps AUDIT_DB. Production also
+		// requires Turnstile keys (and a solved token on each public POST).
 		SENTRY_ENVIRONMENT: 'production',
+		TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
+		TURNSTILE_SECRET_KEY: '1x0000000000000000000000000000000AA',
 	} as unknown as Parameters<typeof createAuthHandler>[0])
 }
 
@@ -80,7 +84,7 @@ async function postAuth(
 	const request = new Request('http://example.com/auth', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body),
+		body: JSON.stringify({ turnstileToken: 'test-token', ...body }),
 	})
 	return handler.handler(new RequestContext(request))
 }
@@ -102,34 +106,44 @@ test('auth handler persists signup failure and login success to AUDIT_DB', async
 		username: 'session-user',
 		password: 'secret123',
 	})
+	const fetchSpy = vi.fn(async (url: string) => {
+		if (String(url).includes('turnstile')) {
+			return Response.json({ success: true, hostname: 'example.com' })
+		}
+		throw new Error(`Unexpected fetch: ${url}`)
+	})
+	vi.stubGlobal('fetch', fetchSpy)
+	try {
+		const signupFailure = await postAuth(handler, {
+			email: 'weak@example.com',
+			username: 'weak-jane',
+			password: 'short',
+			mode: 'signup',
+		})
+		expect(signupFailure.status).toBe(400)
+		expect(await signupFailure.json()).toEqual({
+			error: 'Password must be at least 8 characters.',
+		})
+		await vi.waitFor(() => {
+			expect(readAuditActions(audit.sqlite)).toEqual([
+				{ action: 'signup', result: 'failure' },
+			])
+		})
 
-	const signupFailure = await postAuth(handler, {
-		email: 'weak@example.com',
-		username: 'weak-jane',
-		password: 'short',
-		mode: 'signup',
-	})
-	expect(signupFailure.status).toBe(400)
-	expect(await signupFailure.json()).toEqual({
-		error: 'Password must be at least 8 characters.',
-	})
-	await vi.waitFor(() => {
-		expect(readAuditActions(audit.sqlite)).toEqual([
-			{ action: 'signup', result: 'failure' },
-		])
-	})
-
-	const loginSuccess = await postAuth(handler, {
-		email: 'session-user@example.com',
-		password: 'secret123',
-		mode: 'login',
-	})
-	expect(loginSuccess.status).toBe(200)
-	expect(await loginSuccess.json()).toEqual({ ok: true, mode: 'login' })
-	await vi.waitFor(() => {
-		expect(readAuditActions(audit.sqlite)).toEqual([
-			{ action: 'signup', result: 'failure' },
-			{ action: 'login', result: 'success' },
-		])
-	})
+		const loginSuccess = await postAuth(handler, {
+			email: 'session-user@example.com',
+			password: 'secret123',
+			mode: 'login',
+		})
+		expect(loginSuccess.status).toBe(200)
+		expect(await loginSuccess.json()).toEqual({ ok: true, mode: 'login' })
+		await vi.waitFor(() => {
+			expect(readAuditActions(audit.sqlite)).toEqual([
+				{ action: 'signup', result: 'failure' },
+				{ action: 'login', result: 'success' },
+			])
+		})
+	} finally {
+		vi.unstubAllGlobals()
+	}
 })

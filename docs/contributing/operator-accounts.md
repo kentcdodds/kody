@@ -146,9 +146,11 @@ email.
 
 ### Turnstile
 
-Optional public-signup bot protection. Signup uses Turnstile when both
-`TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` are set. Dashboard:
-**Turnstile**. `.github/workflows/deploy.yml` does not sync these secrets.
+Required in production for public signup. Both `TURNSTILE_SITE_KEY` and
+`TURNSTILE_SECRET_KEY` must be set; production boot fails without them, and
+request handlers refuse with a `503` (to Sentry) if either key disappears.
+Local/preview/test may omit them. Dashboard: **Turnstile**.
+`.github/workflows/deploy.yml` does not sync these secrets.
 
 ### API tokens
 

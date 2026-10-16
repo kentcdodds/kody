@@ -91,10 +91,19 @@ function createAuthTestContext(
 	const testDb = createTestDb({
 		failRoleAssignment: options.failRoleAssignment ?? false,
 	})
+	const sentryEnvironment = options.sentryEnvironment ?? 'test'
 	const handler = createAuthHandler({
 		COOKIE_SECRET: testCookieSecret,
 		APP_DB: testDb.db,
-		SENTRY_ENVIRONMENT: options.sentryEnvironment ?? 'test',
+		SENTRY_ENVIRONMENT: sentryEnvironment,
+		// Production refuses public forms without Turnstile; tests that set
+		// production still exercise auth past the protection gate.
+		...(sentryEnvironment === 'production'
+			? {
+					TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
+					TURNSTILE_SECRET_KEY: '1x0000000000000000000000000000000AA',
+				}
+			: {}),
 		...(options.kv ? { BUNDLE_ARTIFACTS_KV: options.kv } : {}),
 		...(options.emailConfigured
 			? {
@@ -635,23 +644,34 @@ test('signup rolls back when the verification email cannot be sent', async () =>
 test('production signup fails closed when no verification email sender is configured', async () => {
 	consoleError.mockImplementation(() => {})
 	const context = createAuthTestContext({ sentryEnvironment: 'production' })
-
-	const response = await context.signup(
-		'no-sender@example.com',
-		'no-sender-jane',
-	)
-	expect(response.status).toBe(500)
-	expect(await response.json()).toEqual(verificationSendFailed)
-	expect(context.testDb.users.has('no-sender@example.com')).toBe(false)
-	expect(consoleError).toHaveBeenCalledWith(
-		expect.any(String),
-		expect.any(Error),
-	)
-	// The skipped send is logged with the unconfigured-sender tag.
-	expect(consoleInfo).toHaveBeenCalledWith(
-		'cloudflare-email-unconfigured',
-		expect.any(String),
-	)
+	const fetchSpy = vi.fn(async (url: string) => {
+		if (String(url).includes('turnstile')) {
+			return Response.json({ success: true, hostname: 'example.com' })
+		}
+		throw new Error(`Unexpected fetch: ${url}`)
+	})
+	vi.stubGlobal('fetch', fetchSpy)
+	try {
+		const response = await context.signup(
+			'no-sender@example.com',
+			'no-sender-jane',
+			{ turnstileToken: 'test-token' },
+		)
+		expect(response.status).toBe(500)
+		expect(await response.json()).toEqual(verificationSendFailed)
+		expect(context.testDb.users.has('no-sender@example.com')).toBe(false)
+		expect(consoleError).toHaveBeenCalledWith(
+			expect.any(String),
+			expect.any(Error),
+		)
+		// The skipped send is logged with the unconfigured-sender tag.
+		expect(consoleInfo).toHaveBeenCalledWith(
+			'cloudflare-email-unconfigured',
+			expect.any(String),
+		)
+	} finally {
+		vi.unstubAllGlobals()
+	}
 })
 
 test('signup rejects KV-added reserved usernames and accepts unreserved built-ins', async () => {

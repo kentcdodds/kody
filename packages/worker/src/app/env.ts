@@ -28,6 +28,18 @@ function validateEnv(env: Env) {
 		)
 	}
 
+	// Signup is always open; production must not boot without Turnstile or
+	// public forms would fail open (see public-form-protection.ts).
+	if (env.SENTRY_ENVIRONMENT === 'production') {
+		const siteKey = env.TURNSTILE_SITE_KEY?.trim()
+		const secretKey = env.TURNSTILE_SECRET_KEY?.trim()
+		if (!siteKey || !secretKey) {
+			throw new Error(
+				'Production requires TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY: signup is open and must not fail open without Turnstile.',
+			)
+		}
+	}
+
 	const result = parseSafe(EnvSchema, env)
 
 	if (!result.success) {

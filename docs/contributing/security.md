@@ -416,8 +416,11 @@ cannot fan out across parallel paths. Covered paths (`rateLimitedAuthPaths` in
 - `POST /verify/2fa.json` and `POST /account/two-factor.json` (two-factor)
 - `POST /webauthn/authentication` (passkey authentication)
 
-Public signup uses Turnstile when both `TURNSTILE_SITE_KEY` and
-`TURNSTILE_SECRET_KEY` are configured.
+Public signup requires Turnstile in production: both `TURNSTILE_SITE_KEY` and
+`TURNSTILE_SECRET_KEY` must be set or the worker refuses to boot. If either key
+is missing at request time, public forms refuse with a `503` (reported to
+Sentry) instead of failing open. Local development, previews, and tests may omit
+the keys and skip the challenge.
 
 Excess requests receive `429 Too Many Requests` with a `Retry-After` header. The
 D1 approach uses a batched INSERT + COUNT in a single transaction, avoiding the

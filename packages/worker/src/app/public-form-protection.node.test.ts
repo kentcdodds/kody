@@ -6,13 +6,24 @@ import {
 } from '#app/public-form-protection.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
-type PublicFormProtectionEnv = Pick<
-	Env,
-	'TURNSTILE_SITE_KEY' | 'TURNSTILE_SECRET_KEY'
->
+const captureException = vi.fn()
 
-function formProtectionEnv(env: Partial<PublicFormProtectionEnv>) {
-	return env as PublicFormProtectionEnv
+vi.mock('@sentry/cloudflare', async () => {
+	const stub = await import('#worker/test-support/sentry-cloudflare-stub.ts')
+	return {
+		...stub,
+		captureException: (...args: Array<unknown>) => captureException(...args),
+	}
+})
+
+type PublicFormProtectionEnv = {
+	TURNSTILE_SITE_KEY?: string | undefined
+	TURNSTILE_SECRET_KEY?: string | undefined
+	SENTRY_ENVIRONMENT?: string | undefined
+}
+
+function formProtectionEnv(env: PublicFormProtectionEnv) {
+	return env
 }
 
 test('public form protection defaults closed, rejects honeypots, and verifies Turnstile', async () => {
@@ -125,4 +136,75 @@ test('public form protection defaults closed, rejects honeypots, and verifies Tu
 	} finally {
 		vi.unstubAllGlobals()
 	}
+})
+
+test('production refuses when either Turnstile key is missing and reports to Sentry', async () => {
+	captureException.mockClear()
+	const request = new Request('https://example.com/auth', { method: 'POST' })
+
+	const missingBoth = await verifyPublicFormProtection({
+		env: formProtectionEnv({ SENTRY_ENVIRONMENT: 'production' }),
+		request,
+		body: {},
+	})
+	expect(missingBoth.ok).toBe(false)
+	if (missingBoth.ok) throw new Error('Expected production fail-closed.')
+	expect(missingBoth.response.status).toBe(503)
+	expect(await missingBoth.response.json()).toEqual({
+		error:
+			'Human verification is not configured on this deployment. Please try again later.',
+	})
+	expect(captureException).toHaveBeenCalledTimes(1)
+	expect(captureException).toHaveBeenCalledWith(
+		expect.objectContaining({
+			message:
+				'Production public forms require TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY.',
+		}),
+		expect.objectContaining({
+			tags: expect.objectContaining({
+				surface: 'public-form-protection',
+				reason: 'turnstile-keys-missing',
+			}),
+		}),
+	)
+
+	captureException.mockClear()
+	const siteOnly = await verifyPublicFormProtection({
+		env: formProtectionEnv({
+			SENTRY_ENVIRONMENT: 'production',
+			TURNSTILE_SITE_KEY: 'site-key',
+		}),
+		request,
+		body: {},
+	})
+	expect(siteOnly.ok).toBe(false)
+	if (siteOnly.ok) throw new Error('Expected partial-key fail-closed.')
+	expect(siteOnly.response.status).toBe(503)
+	expect(captureException).toHaveBeenCalledTimes(1)
+
+	captureException.mockClear()
+	const secretOnly = await verifyPublicFormProtection({
+		env: formProtectionEnv({
+			SENTRY_ENVIRONMENT: 'production',
+			TURNSTILE_SECRET_KEY: 'secret-key',
+		}),
+		request,
+		body: {},
+	})
+	expect(secretOnly.ok).toBe(false)
+	if (secretOnly.ok) throw new Error('Expected partial-key fail-closed.')
+	expect(secretOnly.response.status).toBe(503)
+	expect(captureException).toHaveBeenCalledTimes(1)
+
+	captureException.mockClear()
+	await expect(
+		verifyPublicFormProtection({
+			env: formProtectionEnv({
+				SENTRY_ENVIRONMENT: 'preview',
+			}),
+			request,
+			body: {},
+		}),
+	).resolves.toEqual({ ok: true })
+	expect(captureException).not.toHaveBeenCalled()
 })

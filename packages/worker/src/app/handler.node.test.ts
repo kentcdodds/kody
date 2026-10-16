@@ -64,7 +64,7 @@ test('account secrets api ignores legacy remote connector env secrets', async ()
 	})
 })
 
-test('getEnv memoizes per env identity and requires AUTH_RATE_LIMITER in production', () => {
+test('getEnv memoizes per env identity and requires AUTH_RATE_LIMITER and Turnstile in production', () => {
 	const env = createEnv()
 	expect(getEnv(env)).toBe(getEnv(env))
 	expect(getEnv(createEnv())).not.toBe(getEnv(env))
@@ -74,6 +74,25 @@ test('getEnv memoizes per env identity and requires AUTH_RATE_LIMITER in product
 	expect(() =>
 		getEnv(
 			createEnv({ SENTRY_ENVIRONMENT: 'production', AUTH_RATE_LIMITER: {} }),
+		),
+	).toThrow('TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY')
+	expect(() =>
+		getEnv(
+			createEnv({
+				SENTRY_ENVIRONMENT: 'production',
+				AUTH_RATE_LIMITER: {},
+				TURNSTILE_SITE_KEY: 'site-key',
+			}),
+		),
+	).toThrow('TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY')
+	expect(() =>
+		getEnv(
+			createEnv({
+				SENTRY_ENVIRONMENT: 'production',
+				AUTH_RATE_LIMITER: {},
+				TURNSTILE_SITE_KEY: 'site-key',
+				TURNSTILE_SECRET_KEY: 'secret-key',
+			}),
 		),
 	).not.toThrow()
 })

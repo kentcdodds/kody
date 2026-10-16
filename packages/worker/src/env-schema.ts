@@ -245,8 +245,9 @@ export const EnvSchema = object({
 	// (/mcp, OAuth, well-known, webhooks, email) are never redirected. Leave
 	// unset to dual-serve legacy hosts without redirecting browser navigation.
 	APP_LEGACY_REDIRECT: optionalNonEmptyStringSchema,
-	// Turnstile remains disabled unless both keys are configured, preserving
-	// local development, preview deployments, and tests.
+	// Optional in env schema so local/preview/test can omit them. Production
+	// boot (getEnv) and request-time public-form-protection refuse when either
+	// key is missing — signup is always open and must not fail open.
 	TURNSTILE_SITE_KEY: optionalNonEmptyStringSchema,
 	TURNSTILE_SECRET_KEY: optionalNonEmptyStringSchema,
 	// Origin that hosted package apps are served from. Required in production
