@@ -1703,6 +1703,60 @@ test('execute finishes the run when setup fails after the follow response', asyn
 	)
 })
 
+test('execute finishes the run when setup fails during follow confirmation', async () => {
+	transportBudgetMock.remainingMs = 0
+	onTestFinished(() => {
+		transportBudgetMock.remainingMs = null
+	})
+	const handle = transportFollowHandle(
+		'run-setup-during-confirm',
+		'execute:confirm-key',
+	)
+	const handler = await getExecuteHandler(transportCaller)
+	mockModule.beginRunRecord.mockReturnValueOnce(handle)
+	let rejectMemories: (error: Error) => void = () => {}
+	let releaseEnsure: (started: boolean) => void = () => {}
+	mockModule.surfaceToolMemories.mockImplementationOnce(
+		() =>
+			new Promise((_resolve, reject) => {
+				rejectMemories = reject
+			}),
+	)
+	mockModule.ensureRunRecordStarted.mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				releaseEnsure = resolve
+			}),
+	)
+	const pending = handler({
+		code: okCode,
+		conversationId: 'conv-setup-during-confirm',
+	})
+	await vi.waitFor(() => {
+		expect(mockModule.ensureRunRecordStarted).toHaveBeenCalled()
+	})
+	rejectMemories(new Error('memory failed during confirm'))
+	await vi.waitFor(() => {
+		expect(mockModule.finishRunRecord).toHaveBeenCalled()
+	})
+	releaseEnsure(true)
+	const response = await pending
+	expect(response.structuredContent).toMatchObject({
+		runId: 'run-setup-during-confirm',
+		inProgress: true,
+	})
+	expect(mockModule.finishRunRecord).toHaveBeenCalledWith(
+		expect.objectContaining({
+			handle,
+			status: 'error',
+			error: expect.objectContaining({
+				message: 'memory failed during confirm',
+			}),
+		}),
+	)
+	expect(mockModule.abandonRunRecord).not.toHaveBeenCalled()
+})
+
 test('execute does not detach a caller cancel that lands before the follow response', async () => {
 	transportBudgetMock.remainingMs = 0
 	onTestFinished(() => {

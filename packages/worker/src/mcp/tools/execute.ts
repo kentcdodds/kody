@@ -824,13 +824,15 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						},
 					)
 				})()
+				let transportBudgetFollow = false
 				const observedAdmittedWork = admittedWork.then(
 					() => undefined,
 					async (cause: unknown) => {
-						// Registry or memory can fail after the follow response
-						// and before the sandbox promise exists. Record that on
-						// the run the caller is polling.
-						if (!transportDetached) return
+						// Registry or memory can fail after we commit to a follow
+						// response and before the sandbox promise exists. Record
+						// that on the run the caller is polling. `transportDetached`
+						// flips only after the usage read, which is too late.
+						if (!transportDetached && !transportBudgetFollow) return
 						await recordDetachedExecuteFailure(cause)
 					},
 				)
@@ -860,6 +862,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							// cancel during that read must still stop the sandbox.
 							// Detach only once the follow response is about to return,
 							// so completing the HTTP response does not cancel the work.
+							transportBudgetFollow = true
 							const follow = await readTransportBudgetFollow(claimedRunHandle)
 							if (
 								follow.transportFollow === 'running' &&
