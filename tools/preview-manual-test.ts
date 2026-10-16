@@ -821,6 +821,38 @@ export function displayTitleMentionsPr(
 	return new RegExp(`(?:^|\\D)#${prNumber}(?:\\D|$)`).test(displayTitle)
 }
 
+/**
+ * preview.yml uses cancel-in-progress concurrency, so a cancelled (or skipped)
+ * run is superseded by a newer one for the same PR. Do not latch onto those.
+ */
+export function isCancelledOrSupersededPreviewRun(run: {
+	status: string
+	conclusion: string | null
+}) {
+	const conclusion = run.conclusion
+	return conclusion === 'cancelled' || conclusion === 'skipped'
+}
+
+/**
+ * Pick the preview workflow run to follow: newest non-cancelled run for the PR
+ * head SHA, else newest non-cancelled run whose display title mentions the PR.
+ */
+export function selectPreviewWorkflowRun(
+	runs: ReadonlyArray<WorkflowRun>,
+	pr: Pick<PrView, 'number' | 'headRefOid'>,
+): WorkflowRun | null {
+	const candidates = runs
+		.filter((run) => !isCancelledOrSupersededPreviewRun(run))
+		.toSorted((a, b) => b.databaseId - a.databaseId)
+	return (
+		candidates.find((run) => run.headSha === pr.headRefOid) ??
+		candidates.find((run) =>
+			displayTitleMentionsPr(run.displayTitle, pr.number),
+		) ??
+		null
+	)
+}
+
 export function flattenGhJsonPages(parsed: unknown): Array<unknown> {
 	if (!Array.isArray(parsed)) return []
 	if (parsed.length > 0 && Array.isArray(parsed[0])) {
@@ -1493,11 +1525,7 @@ async function loadPreviewWorkflow(
 		'--limit',
 		'10',
 	])
-	return (
-		runs.find((run) => run.headSha === pr.headRefOid) ??
-		runs.find((run) => displayTitleMentionsPr(run.displayTitle, pr.number)) ??
-		null
-	)
+	return selectPreviewWorkflowRun(runs, pr)
 }
 
 async function previewHealthReady(

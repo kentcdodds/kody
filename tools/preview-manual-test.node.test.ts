@@ -16,12 +16,14 @@ import {
 	evaluateRuntimeHealth,
 	flattenGhJsonPages,
 	formatBriefing,
+	isCancelledOrSupersededPreviewRun,
 	parseArgs,
 	parsePreviewComment,
 	parseSessionRequest,
 	previewCommentMarker,
 	previewSeedEmail,
 	runPreviewManualTest,
+	selectPreviewWorkflowRun,
 	shellQuote,
 	workerNameFromPreviewUrl,
 	type GhResult,
@@ -222,6 +224,79 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 		flattenGhJsonPages([[{ body: 'a' }], [{ body: 'b' }, { body: 'c' }]]),
 	).toEqual([{ body: 'a' }, { body: 'b' }, { body: 'c' }])
 	expect(flattenGhJsonPages({ not: 'an array' })).toEqual([])
+
+	expect(
+		isCancelledOrSupersededPreviewRun({
+			status: 'completed',
+			conclusion: 'cancelled',
+		}),
+	).toBe(true)
+	expect(
+		isCancelledOrSupersededPreviewRun({
+			status: 'completed',
+			conclusion: 'skipped',
+		}),
+	).toBe(true)
+	expect(
+		isCancelledOrSupersededPreviewRun({
+			status: 'completed',
+			conclusion: 'success',
+		}),
+	).toBe(false)
+	expect(
+		isCancelledOrSupersededPreviewRun({
+			status: 'in_progress',
+			conclusion: null,
+		}),
+	).toBe(false)
+
+	const cancelled = {
+		databaseId: 10,
+		status: 'completed',
+		conclusion: 'cancelled',
+		headSha: 'headsha',
+		event: 'pull_request',
+		url: 'https://github.com/kentcdodds/kody/actions/runs/10',
+		displayTitle: 'Preview #42',
+	}
+	const newerSuccess = {
+		databaseId: 11,
+		status: 'completed',
+		conclusion: 'success',
+		headSha: 'headsha',
+		event: 'pull_request',
+		url: 'https://github.com/kentcdodds/kody/actions/runs/11',
+		displayTitle: 'Preview #42',
+	}
+	const olderOtherPr = {
+		databaseId: 12,
+		status: 'completed',
+		conclusion: 'success',
+		headSha: 'other',
+		event: 'pull_request',
+		url: 'https://github.com/kentcdodds/kody/actions/runs/12',
+		displayTitle: 'Preview #99',
+	}
+	// Cancelled first in the list (the latch bug): still follow the newest
+	// non-cancelled run for the PR head SHA (#3770).
+	expect(
+		selectPreviewWorkflowRun([cancelled, newerSuccess, olderOtherPr], {
+			number: 42,
+			headRefOid: 'headsha',
+		}),
+	).toEqual(newerSuccess)
+	expect(
+		selectPreviewWorkflowRun([cancelled], {
+			number: 42,
+			headRefOid: 'headsha',
+		}),
+	).toBeNull()
+	expect(
+		selectPreviewWorkflowRun([cancelled, olderOtherPr], {
+			number: 42,
+			headRefOid: 'missing',
+		}),
+	).toBeNull()
 })
 
 test('preview manual test --request specs accept control-kody request --dump/--contains flags', () => {
@@ -874,6 +949,84 @@ test('preview manual test refuses draft PRs and failed preview workflows', async
 	expect(logs.join('\n')).toMatch(/Preview workflow failure/)
 })
 
+test('preview manual test skips a cancelled head-SHA run and follows the newer success (#3770)', async () => {
+	await using server = await createPreviewFixtureServer('headsha')
+	const logs: Array<string> = []
+	const cancelled = {
+		databaseId: 10,
+		status: 'completed',
+		conclusion: 'cancelled',
+		headSha: 'headsha',
+		event: 'pull_request',
+		url: 'https://github.com/kentcdodds/kody/actions/runs/10',
+		displayTitle: 'Preview #42',
+	}
+	const successor = {
+		databaseId: 11,
+		status: 'completed',
+		conclusion: 'success',
+		headSha: 'headsha',
+		event: 'pull_request',
+		url: 'https://github.com/kentcdodds/kody/actions/runs/11',
+		displayTitle: 'Preview #42',
+	}
+	// Cancelled listed first, as gh sometimes returns after concurrency cancel.
+	const { exitCode, result } = await runPreviewManualTest(
+		['--pr', '42', '--skip-login'],
+		createSilentDeps({
+			logs,
+			execGh: async (args) =>
+				fakeGh(args, {
+					commentBody: sampleCommentWithUrl(server.origin),
+					headSha: 'headsha',
+					runs: [cancelled, successor],
+				}),
+		}),
+	)
+
+	expect(exitCode).toBe(0)
+	expect(result?.ok).toBe(true)
+	expect(result?.snapshot.workflowUrl).toBe(successor.url)
+	expect(result?.snapshot.workflowConclusion).toBe('success')
+	expect(result?.snapshot.workflowUrl).not.toBe(cancelled.url)
+})
+
+test('preview manual test keeps waiting when the only head-SHA run is cancelled (#3770)', async () => {
+	let now = 0
+	const logs: Array<string> = []
+	const { exitCode, result } = await runPreviewManualTest(
+		['--pr', '42', '--timeout-ms', '2500', '--poll-ms', '1000', '--skip-login'],
+		createSilentDeps({
+			logs,
+			now: () => now,
+			sleep: async (ms) => {
+				now += ms
+			},
+			execGh: async (args) =>
+				fakeGh(args, {
+					commentBody: null,
+					headSha: 'headsha',
+					runs: [
+						{
+							databaseId: 10,
+							status: 'completed',
+							conclusion: 'cancelled',
+							headSha: 'headsha',
+							event: 'pull_request',
+							url: 'https://github.com/kentcdodds/kody/actions/runs/10',
+							displayTitle: 'Preview #42',
+						},
+					],
+				}),
+		}),
+	)
+
+	expect(exitCode).toBe(1)
+	expect(result).toBeNull()
+	expect(logs.join('\n')).toMatch(/Timed out/)
+	expect(logs.join('\n')).not.toMatch(/Preview workflow cancelled/)
+})
+
 function sampleCommentWithUrl(previewUrl: string) {
 	return [
 		previewCommentMarker,
@@ -922,6 +1075,15 @@ function fakeGh(
 		runStatus?: string
 		runConclusion?: string | null
 		runUrl?: string
+		runs?: Array<{
+			databaseId: number
+			status: string
+			conclusion: string | null
+			headSha: string
+			event: string
+			url: string
+			displayTitle: string
+		}>
 		commitParents?: Array<string>
 	},
 ): GhResult {
@@ -945,6 +1107,9 @@ function fakeGh(
 		return jsonGh(comments)
 	}
 	if (joined.startsWith('run list')) {
+		if (input.runs) {
+			return jsonGh(input.runs)
+		}
 		return jsonGh([
 			{
 				databaseId: 1,
