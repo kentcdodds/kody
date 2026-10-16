@@ -2,7 +2,6 @@ import { type searchCapabilities } from '#mcp/capabilities/capability-search.ts'
 import { type getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { type MemoryToolSummary } from '#mcp/tools/memory-tool-context.ts'
-import { type ValueMetadata } from '#mcp/values/types.ts'
 import { type JoinedIntegration } from '#worker/integrations/types.ts'
 import { type PackageSearchProjection } from '#worker/package-registry/manifest.ts'
 import { type PackageReadmeSnippet } from '#worker/package-registry/package-readme.ts'
@@ -30,7 +29,6 @@ export type PackageSearchRow = {
 export type OptionalSearchRowsResult = {
 	packageRows: Array<PackageSearchRow>
 	userSecretRows: Array<SecretSearchRow>
-	userValueRows: Array<ValueMetadata>
 	userIntegrationRows: Array<JoinedIntegration>
 	warnings: Array<string>
 }

@@ -50,7 +50,6 @@ const mockModule = vi.hoisted(() => {
 		return {
 			packageRows: [],
 			userSecretRows: [],
-			userValueRows: [],
 			userIntegrationRows: [],
 			warnings: [],
 			registry: { capabilitySpecs: {} },

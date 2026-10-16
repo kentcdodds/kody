@@ -33,7 +33,6 @@ export const orgTransferRepointedTables = [
 	'secret_buckets',
 	'secret_provider_bindings',
 	'secret_provider_grants',
-	'value_buckets',
 	'user_storage_buckets',
 	'webhook_apply_destination_grants',
 	'webhook_apply_destination_pending',
@@ -50,7 +49,6 @@ export const orgTransferRewrittenTables = [
 	'user_integrations',
 	'webhook_endpoints',
 	'secret_entries',
-	'value_entries',
 ] as const satisfies ReadonlyArray<OrgTransferMovedTable>
 
 function cell(row: OrgTransferRow, column: string) {
@@ -263,7 +261,6 @@ export function buildOrgTransferStatements(input: {
 
 	for (const [entryTable, bucketTable] of [
 		['secret_entries', 'secret_buckets'],
-		['value_entries', 'value_buckets'],
 	] as const) {
 		const merges = plan.bucketMerges[bucketTable]
 		for (const row of plan.moves[entryTable]) {

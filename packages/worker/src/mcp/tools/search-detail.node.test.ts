@@ -12,7 +12,6 @@ import { type JoinedIntegration } from '#worker/integrations/types.ts'
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
 	resolveSavedPackageRef: vi.fn(),
-	getValue: vi.fn(),
 	getJoinedIntegration: vi.fn(),
 	loadPackageSourceBySourceId: vi.fn(),
 	collectIntegrationPackageSuggestions: vi.fn(),
@@ -40,10 +39,6 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 vi.mock('#worker/package-registry/source.ts', () => ({
 	loadPackageSourceBySourceId: (...args: Array<unknown>) =>
 		mockModule.loadPackageSourceBySourceId(...args),
-}))
-
-vi.mock('#mcp/values/service.ts', () => ({
-	getValue: (...args: Array<unknown>) => mockModule.getValue(...args),
 }))
 
 vi.mock('#worker/integrations/service.ts', async () => {
@@ -93,7 +88,6 @@ function createAgent({
 
 function emptySearchRows() {
 	return {
-		userValueRows: [],
 		userSecretRows: [],
 		userIntegrationRows: [],
 		packageRows: [],
@@ -163,7 +157,6 @@ function createJoinedIntegration(name: string): JoinedIntegration {
 }
 
 test('resolveEntityDetail reports unresolvable entity refs as caller errors', async () => {
-	mockModule.getValue.mockResolvedValue(null)
 	mockModule.getJoinedIntegration.mockResolvedValue(null)
 	const badType =
 		'Entity type must be one of: capability, guide, integration, mcp-server, package, or secret.'

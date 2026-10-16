@@ -20,7 +20,6 @@ const orgOwnedAccountSections = [
 	'repositories',
 	'secret-providers',
 	'secrets',
-	'values',
 	'waiting',
 	'webhooks',
 	'workflows',

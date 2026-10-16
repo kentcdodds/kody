@@ -13,7 +13,6 @@ import { guideSearchEntityPlugin } from './guide.ts'
 const emptyOptionalRows = {
 	packageRows: [],
 	userSecretRows: [],
-	userValueRows: [],
 	userIntegrationRows: [],
 }
 
@@ -70,7 +69,7 @@ test('guide descriptors and candidates hide unadvertised and admin guides and re
 			optionalRows: emptyOptionalRows,
 			...(includeAdminGuides ? { includeAdminGuides } : {}),
 		}).map((descriptor) => descriptor.id)
-	const hiddenIds = ['values', 'admin_events']
+	const hiddenIds = ['admin_events']
 	expect(descriptorIds().filter((id) => hiddenIds.includes(id))).toEqual([])
 	expect(descriptorIds(true)).toContain('admin_events')
 

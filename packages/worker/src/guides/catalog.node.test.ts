@@ -81,10 +81,6 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 
 	const listedIds = (options?: { includeAdmin: boolean }) =>
 		listGuides(options).map((guide) => guide.id)
-	for (const id of ['values']) {
-		expect(getGuideById(id)?.unadvertised).toBe(true)
-		expect(listedIds()).not.toContain(id)
-	}
 	expect(getGuideById('admin_events')?.adminOnly).toBe(true)
 	expect(listedIds()).not.toContain('admin_events')
 	expect(listedIds({ includeAdmin: true })).toContain('admin_events')
@@ -176,7 +172,6 @@ test('docs nav covers every advertised doc exactly once and nothing else', () =>
 	for (const guide of listGuides()) {
 		expect(toGuideSummary(guide).section).not.toBeNull()
 	}
-	expect(toGuideSummary(getGuideBySlug('values')!).section).toBeNull()
 })
 
 test('each guide embeds at most one youtube watch block', () => {

@@ -45,7 +45,6 @@ Then drive the surface with `login`, `request`, `preview`, and `health`. Run
 - [experiments](./experiments.md) — `/account/experiments`
 - [memories](./memories.md) — `/@<slug>/-/memories`
 - [email](./email.md) — `/@<slug>/-/email`
-- [values](./values.md) — `/@<slug>/-/values`
 - [billing](./billing.md) — `/@:orgSlug/-/billing`
 - [admin](./admin.md) — `/admin` (seed user is 403)
 - [community](./community.md) — `/community`

@@ -116,7 +116,6 @@ test('descriptor seam follows registry order and preserves integration affinity'
 		} as never,
 		optionalRows: {
 			packageRows: [createPackageRow()],
-			userValueRows: [],
 			userIntegrationRows: [
 				createJoinedIntegration({
 					name: 'github',
@@ -171,7 +170,6 @@ test('descriptor seam follows registry order and preserves integration affinity'
 		optionalRows: {
 			packageRows: [],
 			userSecretRows: [],
-			userValueRows: [],
 			userIntegrationRows,
 		},
 		domain: 'email',

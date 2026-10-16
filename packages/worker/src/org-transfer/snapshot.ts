@@ -36,7 +36,6 @@ export const orgTransferOwnerTables = {
 	secret_buckets: 'user_id',
 	secret_provider_bindings: 'user_id',
 	secret_provider_grants: 'user_id',
-	value_buckets: 'user_id',
 	user_storage_buckets: 'user_id',
 	webhook_endpoints: 'user_id',
 	webhook_apply_destination_grants: 'user_id',
@@ -54,7 +53,6 @@ export type OrgTransferOwnerTable = keyof typeof orgTransferOwnerTables
 /** Child tables keyed by their parent bucket, not by owner. */
 export const orgTransferBucketEntryTables = {
 	secret_entries: 'secret_buckets',
-	value_entries: 'value_buckets',
 } as const
 
 export type OrgTransferBucketEntryTable =

@@ -191,7 +191,7 @@ export const docsNav: ReadonlyArray<DocsNavSection> = [
  * of the sidebar, indexes, sitemap, and search advertisements. Matches the
  * frontmatter `unadvertised: true` flag on each file.
  */
-export const unadvertisedDocSlugs: ReadonlyArray<string> = ['values']
+export const unadvertisedDocSlugs: ReadonlyArray<string> = []
 
 /**
  * Old slugs that no longer exist as their own page. The legacy `/guides/*`

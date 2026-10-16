@@ -118,7 +118,7 @@ test('view transitions skip shell tab switches, including when from-path was nev
 	// transition would squash or fade it. These swap instantly.
 	const sameShell: Array<[string | null, string, boolean]> = [
 		['/account', '/account/secrets', true],
-		['/account/jobs?view=failed', '/account/values', true],
+		['/account/jobs?view=failed', '/account/memories', true],
 		['/admin/users', '/admin/feature-flags', true],
 		['/docs', '/docs/oauth', true],
 		['/docs/oauth', '/docs/connect', true],

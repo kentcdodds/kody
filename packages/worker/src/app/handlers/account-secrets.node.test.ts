@@ -5,7 +5,6 @@ import {
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
 import type * as secretsService from '#mcp/secrets/service.ts'
-import type * as valuesService from '#mcp/values/service.ts'
 import type * as packageRepo from '#worker/package-registry/repo.ts'
 import type * as platformApps from '#worker/integrations/platform-apps.ts'
 import type * as packageSubscriptions from '#worker/integrations/package-subscriptions.ts'
@@ -63,16 +62,6 @@ const mockModule = vi.hoisted(() => ({
 			ttlMs: null,
 		}),
 	),
-	saveValue: vi.fn<typeof valuesService.saveValue>(async (input) => ({
-		name: input.name,
-		scope: input.scope,
-		value: input.value,
-		description: '',
-		appId: null,
-		createdAt: new Date(0).toISOString(),
-		updatedAt: new Date(0).toISOString(),
-		ttlMs: null,
-	})),
 	buildSecretHostApprovalUrl: vi.fn<
 		typeof HostApproval.buildSecretHostApprovalUrl
 	>(
@@ -122,7 +111,6 @@ const mockModule = vi.hoisted(() => ({
 		expiresAt: null,
 		ttlMs: null,
 	})),
-	getValue: vi.fn<typeof valuesService.getValue>(async () => null),
 	upsertIntegration: vi.fn<typeof IntegrationsService.upsertIntegration>(
 		async (input) => ({
 			...input.config,
@@ -302,13 +290,6 @@ vi.mock('#worker/credentials/credential-fields.ts', async (importOriginal) => {
 
 vi.mock('#worker/orgs/org-audit.ts', () => ({
 	orgAuditWriterFromRequest: () => ({ audit: 'writer' }),
-}))
-
-vi.mock('#mcp/values/service.ts', () => ({
-	getValue: (...args: Parameters<typeof valuesService.getValue>) =>
-		mockModule.getValue(...args),
-	saveValue: (...args: Parameters<typeof valuesService.saveValue>) =>
-		mockModule.saveValue(...args),
 }))
 
 vi.mock('#worker/integrations/service.ts', async (importOriginal) => {
@@ -584,7 +565,6 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 			}),
 		}),
 	)
-	expect(mockModule.saveValue).not.toHaveBeenCalled()
 	expect(
 		mockModule.dispatchIntegrationAuthSucceededSubscriptionEvents,
 	).toHaveBeenCalledWith(

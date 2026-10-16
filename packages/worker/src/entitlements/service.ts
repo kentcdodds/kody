@@ -998,16 +998,6 @@ export async function calculateUserD1StorageBytes(input: {
 		sumStorageBytes(
 			db,
 			`SELECT COALESCE(SUM(
-				${textBytesExpression(['ve.name', 've.description', 've.value'])}
-			), 0) AS count
-			FROM value_entries ve
-			JOIN value_buckets vb ON vb.id = ve.bucket_id
-			WHERE vb.user_id = ?`,
-			[userId],
-		),
-		sumStorageBytes(
-			db,
-			`SELECT COALESCE(SUM(
 				${textBytesExpression([
 					'se.name',
 					'se.description',

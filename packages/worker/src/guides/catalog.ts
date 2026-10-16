@@ -65,7 +65,6 @@ import secretProviders from '../../../../docs/guides/secret-providers.md'
 import credentials from '../../../../docs/guides/credentials.md'
 import secrets from '../../../../docs/guides/secrets.md'
 import triggers from '../../../../docs/guides/triggers.md'
-import values from '../../../../docs/guides/values.md'
 import whatIsKody from '../../../../docs/guides/what-is-kody.md'
 import onboarding from '../../../../docs/guides/onboarding.md'
 import portability from '../../../../docs/guides/portability.md'
@@ -138,7 +137,6 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'cant-open-or-get-mail', raw: cantOpenOrGetMail },
 	{ slug: 'platform-friction', raw: platformFriction },
 	{ slug: 'admin-events', raw: adminEvents },
-	{ slug: 'values', raw: values },
 ]
 
 function buildCatalog(): ReadonlyArray<Guide> {

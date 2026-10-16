@@ -17,8 +17,6 @@ export const softDeleteAppTables = [
 	'secret_buckets',
 	'secret_entries',
 	'secret_provider_bindings',
-	'value_buckets',
-	'value_entries',
 	'user_storage_buckets',
 	'user_integrations',
 	'user_oauth_apps',

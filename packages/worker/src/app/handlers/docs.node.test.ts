@@ -239,11 +239,9 @@ test('provider and platform doc markdown details stay stable', async () => {
 	const apiDetail = (slug: string) =>
 		call(createDocDetailApiHandler, `/docs/${slug}.json`, { slug })
 
-	for (const slug of ['values', 'oauth', 'github', 'google-oauth']) {
+	for (const slug of ['oauth', 'github', 'google-oauth']) {
 		expect([slug, (await markdownDetail(slug)).status]).toEqual([slug, 200])
 	}
-	const valuesBody = await (await markdownDetail('values')).text()
-	expect(valuesBody.startsWith('#')).toBe(true)
 	const oauthDetail = await markdownDetail('oauth')
 	expect(oauthDetail.headers.get('content-type')).toBe(markdownType)
 	const oauthBody = await oauthDetail.text()

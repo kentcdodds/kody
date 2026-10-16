@@ -51,3 +51,9 @@ config need appears that memories plus a settings package cannot cover.
 Writes and agent-facing surfaces are gone. `valueGet` / `valueList` /
 `valueDelete` remain as an unadvertised drain until the D1 tables drop. See the
 [values retirement runbook](../architecture/values-retirement-runbook.md).
+
+## LATER-NOTE (2026-10-16)
+
+The drain, `/account/values`, the unadvertised values guide, and data-inventory
+reads are removed. `value_entries` and `value_buckets` stay in D1 until the DROP
+migration in the next deploy. Production rows were already 0.

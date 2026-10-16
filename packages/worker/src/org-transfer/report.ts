@@ -19,7 +19,6 @@ export type OrgTransferSummary = {
 	packages: Array<{ id: string; from_name: string; to_name: string }>
 	repos: Array<string>
 	secrets: Array<{ scope: string; binding: string; name: string }>
-	values: Array<{ scope: string; binding: string; name: string }>
 	integrations: Array<string>
 	oauth_apps: Array<string>
 	mcp_servers: Array<{ id: string; name: string }>
@@ -65,7 +64,7 @@ export function summarizeOrgTransferPlan(
 		packageKodyIds.get(packageId) ?? packageId
 	const bindingLabel = (scope: string, bindingKey: string) =>
 		scope === 'user' ? '' : packageLabel(bindingKey)
-	const entryNames = (entryTable: 'secret_entries' | 'value_entries') =>
+	const entryNames = (entryTable: 'secret_entries') =>
 		plan.moves[entryTable].map((row) => {
 			const bucket = plan.bucketBindings.get(text(row, 'bucket_id'))
 			const scope = bucket?.scope ?? ''
@@ -90,7 +89,6 @@ export function summarizeOrgTransferPlan(
 		})),
 		repos: plan.moves.user_repos.map((row) => text(row, 'name')),
 		secrets: entryNames('secret_entries'),
-		values: entryNames('value_entries'),
 		integrations: plan.moves.user_integrations.map((row) => text(row, 'name')),
 		oauth_apps: plan.moves.user_oauth_apps.map((row) => text(row, 'slug')),
 		mcp_servers: plan.moves.mcp_server_settings.map((row) => ({

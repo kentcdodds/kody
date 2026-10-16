@@ -40,7 +40,6 @@ const builtinDomainLoaders: ReadonlyArray<() => Promise<DomainSpec>> = [
 	() => import('./runs/domain.ts').then((m) => m.runsDomain),
 	() => import('./secrets/domain.ts').then((m) => m.secretsDomain),
 	() => import('./storage/domain.ts').then((m) => m.storageDomain),
-	() => import('./values/domain.ts').then((m) => m.valuesDomain),
 	() => import('./webhooks/domain.ts').then((m) => m.webhooksDomain),
 ]
 

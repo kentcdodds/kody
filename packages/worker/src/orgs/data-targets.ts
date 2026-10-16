@@ -21,7 +21,6 @@ const orgOwnedUserIdSoftDeleteTableExclusions = new Set([
 	'community_listings',
 	// Child rows keyed by bucket_id; soft-deleted via parent buckets.
 	'secret_entries',
-	'value_entries',
 ])
 
 /** Child tables soft-deleted via their parent bucket after org soft-delete. */
@@ -29,11 +28,6 @@ export const orgOwnedBucketChildSoftDeleteTables = [
 	{
 		child: 'secret_entries',
 		parent: 'secret_buckets',
-		parentKey: 'bucket_id',
-	},
-	{
-		child: 'value_entries',
-		parent: 'value_buckets',
 		parentKey: 'bucket_id',
 	},
 ] as const

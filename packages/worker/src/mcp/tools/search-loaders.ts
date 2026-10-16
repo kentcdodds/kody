@@ -4,7 +4,6 @@ import { filterCapabilityRegistryMcpServersForCaller } from '#mcp/capabilities/a
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { listUserSecretsForSearch } from '#mcp/secrets/service.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
-import { type ValueMetadata } from '#mcp/values/types.ts'
 import { listJoinedIntegrations } from '#worker/integrations/service.ts'
 import { type JoinedIntegration } from '#worker/integrations/types.ts'
 import { listVisibleEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
@@ -28,30 +27,23 @@ export async function loadOptionalSearchRows(input: {
 	userId: OwnerId | null
 	loadPackages: () => Promise<LoadedPackageRows>
 	loadUserSecrets: () => Promise<Array<SecretSearchRow>>
-	loadUserValues: () => Promise<Array<ValueMetadata>>
 	loadUserIntegrations: () => Promise<Array<JoinedIntegration>>
 }): Promise<OptionalSearchRowsResult> {
 	if (!input.userId) {
 		return {
 			packageRows: [],
 			userSecretRows: [],
-			userValueRows: [],
 			userIntegrationRows: [],
 			warnings: [],
 		}
 	}
 
-	const [
-		loadedPackageRows,
-		userSecretRows,
-		userValueRows,
-		userIntegrationRows,
-	] = await Promise.all([
-		input.loadPackages(),
-		input.loadUserSecrets(),
-		input.loadUserValues(),
-		input.loadUserIntegrations(),
-	])
+	const [loadedPackageRows, userSecretRows, userIntegrationRows] =
+		await Promise.all([
+			input.loadPackages(),
+			input.loadUserSecrets(),
+			input.loadUserIntegrations(),
+		])
 	const packageRows = Array.isArray(loadedPackageRows)
 		? loadedPackageRows
 		: loadedPackageRows.rows
@@ -59,7 +51,6 @@ export async function loadOptionalSearchRows(input: {
 	return {
 		packageRows,
 		userSecretRows,
-		userValueRows,
 		userIntegrationRows,
 		warnings: [],
 	}
@@ -132,7 +123,6 @@ export async function loadSearchRowsAndRegistry(input: {
 						})
 						return secrets.filter((secret) => revealSecret(secret.credentialId))
 					},
-					loadUserValues: async () => [],
 					loadUserIntegrations: async () => {
 						if (access?.profileGrants) return []
 						const userId = input.userId

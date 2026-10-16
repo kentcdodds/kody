@@ -98,7 +98,7 @@ export function buildSearchableEntityDescriptors(input: {
 	registry: Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
 	optionalRows: Pick<
 		OptionalSearchRowsResult,
-		'packageRows' | 'userSecretRows' | 'userValueRows' | 'userIntegrationRows'
+		'packageRows' | 'userSecretRows' | 'userIntegrationRows'
 	>
 	domain?: string
 	includeAdminGuides?: boolean

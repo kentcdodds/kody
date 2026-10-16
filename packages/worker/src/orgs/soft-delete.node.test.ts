@@ -257,22 +257,6 @@ test('org soft delete tombstones bucket child rows and inbox addresses', async (
 		.run()
 	await appDb
 		.prepare(
-			`INSERT INTO value_buckets (
-				id, user_id, scope, binding_key, created_at, updated_at
-			) VALUES ('val-bucket', ?, 'user', 'default', ?, ?)`,
-		)
-		.bind(orgId, ts, ts)
-		.run()
-	await appDb
-		.prepare(
-			`INSERT INTO value_entries (
-				bucket_id, name, value, created_at, updated_at
-			) VALUES ('val-bucket', 'setting', '1', ?, ?)`,
-		)
-		.bind(ts, ts)
-		.run()
-	await appDb
-		.prepare(
 			`INSERT INTO email_inboxes (
 				id, user_id, name, created_at, updated_at
 			) VALUES ('inbox-1', ?, 'main', ?, ?)`,
@@ -304,12 +288,6 @@ test('org soft delete tombstones bucket child rows and inbox addresses', async (
 		)
 		.first<{ deleted_at: string | null }>()
 	expect(secret?.deleted_at).toBe(deleted.deletedAt)
-	const value = await appDb
-		.prepare(
-			`SELECT deleted_at FROM value_entries WHERE bucket_id = 'val-bucket' AND name = 'setting'`,
-		)
-		.first<{ deleted_at: string | null }>()
-	expect(value?.deleted_at).toBe(deleted.deletedAt)
 	const address = await appDb
 		.prepare(`SELECT deleted_at FROM email_inbox_addresses WHERE id = 'addr-1'`)
 		.first<{ deleted_at: string | null }>()
@@ -327,12 +305,6 @@ test('org soft delete tombstones bucket child rows and inbox addresses', async (
 		)
 		.first<{ deleted_at: string | null }>()
 	expect(restoredSecret?.deleted_at).toBeNull()
-	const restoredValue = await appDb
-		.prepare(
-			`SELECT deleted_at FROM value_entries WHERE bucket_id = 'val-bucket' AND name = 'setting'`,
-		)
-		.first<{ deleted_at: string | null }>()
-	expect(restoredValue?.deleted_at).toBeNull()
 	const restoredAddress = await appDb
 		.prepare(`SELECT deleted_at FROM email_inbox_addresses WHERE id = 'addr-1'`)
 		.first<{ deleted_at: string | null }>()

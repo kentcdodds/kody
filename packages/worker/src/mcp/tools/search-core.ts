@@ -174,7 +174,7 @@ export async function searchUnified(input: {
 	registry: Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
 	optionalRows: Pick<
 		OptionalSearchRowsResult,
-		'packageRows' | 'userSecretRows' | 'userValueRows' | 'userIntegrationRows'
+		'packageRows' | 'userSecretRows' | 'userIntegrationRows'
 	>
 	/**
 	 * Search-scope retriever hits. A promise lets candidate generation and
@@ -217,13 +217,12 @@ export async function searchUnified(input: {
 		? scopeRegistryToDomain(input.registry, domainFilter)
 		: input.registry
 	// Domain scoping is a capability-graph drill-down; user-owned entities
-	// (packages, values, integrations, secrets, retrievers) have no domain.
+	// (packages, integrations, secrets, retrievers) have no domain.
 	// Official guides belong to the coding domain and stay in that scope.
 	const optionalRows = domainFilter
 		? {
 				packageRows: [],
 				userSecretRows: [],
-				userValueRows: [],
 				userIntegrationRows: [],
 			}
 		: input.optionalRows
@@ -512,7 +511,6 @@ export async function searchPackages(input: {
 		optionalRows: {
 			packageRows: input.rows,
 			userSecretRows: [],
-			userValueRows: [],
 			userIntegrationRows: [],
 		},
 	})

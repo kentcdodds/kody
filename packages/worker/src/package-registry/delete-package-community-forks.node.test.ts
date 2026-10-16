@@ -15,7 +15,6 @@ const mockModule = vi.hoisted(() => ({
 	syncJobManagerAlarm: vi.fn(),
 	deleteSavedPackageVector: vi.fn(),
 	removePackageRetrieverManifestCacheEntries: vi.fn(),
-	deleteAllAppScopedValues: vi.fn(),
 	deleteAllPackageScopedSecrets: vi.fn(),
 	removeAllSecretApprovalsForPackage: vi.fn(),
 	clearStorage: vi.fn(async () => ({ ok: true as const })),
@@ -35,7 +34,6 @@ vi.mock('#worker/storage-runner.ts', async (importOriginal) => {
 })
 
 vi.mock('#worker/package-config-cleanup.ts', () => ({
-	deleteAllAppScopedValues: mockModule.deleteAllAppScopedValues,
 	deleteAllPackageScopedSecrets: mockModule.deleteAllPackageScopedSecrets,
 	removeAllSecretApprovalsForPackage:
 		mockModule.removeAllSecretApprovalsForPackage,
@@ -294,7 +292,6 @@ test('package delete removes community_forks so Fork outdated does not linger', 
 	for (const cleanup of [
 		mockModule.deleteSavedPackageVector,
 		mockModule.removePackageRetrieverManifestCacheEntries,
-		mockModule.deleteAllAppScopedValues,
 		mockModule.deleteAllPackageScopedSecrets,
 		mockModule.removeAllSecretApprovalsForPackage,
 	]) {

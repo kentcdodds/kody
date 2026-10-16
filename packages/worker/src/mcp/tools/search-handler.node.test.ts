@@ -2,7 +2,6 @@ import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as CapabilityRegistry from '#mcp/capabilities/registry.ts'
 import type * as SecretsService from '#mcp/secrets/service.ts'
-import type * as ValuesService from '#mcp/values/service.ts'
 import type * as DeriveWaiting from '#mcp/waiting/derive-waiting.ts'
 import type * as CommunityService from '#worker/community/service.ts'
 import type * as EntitlementsService from '#worker/entitlements/service.ts'
@@ -71,7 +70,6 @@ const mockModule = vi.hoisted(() => ({
 	listUserSecretsForSearch: vi.fn<
 		typeof SecretsService.listUserSecretsForSearch
 	>(async () => []),
-	listValues: vi.fn<typeof ValuesService.listValues>(async () => []),
 	listJoinedIntegrations: vi.fn<
 		typeof IntegrationsService.listJoinedIntegrations
 	>(async () => []),
@@ -147,11 +145,6 @@ vi.mock('#mcp/secrets/service.ts', () => ({
 	listUserSecretsForSearch: (
 		...args: Parameters<typeof SecretsService.listUserSecretsForSearch>
 	) => mockModule.listUserSecretsForSearch(...args),
-}))
-
-vi.mock('#mcp/values/service.ts', () => ({
-	listValues: (...args: Parameters<typeof ValuesService.listValues>) =>
-		mockModule.listValues(...args),
 }))
 
 vi.mock('#worker/integrations/service.ts', async () => {

@@ -65,7 +65,6 @@ type TestUser = {
 const countedTables = [
 	'email_attachments',
 	'email_messages',
-	'value_entries',
 	'secret_entries',
 	'mcp_memories',
 	'saved_packages',

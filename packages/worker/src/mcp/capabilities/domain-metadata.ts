@@ -18,7 +18,6 @@ export const capabilityDomainNames = {
 	runs: 'runs',
 	secrets: 'secrets',
 	storage: 'storage',
-	values: 'values',
 	webhooks: 'webhooks',
 } as const
 

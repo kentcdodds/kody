@@ -120,11 +120,10 @@ function registryOf(name: string, capabilities: Array<Capability>) {
 const emptyOptionalSearchRows = {
 	packageRows: [],
 	userSecretRows: [],
-	userValueRows: [],
 	userIntegrationRows: [],
 } satisfies Pick<
 	OptionalSearchRowsResult,
-	'packageRows' | 'userSecretRows' | 'userValueRows' | 'userIntegrationRows'
+	'packageRows' | 'userSecretRows' | 'userIntegrationRows'
 >
 
 const rows = (overrides: Partial<OptionalSearchRowsResult>) => ({
@@ -606,7 +605,7 @@ test('searchUnified ranks package retriever results alongside capabilities', asy
 	)
 })
 
-test('optional search rows load packages and values without partial fallbacks', async () => {
+test('optional search rows load packages and secrets without partial fallbacks', async () => {
 	const loaders = (
 		overrides: Partial<Parameters<typeof loadOptionalSearchRows>[0]> = {},
 	) =>
@@ -614,7 +613,6 @@ test('optional search rows load packages and values without partial fallbacks', 
 			userId: ownerIdFromStored('user-123'),
 			loadPackages: async () => [],
 			loadUserSecrets: async () => [],
-			loadUserValues: async () => [],
 			loadUserIntegrations: async () => [],
 			...overrides,
 		})
@@ -626,8 +624,8 @@ test('optional search rows load packages and values without partial fallbacks', 
 		loaders({ loadPackages: unavailable('packages unavailable') }),
 	).rejects.toThrow('packages unavailable')
 	await expect(
-		loaders({ loadUserValues: unavailable('values unavailable') }),
-	).rejects.toThrow('values unavailable')
+		loaders({ loadUserSecrets: unavailable('secrets unavailable') }),
+	).rejects.toThrow('secrets unavailable')
 
 	const roku = leanPackageRow('package-123', 'user-123', {
 		name: '@kody/roku-remote',
@@ -646,7 +644,7 @@ test('optional search rows load packages and values without partial fallbacks', 
 		await loaders({
 			userId: null,
 			loadPackages: unavailable('should not run'),
-			loadUserValues: unavailable('should not run'),
+			loadUserSecrets: unavailable('should not run'),
 			loadUserIntegrations: unavailable('should not run'),
 		}),
 	).toEqual({ ...emptyOptionalSearchRows, warnings: [] })

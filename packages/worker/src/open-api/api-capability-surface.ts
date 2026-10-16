@@ -4,12 +4,7 @@ import { apiOperationsById } from './operations.ts'
  * Capability domains that are never published on the Open API or MCP `api`
  * tool. Search still lists these capabilities for `execute`.
  */
-export const openApiExcludedDomains = new Set([
-	'admin',
-	'apps',
-	'coding',
-	'values',
-])
+export const openApiExcludedDomains = new Set(['admin', 'apps', 'coding'])
 
 /**
  * Named capabilities deliberately omitted from the Open API even when their

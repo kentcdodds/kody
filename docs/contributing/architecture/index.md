@@ -119,8 +119,8 @@ wrote during that fetch) so the next cron can skip the synthetic.
 - [Production rollback](../rollback.md): Cloudflare version rollback vs
   forward-fix on `main` for the five product scripts, including when Durable
   Object or D1 migrations make Path A unsafe.
-- [Values retirement runbook](./values-retirement-runbook.md): absorb values
-  into memories, package storage, repos, secrets, and integrations
+- [Values retirement runbook](./values-retirement-runbook.md): values code is
+  gone; `value_entries` / `value_buckets` drop in the following deploy
   ([ADR 0022](../decisions/0022-retire-values-primitive.md)).
 - [Cleanup after migrations](../cleanup-after-migrations.md): drop leftovers in
   the same change when safe; otherwise open a GitHub issue.

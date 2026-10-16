@@ -266,10 +266,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		secret_entries: [
 			{ bucket_id: 'sb-1', name: 's', user_id: ownerIdFromStored('unused') },
 		],
-		value_buckets: [{ id: 'vb-1', user_id: userAaa }],
-		value_entries: [
-			{ bucket_id: 'vb-1', name: 'v', user_id: ownerIdFromStored('unused') },
-		],
 		mcp_agent_sessions: [
 			{ do_id: 'do-user-a', user_id: userAaa },
 			{ do_id: 'do-user-b', user_id: userBbb },
@@ -683,8 +679,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	// User-scoped data is removed.
 	expect(rows.secret_buckets).toEqual([])
 	expect(rows.secret_entries).toEqual([])
-	expect(rows.value_buckets).toEqual([])
-	expect(rows.value_entries).toEqual([])
 	expect(rows.entity_sources).toEqual([
 		{
 			id: 'src-2',

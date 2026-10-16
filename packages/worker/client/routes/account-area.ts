@@ -87,10 +87,6 @@ export {
 	accountTwoFactorRouteLoader,
 } from './account-two-factor.tsx'
 export {
-	AccountValuesRoute,
-	accountValuesRouteLoader,
-} from './account-values.tsx'
-export {
 	AccountOrganizationsNewRoute,
 	AccountOrganizationsRoute,
 	accountOrganizationsNewRouteLoader,

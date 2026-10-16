@@ -196,7 +196,6 @@ test('unscoped search ranks the MCP server instead of dumping every remote tool'
 	const optionalRows = {
 		packageRows: [],
 		userSecretRows: [],
-		userValueRows: [],
 		userIntegrationRows: [],
 	}
 

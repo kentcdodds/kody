@@ -81,10 +81,6 @@ export const orgTransferTables: Record<string, OrgTransferTableDisposition> = {
 		'user_id re-pointed for bindings of moved packages.',
 	),
 	secret_provider_grants: move('user_id re-pointed with their binding.'),
-	value_buckets: move(
-		'User and app buckets re-pointed or merged like secret buckets. Session buckets stay.',
-	),
-	value_entries: move('bucket_id follows a merge.'),
 	user_storage_buckets: move(
 		'Package and job buckets of moved packages re-pointed; StorageRunner data copied and verified.',
 	),

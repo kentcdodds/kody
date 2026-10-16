@@ -199,8 +199,14 @@ export function getAccountExportExcludedD1Surfaces(): Array<{
  * Tables still present in D1 after their product surface is gone. Rows may be
  * purged while DROP TABLE waits for a later deploy. Deletion/export do not
  * inventory these leftovers. Empty when nothing is mid-drop.
+ *
+ * `value_buckets` / `value_entries` stay until the DROP migration in the
+ * deploy after the values code removal (#1728). Production rows are already 0.
  */
-export const accountUserDataPendingDropTables = [] as const
+export const accountUserDataPendingDropTables = [
+	'value_buckets',
+	'value_entries',
+] as const
 
 export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'api_tokens' },
@@ -316,12 +322,6 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		setColumn: 'repaired_by_user_id',
 		value: 'deleted-user',
 	},
-	{
-		kind: 'bucket_parent',
-		table: 'value_entries',
-		parentTable: 'value_buckets',
-	},
-	{ kind: 'user_id', table: 'value_buckets' },
 	{
 		kind: 'bucket_parent',
 		table: 'secret_entries',

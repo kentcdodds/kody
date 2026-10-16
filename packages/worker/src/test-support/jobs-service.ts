@@ -166,8 +166,6 @@ export function createDatabase(
 	const tables = new Map<string, Array<Record<string, unknown>>>([
 		['secret_buckets', []],
 		['secret_entries', []],
-		['value_buckets', []],
-		['value_entries', []],
 		['entity_sources', []],
 		['published_bundle_artifacts', []],
 		['user_storage_buckets', []],
@@ -328,22 +326,6 @@ export function createDatabase(
 										row['bucket_id'] === params[0] && row['name'] === params[1],
 								) as T | null
 							}
-							if (query.includes('FROM value_buckets')) {
-								return selectOne(
-									'value_buckets',
-									(row) =>
-										row['user_id'] === params[0] &&
-										row['scope'] === params[1] &&
-										row['binding_key'] === params[2],
-								) as T | null
-							}
-							if (query.includes('FROM value_entries')) {
-								return selectOne(
-									'value_entries',
-									(row) =>
-										row['bucket_id'] === params[0] && row['name'] === params[1],
-								) as T | null
-							}
 							if (
 								query.includes('FROM jobs WHERE id = ? AND user_id = ?') &&
 								query.includes('deleted_at IS NULL')
@@ -494,30 +476,6 @@ export function createDatabase(
 								}
 							}
 							if (
-								query.includes('FROM value_entries') &&
-								query.includes('ORDER BY')
-							) {
-								return {
-									results: selectAll(
-										'value_entries',
-										(row) => row['bucket_id'] === params[3],
-									)
-										.map((row) => ({
-											scope: params[0],
-											binding_key: params[1],
-											name: row['name'],
-											description: row['description'],
-											value: row['value'],
-											created_at: row['created_at'],
-											updated_at: row['updated_at'],
-											expires_at: params[2],
-										}))
-										.sort((left, right) =>
-											String(left['name']).localeCompare(String(right['name'])),
-										) as T[],
-								}
-							}
-							if (
 								query.includes('FROM secret_entries') &&
 								query.includes('ORDER BY')
 							) {
@@ -617,44 +575,6 @@ export function createDatabase(
 								}
 								upsert(
 									'secret_entries',
-									(existing) =>
-										existing['bucket_id'] === row.bucket_id &&
-										existing['name'] === row.name,
-									row,
-								)
-								return { meta: { changes: 1, last_row_id: 0 } }
-							}
-							if (query.startsWith('INSERT INTO value_buckets')) {
-								const row = {
-									id: params[0],
-									user_id: params[1],
-									scope: params[2],
-									binding_key: params[3],
-									expires_at: params[4],
-									created_at: params[5],
-									updated_at: params[6],
-								}
-								upsert(
-									'value_buckets',
-									(existing) =>
-										existing['user_id'] === row.user_id &&
-										existing['scope'] === row.scope &&
-										existing['binding_key'] === row.binding_key,
-									row,
-								)
-								return { meta: { changes: 1, last_row_id: 0 } }
-							}
-							if (query.startsWith('INSERT INTO value_entries')) {
-								const row = {
-									bucket_id: params[0],
-									name: params[1],
-									description: params[2],
-									value: params[3],
-									created_at: params[4],
-									updated_at: params[5],
-								}
-								upsert(
-									'value_entries',
 									(existing) =>
 										existing['bucket_id'] === row.bucket_id &&
 										existing['name'] === row.name,

@@ -128,7 +128,6 @@ function searchPackages(
 		optionalRows: {
 			packageRows,
 			userSecretRows: [],
-			userValueRows: [],
 			userIntegrationRows: [],
 		},
 	})
@@ -520,7 +519,6 @@ test('package candidates hydrate the requested page, not Jev wide recall', async
 			optionalRows: {
 				packageRows: rows,
 				userSecretRows: [],
-				userValueRows: [],
 				userIntegrationRows: [],
 			},
 			retrieverResults: [],

@@ -2458,33 +2458,6 @@ export type AccountSecretsLoaderData = {
 	renameCleanupError?: string | null
 }
 
-export type AccountValueListItem = {
-	id: string
-	name: string
-	description: string
-	valuePreview: string
-	updatedAt: string
-	ttlMs: number | null
-}
-
-export type AccountValueDetail = {
-	id: string
-	name: string
-	description: string
-	value: string
-	createdAt: string
-	updatedAt: string
-	ttlMs: number | null
-	scope: 'user'
-}
-
-export type AccountValuesLoaderData = {
-	ok: true
-	values: Array<AccountValueListItem>
-	selectedValue: AccountValueDetail | null
-	selectedValueId: string | null
-}
-
 /**
  * JSON-safe blob for job params (and similar free-form payloads). Remix
  * entry props require SerializableValue; `unknown` is not allowed.
@@ -2957,7 +2930,6 @@ export type AppLoaderData = {
 	approvalBundle?: ApprovalBundleLoaderData
 	accountSecrets?: AccountSecretsLoaderData
 	accountSecretProviders?: AccountSecretProvidersLoaderData
-	accountValues?: AccountValuesLoaderData
 	accountJobs?: AccountJobsLoaderData
 	accountWorkflows?: AccountWorkflowsLoaderData
 	accountActivity?: AccountActivityLoaderData

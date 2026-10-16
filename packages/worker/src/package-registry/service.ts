@@ -70,7 +70,6 @@ import {
 import {
 	deleteAllPackageScopedSecrets,
 	removeAllSecretApprovalsForPackage,
-	deleteAllAppScopedValues,
 } from '#worker/package-config-cleanup.ts'
 import { listUserStorageBucketIds } from '#worker/storage-buckets/service.ts'
 import {
@@ -800,20 +799,6 @@ export async function deleteSavedPackageProjection(input: {
 				env: input.env,
 				userId: input.userId,
 				packageId: input.packageId,
-			})
-			await deleteAllAppScopedValues({
-				env: input.env,
-				userId: input.userId,
-				appId: input.packageId,
-			}).catch((error) => {
-				console.warn(
-					JSON.stringify({
-						message: 'package app-scoped values cleanup failed',
-						userId: input.userId,
-						packageId: input.packageId,
-						error: getErrorMessage(error),
-					}),
-				)
 			})
 			await deleteSavedPackage(input.env.APP_DB, {
 				userId: input.userId,

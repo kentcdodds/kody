@@ -267,13 +267,6 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		apis: ['/account/email.json', '/account/email-destinations.json'],
 	},
 	{
-		id: 'values',
-		title: 'Values',
-		file: 'values.md',
-		paths: ['/@:orgSlug/-/values(/*rest)'],
-		apis: ['/account/values.json'],
-	},
-	{
 		id: 'billing',
 		title: 'Billing, credits, and usage',
 		file: 'billing.md',

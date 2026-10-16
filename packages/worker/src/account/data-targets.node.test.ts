@@ -74,8 +74,8 @@ test('shared user-scoped target match SQL is identical for deletion and export s
 		},
 		{
 			kind: 'bucket_parent',
-			table: 'value_entries',
-			parentTable: 'value_buckets',
+			table: 'secret_entries',
+			parentTable: 'secret_buckets',
 		},
 		{
 			kind: 'community_listing_child',
@@ -160,8 +160,8 @@ test('shared user-scoped target match SQL is identical for deletion and export s
 	})
 
 	expect(matchFor(samples[7]!).qualifiedWhereSql).toBe(
-		`value_entries.bucket_id IN (
-						SELECT id FROM value_buckets WHERE user_id = ?
+		`secret_entries.bucket_id IN (
+						SELECT id FROM secret_buckets WHERE user_id = ?
 					)`,
 	)
 	expect(matchFor(samples[8]!).qualifiedWhereSql).toBe(
@@ -375,7 +375,10 @@ test('final schema drops retired tables without stale deletion/export inventory 
 			.all() as Array<{ name: string }>
 	).map((table) => table.name)
 	expect(tables.filter((table) => retiredTables.includes(table))).toEqual([])
-	expect([...accountUserDataPendingDropTables]).toEqual([])
+	expect([...accountUserDataPendingDropTables]).toEqual([
+		'value_buckets',
+		'value_entries',
+	])
 	for (const table of accountUserDataPendingDropTables) {
 		expect(inventorySql).not.toMatch(new RegExp(`\\b${table}\\b`, 'u'))
 		expect(tables).toContain(table)

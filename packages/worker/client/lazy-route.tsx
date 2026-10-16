@@ -286,7 +286,6 @@ registerPreloadPatterns(
 		routePattern(routes.orgRepositories),
 		routePattern(routes.orgSecretProviders),
 		routePattern(routes.orgSecrets),
-		routePattern(routes.orgValues),
 		routePattern(routes.orgWaiting),
 		routePattern(routes.orgWebhooks),
 		routePattern(routes.orgWorkflows),

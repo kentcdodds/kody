@@ -358,11 +358,6 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 			'["api.example.com"]', '["@user/pkg"]', 'lookup-hash', '2026-07-05', '2026-07-05'
 		);
 
-		INSERT INTO value_buckets (id, user_id, scope, binding_key, created_at, updated_at)
-		VALUES ('value-bucket-a', 'user-aaa', 'user', 'global', '2026-07-05', '2026-07-05');
-		INSERT INTO value_entries (bucket_id, name, description, value, created_at, updated_at)
-		VALUES ('value-bucket-a', 'timezone', 'Preferred timezone', 'America/Denver', '2026-07-05', '2026-07-05');
-
 		INSERT INTO password_resets (id, user_id, token_hash, expires_at, created_at)
 		VALUES (1, 1, 'reset-token-hash-a', 2000000000, '2026-07-05');
 
@@ -403,9 +398,6 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 	expect(d1Table(accountExport, 'password_resets').rows[0]).not.toHaveProperty(
 		'token_hash',
 	)
-	expect(d1Table(accountExport, 'value_entries').rows).toEqual([
-		expect.objectContaining({ value: 'America/Denver' }),
-	])
 	expect(d1Table(accountExport, 'mcp_memories').rows).toEqual([
 		expect.objectContaining({ id: 'memory-a', summary: 'Blue' }),
 	])
@@ -425,12 +417,10 @@ test('createAccountExport records partial-failure warnings and section paginatio
 			'job:archive-a', '{}', 'UTC', '{}', '2026-07-05', '2026-07-05',
 			'2026-08-05'
 		);
-		INSERT INTO value_buckets (id, user_id, scope, binding_key, created_at, updated_at)
-		VALUES ('value-bucket-a', 'user-aaa', 'user', 'global', '2026-07-05', '2026-07-05');
-		INSERT INTO value_entries (bucket_id, name, description, value, created_at, updated_at)
+		INSERT INTO mcp_memories (id, user_id, subject, summary, details)
 		VALUES
-			('value-bucket-a', 'first', '', '1', '2026-07-05', '2026-07-05'),
-			('value-bucket-a', 'second', '', '2', '2026-07-05', '2026-07-05');
+			('memory-first', 'user-aaa', 'first', '', ''),
+			('memory-second', 'user-aaa', 'second', '', '');
 	`)
 	const env = {
 		APP_DB: db,
@@ -454,22 +444,24 @@ test('createAccountExport records partial-failure warnings and section paginatio
 		]),
 	)
 
-	const readValues = (startAfter?: string) =>
+	const readMemories = (startAfter?: string) =>
 		readAccountExportSection({
 			env,
 			dbUserId: 1,
 			mcpUserId: ownerIdFromStored('user-aaa'),
 			section: 'd1_table',
-			table: 'value_entries',
+			table: 'mcp_memories',
 			pageSize: 1,
 			startAfter,
 		})
-	const page = await readValues()
-	expect(page.items).toEqual([expect.objectContaining({ name: 'first' })])
+	const page = await readMemories()
+	expect(page.items).toEqual([expect.objectContaining({ subject: 'first' })])
 	expect(page.truncated).toBe(true)
 	expect(page.nextStartAfter).not.toBeNull()
-	const nextPage = await readValues(page.nextStartAfter ?? undefined)
-	expect(nextPage.items).toEqual([expect.objectContaining({ name: 'second' })])
+	const nextPage = await readMemories(page.nextStartAfter ?? undefined)
+	expect(nextPage.items).toEqual([
+		expect.objectContaining({ subject: 'second' }),
+	])
 	expect(nextPage.truncated).toBe(false)
 	expect(nextPage.nextStartAfter).toBeNull()
 })

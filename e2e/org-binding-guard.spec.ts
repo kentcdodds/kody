@@ -8,7 +8,6 @@ const orgSectionApis = [
 	['mcp-servers', 'mcp-servers'],
 	['integrations', 'integrations'],
 	['secret-providers', 'secret-providers'],
-	['values', 'values'],
 	['email', 'email'],
 	['activity', 'activity'],
 	['waiting', 'waiting'],

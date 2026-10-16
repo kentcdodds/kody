@@ -49,7 +49,6 @@ import {
 import { type BuiltCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
 import { assertCallerCanAccessCapability } from '#mcp/capabilities/access-control.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
-import { createRemovedValueWriteError } from '#mcp/capabilities/values/shared.ts'
 import {
 	type KodyMcpServerMetadata,
 	type KodyResolvedProvider,
@@ -482,11 +481,6 @@ export async function buildKodyToolContext(
 			},
 		]),
 	) as AdditionalKodyTools
-	if (!capabilityKodyTools.value_set) {
-		capabilityKodyTools.value_set = async () => {
-			throw createRemovedValueWriteError()
-		}
-	}
 	const runtimeHelperKodyToolSets = await createRuntimeHelperKodyToolSets({
 		env,
 		callerContext,

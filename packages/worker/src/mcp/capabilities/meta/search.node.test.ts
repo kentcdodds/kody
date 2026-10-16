@@ -8,7 +8,6 @@ import type * as capabilityRegistry from '#mcp/capabilities/registry.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import type * as secretsService from '#mcp/secrets/service.ts'
 import type * as memoryToolContext from '#mcp/tools/memory-tool-context.ts'
-import type * as valuesService from '#mcp/values/service.ts'
 import {
 	featureFlagKeys,
 	jevSearchRerankFlagKey,
@@ -58,7 +57,6 @@ const mockModule = vi.hoisted(() => ({
 	listUserSecretsForSearch: vi.fn<
 		typeof secretsService.listUserSecretsForSearch
 	>(async () => []),
-	listValues: vi.fn<typeof valuesService.listValues>(async () => []),
 	listJoinedIntegrations: vi.fn<
 		typeof integrationsService.listJoinedIntegrations
 	>(async () => []),
@@ -122,11 +120,6 @@ vi.mock('#mcp/secrets/service.ts', () => ({
 	listUserSecretsForSearch: (
 		...args: Parameters<typeof secretsService.listUserSecretsForSearch>
 	) => mockModule.listUserSecretsForSearch(...args),
-}))
-
-vi.mock('#mcp/values/service.ts', () => ({
-	listValues: (...args: Parameters<typeof valuesService.listValues>) =>
-		mockModule.listValues(...args),
 }))
 
 vi.mock('#worker/integrations/service.ts', () => ({

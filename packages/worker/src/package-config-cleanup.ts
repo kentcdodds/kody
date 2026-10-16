@@ -49,17 +49,3 @@ export async function removeAllSecretApprovalsForPackage(input: {
 		.run()
 	return result.meta.changes ?? 0
 }
-
-export async function deleteAllAppScopedValues(input: {
-	env: Pick<Env, 'APP_DB'>
-	userId: string
-	appId: string
-}) {
-	const result = await input.env.APP_DB.prepare(
-		`DELETE FROM value_buckets
-		WHERE user_id = ? AND scope = ? AND binding_key = ?${andLiveDeletedAtSql()}`,
-	)
-		.bind(input.userId, 'app', input.appId)
-		.run()
-	return (result.meta.changes ?? 0) > 0
-}

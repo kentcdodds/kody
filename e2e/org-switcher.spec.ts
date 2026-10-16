@@ -363,7 +363,7 @@ test('the switcher keeps each org section and loads it with the destination page
 		'workflows',
 		'webhooks',
 		'credentials',
-		'values',
+		'email',
 	]) {
 		await page.goto(`/@${user.username}/-/${section}`)
 		await waitForClientHydration(page)

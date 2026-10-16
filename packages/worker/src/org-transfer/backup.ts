@@ -63,7 +63,6 @@ export function buildOrgTransferBackup(input: {
 		moves: plan.moves,
 		bucketMerges: {
 			secret_buckets: Object.fromEntries(plan.bucketMerges.secret_buckets),
-			value_buckets: Object.fromEntries(plan.bucketMerges.value_buckets),
 		},
 		derivedDeletes: plan.derivedDeletes,
 		orphans: plan.orphans,

@@ -143,7 +143,6 @@ test('switcher keeps every org-owned section when switching between orgs', async
 		'repositories',
 		'secret-providers',
 		'secrets',
-		'values',
 		'waiting',
 		'webhooks',
 		'workflows',

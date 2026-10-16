@@ -142,8 +142,8 @@ reference so the row does not retain attribution to a nonexistent account.
 Deletion must cover these user-owned surfaces:
 
 - **D1:** every live table with `user_id` / `*_user_id` ownership columns, plus
-  transitive children (`secret_entries`, `value_entries`) and listing children
-  for community-owned listings. The guardrail test in
+  transitive children (`secret_entries`) and listing children for
+  community-owned listings. The guardrail test in
   `packages/worker/src/account/data-targets.node.test.ts` applies the live
   migrations to SQLite and fails if a user-owned schema column lacks schema
   coverage in the runtime target list or if that list references a stale column.

@@ -165,7 +165,6 @@ import { createAccountEmailVerificationDeliveryHandler } from '#app/handlers/acc
 import { createPendingVerificationHandler } from '#app/handlers/pending-verification.ts'
 import { createAccountSecretsApiHandler } from '#app/handlers/account-secrets.ts'
 import { createAccountSecretProvidersApiHandler } from '#app/handlers/account-secret-providers.ts'
-import { createAccountValuesApiHandler } from '#app/handlers/account-values.ts'
 import { createAuthHandler } from '#app/handlers/auth.ts'
 import {
 	createAuthProviderCallbackHandler,
@@ -611,8 +610,6 @@ export function createAppRouter(env: Env) {
 			accountSecretProvidersApi: createAccountSecretProvidersApiHandler(env),
 			accountSecretProvidersApiPost:
 				createAccountSecretProvidersApiHandler(env),
-			accountValuesApi: createAccountValuesApiHandler(env),
-			accountValuesApiPost: createAccountValuesApiHandler(env),
 			accountJobsApi: createAccountJobsApiHandler(env),
 			accountJobsApiPost: createAccountJobsApiHandler(env),
 			accountWorkflowsApi: createAccountWorkflowsApiHandler(env),
@@ -755,7 +752,6 @@ export function createAppRouter(env: Env) {
 			orgSecrets: withCredentialIndexRedirect(
 				createOrgSectionHandler(env, 'secrets'),
 			),
-			orgValues: createOrgSectionHandler(env, 'values'),
 			orgWaiting: createOrgSectionHandler(env, 'waiting'),
 			orgWebhooks: createOrgSectionHandler(env, 'webhooks'),
 			orgWorkflows: createOrgSectionHandler(env, 'workflows'),

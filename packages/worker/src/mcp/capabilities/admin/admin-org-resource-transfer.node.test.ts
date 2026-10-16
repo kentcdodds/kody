@@ -35,7 +35,6 @@ const summary = {
 	packages: [{ id: 'p1', from_name: '@bradhave/x', to_name: '@haveman/x' }],
 	repos: [],
 	secrets: [{ scope: 'user', binding: '', name: 'API_KEY' }],
-	values: [],
 	integrations: [],
 	oauth_apps: [],
 	mcp_servers: [{ id: 'server-1', name: 'linear' }],

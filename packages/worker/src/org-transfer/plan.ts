@@ -39,10 +39,7 @@ export type OrgTransferOrphan = {
 	cleanup: OrgTransferOrphanCleanup
 }
 
-export type OrgTransferMovedTable =
-	| OrgTransferOwnerTable
-	| 'secret_entries'
-	| 'value_entries'
+export type OrgTransferMovedTable = OrgTransferOwnerTable | 'secret_entries'
 
 export type OrgTransferStorageCopy = {
 	storageId: string
@@ -64,7 +61,6 @@ export type OrgTransferPlan = {
 	/** Source bucket id → existing target bucket id (same scope and binding). */
 	bucketMerges: {
 		secret_buckets: Map<string, string>
-		value_buckets: Map<string, string>
 	}
 	/** Scope and binding of every moved or merged source bucket, by id. */
 	bucketBindings: Map<string, { scope: string; bindingKey: string }>
@@ -108,8 +104,6 @@ const movedTables: ReadonlyArray<OrgTransferMovedTable> = [
 	'secret_entries',
 	'secret_provider_bindings',
 	'secret_provider_grants',
-	'value_buckets',
-	'value_entries',
 	'user_storage_buckets',
 	'webhook_endpoints',
 	'webhook_apply_destination_grants',
@@ -404,15 +398,13 @@ export function planOrgTransfer(
 		}
 	}
 
-	// Secret and value buckets: move, merge, or orphan.
+	// Secret buckets: move, merge, or orphan.
 	const bucketMerges: OrgTransferPlan['bucketMerges'] = {
 		secret_buckets: new Map(),
-		value_buckets: new Map(),
 	}
 	const bucketBindings: OrgTransferPlan['bucketBindings'] = new Map()
 	for (const [bucketTable, entryTable, ownedScope] of [
 		['secret_buckets', 'secret_entries', 'package'],
-		['value_buckets', 'value_entries', 'app'],
 	] as const) {
 		const targetBuckets = new Map(
 			target[bucketTable].map((row) => [

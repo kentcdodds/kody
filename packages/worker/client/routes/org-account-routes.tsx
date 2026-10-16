@@ -102,10 +102,6 @@ export const orgAccountClientLoaders: Record<string, RouteLoader> = {
 	[routePattern(routes.orgSecrets)]: withCredentialRedirectLoader(
 		lazyRouteLoader(accountArea, (module) => module.accountSecretsRouteLoader),
 	),
-	[routePattern(routes.orgValues)]: lazyRouteLoader(
-		accountArea,
-		(module) => module.accountValuesRouteLoader,
-	),
 	[routePattern(routes.orgWaiting)]: lazyRouteLoader(
 		accountArea,
 		(module) => module.accountWaitingRouteLoader,
@@ -218,9 +214,6 @@ export const orgAccountClientRoutes = {
 	),
 	[routePattern(routes.orgSecrets)]: (
 		<LazyAccountRoute render={(module) => <module.AccountSecretsRoute />} />
-	),
-	[routePattern(routes.orgValues)]: (
-		<LazyAccountRoute render={(module) => <module.AccountValuesRoute />} />
 	),
 	[routePattern(routes.orgWaiting)]: (
 		<LazyAccountRoute render={(module) => <module.AccountWaitingRoute />} />

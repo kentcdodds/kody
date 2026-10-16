@@ -32,7 +32,7 @@ export const adminOrgResourceTransferCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		name: 'adminOrgResourceTransfer',
 		description:
-			'Admin-only: move every live resource of one org (packages, repos, sources, memories, secrets and values, integrations, OAuth apps, MCP servers, webhooks, package storage, package jobs, enablements) to another org. Email inboxes, usage history, run logs, billing, and the meter stay. dry-run reports the plan as counts and names, with coded clashes, blockers, warnings, and orphans, the refusals apply would raise, and a plan fingerprint. apply returns outcome refused (with refusals) on any clash or blocker, on orphans unless skipOrphans (which leaves orphans out and deletes them), and when expectedFingerprint no longer matches the plan. A failure before commit returns outcome failed with { committed: false, failed_step, failed_undo?, backup_key } and moves nothing. apply holds both orgs\u2019 write leases, writes an R2 backup of every touched row, re-seals credentials to the target, copies package storage, re-points everything in one D1 batch (package names become @<target>/<kody_id>), bumps both access epochs, and writes org audit events on both. Returns counts, names, the backup key, per-server MCP connection state with the Kody authorize URL when approval is pending, and each webhook\u2019s old and new public path prefix (without the URL secret); never credential values. Follow with the owner-scope-follows-registry codemod so package sources import the new scope. Audited.',
+			'Admin-only: move every live resource of one org (packages, repos, sources, memories, secrets, integrations, OAuth apps, MCP servers, webhooks, package storage, package jobs, enablements) to another org. Email inboxes, usage history, run logs, billing, and the meter stay. dry-run reports the plan as counts and names, with coded clashes, blockers, warnings, and orphans, the refusals apply would raise, and a plan fingerprint. apply returns outcome refused (with refusals) on any clash or blocker, on orphans unless skipOrphans (which leaves orphans out and deletes them), and when expectedFingerprint no longer matches the plan. A failure before commit returns outcome failed with { committed: false, failed_step, failed_undo?, backup_key } and moves nothing. apply holds both orgs\u2019 write leases, writes an R2 backup of every touched row, re-seals credentials to the target, copies package storage, re-points everything in one D1 batch (package names become @<target>/<kody_id>), bumps both access epochs, and writes org audit events on both. Returns counts, names, the backup key, per-server MCP connection state with the Kody authorize URL when approval is pending, and each webhook\u2019s old and new public path prefix (without the URL secret); never credential values. Follow with the owner-scope-follows-registry codemod so package sources import the new scope. Audited.',
 		keywords: [
 			'admin',
 			'org',
@@ -79,7 +79,6 @@ export const adminOrgResourceTransferCapability = defineDomainCapability(
 			),
 			repos: z.array(z.string()),
 			secrets: z.array(entryNameSchema),
-			values: z.array(entryNameSchema),
 			integrations: z.array(z.string()),
 			oauth_apps: z.array(z.string()),
 			mcp_servers: z.array(z.object({ id: z.string(), name: z.string() })),

@@ -625,7 +625,6 @@ const orgDocumentHeads: Record<string, DocumentHeadResolver> = {
 	[routePattern(routes.orgRepositories)]: titleOnly('Repositories'),
 	[routePattern(routes.orgSecretProviders)]: titleOnly('Secret providers'),
 	[routePattern(routes.orgSecrets)]: titleOnly('Secrets'),
-	[routePattern(routes.orgValues)]: titleOnly('Values'),
 	[routePattern(routes.orgWaiting)]: titleOnly('Waiting'),
 	[routePattern(routes.orgWebhooks)]: titleOnly('Webhooks'),
 	[routePattern(routes.orgWorkflows)]: titleOnly('Workflows'),

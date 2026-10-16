@@ -24,9 +24,9 @@ test('sortGuidesByAuthoredOrder throws when a guide is missing from the docs nav
 
 test('sortGuidesByAuthoredOrder throws when the docs nav names a slug with no matching guide', () => {
 	const guidesMissingOneEntry = webGuides.filter(
-		(guide) => guide.slug !== 'values',
+		(guide) => guide.slug !== 'oauth',
 	)
 	expect(() => sortGuidesByAuthoredOrder(guidesMissingOneEntry)).toThrow(
-		/docs-nav\.ts lists entr(?:y|ies) with no matching guide: values/,
+		/docs-nav\.ts lists entr(?:y|ies) with no matching guide: oauth/,
 	)
 })

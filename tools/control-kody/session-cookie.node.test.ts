@@ -171,7 +171,7 @@ test('login HTML on an account path refreshes the session', () => {
 		shouldRefreshSession({
 			skipLogin: false,
 			status: 200,
-			path: '/account/values.json',
+			path: '/account/secrets.json',
 			rawBody: loginHtml,
 			method: 'POST',
 		}),

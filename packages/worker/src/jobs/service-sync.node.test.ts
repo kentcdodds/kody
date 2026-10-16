@@ -10,7 +10,6 @@ import {
 	isJobIntervalFloorError,
 } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
-import { saveValue } from '#mcp/values/service.ts'
 import { syncPackageJobsForPackage, updateJob } from './service.ts'
 import {
 	listJobRowsByUserId,
@@ -579,7 +578,7 @@ test('syncPackageJobsForPackage enforces scheduled job entitlements for plan use
 	)
 })
 
-test('blank-email package context uses the max plan for storage writes and nested job scheduling', async () => {
+test('blank-email package context uses the max plan for nested job scheduling', async () => {
 	const email = 'package-owner@example.com'
 	const userId = testStableUserIdFromEmail(email)
 	const meter = createInMemoryUserMeterEnv()
@@ -595,41 +594,6 @@ test('blank-email package context uses the max plan for storage writes and neste
 	})
 	const env = createJobServiceTestEnv({ APP_DB: db }, meter)
 	mockRepoPersistence()
-	await meter.seedStorageBytes({
-		userId,
-		bytes: planLimits.free.maxStorageBytes + 1,
-	})
-	const stalePackageStorageContext = {
-		sessionId: null,
-		appId: 'package-1',
-		packageId: 'package-1',
-		storageId: 'job:package-job:package-1:parent',
-	}
-	const stalePackageContext = withCallerUser(
-		createMcpCallerContext({
-			source: { kind: 'mcp-oauth' },
-			baseUrl: 'https://example.com',
-			executionOrigin: 'background',
-			user: {
-				userId: personIdFromStored(userId),
-				email: '',
-				displayName: 'Package Owner',
-			},
-			storageContext: stalePackageStorageContext,
-		}),
-	)
-
-	await expect(
-		saveValue({
-			env,
-			userId: ownerIdFromStored(userId),
-			userEmail: stalePackageContext.user.email,
-			scope: 'app',
-			name: 'checkpoint',
-			value: 'stored above the free-plan byte limit',
-			storageContext: stalePackageStorageContext,
-		}),
-	).resolves.toMatchObject({ name: 'checkpoint' })
 	identityMockModule.resolveBackgroundMcpUser.mockResolvedValueOnce({
 		userId: personIdFromStored(userId),
 		email,

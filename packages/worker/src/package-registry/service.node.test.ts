@@ -47,7 +47,6 @@ const { mockModule, pickMocks } = vi.hoisted(() => {
 		cleanupArtifactReposForPackage: vi.fn(),
 		deleteAllPackageScopedSecrets: vi.fn(),
 		removeAllSecretApprovalsForPackage: vi.fn(),
-		deleteAllAppScopedValues: vi.fn(),
 		clearStorage: vi.fn(async () => ({ ok: true as const })),
 		storageRunnerRpc: vi.fn(),
 		getCommunityListingByOwnerAndPackage: vi.fn(),
@@ -80,7 +79,6 @@ vi.mock('#worker/storage-runner.ts', async (importOriginal) => ({
 }))
 vi.mock('#worker/package-config-cleanup.ts', () =>
 	pickMocks(
-		'deleteAllAppScopedValues',
 		'deleteAllPackageScopedSecrets',
 		'removeAllSecretApprovalsForPackage',
 	),
@@ -270,7 +268,6 @@ function setupDefaultMocks() {
 	mockModule.deleteSavedPackageVector.mockResolvedValue(undefined)
 	mockModule.deleteJobRow.mockResolvedValue(undefined)
 	mockModule.cleanupArtifactReposForPackage.mockResolvedValue(0)
-	mockModule.deleteAllAppScopedValues.mockResolvedValue(undefined)
 	mockModule.clearStorage.mockResolvedValue({ ok: true as const })
 	mockModule.listJobRowsByUserId.mockResolvedValue([])
 	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
@@ -318,10 +315,6 @@ function clearedStorageIds() {
 	return mockModule.storageRunnerRpc.mock.calls.map(
 		(call) => (call[0] as { storageId: string }).storageId,
 	)
-}
-
-function appScopedCleanup(env: Env, packageId: string) {
-	return { env, userId: ownerIdFromStored('user-1'), appId: packageId }
 }
 
 test('refreshSavedPackageProjection defers search-index upsert and retriever cache via waitUntil', async () => {
@@ -956,9 +949,6 @@ test('deleteSavedPackageProjection clears package-owned storage buckets and inve
 		otherPackageBucket,
 		bucket(otherJobStorageId),
 	])
-	expect(mockModule.deleteAllAppScopedValues).toHaveBeenCalledWith(
-		appScopedCleanup(env, uuidPackageId),
-	)
 })
 
 test('deleteSavedPackageProjection aborts before source cleanup when clearStorage fails', async () => {
@@ -996,7 +986,6 @@ test('deleteSavedPackageProjection aborts before source cleanup when clearStorag
 	expect(mockModule.deleteEntitySource).not.toHaveBeenCalled()
 	expect(mockModule.deleteCommunityForksForPackage).not.toHaveBeenCalled()
 	expect(mockModule.deleteJobRow).not.toHaveBeenCalled()
-	expect(mockModule.deleteAllAppScopedValues).not.toHaveBeenCalled()
 	expect(storageBuckets.map((row) => row.storageId)).toEqual([facetStorageId])
 	expect(consoleWarn).toHaveBeenCalledWith(
 		expect.stringContaining('"message":"package storage clear failed"'),
@@ -1044,9 +1033,6 @@ test('deleteSavedPackageProjection cleans secrets and deterministic storage when
 	expect(mockModule.deleteAllPackageScopedSecrets).toHaveBeenCalledWith(scoped)
 	expect(mockModule.removeAllSecretApprovalsForPackage).toHaveBeenCalledWith(
 		scoped,
-	)
-	expect(mockModule.deleteAllAppScopedValues).toHaveBeenCalledWith(
-		appScopedCleanup(env, uuidPackageId),
 	)
 	expect(clearedStorageIds()).toEqual(
 		expect.arrayContaining([packageStorageId, uuidPackageId, facetStorageId]),
@@ -1221,7 +1207,6 @@ function createEntitlementsDatabase(input: {
 							const storageByteTables = [
 								'email_attachments',
 								'email_messages',
-								'value_entries',
 								'secret_entries',
 								'mcp_memories',
 								'saved_packages',
