@@ -269,6 +269,11 @@ export type ResolveCredentialInput<T extends CredentialTarget> = {
 	runPackageId?: string | null
 	/** App origin for approval links in denial messages. */
 	baseUrl: string
+	/**
+	 * Extra `credential.resolve` audit details, such as the viewer of an
+	 * internet-visible app using its owner's credential. Never a value.
+	 */
+	auditDetails?: Record<string, string | null>
 	credential: T
 }
 

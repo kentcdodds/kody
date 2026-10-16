@@ -90,6 +90,8 @@ export function scheduleCredentialResolutionAudit(input: {
 	packageStamp: PackageStamp | null | undefined
 	subject: CredentialAuditSubject
 	outcome: CredentialResolutionOutcome
+	/** Run-level details (who viewed an app that used its owner's credential). */
+	details?: Record<string, string | null>
 }) {
 	const db = auditDatabaseFromEnv(input.env)
 	// `undefined` is the generic-test opt-out (see `auditDatabaseFromEnv`).
@@ -121,6 +123,7 @@ export function scheduleCredentialResolutionAudit(input: {
 					packageStampKind: input.packageStamp?.kind ?? 'none',
 					packageId: input.packageStamp?.packageId ?? null,
 					...(outcome.result === 'success' ? {} : { reason: outcome.reason }),
+					...input.details,
 					...subject.details,
 				},
 			})

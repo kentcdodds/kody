@@ -124,6 +124,7 @@ async function resolveWith<U extends CredentialUse>(
 				packageStamp: input.packageStamp,
 				subject: row,
 				outcome,
+				details: input.auditDetails,
 			})
 		}
 		if (outcome.result === 'success') {

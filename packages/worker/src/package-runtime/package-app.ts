@@ -70,6 +70,7 @@ import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import { newRunCredentialClientBinding } from '#worker/credentials/credential-client-handle.ts'
 import { loadRunCredentialNeeds } from '#worker/credentials/credential-client.ts'
+import { type OwnerCredentialScope } from '#worker/credentials/owner-credential-for-visitors.ts'
 import { type CredentialNeed } from '#worker/credentials/credential-needs.ts'
 import {
 	createCredentialClientRuntimeSource,
@@ -1682,16 +1683,17 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 						typeof requested === 'string' && grantedPackageIds.has(requested)
 							? requested
 							: this.ctx.props.packageId,
+					// Needs load for anonymous visitors too: an opted-in need is the
+					// only way they reach a credential.
 					runNeeds: () => {
-						const request = callerContext.request
-						if (!request) return Promise.resolve(new Map())
 						runNeeds ??= loadRunCredentialNeeds({
 							env: this.env,
-							request,
+							orgId: this.ctx.props.userId,
 							packageIds: [this.ctx.props.packageId],
 						})
 						return runNeeds
 					},
+					ownerCredentialScope: packageAppOwnerCredentialScope(this.ctx.props),
 					waitUntil: (promise) => {
 						this.ctx.waitUntil(promise)
 					},
@@ -2233,9 +2235,31 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 						},
 						grantedSecretAuthorityPackageIds: packageStorageGrantIds,
 						credentialClientBinding,
+						ownerCredentialScope: packageAppOwnerCredentialScope({
+							userId: input.userId,
+							packageId: input.savedPackage.id,
+							publishedCommit: input.savedPackage.publishedCommit,
+						}),
 					},
 				})
 			: null,
+	}
+}
+
+/**
+ * Where an `ownerCredentialForVisitors` need may resolve owner credentials:
+ * this app at the commit it serves. Whether the app is internet-visible and
+ * that commit approved is read when a need asks, not baked into the worker.
+ */
+function packageAppOwnerCredentialScope(input: {
+	userId: OwnerId
+	packageId: string
+	publishedCommit: string | null
+}): OwnerCredentialScope {
+	return {
+		orgId: input.userId,
+		packageId: input.packageId,
+		publishedCommit: input.publishedCommit,
 	}
 }
 
