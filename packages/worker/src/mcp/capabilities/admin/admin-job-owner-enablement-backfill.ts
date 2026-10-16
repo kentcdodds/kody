@@ -27,7 +27,7 @@ const inputSchema = z.object({
 		.max(ownerCronEnablementBackfillLimitMax)
 		.optional()
 		.describe(
-			`Enabled jobs to inspect this page (1-${ownerCronEnablementBackfillLimitMax}, default ${ownerCronEnablementBackfillLimitDefault}).`,
+			`Jobs to inspect this page from the jobs store (1-${ownerCronEnablementBackfillLimitMax}, default ${ownerCronEnablementBackfillLimitDefault}). Includes disabled/deleted rows that are counted as skippedNotEnabled.`,
 		),
 	cursor: z
 		.string()

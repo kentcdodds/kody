@@ -1,5 +1,6 @@
 import {
 	type OwnerId,
+	type PersonId,
 	ownerIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
@@ -597,6 +598,8 @@ export async function syncPackageJobsForPackage(input: {
 	packageId: string
 	sourceId: string
 	manifest: Awaited<ReturnType<typeof parseAuthoredPackageJson>>
+	/** Publishing person when known; preferred enabler over earliest Owner. */
+	actorUserId?: PersonId
 }) {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
@@ -683,6 +686,25 @@ export async function syncPackageJobsForPackage(input: {
 			}
 			const now = new Date().toISOString()
 			let schedulerStateChanged = false
+			const ensureOwnerEnablement = async (job: {
+				id: string
+				name: string
+				enabled: boolean
+			}) => {
+				// Always on create (including disabled) so a later enable runs.
+				// On identity refresh / update, only repair enabled jobs so a
+				// failed create-time write cannot leave ticks silently skipped.
+				if (!job.enabled && existingByName.has(job.name)) return
+				await ensureOwnerCronEnablementForJob({
+					db: input.env.APP_DB,
+					orgId: input.userId,
+					jobId: job.id,
+					jobName: job.name,
+					packageId: input.packageId,
+					enablerUserId: input.actorUserId,
+					now,
+				})
+			}
 
 			for (const [jobName, definition] of Object.entries(desiredJobs)) {
 				const existing = existingByName.get(jobName)
@@ -714,6 +736,11 @@ export async function syncPackageJobsForPackage(input: {
 								`Package job "${existing.record.id}" identity could not be refreshed.`,
 							)
 						}
+						await ensureOwnerEnablement({
+							id: existing.record.id,
+							name: jobName,
+							enabled,
+						})
 						continue
 					}
 					if (
@@ -747,6 +774,11 @@ export async function syncPackageJobsForPackage(input: {
 						userId: input.userId,
 						job: updated,
 						callerContextJson,
+					})
+					await ensureOwnerEnablement({
+						id: updated.id,
+						name: jobName,
+						enabled,
 					})
 					schedulerStateChanged = true
 					continue
@@ -792,13 +824,10 @@ export async function syncPackageJobsForPackage(input: {
 				// New jobs auto-enable for the creator/owner so the schedule runs
 				// without a separate ask-the-user enablementEnable step. Other
 				// package triggers still never auto-enable on publish.
-				await ensureOwnerCronEnablementForJob({
-					db: input.env.APP_DB,
-					orgId: input.userId,
-					jobId: created.id,
-					jobName: jobName,
-					packageId: input.packageId,
-					now,
+				await ensureOwnerEnablement({
+					id: created.id,
+					name: jobName,
+					enabled,
 				})
 				await stampFirstJob(
 					input.env.APP_DB,
@@ -959,6 +988,16 @@ export async function updateJob(input: {
 			})
 			if (!didUpdate) {
 				throw new Error(`Job "${updated.id}" could not be updated.`)
+			}
+			if (updated.enabled) {
+				await ensureOwnerCronEnablementForJob({
+					db: input.env.APP_DB,
+					orgId: ownerId,
+					jobId: updated.id,
+					jobName: updated.name,
+					enablerUserId: callerContext.user.userId,
+					now: nowIso,
+				})
 			}
 			await upsertJobVector(input.env, {
 				jobId: updated.id,

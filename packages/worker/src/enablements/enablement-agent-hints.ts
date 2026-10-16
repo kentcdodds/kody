@@ -64,6 +64,18 @@ export function buildSingleTriggerEnablementHint(
 			? `Ask the user to fix the paused enablement for ${label}. Webhook turn-on is Approve, not enablementEnable.`
 			: `Ask the user whether to turn on ${label} for them. Webhooks need Approve (enablementEnable cannot turn a webhook on the first time).`
 	}
+	// Cron before email-topic name matching: a job can reuse an email topic
+	// string as its cron name and still needs cron enablementEnable guidance.
+	if (input.triggerKind === 'cron') {
+		const call = formatEnablementEnableCall({
+			...input,
+			triggerKind: 'cron',
+		})
+		if (input.reason === 'paused') {
+			return `Ask the user to fix the paused enablement for ${label}, or re-enable with ${call}.`
+		}
+		return `Call ${call} to turn on ${label} for the owner. Creating a job enables it for the owner automatically; other package triggers still need an explicit enable.`
+	}
 	if (isEmailSubscriptionTopic(input.triggerName)) {
 		return input.reason === 'paused'
 			? `Ask the user to fix the paused enablement for ${label}. Inbound email turn-on is Approve from the inbox, not enablementEnable.`
@@ -73,12 +85,6 @@ export function buildSingleTriggerEnablementHint(
 		...input,
 		triggerKind: input.triggerKind,
 	})
-	if (input.triggerKind === 'cron') {
-		if (input.reason === 'paused') {
-			return `Ask the user to fix the paused enablement for ${label}, or re-enable with ${call}.`
-		}
-		return `Call ${call} to turn on ${label} for the owner. Creating a job enables it for the owner automatically; other package triggers still need an explicit enable.`
-	}
 	if (input.reason === 'paused') {
 		return `Ask the user to fix the paused enablement for ${label}, or re-enable with ${call}.`
 	}
@@ -116,7 +122,7 @@ export function buildMultiTriggerEnablementHint(
 			: `- ${label}: ask the user whether to enable it with ${call}.`
 	})
 	return [
-		'Ask the user whether to turn these triggers on for them (publishing never turns triggers on):',
+		'Ask the user whether to turn these triggers on for them (publishing does not auto-enable webhooks or subscriptions; new package jobs enable for the owner on create):',
 		...lines,
 	].join('\n')
 }

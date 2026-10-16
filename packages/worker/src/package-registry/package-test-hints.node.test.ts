@@ -15,7 +15,7 @@ test('buildPackageTestHints includes agent-directed enablementEnable calls', () 
 	expect(hints).toEqual({
 		enablements: {
 			message: [
-				'Ask the user whether to turn these triggers on for them (publishing never turns triggers on):',
+				'Ask the user whether to turn these triggers on for them (publishing does not auto-enable webhooks or subscriptions; new package jobs enable for the owner on create):',
 				'- cron "inbox-refresh": ask the user whether to enable it with enablementEnable({ packageId: "pkg-1", triggerKind: "cron", triggerName: "inbox-refresh" }).',
 				'- subscription "desk.tick" (paused): ask the user to fix the pause, or re-enable with enablementEnable({ packageId: "pkg-1", triggerKind: "subscription", triggerName: "desk.tick" }).',
 			].join('\n'),

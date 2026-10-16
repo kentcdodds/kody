@@ -585,6 +585,7 @@ export async function refreshSavedPackageProjection(input: {
 				packageId: input.packageId,
 				sourceId: input.sourceId,
 				manifest: loaded.manifest,
+				actorUserId: input.actorUserId,
 			})
 			if (schedulerStateChanged) {
 				await syncJobManagerAlarm({

@@ -402,6 +402,7 @@ test('refreshSavedPackageProjection syncs the job manager only when package jobs
 		packageId: 'package-1',
 		sourceId: 'source-1',
 		manifest,
+		actorUserId: undefined,
 	})
 	expect(mockModule.buildPublishedPackageArtifacts).toHaveBeenCalledWith({
 		env,
@@ -553,6 +554,7 @@ test('refreshSavedPackageProjection continues best-effort cleanup when dependent
 		packageId: 'package-1',
 		sourceId: 'source-1',
 		manifest,
+		actorUserId: undefined,
 	})
 	expect(mockModule.syncJobManagerAlarm).not.toHaveBeenCalled()
 	// The swallowed retriever-cache failure is still logged for operators.

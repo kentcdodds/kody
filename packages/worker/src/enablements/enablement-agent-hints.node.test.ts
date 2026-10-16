@@ -75,6 +75,22 @@ test('single-trigger cron hints do not ask about owner-created jobs; other trigg
 	).toBe(
 		'Ask the user whether to enable subscription "desk.tick" for them: enablementEnable({ packageId: "pkg-1", triggerKind: "subscription", triggerName: "desk.tick" }). Publishing never turns a trigger on.',
 	)
+	expect(
+		buildSingleTriggerEnablementHint({
+			packageId: 'pkg-1',
+			triggerKind: 'cron',
+			triggerName: 'email.message.received',
+			reason: 'missing',
+		}),
+	).toContain('triggerKind: "cron"')
+	expect(
+		buildSingleTriggerEnablementHint({
+			packageId: 'pkg-1',
+			triggerKind: 'cron',
+			triggerName: 'email.message.received',
+			reason: 'missing',
+		}),
+	).not.toContain('Approve from the inbox')
 })
 
 test('multi-trigger publish hint lists each enablementEnable call', () => {
@@ -88,7 +104,7 @@ test('multi-trigger publish hint lists each enablementEnable call', () => {
 		],
 	})
 	expect(message).toContain(
-		'Ask the user whether to turn these triggers on for them (publishing never turns triggers on):',
+		'Ask the user whether to turn these triggers on for them (publishing does not auto-enable webhooks or subscriptions; new package jobs enable for the owner on create):',
 	)
 	expect(message).toContain(
 		'enablementEnable({ packageId: "pkg-1", triggerKind: "cron", triggerName: "inbox-refresh" })',
