@@ -339,6 +339,8 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				...(activeStorageId ? { storageId: activeStorageId } : {}),
 			}
 			let claimedRunHandle: RunRecordHandle | null = null
+			let runRowOwned = false
+			let transportDetached = false
 			let claimedExecuteUsage: ClaimedExecuteUsage | null = null
 			return await attachExecuteUsage(await runExecuteToolWithErrorBoundary())
 
@@ -383,8 +385,10 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					// analysis on the outer `let`, so reassert the declared type.
 					const claimedHandle = claimedRunHandle as RunRecordHandle | null
 					// Setup failures happen before sandbox work: release the key so
-					// a later retry is not poisoned by a non-sandbox error.
-					if (claimedHandle) {
+					// a later retry is not poisoned by a non-sandbox error. A
+					// transport-budget detach already handed the caller this run,
+					// so abandoning it would delete the handle they are polling.
+					if (claimedHandle && !transportDetached) {
 						await abandonRunRecord({ env, handle: claimedHandle })
 					}
 					const timing = finishToolTiming(timingStart)
@@ -578,6 +582,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						})
 					}
 					claimedRunHandle = claim.handle
+					runRowOwned = true
 				} else if (storageOwnerId) {
 					const generatedKey = createDefaultExecuteIdempotencyKey()
 					claimedRunHandle = beginRunRecord({
@@ -594,185 +599,248 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					})
 				}
 
-				// Only the pure registry read overlaps admission. Memory retrievers
-				// can run package code, so they start after the call is admitted.
-				const [registry] = await Promise.all([
-					registryPromise,
-					admissionPromise,
-				])
-				const surfacedMemories = await surfaceToolMemories({
-					env,
-					callerContext,
-					conversationId: resolvedConversationId,
-					retrievalQuery: buildMemoryRetrievalQuery(memoryContext),
-				})
-				const registeredCapabilityCount = Object.keys(
-					registry.capabilityHandlers,
-				).length
+				// Registry assembly and memory retrieval can run package code.
+				// The transport deadline covers that setup plus the sandbox, so a
+				// slow prelude still returns a follow handle before the client
+				// drops the tools/call.
+				let surfacedMemories: Awaited<
+					ReturnType<typeof surfaceToolMemories>
+				> | null = null
+				let registeredCapabilityCount = 0
 				const rawFetchHosts = createRawFetchHostSink()
 				const credentialCallMapWarnings: Array<string> = []
-				const credentialCallMap = normalizedCallMap
-					? {
-							map: normalizedCallMap,
-							strict: resolvedModule.entry === 'invoke',
-							onWarnings: (warnings: Array<string>) => {
-								credentialCallMapWarnings.push(...warnings)
-							},
+				const transportSignal = createDetachableAbortSignal(
+					getInboundRequestSignal(),
+				)
+				const recordDetachedExecuteFailure = async (cause: unknown) => {
+					if (!claimedRunHandle) return
+					try {
+						const current = await getRunRecord({
+							env,
+							userId: claimedRunHandle.userId,
+							runId: claimedRunHandle.id,
+						}).catch(() => null)
+						if (current && current.run.status !== 'running') return
+						// The caller already left with this run id. Persist the
+						// failure for runGet even if the running row is not
+						// readable yet. finish upserts the terminal row.
+						await finishRunRecord({
+							env,
+							handle: claimedRunHandle,
+							status: 'error',
+							error: cause,
+						})
+					} catch (error) {
+						console.warn('execute-transport-budget-finish-failed', error)
+					}
+				}
+				const readTransportBudgetFollow = async (handle: RunRecordHandle) => {
+					let started = false
+					let current: { run: RunRecord } | null = null
+					try {
+						started = await ensureRunRecordStarted({ env, handle })
+						current = await getRunRecord({
+							env,
+							userId: handle.userId,
+							runId: handle.id,
+						})
+					} catch (error) {
+						console.warn('execute-transport-budget-read-failed', error)
+					}
+					if (current && current.run.status !== 'running') {
+						return {
+							transportFollow: 'terminal' as const,
+							run: current.run,
 						}
-					: null
-				const spanned = await Sentry.startSpan(
-					{
-						name: 'mcp.tool.execute',
-						op: 'mcp.tool',
-						attributes: {
-							'mcp.tool': 'execute',
+					}
+					// A caller-supplied claim already owns the key. A generated
+					// key is advertised only after the running row is readable,
+					// so a retry cannot claim the same key and start a second
+					// sandbox.
+					const keyOwned = runRowOwned || started || Boolean(current)
+					const idempotencyKey = keyOwned
+						? (handle.context.idempotencyKey?.trim() ?? '')
+						: ''
+					await reportProgress?.({
+						progress: 1,
+						message: idempotencyKey
+							? `Still running (runId: ${handle.id}). Poll runGet. idempotencyKey: ${idempotencyKey}.`
+							: `Still running (runId: ${handle.id}). Poll runGet. Do not start another mutation.`,
+					})
+					return {
+						transportFollow: 'running' as const,
+						runId: handle.id,
+						idempotencyKey,
+					}
+				}
+				const admittedWork = (async () => {
+					const [registry] = await Promise.all([
+						registryPromise,
+						admissionPromise,
+					])
+					registeredCapabilityCount = Object.keys(
+						registry.capabilityHandlers,
+					).length
+					surfacedMemories = await surfaceToolMemories({
+						env,
+						callerContext,
+						conversationId: resolvedConversationId,
+						retrievalQuery: buildMemoryRetrievalQuery(memoryContext),
+					})
+					const credentialCallMap = normalizedCallMap
+						? {
+								map: normalizedCallMap,
+								strict: resolvedModule.entry === 'invoke',
+								onWarnings: (warnings: Array<string>) => {
+									credentialCallMapWarnings.push(...warnings)
+								},
+							}
+						: null
+					return await Sentry.startSpan(
+						{
+							name: 'mcp.tool.execute',
+							op: 'mcp.tool',
+							attributes: {
+								'mcp.tool': 'execute',
+							},
 						},
-					},
-					async () => {
-						try {
-							const transportSignal = createDetachableAbortSignal(
-								getInboundRequestSignal(),
-							)
-							const detached = { current: false }
-							const execution = runWithRequestPermissions(
-								{ env, request: callerContext.request },
-								async () =>
-									runModuleWithRegistry(
-										env,
-										callerContext,
-										resolvedModule.code,
-										params,
-										{
-											executorExports: agent.getLoopbackExports(),
-											capabilityRegistry: registry,
-											rawFetchHostSink: rawFetchHosts.sink,
-											conversationId: resolvedConversationId,
-											runRecordHandle: claimedRunHandle,
-											claimWorkerDay,
-											credentialCallMap,
-											waitUntil,
-											reportProgress: reportProgress ?? undefined,
-											signal: transportSignal.signal,
-											runRecord: {
-												surface: 'execute',
-												name: null,
-												storageId: activeStorageId,
-												idempotencyKey:
-													claimedRunHandle?.context.idempotencyKey ??
-													normalizedIdempotencyKey,
-												metadata: executeRunMetadata,
+						async () => {
+							try {
+								const execution = runWithRequestPermissions(
+									{ env, request: callerContext.request },
+									async () =>
+										runModuleWithRegistry(
+											env,
+											callerContext,
+											resolvedModule.code,
+											params,
+											{
+												executorExports: agent.getLoopbackExports(),
+												capabilityRegistry: registry,
+												rawFetchHostSink: rawFetchHosts.sink,
+												conversationId: resolvedConversationId,
+												runRecordHandle: claimedRunHandle,
+												claimWorkerDay,
+												credentialCallMap,
+												waitUntil,
+												reportProgress: reportProgress ?? undefined,
+												signal: transportSignal.signal,
+												runRecord: {
+													surface: 'execute',
+													name: null,
+													storageId: activeStorageId,
+													idempotencyKey:
+														claimedRunHandle?.context.idempotencyKey ??
+														normalizedIdempotencyKey,
+													metadata: executeRunMetadata,
+												},
 											},
-										},
-									),
-							)
-							const recordDetachedExecuteFailure = async (cause: unknown) => {
-								if (!claimedRunHandle) return
-								try {
+										),
+								)
+								const settled = execution.then(
+									async (value) => {
+										if (transportDetached && !value.error) {
+											const passthrough = extractMcpPassthrough(value.result)
+											if (!passthrough?.isError) {
+												await scheduleFleetExecuteLastSuccess({
+													waitUntil,
+													kv: env.BUNDLE_ARTIFACTS_KV,
+												})
+											}
+										}
+										return value
+									},
+									async (cause: unknown) => {
+										if (transportDetached) {
+											await recordDetachedExecuteFailure(cause)
+										}
+										throw cause
+									},
+								)
+								return await settled
+							} catch (cause) {
+								if (transportDetached && claimedRunHandle) {
+									const idempotencyKey = runRowOwned
+										? (claimedRunHandle.context.idempotencyKey?.trim() ?? '')
+										: ''
+									return {
+										transportFollow: 'running' as const,
+										runId: claimedRunHandle.id,
+										idempotencyKey,
+									}
+								}
+								// A usage denial happens before the worker loads: the
+								// outer boundary releases the key, as for any other
+								// pre-sandbox refusal.
+								if (isPreRunUsageDenial(cause)) throw cause
+								// Bundling the caller-provided module (syntax errors,
+								// unresolved imports) throws before the sandbox runs;
+								// route it through the sandbox-error result path so it
+								// is not logged as a platform failure. Finish a still-
+								// running claimed row only — if the registry already
+								// wrote a terminal row, do not double-finish.
+								if (claimedRunHandle) {
 									const current = await getRunRecord({
 										env,
 										userId: claimedRunHandle.userId,
 										runId: claimedRunHandle.id,
-									})
-									if (current && current.run.status !== 'running') return
-									// The caller already left with this run id. Persist
-									// the failure for runGet instead of abandoning it.
-									await finishRunRecord({
-										env,
-										handle: claimedRunHandle,
-										status: 'error',
-										error: cause,
-									})
-								} catch (error) {
-									console.warn('execute-transport-budget-finish-failed', error)
-								}
-							}
-							const observed = execution.then(
-								() => undefined,
-								async (cause: unknown) => {
-									if (!detached.current) return
-									await recordDetachedExecuteFailure(cause)
-								},
-							)
-							waitUntil?.(observed)
-							if (!claimedRunHandle) return await execution
-							const watched = watchExecuteTransport(
-								execution,
-								remainingTransportBudgetMs({
-									startedAtMs: timingStart.startedAtMs,
-								}),
-							)
-							const raced = await watched.raced
-							if (raced.kind === 'budget') {
-								await Promise.resolve()
-								const peeked = watched.peek()
-								if (peeked?.ok === true) return peeked.value
-								if (peeked && peeked.ok === false) throw peeked.error
-								transportSignal.detach()
-								detached.current = true
-								await ensureRunRecordStarted({
-									env,
-									handle: claimedRunHandle,
-								})
-								const current = await getRunRecord({
-									env,
-									userId: claimedRunHandle.userId,
-									runId: claimedRunHandle.id,
-								})
-								if (current && current.run.status !== 'running') {
-									return {
-										transportFollow: 'terminal' as const,
-										run: current.run,
+									}).catch(() => null)
+									if (!current || current.run.status === 'running') {
+										await finishRunRecord({
+											env,
+											handle: claimedRunHandle,
+											status: 'error',
+											error: cause,
+										})
 									}
 								}
-								const idempotencyKey =
-									claimedRunHandle.context.idempotencyKey?.trim() ?? ''
-								await reportProgress?.({
-									progress: 1,
-									message: `Still running (runId: ${claimedRunHandle.id}). Poll runGet. idempotencyKey: ${idempotencyKey}.`,
-								})
 								return {
-									transportFollow: 'running' as const,
-									runId: claimedRunHandle.id,
-									idempotencyKey,
+									result: undefined,
+									error: getErrorMessage(cause),
+									logs: [],
+									...(claimedRunHandle ? { runId: claimedRunHandle.id } : {}),
 								}
 							}
-							if (raced.kind === 'rejected') throw raced.error
-							return raced.value
-						} catch (cause) {
-							// A usage denial happens before the worker loads: the
-							// outer boundary releases the key, as for any other
-							// pre-sandbox refusal.
-							if (isPreRunUsageDenial(cause)) throw cause
-							// Bundling the caller-provided module (syntax errors,
-							// unresolved imports) throws before the sandbox runs;
-							// route it through the sandbox-error result path so it
-							// is not logged as a platform failure. Finish a still-
-							// running claimed row only — if the registry already
-							// wrote a terminal row, do not double-finish.
-							if (claimedRunHandle) {
-								const current = await getRunRecord({
-									env,
-									userId: claimedRunHandle.userId,
-									runId: claimedRunHandle.id,
-								})
-								if (current?.run.status === 'running') {
-									await finishRunRecord({
-										env,
-										handle: claimedRunHandle,
-										status: 'error',
-										error: cause,
-									})
-								}
-							}
-							return {
-								result: undefined,
-								error: getErrorMessage(cause),
-								logs: [],
-								...(claimedRunHandle ? { runId: claimedRunHandle.id } : {}),
-							}
-						}
-					},
+						},
+					)
+				})()
+				waitUntil?.(
+					admittedWork.then(
+						() => undefined,
+						() => undefined,
+					),
 				)
+				let spanned:
+					| Awaited<typeof admittedWork>
+					| Awaited<ReturnType<typeof readTransportBudgetFollow>>
+				if (!claimedRunHandle) {
+					spanned = await admittedWork
+				} else {
+					const watched = watchExecuteTransport(
+						admittedWork,
+						remainingTransportBudgetMs({
+							startedAtMs: timingStart.startedAtMs,
+						}),
+					)
+					const raced = await watched.raced
+					if (raced.kind === 'budget') {
+						await Promise.resolve()
+						const peeked = watched.peek()
+						if (peeked?.ok === true) {
+							spanned = peeked.value
+						} else if (peeked && peeked.ok === false) {
+							throw peeked.error
+						} else {
+							transportSignal.detach()
+							transportDetached = true
+							spanned = await readTransportBudgetFollow(claimedRunHandle)
+						}
+					} else if (raced.kind === 'rejected') {
+						throw raced.error
+					} else {
+						spanned = raced.value
+					}
+				}
 				if (
 					'transportFollow' in spanned &&
 					spanned.transportFollow === 'terminal'

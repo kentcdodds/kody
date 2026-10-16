@@ -234,7 +234,7 @@ test('ensureRunRecordStarted reissues the running insert and swallows RPC failur
 	})
 	expect(handle).not.toBeNull()
 	mocks.startRun.mockClear()
-	await ensureRunRecordStarted({ env, handle })
+	await expect(ensureRunRecordStarted({ env, handle })).resolves.toBe(true)
 	expect(mocks.startRun).toHaveBeenCalledTimes(1)
 	expect(mocks.startRun).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -247,14 +247,14 @@ test('ensureRunRecordStarted reissues the running insert and swallows RPC failur
 	)
 
 	mocks.startRun.mockRejectedValueOnce(new Error('do unavailable'))
-	await expect(ensureRunRecordStarted({ env, handle })).resolves.toBeUndefined()
+	await expect(ensureRunRecordStarted({ env, handle })).resolves.toBe(false)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'run-record-ensure-start-failed',
 		expect.any(Error),
 	)
-	await expect(
-		ensureRunRecordStarted({ env, handle: null }),
-	).resolves.toBeUndefined()
+	await expect(ensureRunRecordStarted({ env, handle: null })).resolves.toBe(
+		false,
+	)
 })
 
 test('finishRunRecord awaits the terminal Durable Object write before scheduling side effects', async () => {

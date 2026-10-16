@@ -34,6 +34,7 @@ import {
 } from '#mcp/execute-admission.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { runWithInboundRequestSignal } from '#mcp/inbound-request-signal.ts'
 import type * as ExecuteTransportBudgetModule from '#mcp/execute-transport-budget.ts'
@@ -92,7 +93,7 @@ const mockModule = vi.hoisted(() => ({
 	),
 	ensureRunRecordStarted: vi.fn<
 		typeof RunRecordsServiceModule.ensureRunRecordStarted
-	>(async () => undefined),
+	>(async () => true),
 	claimRunRecord: vi.fn<typeof RunRecordsServiceModule.claimRunRecord>(
 		async () => null,
 	),
@@ -1571,5 +1572,124 @@ test('execute keeps a caller-supplied idempotency key on the transport-budget fo
 		idempotencyKey: 'caller-key',
 		inProgress: true,
 		status: 'running',
+	})
+})
+
+test('execute returns a follow handle while setup is still running and then starts the sandbox', async () => {
+	transportBudgetMock.remainingMs = 0
+	onTestFinished(() => {
+		transportBudgetMock.remainingMs = null
+	})
+	const handle = transportFollowHandle('run-slow-setup', 'execute:slow-key')
+	const handler = await getExecuteHandler(transportCaller)
+	mockModule.beginRunRecord.mockReturnValueOnce(handle)
+	let releaseMemories: (value: null) => void = () => {}
+	mockModule.surfaceToolMemories.mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				releaseMemories = resolve
+			}),
+	)
+	const response = await handler({
+		code: okCode,
+		conversationId: 'conv-slow-setup',
+	})
+	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
+	expect(response.isError).toBe(false)
+	expect(response.structuredContent).toMatchObject({
+		runId: 'run-slow-setup',
+		idempotencyKey: 'execute:slow-key',
+		inProgress: true,
+		status: 'running',
+	})
+	mockModule.runModuleWithRegistry.mockReturnValueOnce(new Promise(() => {}))
+	releaseMemories(null)
+	await vi.waitFor(() => {
+		expect(mockModule.runModuleWithRegistry).toHaveBeenCalled()
+	})
+	const options = mockModule.runModuleWithRegistry.mock.calls.at(-1)?.[4] as {
+		signal?: AbortSignal
+	}
+	expect(options.signal?.aborted).toBe(false)
+})
+
+test('execute still returns the run id when the run-log read fails and does not abandon it', async () => {
+	transportBudgetMock.remainingMs = 0
+	onTestFinished(() => {
+		transportBudgetMock.remainingMs = null
+	})
+	consoleWarn.mockImplementation(() => {})
+	const handle = transportFollowHandle('run-read-failed', 'execute:read-key')
+	const handler = await getExecuteHandler(transportCaller)
+	mockModule.beginRunRecord.mockReturnValueOnce(handle)
+	mockModule.runModuleWithRegistry.mockReturnValueOnce(new Promise(() => {}))
+	mockModule.ensureRunRecordStarted.mockResolvedValueOnce(true)
+	mockModule.getRunRecord.mockRejectedValueOnce(new Error('run log down'))
+	const response = await handler({
+		code: okCode,
+		conversationId: 'conv-read-failed',
+	})
+	expect(response.isError).toBe(false)
+	expect(response.structuredContent).toMatchObject({
+		runId: 'run-read-failed',
+		idempotencyKey: 'execute:read-key',
+		inProgress: true,
+	})
+	expect(mockModule.abandonRunRecord).not.toHaveBeenCalled()
+})
+
+test('execute omits an unconfirmed idempotency key from the follow response', async () => {
+	transportBudgetMock.remainingMs = 0
+	onTestFinished(() => {
+		transportBudgetMock.remainingMs = null
+	})
+	const handle = transportFollowHandle('run-unconfirmed', 'execute:missing-key')
+	const handler = await getExecuteHandler(transportCaller)
+	mockModule.beginRunRecord.mockReturnValueOnce(handle)
+	mockModule.runModuleWithRegistry.mockReturnValueOnce(new Promise(() => {}))
+	mockModule.ensureRunRecordStarted.mockResolvedValueOnce(false)
+	mockModule.getRunRecord.mockResolvedValueOnce(null)
+	const response = await handler({
+		code: okCode,
+		conversationId: 'conv-unconfirmed',
+	})
+	expect(response.isError).toBe(false)
+	expect(response.structuredContent.runId).toBe('run-unconfirmed')
+	expect(response.structuredContent.inProgress).toBe(true)
+	expect(response.structuredContent).not.toHaveProperty('idempotencyKey')
+	const text = response.content
+		.map((block) => (block.type === 'text' ? block.text : ''))
+		.join('\n')
+	expect(text).toContain('Poll runGet')
+	expect(text).not.toContain('execute:missing-key')
+	expect(mockModule.abandonRunRecord).not.toHaveBeenCalled()
+})
+
+test('execute records fleet last-success when a detached run finishes', async () => {
+	transportBudgetMock.remainingMs = 0
+	onTestFinished(() => {
+		transportBudgetMock.remainingMs = null
+	})
+	const handle = transportFollowHandle('run-heartbeat', 'execute:heartbeat-key')
+	const handler = await getExecuteHandler(transportCaller)
+	mockModule.beginRunRecord.mockReturnValueOnce(handle)
+	let resolveWork: (value: {
+		result: { ok: true }
+		logs: []
+	}) => void = () => {}
+	mockModule.runModuleWithRegistry.mockReturnValueOnce(
+		new Promise((resolve) => {
+			resolveWork = resolve
+		}),
+	)
+	const response = await handler({
+		code: okCode,
+		conversationId: 'conv-heartbeat',
+	})
+	expect(response.structuredContent.inProgress).toBe(true)
+	expect(heartbeatMock.scheduleFleetExecuteLastSuccess).not.toHaveBeenCalled()
+	resolveWork({ result: { ok: true }, logs: [] })
+	await vi.waitFor(() => {
+		expect(heartbeatMock.scheduleFleetExecuteLastSuccess).toHaveBeenCalled()
 	})
 })

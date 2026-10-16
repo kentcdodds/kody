@@ -349,10 +349,10 @@ export function beginRunRecord(input: {
 export async function ensureRunRecordStarted(input: {
 	env: Env
 	handle: RunRecordHandle | null
-}): Promise<void> {
+}): Promise<boolean> {
 	const handle = input.handle
-	if (!handle || handle.persistence !== 'eager') return
-	if (!runLogBinding(input.env)) return
+	if (!handle || handle.persistence !== 'eager') return false
+	if (!runLogBinding(input.env)) return false
 	try {
 		const run = buildRunRow({
 			handle,
@@ -366,8 +366,10 @@ export async function ensureRunRecordStarted(input: {
 		await runLogRpc({ env: input.env, userId: handle.userId }).startRun({
 			run,
 		})
+		return true
 	} catch (error) {
 		console.warn('run-record-ensure-start-failed', error)
+		return false
 	}
 }
 
