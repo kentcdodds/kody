@@ -584,13 +584,13 @@ function filterMetaMaskWalletNoAccountSentryEvent<
  *
  * Pre-SDK buffering attributes the flush stack to `captureBrowserException`,
  * so there are no chrome-extension event frames to require (unlike
- * Client-has-been-destroyed). Match is intentionally narrow: this exact
- * "Message channel disconnected" wording (optional `MessageDisconnectedError:`
- * / `Error:` preface). For plain-object originalExceptions, also accept when
- * the message matches AND (`code === 4900` OR string `stack` contains
- * `chrome-extension:`) — message-only is enough for the buffered case
- * (same as MetaMask wallet-no-account). Never blanket-drop unrelated
- * `{ code, message, stack }` objects or EIP-1193 `4900` with other messages.
+ * Client-has-been-destroyed). Match requires the exact wording (optional
+ * `MessageDisconnectedError:` / `Error:` preface) AND extension provenance:
+ * EIP-1193 `code === 4900`, a string `stack` containing `chrome-extension:`,
+ * or (for Sentry events without a matching originalException) at least one
+ * `chrome-extension:` stack frame. Never drop a first-party Error that only
+ * shares the message, bare strings with no provenance, unrelated
+ * `{ code, message, stack }` objects, or EIP-1193 `4900` with other messages.
  */
 const chromeExtensionMessageChannelDisconnectedMessage =
 	/^(?:(?:MessageDisconnectedError|Error):\s*)?Message channel disconnected\.?$/i
@@ -599,15 +599,41 @@ function isChromeExtensionMessageChannelDisconnectedMessage(message: string) {
 	return chromeExtensionMessageChannelDisconnectedMessage.test(message.trim())
 }
 
+function isChromeExtensionStackFrameUrl(url: string) {
+	try {
+		return (
+			new URL(url, 'https://sentry.invalid').protocol === 'chrome-extension:'
+		)
+	} catch {
+		return false
+	}
+}
+
+function hasChromeExtensionMessageChannelDisconnectedEvidence(
+	error: object,
+): boolean {
+	if ('code' in error && error.code === 4900) return true
+	if (
+		'stack' in error &&
+		typeof error.stack === 'string' &&
+		error.stack.includes('chrome-extension:')
+	) {
+		return true
+	}
+	return false
+}
+
 export function isChromeExtensionMessageChannelDisconnectedError(
 	error: unknown,
 ) {
-	if (typeof error === 'string') {
-		return isChromeExtensionMessageChannelDisconnectedMessage(error)
-	}
+	// Bare strings have no extension provenance — keep them visible.
+	if (typeof error === 'string') return false
 	if (typeof error !== 'object' || error === null) return false
 	if (!('message' in error) || typeof error.message !== 'string') return false
-	return isChromeExtensionMessageChannelDisconnectedMessage(error.message)
+	if (!isChromeExtensionMessageChannelDisconnectedMessage(error.message)) {
+		return false
+	}
+	return hasChromeExtensionMessageChannelDisconnectedEvidence(error)
 }
 
 function isChromeExtensionMessageChannelDisconnectedSentryEvent(
@@ -617,11 +643,13 @@ function isChromeExtensionMessageChannelDisconnectedSentryEvent(
 	if (isChromeExtensionMessageChannelDisconnectedError(originalException)) {
 		return true
 	}
-	return sentryEventMessages(event).some(
+	const hasMessage = sentryEventMessages(event).some(
 		(message) =>
 			typeof message === 'string' &&
 			isChromeExtensionMessageChannelDisconnectedMessage(message),
 	)
+	if (!hasMessage) return false
+	return sentryEventStackFrameUrls(event).some(isChromeExtensionStackFrameUrl)
 }
 
 function filterChromeExtensionMessageChannelDisconnectedSentryEvent<
@@ -657,16 +685,6 @@ const chromeExtensionClientDestroyedMessage =
 
 function isChromeExtensionClientDestroyedMessage(message: string) {
 	return chromeExtensionClientDestroyedMessage.test(message.trim())
-}
-
-function isChromeExtensionStackFrameUrl(url: string) {
-	try {
-		return (
-			new URL(url, 'https://sentry.invalid').protocol === 'chrome-extension:'
-		)
-	} catch {
-		return false
-	}
 }
 
 function isChromeExtensionClientDestroyedError(error: unknown) {

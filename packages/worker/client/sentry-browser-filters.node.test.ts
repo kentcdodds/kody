@@ -4,6 +4,7 @@ import {
 	filterBrowserInjectedGlobalNoiseSentryEvent,
 	filterBrowserSentryEvent,
 	filterFirefoxDomPermissionDeniedSentryEvent,
+	isChromeExtensionMessageChannelDisconnectedError,
 } from './sentry-browser-filters.ts'
 
 type Frame = {
@@ -223,8 +224,27 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 				stack: rabbyMessageChannelStack,
 			},
 		],
-		['Error', messageChannelDisconnected],
-		['Error', `MessageDisconnectedError: ${messageChannelDisconnected}`],
+		// Same wording with only chrome-extension stack evidence (no code).
+		[
+			'Error',
+			`MessageDisconnectedError: ${messageChannelDisconnected}`,
+			undefined,
+			withStack(
+				new Error(`MessageDisconnectedError: ${messageChannelDisconnected}`),
+				rabbyMessageChannelStack,
+			),
+		],
+		// Direct capture: matching message plus chrome-extension event frames.
+		[
+			'Error',
+			messageChannelDisconnected,
+			[
+				{
+					filename:
+						'chrome-extension://acmacodkjbdgmoleebolmdjonilkdbch/content-script.js',
+				},
+			],
+		],
 		[
 			'WrappedError',
 			'Client has been destroyed',
@@ -496,7 +516,22 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 			undefined,
 			{ code: 4900, message: 'User rejected the request.' },
 		],
-		// App / other errors that merely mention "disconnected".
+		// First-party "Message channel disconnected" without extension
+		// provenance must stay visible (Devin on #3892).
+		['Error', messageChannelDisconnected],
+		['Error', `MessageDisconnectedError: ${messageChannelDisconnected}`],
+		[
+			'Error',
+			messageChannelDisconnected,
+			[kodyEntry],
+			withStack(
+				new Error(messageChannelDisconnected),
+				`Error: ${messageChannelDisconnected}\n    at boot (https://kody.codes/assets/entry.js:1:1)`,
+			),
+		],
+		// Matching message + first-party frames (no chrome-extension) stays.
+		['Error', messageChannelDisconnected, [kodyEntry]],
+		// Bare / unrelated "disconnected" wording stays visible.
 		['Error', 'WebSocket disconnected unexpectedly'],
 		['Error', 'Connection disconnected'],
 		['WrappedError', 'Client has been destroyed', [kodyEntry]],
@@ -738,4 +773,39 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 	expect(filterBrowserSentryEvent(emptyEvent, cspUnsafeEvalMessage)).toBe(
 		emptyEvent,
 	)
+})
+
+test('isChromeExtensionMessageChannelDisconnectedError requires extension provenance', () => {
+	expect(
+		isChromeExtensionMessageChannelDisconnectedError({
+			code: 4900,
+			message: messageChannelDisconnected,
+			stack: rabbyMessageChannelStack,
+		}),
+	).toBe(true)
+	expect(
+		isChromeExtensionMessageChannelDisconnectedError(
+			withStack(
+				new Error(messageChannelDisconnected),
+				rabbyMessageChannelStack,
+			),
+		),
+	).toBe(true)
+	// No extension evidence — keep first-party / bare matches visible.
+	expect(
+		isChromeExtensionMessageChannelDisconnectedError(
+			messageChannelDisconnected,
+		),
+	).toBe(false)
+	expect(
+		isChromeExtensionMessageChannelDisconnectedError(
+			new Error(messageChannelDisconnected),
+		),
+	).toBe(false)
+	expect(
+		isChromeExtensionMessageChannelDisconnectedError({
+			code: 4900,
+			message: 'User rejected the request.',
+		}),
+	).toBe(false)
 })
