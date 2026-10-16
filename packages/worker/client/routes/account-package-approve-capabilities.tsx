@@ -17,7 +17,9 @@ import {
 	approveCapabilitiesPageCopy,
 	credentialsSectionIntro,
 	credentialValuesNote,
+	credentialEntryKey,
 	credentialSummary,
+	credentialVisitorsNote,
 	noCapabilitiesMessage,
 	reachingDependency,
 	storageSummary,
@@ -68,8 +70,11 @@ function approveCapabilitiesDetailItems(
 			value: <IdValue value={payload.fingerprint} label="fingerprint" />,
 		},
 	]
+	const listedCredentialIds = new Set<string>()
 	for (const entry of payload.entries) {
 		if (entry.kind === 'credential' && entry.credentialId) {
+			if (listedCredentialIds.has(entry.credentialId)) continue
+			listedCredentialIds.add(entry.credentialId)
 			const name = entry.name ?? 'Credential'
 			items.push({
 				key: `credential:${entry.credentialId}`,
@@ -500,25 +505,36 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 												})}
 											</p>
 											<ul mix={css(cardListCss)}>
-												{credentialEntries.map((entry) => (
-													<li
-														key={entry.credentialId ?? entry.name}
-														data-testid="package-approve-capabilities-credential"
-														mix={css(capabilityRowCss)}
-													>
-														<strong mix={css(cardTitleCss)}>
-															{entry.name ?? 'Unnamed credential'}
-														</strong>
-														<span mix={css({ color: colors.textMuted })}>
-															{credentialSummary(entry)}
-														</span>
-														<span mix={css({ color: colors.textMuted })}>
-															{entry.hosts.length > 0
-																? `Can only be sent to ${entry.hosts.join(', ')}`
-																: 'No hosts approved yet'}
-														</span>
-													</li>
-												))}
+												{credentialEntries.map((entry) => {
+													const visitorsNote = credentialVisitorsNote(entry)
+													return (
+														<li
+															key={credentialEntryKey(entry)}
+															data-testid="package-approve-capabilities-credential"
+															mix={css(capabilityRowCss)}
+														>
+															<strong mix={css(cardTitleCss)}>
+																{entry.name ?? 'Unnamed credential'}
+															</strong>
+															<span mix={css({ color: colors.textMuted })}>
+																{credentialSummary(entry)}
+															</span>
+															{visitorsNote ? (
+																<span
+																	data-testid="package-approve-capabilities-credential-visitors"
+																	mix={css(visitorsNoteCss)}
+																>
+																	{visitorsNote}
+																</span>
+															) : null}
+															<span mix={css({ color: colors.textMuted })}>
+																{entry.hosts.length > 0
+																	? `Can only be sent to ${entry.hosts.join(', ')}`
+																	: 'No hosts approved yet'}
+															</span>
+														</li>
+													)
+												})}
 											</ul>
 										</>
 									)}
@@ -670,6 +686,11 @@ const capabilityRowCss = {
 	border: `1px solid ${colors.border}`,
 	backgroundColor: colors.surface,
 	minWidth: 0,
+}
+
+const visitorsNoteCss = {
+	color: colors.text,
+	fontWeight: typography.fontWeight.semibold,
 }
 
 const backToSettingsLabel = 'Back to package settings'
