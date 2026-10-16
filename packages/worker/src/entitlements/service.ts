@@ -986,7 +986,14 @@ export async function calculateUserD1StorageBytes(input: {
 	const { db, userId } = input
 	const sums = await Promise.all([
 		input.jobs
-			? input.jobs.sumJobsStorageBytesForUser({ userId })
+			? input.jobs
+					.sumJobsStorageBytesForUser({ userId })
+					.catch((error: unknown) => {
+						// Local/test APP_DB often has no jobs table when the JOBS
+						// binding is absent (ADR 0016). Match the other surfaces.
+						if (isMissingStorageByteSurfaceError(error)) return 0
+						throw error
+					})
 			: Promise.resolve(0),
 		sumStorageBytes(
 			db,
