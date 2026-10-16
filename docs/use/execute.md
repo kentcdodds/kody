@@ -480,9 +480,10 @@ await fetch('https://api.github.com/repos/acme/widgets/issues', {
 
 To mention the syntax in prose, write the inert form `{{secret:<name>}}`. Treat
 a resolvable `{{secret:name}}` as wiring, not as text you show to users or send
-onward. `kody dev check` and publish warn when a fetch sends a non-literal body
-without `x-kody-secret-resolution`. That warning does not fail the check or
-block publish. Details:
+onward. `kody dev check` and publish warn for clear cases only: a literal fetch
+init with a non-literal body and without `x-kody-secret-resolution` set to
+`headers-only` or `off`. Variable `init` values and header spreads are skipped.
+That warning does not fail the check or block publish. Details:
 [Credentials](../guides/credentials.md#keys-and-placeholders).
 
 ## Named state

@@ -16,7 +16,10 @@ test('the CLI copy of the scanner stays identical', () => {
 		'utf8',
 	)
 	const cli = readFileSync(
-		'packages/cli/src/fetch-body-secret-resolution.ts',
+		new URL(
+			'../../../cli/src/fetch-body-secret-resolution.ts',
+			import.meta.url,
+		),
 		'utf8',
 	)
 	expect(cli).toBe(worker)
@@ -67,6 +70,20 @@ test('uses the last body and headers properties when keys are duplicated', () =>
 })
 
 test('skips author-written bodies and explicit resolution modes', () => {
+	expect(
+		lines(`
+			fetch(url, {
+				body: JSON.stringify({ tags: ['a', 'b'] }),
+			})
+		`),
+	).toEqual([])
+	expect(
+		lines(`
+			fetch(url, {
+				body: new URLSearchParams([['a', 'b']]),
+			})
+		`),
+	).toEqual([])
 	expect(
 		lines(`
 			fetch('https://api.example.com/oauth/token', {

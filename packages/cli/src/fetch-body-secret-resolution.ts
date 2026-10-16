@@ -322,7 +322,8 @@ function readUntilSeparator(source: string, start: number): number | null {
 			brace -= 1
 		} else if (char === '[') bracket += 1
 		else if (char === ']') {
-			if (bracket === 0) return null
+			// End of an array element list (same as `}` for objects).
+			if (bracket === 0) return index
 			bracket -= 1
 		} else if (char === ',' && paren === 0 && brace === 0 && bracket === 0) {
 			return index

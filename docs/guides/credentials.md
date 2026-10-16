@@ -113,8 +113,12 @@ await fetch('https://api.github.com/repos/acme/widgets/issues', {
 
 `off` sends every placeholder as written, including headers. Kody strips the
 header before the request leaves. `kody dev check` and a successful publish
-print a warning when a fetch sends a non-literal body without that header. The
-warning does not fail the check or block publish.
+print a warning for a clear case: a fetch (or `new Request`) whose init object
+is a literal, whose body is not a literal (or `JSON.stringify` /
+`new URLSearchParams` of literals), and whose headers object does not set
+`x-kody-secret-resolution` to `headers-only` or `off`. Variable `init` values,
+header spreads, and non-literal header bags are skipped. The warning does not
+fail the check or block publish.
 
 Full placeholder rules (encodings, multipart, the inert `{{secret:<name>}}`
 mention form):
