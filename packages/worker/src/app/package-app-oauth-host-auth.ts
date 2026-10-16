@@ -22,6 +22,7 @@ import {
 } from '#app/package-app-oauth-scopes.ts'
 import {
 	createPackageAppSessionCookie,
+	destroyLegacyPackageAppSessionCookies,
 	destroyPackageAppSessionCookie,
 	readPackageAppSession,
 } from '#app/package-app-session.ts'
@@ -108,6 +109,7 @@ function readAppSlugFromReturnTo(returnTo: string) {
 	return raw ? raw.toLowerCase() : undefined
 }
 
+<<<<<<< HEAD
 async function resolveVerifiedHostApp(input: {
 	env: Env
 	orgUsername: string
@@ -127,6 +129,69 @@ async function resolveVerifiedHostApp(input: {
 	}
 }
 
+=======
+/**
+ * Leaf from a same-origin `Referer` path `/packages/{leaf}/…`. Used on shared
+ * hosts so logout binds to the app that initiated the navigation, not an
+ * attacker-chosen `?app=` on a sibling package.
+ */
+function readAppSlugFromSameOriginReferer(request: Request, requestUrl: URL) {
+	const referer = request.headers.get('Referer')
+	if (!referer) return undefined
+	try {
+		const refererUrl = new URL(referer)
+		if (refererUrl.origin !== requestUrl.origin) return undefined
+		return readAppSlugFromReturnTo(`${refererUrl.pathname}${refererUrl.search}`)
+	} catch {
+		return undefined
+	}
+}
+
+/**
+ * Which package leaf logout should clear on this host.
+ *
+ * Priority: verified app custom hostname mapping → same-origin Referer
+ * `/packages/{leaf}` (sibling isolation) → `?app=` / `return_to` / host-app
+ * resolution. When nothing resolves, callers clear only the legacy host-wide
+ * cookie so older kit clients that omit `?app=` and use `return_to=/` still
+ * sign out of pre-per-app sessions.
+ */
+async function resolveLogoutAppSlug(input: {
+	request: Request
+	env: Env
+	url: URL
+	returnTo: string
+}): Promise<string | null> {
+	const fromReferer = readAppSlugFromSameOriginReferer(input.request, input.url)
+	const fromQuery = readAppSlugParam(input.url)
+	const fromReturnTo = readAppSlugFromReturnTo(input.returnTo)
+
+	const hostname = normalizeCustomHostname(input.url.hostname)
+	if (hostname && (await isPackageAppCustomDomainsEnabled(input.env.APP_DB))) {
+		const mapping = await lookupCachedPackageAppCustomHostname({
+			db: input.env.APP_DB,
+			hostname,
+		})
+		if (mapping && isVerifiedAppCustomHostname(mapping)) {
+			return mapping.kodyId.toLowerCase()
+		}
+	}
+
+	// Shared host: Referer wins over `?app=` so one package cannot clear
+	// another leaf's session with a top-level GET.
+	if (fromReferer) return fromReferer
+
+	if (fromQuery) return fromQuery
+	if (fromReturnTo) return fromReturnTo
+	const hostApp = await resolveHostApp({
+		request: input.request,
+		env: input.env,
+		url: input.url,
+	})
+	return hostApp?.kodyId ?? null
+}
+
+>>>>>>> 559e75e9c (fix(package-apps): bind logout to Referer; keep legacy logout working)
 async function resolveHostApp(input: {
 	request: Request
 	env: Env
@@ -311,34 +376,35 @@ async function handleLogout(input: { request: Request; env: Env; url: URL }) {
 		input.url.searchParams.get('return_to'),
 		input.url.origin,
 	)
-	// Resolve the app that requested logout so shared hosts
-	// (`{user}.kody.run/packages/{leaf}`) only clear that leaf's session.
-	// Custom domains resolve from the verified hostname mapping. Older kit
-	// clients omitted `?app=` on logout; fall back to `/packages/{leaf}` in
-	// `return_to` when present.
-	const app = await resolveHostApp(input)
-	const kodyId =
-		app?.kodyId ??
-		readAppSlugParam(input.url) ??
-		readAppSlugFromReturnTo(returnTo)
-	if (!kodyId) {
-		return badRequest(
-			'Missing app identity for sign-out. On *.kody.run pass ?app={leaf}.',
+	// Shared hosts clear only the requesting leaf. Prefer same-origin Referer
+	// `/packages/{leaf}` over `?app=` so a sibling package cannot navigate the
+	// browser into clearing another app. Verified app custom domains resolve
+	// from the hostname mapping. When no leaf is known (older kit clients with
+	// `return_to=/` and no Referer), clear only the legacy host-wide cookie so
+	// pre-per-app sessions still end.
+	const kodyId = await resolveLogoutAppSlug({ ...input, returnTo })
+	const cookies = [
+		...(kodyId
+			? await destroyPackageAppSessionCookie({
+					env: input.env,
+					slug: kodyId,
+					secure,
+				})
+			: await destroyLegacyPackageAppSessionCookies({
+					env: input.env,
+					secure,
+				})),
+		await destroyPackageAppOauthPkceCookie({ env: input.env, secure }),
+	]
+	if (kodyId) {
+		cookies.push(
+			await destroyPackageAppTicketCookie({
+				env: input.env,
+				slug: kodyId,
+				secure,
+			}),
 		)
 	}
-	const cookies = [
-		...(await destroyPackageAppSessionCookie({
-			env: input.env,
-			slug: kodyId,
-			secure,
-		})),
-		await destroyPackageAppOauthPkceCookie({ env: input.env, secure }),
-		await destroyPackageAppTicketCookie({
-			env: input.env,
-			slug: kodyId,
-			secure,
-		}),
-	]
 	return redirectResponse(returnTo, cookies)
 }
 
