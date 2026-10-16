@@ -86,6 +86,13 @@ test('skips author-written bodies and explicit resolution modes', () => {
 	).toEqual([])
 	expect(
 		lines(`
+			fetch(url, {
+				body: JSON.stringify(['a'].concat(userText)),
+			})
+		`),
+	).toEqual([2])
+	expect(
+		lines(`
 			fetch('https://api.example.com/oauth/token', {
 				method: 'POST',
 				headers: { Authorization: 'Bearer {{secret:github}}' },

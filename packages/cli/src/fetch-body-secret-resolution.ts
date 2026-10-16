@@ -453,6 +453,8 @@ function isStaticData(expression: string): boolean {
 	const text = expression.trim()
 	if (isLiteral(text)) return true
 	if (text.startsWith('{')) {
+		const closed = readBalanced(text, 0, '{', '}')
+		if (closed == null || closed.end !== text.length) return false
 		const properties = readObjectProperties(text)
 		if (properties == null) return false
 		return properties.every(
@@ -464,6 +466,8 @@ function isStaticData(expression: string): boolean {
 		)
 	}
 	if (text.startsWith('[')) {
+		const closed = readBalanced(text, 0, '[', ']')
+		if (closed == null || closed.end !== text.length) return false
 		const elements = readArrayElements(text)
 		if (elements == null) return false
 		return elements.every((element) => isStaticData(element))
