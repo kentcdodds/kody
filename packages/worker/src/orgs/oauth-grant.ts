@@ -35,6 +35,19 @@ export function readOrgIdFromGrantMetadata(metadata: unknown): string | null {
 }
 
 /**
+ * True when a stored OAuth grant value has a non-empty plaintext
+ * `metadata.orgId`. Props stay encrypted and are never consulted here — same
+ * predicate as the Teams production OAuth inventory.
+ */
+export function grantHasMetadataOrgId(value: unknown): boolean {
+	if (typeof value !== 'object' || value === null) return false
+	return (
+		readOrgIdFromGrantMetadata((value as { metadata?: unknown }).metadata) !==
+		null
+	)
+}
+
+/**
  * Org bound on a listed grant for silent-consent reuse.
  * Prefer `metadata.orgId`; pre-P4 grants fall back to the grant subject's
  * user id (personal org) until P9 (#3057).

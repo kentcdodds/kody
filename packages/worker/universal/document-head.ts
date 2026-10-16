@@ -4,6 +4,7 @@ import { isAccountConnectionAgent } from '#universal/account-connections.ts'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 import { onboardingAgentLabel } from '#universal/onboarding-mcp-clients.ts'
 import { oauthPaths } from '#universal/oauth-paths.ts'
+import { packageAppOauthPaths } from '#universal/package-app-oauth-paths.ts'
 import {
 	type PackageCredentialsTab,
 	packageCredentialsTabLabel,
@@ -586,6 +587,7 @@ const routeDocumentHeads = {
 		'Approve webhook apply destination',
 	),
 	[oauthPaths.authorize]: titleOnly('Authorize access'),
+	[packageAppOauthPaths.authorize]: titleOnly('Allow package app'),
 	[oauthPaths.callback]: titleOnly('OAuth callback'),
 } as const satisfies Record<string, DocumentHeadResolver>
 

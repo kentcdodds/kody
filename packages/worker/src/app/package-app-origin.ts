@@ -47,6 +47,7 @@ import {
 	createPackageAppHandoffToken,
 	packageAppHandoffQueryParam,
 } from '#app/package-app-handoff.ts'
+import { handlePackageAppOauthHostAuth } from '#app/package-app-oauth-host-auth.ts'
 import {
 	resolvePackageAppOrgOwnerByHandle,
 	resolvePackageAppOwnerByStableUserId,
@@ -956,6 +957,8 @@ async function handleUserSubdomainRequest(input: {
 }) {
 	const { request, env, url, username } = input
 	const appBaseUrl = getAppBaseUrl({ env })
+	const hostAuth = await handlePackageAppOauthHostAuth({ request, env, url })
+	if (hostAuth) return hostAuth
 	const packagePath = parsePackageAppSubdomainPath({
 		pathname: url.pathname,
 		username,
@@ -1032,6 +1035,8 @@ async function handleOrgCustomHostnameRequest(input: {
 }) {
 	const { request, env, url, mapping } = input
 	const appBaseUrl = getAppBaseUrl({ env })
+	const hostAuth = await handlePackageAppOauthHostAuth({ request, env, url })
+	if (hostAuth) return hostAuth
 	const packagePath = parsePackageAppSubdomainPath({
 		pathname: url.pathname,
 		username: mapping.username,
@@ -1072,6 +1077,8 @@ async function handleCustomHostnameRequest(input: {
 }) {
 	const { request, env, url, mapping } = input
 	const appBaseUrl = getAppBaseUrl({ env })
+	const hostAuth = await handlePackageAppOauthHostAuth({ request, env, url })
+	if (hostAuth) return hostAuth
 	const packagePath = parsePackageAppCustomHostnamePath({
 		pathname: url.pathname,
 		username: mapping.username,

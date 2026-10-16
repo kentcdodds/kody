@@ -821,6 +821,70 @@ export function displayTitleMentionsPr(
 	return new RegExp(`(?:^|\\D)#${prNumber}(?:\\D|$)`).test(displayTitle)
 }
 
+/**
+ * preview.yml uses cancel-in-progress concurrency, so a cancelled run is
+ * superseded by a newer one for the same PR. That is a wait boundary.
+ *
+ * `skipped` is different: job-level `if:` no-ops (for example non-preview-flag
+ * label events) complete as skipped without starting a replacement deploy.
+ */
+export function isCancelledOrSupersededPreviewRun(run: {
+	status: string
+	conclusion: string | null
+}) {
+	return run.conclusion === 'cancelled'
+}
+
+function isSkippedNoopPreviewRun(run: { conclusion: string | null }) {
+	return run.conclusion === 'skipped'
+}
+
+function newestFirst(a: WorkflowRun, b: WorkflowRun) {
+	return b.databaseId - a.databaseId
+}
+
+type PreviewRunFollow =
+	| { kind: 'run'; run: WorkflowRun }
+	| { kind: 'wait' }
+	| { kind: 'none' }
+
+/**
+ * Walk newest-first. Cancelled is a boundary (wait for a successor). Skipped
+ * no-ops are transparent so an older successful deploy can still be followed.
+ */
+function followNewestMatchingRun(
+	runs: ReadonlyArray<WorkflowRun>,
+): PreviewRunFollow {
+	for (const run of runs.toSorted(newestFirst)) {
+		if (isCancelledOrSupersededPreviewRun(run)) return { kind: 'wait' }
+		if (isSkippedNoopPreviewRun(run)) continue
+		return { kind: 'run', run }
+	}
+	return { kind: 'none' }
+}
+
+/**
+ * Pick the preview workflow run to follow: newest runnable run for the PR head
+ * SHA, else newest runnable run whose display title mentions the PR. A newer
+ * cancelled run is a boundary — do not adopt an older success behind it.
+ * Skipped no-op runs are ignored.
+ */
+export function selectPreviewWorkflowRun(
+	runs: ReadonlyArray<WorkflowRun>,
+	pr: Pick<PrView, 'number' | 'headRefOid'>,
+): WorkflowRun | null {
+	const headMatches = runs.filter((run) => run.headSha === pr.headRefOid)
+	const headFollow = followNewestMatchingRun(headMatches)
+	if (headFollow.kind === 'run') return headFollow.run
+	if (headFollow.kind === 'wait') return null
+	const titleMatches = runs.filter((run) =>
+		displayTitleMentionsPr(run.displayTitle, pr.number),
+	)
+	const titleFollow = followNewestMatchingRun(titleMatches)
+	if (titleFollow.kind === 'run') return titleFollow.run
+	return null
+}
+
 export function flattenGhJsonPages(parsed: unknown): Array<unknown> {
 	if (!Array.isArray(parsed)) return []
 	if (parsed.length > 0 && Array.isArray(parsed[0])) {
@@ -1493,11 +1557,7 @@ async function loadPreviewWorkflow(
 		'--limit',
 		'10',
 	])
-	return (
-		runs.find((run) => run.headSha === pr.headRefOid) ??
-		runs.find((run) => displayTitleMentionsPr(run.displayTitle, pr.number)) ??
-		null
-	)
+	return selectPreviewWorkflowRun(runs, pr)
 }
 
 async function previewHealthReady(

@@ -58,6 +58,11 @@ const ogTypeMessage =
 	"null is not an object (evaluating 'document.querySelector(\"meta[property='og:type']\").content')"
 const tabNotFound = 'Invalid call to runtime.sendMessage(). Tab not found.'
 const objectCaptured = 'Object captured as exception with keys: code, message'
+const objectCapturedWithStack =
+	'Object captured as exception with keys: code, message, stack'
+const messageChannelDisconnected = 'Message channel disconnected'
+const rabbyMessageChannelStack =
+	'MessageDisconnectedError: Message channel disconnected\n    at chrome-extension://acmacodkjbdgmoleebolmdjonilkdbch/content-script.js:1:1'
 const highlightChunkMessage =
 	'Failed to fetch dynamically imported module: https://kody.codes/assets/syntax-highlight-core-VCFYP6MU.js'
 const blogChunkMessage =
@@ -206,6 +211,20 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 			{ code: 4001, message: 'wallet must has at least one account' },
 		],
 		['Error', 'wallet must has at least one account'],
+		// Rabby / Chrome-extension Message channel disconnected (KODY-72):
+		// buffered unhandledrejection with { code: 4900, message, stack }.
+		[
+			'Error',
+			objectCapturedWithStack,
+			undefined,
+			{
+				code: 4900,
+				message: messageChannelDisconnected,
+				stack: rabbyMessageChannelStack,
+			},
+		],
+		['Error', messageChannelDisconnected],
+		['Error', `MessageDisconnectedError: ${messageChannelDisconnected}`],
 		[
 			'WrappedError',
 			'Client has been destroyed',
@@ -470,6 +489,16 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 			undefined,
 			{ code: 4001, message: 'User rejected the request.' },
 		],
+		// EIP-1193 code 4900 with a different message must stay visible.
+		[
+			'Error',
+			objectCapturedWithStack,
+			undefined,
+			{ code: 4900, message: 'User rejected the request.' },
+		],
+		// App / other errors that merely mention "disconnected".
+		['Error', 'WebSocket disconnected unexpectedly'],
+		['Error', 'Connection disconnected'],
 		['WrappedError', 'Client has been destroyed', [kodyEntry]],
 		[
 			'Error',

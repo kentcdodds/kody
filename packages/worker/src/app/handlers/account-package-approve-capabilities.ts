@@ -5,6 +5,7 @@ import { createMatcher } from 'remix/route-pattern/match'
 import {
 	handleAccountPackageInternetVisibleAction,
 	loadAccountPackageApproveCapabilitiesData,
+	resolveAccountPackageApproveCapabilitiesPageAction,
 } from '#app/account-package-capability-approval.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { loadPackagePage } from '#app/package-page.ts'
@@ -297,6 +298,10 @@ export function createAccountPackageApproveCapabilitiesApiHandler(env: Env) {
 					allowRedirect: false,
 				})
 				if (!packageId.ok) return packageId.response
+				const action = resolveAccountPackageApproveCapabilitiesPageAction(body)
+				if (!action) {
+					return jsonResponse({ ok: false, error: 'Unsupported action.' }, 400)
+				}
 				const response = await handleAccountPackageInternetVisibleAction({
 					env,
 					request,
@@ -304,13 +309,7 @@ export function createAccountPackageApproveCapabilitiesApiHandler(env: Env) {
 					body: {
 						...body,
 						// URL package wins: collaborators must approve the page they reviewed.
-						action:
-							'action' in body &&
-							(body.action === 'approve-credential-needs' ||
-								body.action === 'approve-went-public' ||
-								body.action === 'approve-capabilities-and-go-public')
-								? body.action
-								: 'approve-capabilities',
+						action,
 						packageId: packageId.packageId,
 					},
 				})

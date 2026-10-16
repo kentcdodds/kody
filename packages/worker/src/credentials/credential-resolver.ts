@@ -38,6 +38,44 @@ export type ClientPlacement =
 	| { kind: 'header'; name: string; value: string }
 	| { kind: 'query'; param: string; value: string }
 
+/**
+ * Where the fetch gateway filled or refused a placeholder. The audit row
+ * stores the lowercase header name, or `url` / `body`. A header named `url`
+ * or `body` is stored as `header:url` or `header:body`, so
+ * `placement IN ('url', 'body')` counts only non-header placements.
+ */
+export type CredentialFetchPlacement =
+	| { kind: 'header'; name: string }
+	| { kind: 'url' }
+	| { kind: 'body' }
+
+const reservedFetchPlacementLabels = new Set(['url', 'body'])
+
+/** Audit value for one fetch placement. Header names are lowercased. */
+export function credentialFetchPlacementKey(
+	placement: CredentialFetchPlacement,
+): string {
+	switch (placement.kind) {
+		case 'header': {
+			const name = placement.name.trim().toLowerCase()
+			if (!name) {
+				throw new Error('A header credential placement needs a header name.')
+			}
+			// A header literally named url or body must not count as that place.
+			if (reservedFetchPlacementLabels.has(name)) return `header:${name}`
+			return name
+		}
+		case 'url':
+			return 'url'
+		case 'body':
+			return 'body'
+		default: {
+			const exhaustive: never = placement
+			throw new Error(`Unhandled credential placement: ${String(exhaustive)}`)
+		}
+	}
+}
+
 export type ResolvedClientPlacement = {
 	placement: ClientPlacement
 	/** Texts that carry the value, for echo redaction of the response. */
@@ -65,6 +103,11 @@ export type CredentialTarget =
 			/** Org slug for approval links in denial messages. */
 			orgSlug?: string | null
 			requestHost?: RequestHost
+			/**
+			 * Fetch-gateway placements of this placeholder. Each one is its own
+			 * `credential.resolve` row. Other callers omit it.
+			 */
+			placements?: ReadonlyArray<CredentialFetchPlacement>
 	  }
 	/** `packageSecrets.get` / `.has`: a declared `kody.secretMounts` alias. */
 	| {
@@ -89,6 +132,11 @@ export type CredentialTarget =
 			ref: string
 			storageContext: StorageContext
 			requestHost?: RequestHost
+			/**
+			 * Fetch-gateway placements of this placeholder. Each one is its own
+			 * `credential.resolve` row. Other callers omit it.
+			 */
+			placements?: ReadonlyArray<CredentialFetchPlacement>
 	  }
 	/** `{{integration-token:…}}` and webhook apply integration auth. */
 	| {
@@ -96,6 +144,11 @@ export type CredentialTarget =
 			name: string
 			packageKodyId?: string | null
 			requestHost?: RequestHost
+			/**
+			 * Fetch-gateway placements of this placeholder. Each one is its own
+			 * `credential.resolve` row. Other callers omit it.
+			 */
+			placements?: ReadonlyArray<CredentialFetchPlacement>
 	  }
 	/** `integrationTokenRefresh` and webhook apply 401 retry. */
 	| {

@@ -1,7 +1,13 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
-import { evaluateUnitJobBudget, main } from './enforce-unit-job-budget.ts'
+import {
+	evaluateUnitJobBudget,
+	getUnitJobMaxSeconds,
+	isRetryableUnitJobAttemptExit,
+	main,
+	unitJobAttemptTimeoutExitCode,
+} from './enforce-unit-job-budget.ts'
 
 test('unit job budgets fail any overrun of the cold-run caps', () => {
 	const previousExitCode = process.exitCode
@@ -9,6 +15,14 @@ test('unit job budgets fail any overrun of the cold-run caps', () => {
 		new URL('../../.github/workflows/validate.yml', import.meta.url),
 		'utf8',
 	)
+
+	expect(getUnitJobMaxSeconds('node')).toBe(720)
+	expect(getUnitJobMaxSeconds('workers')).toBe(720)
+	expect(isRetryableUnitJobAttemptExit(unitJobAttemptTimeoutExitCode)).toBe(
+		true,
+	)
+	expect(isRetryableUnitJobAttemptExit(1)).toBe(false)
+	expect(isRetryableUnitJobAttemptExit(0)).toBe(false)
 
 	expect(
 		evaluateUnitJobBudget({
@@ -46,6 +60,23 @@ test('unit job budgets fail any overrun of the cold-run caps', () => {
 		'node tools/ci/enforce-unit-job-budget.ts --leg workers --start-epoch',
 	)
 	expect(workflow).toContain('UNIT_JOB_START_EPOCH')
+	// Workers retries once on soft-budget timeout (exit 124), not on
+	// assertion failures (#3763). Keep ADR 0011 isolation intact.
+	expect(workflow).toContain('attempt_budget_seconds=720')
+	expect(workflow).toContain('[ "$status" -ne 124 ]')
+	expect(workflow).toContain('retrying once (#3763)')
+	expect(workflow).toContain('npm run test:workers')
+	// ADR 0011: retry must not disable per-file isolation or skip verify.
+	const workersUnitStep = workflow.match(
+		/- name: ☁️ Workers unit tests\n([\s\S]*?)\n\n\s+- name: ⏱️ Unit job budget/,
+	)?.[1]
+	expect(workersUnitStep).toBeTruthy()
+	expect(workersUnitStep).not.toContain('--no-isolate')
+	expect(workersUnitStep).not.toContain('--no-verify')
+	expect(workersUnitStep).not.toContain('setupFiles')
+	expect(workflow).toMatch(
+		/name: ☁️ Workers\n\s+# Room for one ≤720s attempt[\s\S]*?timeout-minutes: 30/,
+	)
 
 	process.exitCode = undefined
 	main([
