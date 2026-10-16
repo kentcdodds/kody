@@ -24,6 +24,11 @@ export const credentialNeedSchema = z.object({
 	provider: z.string(),
 	description: z.string(),
 	multiple: z.boolean(),
+	/**
+	 * Set only by the package that declares the need: on an internet-visible
+	 * app it resolves with the approving owner's credentials for visitors.
+	 */
+	ownerCredentialForVisitors: z.literal(true).optional(),
 	/** The dependency that declared an inherited need. */
 	from: z.string().optional(),
 })
@@ -47,6 +52,9 @@ export function ownCredentialNeeds(
 			provider: slot.provider ?? key,
 			description: slot.description,
 			multiple: slot.multiple === true,
+			...(slot.ownerCredentialForVisitors
+				? { ownerCredentialForVisitors: true as const }
+				: {}),
 		}))
 		.sort((left, right) => left.key.localeCompare(right.key))
 }
@@ -104,7 +112,9 @@ export type DependencyCredentialNeeds = {
  * Own needs first, then each dependency's closure. A key declared twice must
  * agree on provider and compatible kinds; any disagreement is returned as a
  * conflict. When one side omits `kind` and the other declares a fetch-capable
- * kind, the declared kind is kept.
+ * kind, the declared kind is kept. `ownerCredentialForVisitors` follows the
+ * first declaration, like `description`: a dependency never turns it on for
+ * a key the package itself declares.
  */
 export function mergeCredentialNeeds(input: {
 	own: ReadonlyArray<CredentialNeed>
@@ -137,6 +147,9 @@ export function mergeCredentialNeeds(input: {
 			description: existing.description,
 			multiple,
 			...(kind ? { kind } : {}),
+			...(existing.ownerCredentialForVisitors
+				? { ownerCredentialForVisitors: true as const }
+				: {}),
 			...(existing.from ? { from: existing.from } : {}),
 		})
 	}

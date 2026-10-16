@@ -209,6 +209,68 @@ test('a need inherited from a dependency lists the credential mapped to it on th
 	])
 })
 
+test('a need that shares a credential with visitors lists it as its own entry, even when also granted', async () => {
+	const t = await setup({
+		kody: {
+			credentials: {
+				resend: {
+					description: 'Send the digest',
+					ownerCredentialForVisitors: true,
+				},
+			},
+		},
+	})
+	const resendId = await t.storeKey('RESEND_KEY', 'resend')
+	const shared = await t.compute()
+	expect(shared.capabilitySet.entries).toEqual([
+		expect.objectContaining({
+			credentialId: resendId,
+			source: 'need',
+			needKey: 'resend',
+			ownerCredentialForVisitors: true,
+		}),
+	])
+
+	await t.db
+		.prepare(`UPDATE secret_entries SET allowed_packages = ? WHERE id = ?`)
+		.bind(JSON.stringify([t.savedPackage.id]), resendId)
+		.run()
+	const granted = await t.compute()
+	expect(
+		granted.capabilitySet.entries.map((entry) => [
+			entry.source,
+			entry.ownerCredentialForVisitors ?? false,
+		]),
+	).toEqual(
+		expect.arrayContaining([
+			['grant', false],
+			['need', true],
+		]),
+	)
+	expect(granted.capabilitySet.entries).toHaveLength(2)
+
+	vi.mocked(needsClosure.loadPublishedCredentialNeeds).mockResolvedValue(
+		ownCredentialNeeds({ resend: { description: 'Send the digest' } }),
+	)
+	mocks.loadPackageManifestBySourceId.mockResolvedValue({
+		manifest: {
+			name: '@acme/digest',
+			kody: {
+				id: 'digest',
+				description: 'digest',
+				credentials: { resend: { description: 'Send the digest' } },
+			},
+		},
+	})
+	const unshared = await t.compute()
+	expect(unshared.capabilitySet.entries).toEqual([
+		expect.objectContaining({ credentialId: resendId, source: 'grant' }),
+	])
+	expect(unshared.capabilitySet.fingerprint).not.toBe(
+		granted.capabilitySet.fingerprint,
+	)
+})
+
 test('a secret mount and an explicit grant to this package are listed; other credentials are not', async () => {
 	const t = await setup({
 		kody: {

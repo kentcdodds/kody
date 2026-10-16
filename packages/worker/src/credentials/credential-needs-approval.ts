@@ -1,8 +1,9 @@
 /**
  * The publish pause for changed credential needs (ADR 0068 amendment
  * 2026-10-13, scoped 2026-10-15). For an **internet-visible** package, a
- * publish whose needs closure gains a key, or changes a key's kind, provider,
- * or `multiple`, waits for the owner in the shared approval queue while the
+ * publish whose needs closure gains a key, changes a key's kind, provider,
+ * or `multiple`, or turns on a key's `ownerCredentialForVisitors`, waits for
+ * the owner in the shared approval queue while the
  * previously published commit keeps serving. Private packages skip this pause
  * (owner publish proceeds); going internet-visible still uses the
  * `went_public` / capability approval path, which lists declared credentials.
@@ -24,7 +25,10 @@ import {
 } from './credential-needs-closure.ts'
 import { type CredentialNeed } from './credential-needs.ts'
 
-type NeedShape = Pick<CredentialNeed, 'kind' | 'provider' | 'multiple'>
+type NeedShape = Pick<
+	CredentialNeed,
+	'kind' | 'provider' | 'multiple' | 'ownerCredentialForVisitors'
+>
 
 export type CredentialNeedChange =
 	| { key: string; change: 'added'; after: NeedShape; from?: string }
@@ -72,6 +76,9 @@ function shape(need: CredentialNeed): NeedShape {
 		...(need.kind ? { kind: need.kind } : {}),
 		provider: need.provider,
 		multiple: need.multiple,
+		...(need.ownerCredentialForVisitors
+			? { ownerCredentialForVisitors: true as const }
+			: {}),
 	}
 }
 
@@ -94,10 +101,15 @@ export function diffCredentialNeeds(
 			})
 			continue
 		}
+		// Turning visitor use off only narrows, like dropping a need.
+		const sharesWithVisitors =
+			need.ownerCredentialForVisitors === true &&
+			prior.ownerCredentialForVisitors !== true
 		if (
 			prior.kind !== need.kind ||
 			prior.provider !== need.provider ||
-			prior.multiple !== need.multiple
+			prior.multiple !== need.multiple ||
+			sharesWithVisitors
 		) {
 			changes.push({
 				key: need.key,
@@ -118,7 +130,10 @@ function describeNeedKind(kind: NeedShape['kind']) {
 
 function describeNeedTail(need: NeedShape) {
 	const viaMultiple = need.multiple ? ' (several allowed)' : ''
-	return `${describeNeedKind(need.kind)} from ${need.provider}${viaMultiple}`
+	const forVisitors = need.ownerCredentialForVisitors
+		? ' (app visitors may use your credential)'
+		: ''
+	return `${describeNeedKind(need.kind)} from ${need.provider}${viaMultiple}${forVisitors}`
 }
 
 /**

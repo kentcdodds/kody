@@ -230,6 +230,29 @@ test('only added or reshaped needs count as a change', () => {
 	)
 })
 
+test('turning on owner credentials for visitors reshapes a need; turning it off does not', () => {
+	const shared = need('DB', { ownerCredentialForVisitors: true })
+	const changes = diffCredentialNeeds([need('DB')], [shared])
+	expect(changes).toEqual([
+		{
+			key: 'DB',
+			change: 'changed',
+			before: { kind: 'secret', provider: 'resend', multiple: false },
+			after: {
+				kind: 'secret',
+				provider: 'resend',
+				multiple: false,
+				ownerCredentialForVisitors: true,
+			},
+		},
+	])
+	expect(describeCredentialNeedChange(changes[0]!)).toBe(
+		'This version changes the credential need DB: was Key from resend, now Key from resend (app visitors may use your credential)',
+	)
+	expect(diffCredentialNeeds([shared], [need('DB')])).toEqual([])
+	expect(diffCredentialNeeds([shared], [shared])).toEqual([])
+})
+
 test('a private package publishes credential-need changes without approval; internet-visible still pauses', async () => {
 	mocks.before = [need('MAIL')]
 	mocks.after = [need('MAIL'), need('NEW')]

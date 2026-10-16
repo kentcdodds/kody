@@ -211,6 +211,68 @@ test('omitted kind merges with a fetch-capable declared kind and keeps the decla
 	])
 })
 
+test('owner credentials for visitors follow the declaring package through the closure', () => {
+	const shared = {
+		key: 'database',
+		provider: 'database',
+		description: 'Rooms.',
+		multiple: false,
+		ownerCredentialForVisitors: true as const,
+	}
+	expect(
+		ownCredentialNeeds({
+			database: { description: 'Rooms.', ownerCredentialForVisitors: true },
+			github: { description: 'Repos.' },
+		}),
+	).toEqual([
+		shared,
+		{
+			key: 'github',
+			provider: 'github',
+			description: 'Repos.',
+			multiple: false,
+		},
+	])
+
+	const inherited = mergeCredentialNeeds({
+		own: [],
+		dependencies: [{ packageName: '@acme/rooms', needs: [shared] }],
+	})
+	expect(inherited.needs).toEqual([{ ...shared, from: '@acme/rooms' }])
+	expect(readStoredCredentialNeeds(inherited.needs)).toEqual(inherited.needs)
+
+	// A dependency cannot share a credential the package itself declares.
+	const ownWins = mergeCredentialNeeds({
+		own: ownCredentialNeeds({ database: { description: 'Mine.' } }),
+		dependencies: [{ packageName: '@acme/rooms', needs: [shared] }],
+	})
+	expect(ownWins.needs).toEqual([
+		{
+			key: 'database',
+			provider: 'database',
+			description: 'Mine.',
+			multiple: false,
+		},
+	])
+	const ownShares = mergeCredentialNeeds({
+		own: [shared],
+		dependencies: [
+			{
+				packageName: '@acme/rooms',
+				needs: [
+					{
+						key: 'database',
+						provider: 'database',
+						description: 'Theirs.',
+						multiple: false,
+					},
+				],
+			},
+		],
+	})
+	expect(ownShares.needs).toEqual([shared])
+})
+
 test('keys that are not provider slugs get a note, never an error', () => {
 	expect(
 		credentialNeedKeyNotes({

@@ -2302,6 +2302,8 @@ export type AccountPackageApproveCapabilitiesLoaderData = {
 		source?: 'need' | 'mount' | 'grant' | 'package'
 		/** The declared `kody.credentials` key a `need` credential fills. */
 		needKey?: string
+		/** Visitors of the internet-visible app may use this credential. */
+		ownerCredentialForVisitors?: true
 		credentialKind?: string
 		hosts: Array<string>
 		placement?: string | null

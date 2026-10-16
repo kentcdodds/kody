@@ -422,7 +422,12 @@ async function appendPackageCapabilityEntries(input: {
 	const reachableById = new Map(
 		reachableCredentials.map((credential) => [credential.id, credential]),
 	)
+	// A credential visitors may use through a need is its own entry even when
+	// the package also reaches it another way, so the flag always reaches the
+	// fingerprint and the approval page.
+	const seenVisitorEntries = new Set<string>()
 	for (const need of needs) {
+		const forVisitors = need.ownerCredentialForVisitors === true
 		// A stored mapping (any layer) can point the need at a credential the
 		// provider match would not pick, so list those too.
 		const mapped = mappings
@@ -436,7 +441,13 @@ async function appendPackageCapabilityEntries(input: {
 			...mapped,
 			...resolveNeedCandidates(need, reachableCredentials).candidates,
 		]) {
-			if (seenCredentialIds.has(candidate.id)) continue
+			if (forVisitors) {
+				const visitorKey = `${need.key}\0${candidate.id}`
+				if (seenVisitorEntries.has(visitorKey)) continue
+				seenVisitorEntries.add(visitorKey)
+			} else if (seenCredentialIds.has(candidate.id)) {
+				continue
+			}
 			seenCredentialIds.add(candidate.id)
 			input.entries.push({
 				kind: 'credential',
@@ -444,6 +455,7 @@ async function appendPackageCapabilityEntries(input: {
 				name: candidate.name,
 				source: 'need',
 				needKey: need.key,
+				...(forVisitors ? { ownerCredentialForVisitors: true as const } : {}),
 				credentialKind: candidate.kind,
 				hosts: candidate.hosts,
 				placement: null,
