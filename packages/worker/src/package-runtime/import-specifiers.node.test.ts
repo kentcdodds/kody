@@ -74,3 +74,35 @@ test('collectModuleImportNodes parses once for literal and dynamic import sites'
 	)
 	parseSpy.mockRestore()
 })
+
+test('dynamic import() with TS assertion or static template stays literal', () => {
+	const cases: Array<{ source: string; specifier: string }> = [
+		{
+			source: `await import('kody:@kentcdodds/grok-bot/wake' as \`kody:@\${string}/\${string}\`)`,
+			specifier: 'kody:@kentcdodds/grok-bot/wake',
+		},
+		{
+			source: `await import(('kody:@kentcdodds/helper/run' as string))`,
+			specifier: 'kody:@kentcdodds/helper/run',
+		},
+		{
+			source: 'await import(`kody:@kentcdodds/helper/run`)',
+			specifier: 'kody:@kentcdodds/helper/run',
+		},
+	]
+	for (const { source, specifier } of cases) {
+		const nodes = collectDynamicImportExpressionNodes(source)
+		expect(nodes, source).toHaveLength(1)
+		expect(nodes[0]?.literalSpecifier, source).toBe(specifier)
+		expect(
+			collectLiteralImportNodes(source).map((node) => node.specifier),
+			source,
+		).toEqual([specifier])
+	}
+
+	const computed = collectDynamicImportExpressionNodes(
+		'await import(subscriber.importSpecifier)',
+	)
+	expect(computed).toHaveLength(1)
+	expect(computed[0]?.literalSpecifier).toBeNull()
+})

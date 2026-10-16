@@ -138,9 +138,28 @@ export function collectModuleImportNodes(
 		}
 		if (typedNode.type === 'ImportExpression') {
 			const sourceNode = typedNode.source
-			const literalNode = readLiteralStringNode(sourceNode)
+			// Match collectBundlerResolvedSpecifiers / require(): unwrap
+			// parentheses and TS assertions so `import('x' as T)` and
+			// `import(\`x\`)` stay literal for stamp + rewrite.
+			const literalSpecifier = readStaticSpecifierNode(sourceNode)
+			const literalNode = readLiteralStringNode(
+				unwrapTypeOnlyExpression(sourceNode),
+			)
 			if (literalNode) {
 				literalImports.push({ ...literalNode, kind: 'dynamic' })
+			} else if (
+				literalSpecifier != null &&
+				typeof sourceNode?.start === 'number' &&
+				typeof sourceNode.end === 'number'
+			) {
+				// Static template literal: no StringLiteral node, but still a
+				// known specifier (same as readStaticSpecifierNode).
+				literalImports.push({
+					start: sourceNode.start,
+					end: sourceNode.end,
+					specifier: literalSpecifier,
+					kind: 'dynamic',
+				})
 			}
 			if (
 				typeof typedNode.start === 'number' &&
@@ -153,7 +172,7 @@ export function collectModuleImportNodes(
 					end: typedNode.end,
 					sourceStart: sourceNode.start,
 					sourceEnd: sourceNode.end,
-					literalSpecifier: literalNode?.specifier ?? null,
+					literalSpecifier,
 				})
 			}
 		}

@@ -430,6 +430,23 @@ function appManifestFiles(extra: Record<string, string>) {
 	}
 }
 
+test('literal dynamic import with TS assertion is not server_eval', () => {
+	const stamped = scanCredentialStamp(
+		appManifestFiles({
+			'src/server.ts': [
+				'export default {',
+				'  async fetch() {',
+				"    const mod = await import('kody:@kentcdodds/helper/run' as `kody:@${string}/${string}`)",
+				'    return mod.default()',
+				'  },',
+				'}',
+			].join('\n'),
+			'src/client.ts': 'export {}',
+		}),
+	)
+	expect(stamped.failures.filter((f) => f.code === 'server_eval')).toEqual([])
+})
+
 test('server eval / new Function / non-literal import fail; UI client entry is exempt', () => {
 	const serverEval = scanCredentialStamp(
 		appManifestFiles({

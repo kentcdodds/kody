@@ -16,6 +16,15 @@ import {
 const pagingHint =
 	'One page per execute/sandbox. Resume with the returned nextCursor until null — a filtered scan can return empty outcomes with a non-null nextCursor after exhausting the underlying page budget, so keep paging until nextCursor is null. dryRun default is true (scan only); set dryRun false to restamp seal-ready packages at the current published commit with no content change. Packages that need manifest edits: run adminPackageCodemodApply with codemodId 0014-seal-credential-stamps first. Packages reported unconvertible need an agent conversion attempt, then stop-and-notify Kent on issue #3836 if they still fail. Packages reported deferred_scan_budget hit the known Durable Object CPU blowup on large prebuilt client assets (e.g. world-builder public/client/main.js) — retry after the publish-seal CPU fix is live; do not treat them as unconvertible or stop-and-notify.'
 
+const gateFailureCodeSchema = z.enum([
+	'non_literal',
+	'unstampable_pattern',
+	'server_eval',
+	'missing_description',
+	'invalid_key',
+	'credential_named',
+])
+
 const outcomeSchema = z.discriminatedUnion('outcome', [
 	z.object({
 		packageId: z.string(),
@@ -30,8 +39,29 @@ const outcomeSchema = z.discriminatedUnion('outcome', [
 			'would_restamp',
 			'restamped',
 			'needs_manifest',
-			'unconvertible',
 		]),
+	}),
+	z.object({
+		packageId: z.string(),
+		ownerUserId: z.string(),
+		packageName: z.string(),
+		kodyId: z.string(),
+		sourceId: z.string(),
+		publishedCommit: z.string(),
+		stampKeyCount: z.number().int().nonnegative(),
+		outcome: z.literal('unconvertible'),
+		blockingFailureCodes: z.array(gateFailureCodeSchema),
+		blockingFailures: z
+			.array(
+				z.object({
+					code: gateFailureCodeSchema,
+					message: z.string(),
+					path: z.string().optional(),
+				}),
+			)
+			.describe(
+				'Up to 12 blocking stamp-gate failures (path + message) for false-positive sampling before stop-and-notify.',
+			),
 	}),
 	z.object({
 		packageId: z.string(),
@@ -136,16 +166,7 @@ const outputSchema = z.object({
 		),
 	outcomes: z.array(outcomeSchema),
 	unconvertibleFailureCodes: z
-		.array(
-			z.enum([
-				'non_literal',
-				'unstampable_pattern',
-				'server_eval',
-				'missing_description',
-				'invalid_key',
-				'credential_named',
-			]),
-		)
+		.array(gateFailureCodeSchema)
 		.describe(
 			'Distinct blocking stamp-gate failure codes seen on unconvertible packages this page (issue #3836 phase 2 stop-and-notify input).',
 		),

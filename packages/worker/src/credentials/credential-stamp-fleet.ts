@@ -50,12 +50,21 @@ export type CredentialStampFleetOutcome =
 			sourceId: string
 			publishedCommit: string
 			stampKeyCount: number
-			outcome:
-				| 'stamped'
-				| 'would_restamp'
-				| 'restamped'
-				| 'needs_manifest'
-				| 'unconvertible'
+			outcome: 'stamped' | 'would_restamp' | 'restamped' | 'needs_manifest'
+	  }
+	| {
+			packageId: string
+			ownerUserId: OwnerId
+			packageName: string
+			kodyId: string
+			sourceId: string
+			publishedCommit: string
+			stampKeyCount: number
+			outcome: 'unconvertible'
+			/** Distinct blocking gate codes for this package (sample before stop-and-notify). */
+			blockingFailureCodes: Array<CredentialStampGateFailure['code']>
+			/** Cap of blocking failures (path + message) for FP sampling. */
+			blockingFailures: Array<CredentialStampGateFailure>
 	  }
 	| {
 			packageId: string
@@ -357,6 +366,11 @@ export async function runCredentialStampFleet(input: {
 				for (const failure of plan.blockingFailures) {
 					unconvertibleFailureCodes.add(failure.code)
 				}
+				const blockingFailureCodes = [
+					...new Set(plan.blockingFailures.map((failure) => failure.code)),
+				].sort()
+				// Cap detail so a fleet page stays within capability response budgets.
+				const blockingFailures = plan.blockingFailures.slice(0, 12)
 				outcomes.push({
 					packageId: savedPackage.id,
 					ownerUserId: savedPackage.userId,
@@ -366,6 +380,8 @@ export async function runCredentialStampFleet(input: {
 					publishedCommit,
 					stampKeyCount,
 					outcome: 'unconvertible',
+					blockingFailureCodes,
+					blockingFailures,
 				})
 				continue
 			}
