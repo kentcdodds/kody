@@ -1665,6 +1665,44 @@ test('execute omits an unconfirmed idempotency key from the follow response', as
 	expect(mockModule.abandonRunRecord).not.toHaveBeenCalled()
 })
 
+test('execute finishes the run when setup fails after the follow response', async () => {
+	transportBudgetMock.remainingMs = 0
+	onTestFinished(() => {
+		transportBudgetMock.remainingMs = null
+	})
+	consoleWarn.mockImplementation(() => {})
+	const handle = transportFollowHandle('run-setup-failed', 'execute:setup-key')
+	const handler = await getExecuteHandler(transportCaller)
+	mockModule.beginRunRecord.mockReturnValueOnce(handle)
+	let rejectMemories: (error: Error) => void = () => {}
+	mockModule.surfaceToolMemories.mockImplementationOnce(
+		() =>
+			new Promise((_resolve, reject) => {
+				rejectMemories = reject
+			}),
+	)
+	const response = await handler({
+		code: okCode,
+		conversationId: 'conv-setup-failed',
+	})
+	expect(response.structuredContent).toMatchObject({
+		runId: 'run-setup-failed',
+		inProgress: true,
+	})
+	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
+	rejectMemories(new Error('memory failed'))
+	await vi.waitFor(() => {
+		expect(mockModule.finishRunRecord).toHaveBeenCalled()
+	})
+	expect(mockModule.finishRunRecord).toHaveBeenCalledWith(
+		expect.objectContaining({
+			handle,
+			status: 'error',
+			error: expect.objectContaining({ message: 'memory failed' }),
+		}),
+	)
+})
+
 test('execute does not detach a caller cancel that lands before the follow response', async () => {
 	transportBudgetMock.remainingMs = 0
 	onTestFinished(() => {

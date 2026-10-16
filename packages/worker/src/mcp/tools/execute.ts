@@ -823,12 +823,17 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						},
 					)
 				})()
-				waitUntil?.(
-					admittedWork.then(
-						() => undefined,
-						() => undefined,
-					),
+				const observedAdmittedWork = admittedWork.then(
+					() => undefined,
+					async (cause: unknown) => {
+						// Registry or memory can fail after the follow response
+						// and before the sandbox promise exists. Record that on
+						// the run the caller is polling.
+						if (!transportDetached) return
+						await recordDetachedExecuteFailure(cause)
+					},
 				)
+				waitUntil?.(observedAdmittedWork)
 				let spanned:
 					| Awaited<typeof admittedWork>
 					| Awaited<ReturnType<typeof readTransportBudgetFollow>>
