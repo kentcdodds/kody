@@ -386,6 +386,74 @@ test('turning on internet-visible self-publishes when the capability set is empt
 	expect(mockModule.applyMatchingPinInternetVisible).not.toHaveBeenCalled()
 })
 
+test('turning on internet-visible does not recreate a canceled went_public ask after self-publish fails', async () => {
+	const env = { APP_DB: {} } as Env
+	const user = createUser()
+	mockModule.writablePackage = createSavedPackage(false)
+	mockModule.loadOrgBindingForOrg.mockResolvedValue(null)
+	mockModule.loadCapabilityApprovalSummary.mockResolvedValue({
+		capabilitySet: { entries: [], fingerprint: 'abc' },
+		dependencySnapshot: null,
+		publishedCommit: 'deadbeef',
+		latestApproval: null,
+		matchingApproval: { fingerprint: 'abc' },
+		fingerprintMatchesApproval: true,
+		isInternetVisible: false,
+	})
+	mockModule.attemptSelfPublish.mockResolvedValue({
+		status: 'failed',
+		error:
+			'The request to make this package internet-visible was resolved meanwhile, so nothing was approved.',
+	})
+	mockModule.getPendingWentPublicApproval.mockResolvedValueOnce(null)
+
+	const canceled = await handleAccountPackageInternetVisibleAction({
+		env,
+		request: new Request('https://example.com/account/packages.json', {
+			method: 'POST',
+		}),
+		user,
+		body: {
+			action: 'set-internet-visible',
+			packageId: 'pkg-1',
+			internetVisible: true,
+			confirmName: 'notes',
+		},
+	})
+	expect(canceled?.status).toBe(400)
+	await expect(canceled?.json()).resolves.toMatchObject({
+		ok: false,
+		error: expect.stringContaining('Nothing is pending'),
+	})
+	expect(mockModule.enqueueWentPublicApproval).not.toHaveBeenCalled()
+	expect(mockModule.applyMatchingPinInternetVisible).not.toHaveBeenCalled()
+
+	mockModule.getPendingWentPublicApproval.mockResolvedValueOnce({
+		id: 'request-still-pending',
+	})
+	const pending = await handleAccountPackageInternetVisibleAction({
+		env,
+		request: new Request('https://example.com/account/packages.json', {
+			method: 'POST',
+		}),
+		user,
+		body: {
+			action: 'set-internet-visible',
+			packageId: 'pkg-1',
+			internetVisible: true,
+			confirmName: 'notes',
+		},
+	})
+	expect(pending?.status).toBe(400)
+	await expect(pending?.json()).resolves.toMatchObject({
+		ok: false,
+		error: expect.stringContaining('resolved meanwhile'),
+		approvalUrl: expect.stringContaining('/approve-capabilities'),
+	})
+	expect(mockModule.enqueueWentPublicApproval).not.toHaveBeenCalled()
+	expect(mockModule.applyMatchingPinInternetVisible).not.toHaveBeenCalled()
+})
+
 test('approve-capabilities binds the reviewed fingerprint', async () => {
 	const env = { APP_DB: {} } as Env
 	const user = createUser()

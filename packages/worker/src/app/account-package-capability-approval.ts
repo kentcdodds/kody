@@ -503,6 +503,33 @@ export async function handleAccountPackageInternetVisibleAction(input: {
 		if (attempt.status === 'self_published') {
 			return await reloaded()
 		}
+		if (attempt.status === 'failed') {
+			// Same as packageUpdate: do not recreate a went_public ask or apply
+			// a matching pin after a concurrent clear superseded the request.
+			const pending = await getPendingWentPublicApproval({
+				env: input.env,
+				ownerUserId,
+				packageId: savedPackage.id,
+			})
+			if (!pending) {
+				return jsonResponse(
+					{
+						ok: false,
+						error: `${attempt.error} Nothing is pending; try turning internet-visible on again.`,
+						approvalUrl,
+					},
+					400,
+				)
+			}
+			return jsonResponse(
+				{
+					ok: false,
+					error: attempt.error,
+					approvalUrl,
+				},
+				400,
+			)
+		}
 		if (summary.fingerprintMatchesApproval) {
 			// Capability set already approved — turn internet-visible on now
 			// (same as packageUpdate when the pin matches).
