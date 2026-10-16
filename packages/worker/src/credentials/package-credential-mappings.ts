@@ -497,6 +497,9 @@ export async function buildPackageCredentialsView(
 				primary.kind === 'webhook'
 					? merged.instanceId !== null && !otherEnabler
 					: true
+			const labelFor = (row: EnablementRecord) =>
+				members.find((member) => member.instanceId === row.instanceId)
+					?.instanceLabel ?? null
 			const instances: Array<PackageTriggerInstanceView> = otherEnabler
 				? enablement
 					? [
@@ -507,6 +510,7 @@ export async function buildPackageCredentialsView(
 									enabledByYou: false,
 								},
 								canEdit: false,
+								instanceLabel: labelFor(enablement),
 								mappings: [],
 							},
 						]
@@ -518,6 +522,7 @@ export async function buildPackageCredentialsView(
 							enabledByYou: true,
 						},
 						canEdit: canEditPrimary,
+						instanceLabel: labelFor(row),
 						mappings: mappingRowsFor(row, { recordIncomplete: true }),
 					}))
 			// An off trigger still lists need rows (null overrides) so the editor

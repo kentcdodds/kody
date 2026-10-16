@@ -237,6 +237,8 @@ export type PackageTriggerInstanceView = {
 	}
 	/** Only the enabler edits this instance's credential mappings. */
 	canEdit: boolean
+	/** Webhook only: short label for the minted URL this enablement runs. */
+	instanceLabel?: string | null
 	mappings: Array<{
 		needKey: string
 		override: StoredCredentialMapping | null

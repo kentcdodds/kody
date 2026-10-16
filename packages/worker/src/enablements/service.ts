@@ -205,6 +205,8 @@ export type DeclaredTrigger = {
 	name: string
 	/** Job id, package id, or webhook endpoint id; null for an unminted webhook. */
 	instanceId: string | null
+	/** Webhook only: short label for this minted URL; null when unlabeled. */
+	instanceLabel?: string | null
 	/** Enablements of this instance that are not off, oldest first. */
 	enablements: Array<EnablementRecord>
 }
@@ -252,6 +254,7 @@ export async function listDeclaredTriggers(input: {
 								kind: 'webhook' as const,
 								name: webhook.name,
 								instanceId: null as string | null,
+								instanceLabel: null as string | null,
 							},
 						]
 					}
@@ -259,6 +262,7 @@ export async function listDeclaredTriggers(input: {
 						kind: 'webhook' as const,
 						name: webhook.name,
 						instanceId: endpoint.id as string | null,
+						instanceLabel: endpoint.instanceLabel,
 					}))
 				}),
 			)

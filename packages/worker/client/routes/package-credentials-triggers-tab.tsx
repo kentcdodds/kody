@@ -270,7 +270,18 @@ function renderInstanceCard(
 								fontWeight: typography.fontWeight.semibold,
 							})}
 						>
-							Instance {index + 1}
+							{instance.instanceLabel?.trim()
+								? instance.instanceLabel.trim()
+								: `Instance ${index + 1}`}
+						</p>
+					) : instance.instanceLabel?.trim() ? (
+						<p
+							mix={css({
+								margin: 0,
+								fontWeight: typography.fontWeight.semibold,
+							})}
+						>
+							{instance.instanceLabel.trim()}
 						</p>
 					) : null}
 					<span mix={css(mutedCss)}>{stateLabel}</span>
