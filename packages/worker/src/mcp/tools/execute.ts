@@ -33,7 +33,6 @@ import {
 	validateDownstreamMcpContentBlocks,
 } from '#mcp/downstream-mcp-result.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
-import { createCallerDisconnectedExecutionError } from '#worker/caller-disconnect.ts'
 import { getInboundRequestSignal } from '#mcp/inbound-request-signal.ts'
 import { runModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import {
@@ -864,22 +863,10 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							// so completing the HTTP response does not cancel the work.
 							transportBudgetFollow = true
 							const follow = await readTransportBudgetFollow(claimedRunHandle)
-							if (
-								follow.transportFollow === 'running' &&
-								activeTransportSignal.signal.aborted
-							) {
-								// The sandbox may already have been running for the
-								// whole budget. Keep the row so a retry replays
-								// client_disconnected instead of starting again.
-								transportDetached = true
-								await recordDetachedExecuteFailure(
-									createCallerDisconnectedExecutionError(),
-								)
-								const reason: unknown = activeTransportSignal.signal.reason
-								throw reason instanceof Error
-									? reason
-									: new DOMException('The operation was aborted', 'AbortError')
-							}
+							// A caller cancel does not overwrite an in-flight success
+							// with client_disconnected, and the response still carries
+							// the run id. The abort signal stays attached, so a sandbox
+							// that is still running stops through its own handler.
 							if (follow.transportFollow === 'terminal') {
 								activeTransportSignal.detach()
 								transportDetached = true

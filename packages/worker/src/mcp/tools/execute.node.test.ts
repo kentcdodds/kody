@@ -1757,7 +1757,7 @@ test('execute finishes the run when setup fails during follow confirmation', asy
 	expect(mockModule.abandonRunRecord).not.toHaveBeenCalled()
 })
 
-test('execute does not detach a caller cancel that lands before the follow response', async () => {
+test('execute returns the run id when the caller cancels after the transport budget', async () => {
 	transportBudgetMock.remainingMs = 0
 	onTestFinished(() => {
 		transportBudgetMock.remainingMs = null
@@ -1771,17 +1771,15 @@ test('execute does not detach a caller cancel that lands before the follow respo
 	const response = await runWithInboundRequestSignal(controller.signal, () =>
 		handler({ code: okCode, conversationId: 'conv-cancelled' }),
 	)
-	expect(response.isError).toBe(true)
-	expect(response.structuredContent.inProgress).toBeUndefined()
-	expect(response.structuredContent.error).toContain('aborted')
+	expect(response.isError).toBe(false)
+	expect(response.structuredContent).toMatchObject({
+		runId: 'run-cancelled',
+		idempotencyKey: 'execute:cancel-key',
+		inProgress: true,
+		status: 'running',
+	})
 	expect(mockModule.abandonRunRecord).not.toHaveBeenCalled()
-	expect(mockModule.finishRunRecord).toHaveBeenCalledWith(
-		expect.objectContaining({
-			handle,
-			status: 'error',
-			error: expect.objectContaining({ name: 'client_disconnected' }),
-		}),
-	)
+	expect(mockModule.finishRunRecord).not.toHaveBeenCalled()
 })
 
 test('execute records fleet last-success when a detached run finishes', async () => {
