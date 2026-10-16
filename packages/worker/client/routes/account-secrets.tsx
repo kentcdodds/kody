@@ -353,6 +353,16 @@ export function AccountSecretsRoute(handle: Handle) {
 				AccountSecretsLoaderData & { error?: string; ok?: boolean }
 			>(response)
 			if (!response.ok || !payload?.ok) {
+				// Stuck rename: API returns the new id so retries do not 404.
+				const stuck = payload?.selectedSecret
+				if (stuck) {
+					editorState = {
+						...submittedEditorState,
+						currentId: stuck.id,
+						name: stuck.name,
+					}
+					navigate(buildSecretHref(stuck, getCurrentSearch(), getCurrentHref()))
+				}
 				throw new Error(payload?.error || 'Unable to save secret.')
 			}
 

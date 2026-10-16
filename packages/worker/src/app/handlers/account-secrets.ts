@@ -1370,44 +1370,9 @@ async function handleSaveAction(input: {
 	const nameChanged = currentSecret != null && currentSecret.name !== name
 	// Same-scope renames (including Henry → henry) update the row in place so
 	// the credential id and opt-in kind stay put. Scope/package moves still use
-	// create-under-new + delete-old below.
-	let renamedInPlace = false
-	if (nameChanged && samePlacement) {
-		try {
-			const renamed = await renameSecret({
-				env: input.env,
-				userId: ownerIdFromCaller({
-					request: input.user.request,
-					user: input.user.mcpUser,
-				}),
-				scope: currentSecret.scope,
-				fromName: currentSecret.name,
-				toName: name,
-				storageContext: getSecretContextForAccountSecret(currentSecret),
-			})
-			if (renamed.name !== name) {
-				return jsonResponse(
-					{
-						ok: false,
-						error: 'Secret rename did not persist the new name.',
-					},
-					500,
-				)
-			}
-			renamedInPlace = true
-		} catch (error) {
-			return jsonResponse(
-				{
-					ok: false,
-					error:
-						error instanceof Error ? error.message : 'Unable to rename secret.',
-				},
-				error instanceof Error && error.message.includes('already exists')
-					? 409
-					: 400,
-			)
-		}
-	}
+	// create-under-new + delete-old below. Validate before renaming so a failed
+	// save cannot leave the editor pointing at a name that no longer exists.
+	const willRenameInPlace = nameChanged && samePlacement
 
 	const orgId = ownerIdFromCaller({
 		request: input.user.request,
@@ -1447,15 +1412,12 @@ async function handleSaveAction(input: {
 			const placement = await readStoredCredentialPlacement({
 				db: input.env.APP_DB,
 				orgId,
-				// After an in-place rename the row already uses `name`.
-				name:
-					renamedInPlace || currentSecret?.scope !== 'user'
-						? name
-						: currentSecret.name,
+				// Still under the prior name until rename commits below.
+				name: currentSecret?.scope === 'user' ? currentSecret.name : name,
 			})
 			keepsOptInHosts = placement != null && placement.kind !== 'secret'
 			if (placement && keepsOptInHosts) {
-				if (currentSecret && currentId !== nextId && !renamedInPlace) {
+				if (currentSecret && currentId !== nextId && !willRenameInPlace) {
 					return jsonResponse(
 						{
 							ok: false,
@@ -1490,6 +1452,45 @@ async function handleSaveAction(input: {
 			400,
 		)
 	}
+
+	let renamedInPlace = false
+	if (willRenameInPlace && currentSecret) {
+		try {
+			const renamed = await renameSecret({
+				env: input.env,
+				userId: ownerIdFromCaller({
+					request: input.user.request,
+					user: input.user.mcpUser,
+				}),
+				scope: currentSecret.scope,
+				fromName: currentSecret.name,
+				toName: name,
+				storageContext: getSecretContextForAccountSecret(currentSecret),
+			})
+			if (renamed.name !== name) {
+				return jsonResponse(
+					{
+						ok: false,
+						error: 'Secret rename did not persist the new name.',
+					},
+					500,
+				)
+			}
+			renamedInPlace = true
+		} catch (error) {
+			return jsonResponse(
+				{
+					ok: false,
+					error:
+						error instanceof Error ? error.message : 'Unable to rename secret.',
+				},
+				error instanceof Error && error.message.includes('already exists')
+					? 409
+					: 400,
+			)
+		}
+	}
+
 	const setsKeyHosts =
 		credential == null ? !keepsOptInHosts : credential.kind === 'secret'
 
@@ -1544,14 +1545,36 @@ async function handleSaveAction(input: {
 			}),
 		})
 	} catch (error) {
-		return jsonResponse(
-			{
-				ok: false,
-				error:
-					error instanceof Error ? error.message : 'Unable to save secret.',
-			},
-			400,
-		)
+		const saveError =
+			error instanceof Error ? error.message : 'Unable to save secret.'
+		if (renamedInPlace && currentSecret) {
+			try {
+				await renameSecret({
+					env: input.env,
+					userId: ownerIdFromCaller({
+						request: input.user.request,
+						user: input.user.mcpUser,
+					}),
+					scope: currentSecret.scope,
+					fromName: name,
+					toName: currentSecret.name,
+					storageContext: getSecretContextForAccountSecret(currentSecret),
+				})
+				renamedInPlace = false
+			} catch {
+				// Rename stuck at the new name — surface it so the editor can
+				// retarget currentId instead of 404ing on the prior casing.
+				return jsonResponse(
+					{
+						ok: false,
+						error: saveError,
+						selectedSecret: { id: nextId, name },
+					},
+					400,
+				)
+			}
+		}
+		return jsonResponse({ ok: false, error: saveError }, 400)
 	}
 
 	// Post-commit provider link must not claim the save failed — a create retry

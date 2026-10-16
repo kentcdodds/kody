@@ -563,8 +563,9 @@ test('account secrets save renames opt-in credentials in place without their kin
 		}),
 	)
 	expect(mockModule.deleteSecret).not.toHaveBeenCalled()
+	// Placement is read under the prior name before the in-place rename commits.
 	expect(mockModule.readStoredCredentialPlacement.mock.lastCall?.[0].name).toBe(
-		'webhook2',
+		'webhook',
 	)
 
 	mockSecretsListing([makeSecret('Henry')])
@@ -596,6 +597,7 @@ test('account secrets save renames opt-in credentials in place without their kin
 	mockSecretsListing([makeSecret('webhook')])
 	mockModule.readStoredCredentialPlacement.mockResolvedValueOnce(placement)
 	mockModule.saveSecret.mockClear()
+	mockModule.renameSecret.mockClear()
 	const rehosted = await save({
 		name: 'webhook',
 		allowedHosts: ['other.example.com'],
@@ -605,6 +607,24 @@ test('account secrets save renames opt-in credentials in place without their kin
 		error: expect.stringContaining('take hosts, not approved hosts'),
 	})
 	expect(mockModule.saveSecret).not.toHaveBeenCalled()
+	expect(mockModule.renameSecret).not.toHaveBeenCalled()
+
+	mockSecretsListing([makeSecret('Henry')])
+	mockModule.readStoredCredentialPlacement.mockResolvedValueOnce(placement)
+	mockModule.renameSecret.mockClear()
+	const rejectedBeforeRename = await createHandler()(
+		postRequest({
+			action: 'save',
+			currentId: 'user::::Henry',
+			name: 'henry',
+			scope: 'user',
+			value: 'https://hooks.example.com/new',
+			allowedHosts: ['other.example.com'],
+			allowedPackages: [],
+		}),
+	)
+	expect(rejectedBeforeRename.status).toBe(400)
+	expect(mockModule.renameSecret).not.toHaveBeenCalled()
 
 	mockSecretsListing([makeSecret('webhook')])
 	mockModule.readStoredCredentialPlacement.mockResolvedValueOnce(placement)
@@ -613,6 +633,46 @@ test('account secrets save renames opt-in credentials in place without their kin
 		allowedHosts: ['HOOKS.example.com'],
 	})
 	expect(unchanged.status).toBe(200)
+})
+
+test('account secrets save rolls back an in-place rename when the later write fails', async () => {
+	const placement = {
+		id: 'cred-webhook',
+		kind: 'url' as const,
+		allowedHosts: ['hooks.example.com'],
+		loginExchange: null,
+		provider: null,
+		inject: {
+			kind: 'header' as const,
+			name: 'Authorization',
+			format: 'Bearer {value}',
+		},
+	}
+	mockSecretsListing([makeSecret('Henry')])
+	mockModule.readStoredCredentialPlacement.mockResolvedValueOnce(placement)
+	mockModule.renameSecret.mockClear()
+	mockModule.saveSecret.mockRejectedValueOnce(new Error('value write failed'))
+
+	const response = await createHandler()(
+		postRequest({
+			action: 'save',
+			currentId: 'user::::Henry',
+			name: 'henry',
+			scope: 'user',
+			value: 'https://hooks.example.com/new',
+			allowedHosts: [],
+			allowedPackages: [],
+		}),
+	)
+	expect(response.status).toBe(400)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'value write failed',
+	})
+	expect(mockModule.renameSecret.mock.calls.map((call) => call[0])).toEqual([
+		expect.objectContaining({ fromName: 'Henry', toName: 'henry' }),
+		expect.objectContaining({ fromName: 'henry', toName: 'Henry' }),
+	])
 })
 
 test('account secrets save still refuses moving an opt-in credential across scopes without its kind', async () => {
