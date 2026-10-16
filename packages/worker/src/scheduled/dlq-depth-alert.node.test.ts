@@ -299,6 +299,27 @@ test('a missing oldest timestamp starts the 15 minute clock on the first non-zer
 	expect(mocks.captureMessage.mock.calls[0]?.[0]).toContain(stuckQueue)
 })
 
+test('a cooldown write failure does not page that queue', async () => {
+	const { kv } = memoryKv()
+	const failingKv = {
+		get: kv.get.bind(kv),
+		put: async () => {
+			throw new Error('kv down')
+		},
+		delete: kv.delete.bind(kv),
+	} as unknown as KVNamespace
+	installQueues({
+		[stuckQueue]: {
+			backlogCount: 3,
+			oldestMessageTimestampMs: now.getTime() - 16 * 60_000,
+		},
+	})
+	await expect(
+		checkDlqDepthAndAlert({ env: productionEnv(failingKv), now }),
+	).rejects.toThrow(/kody-webhook-dispatch-dlq \(state write failed\)/)
+	expect(mocks.captureMessage).not.toHaveBeenCalled()
+})
+
 test('one unread queue fails the lane after a sibling stuck queue has already paged', async () => {
 	consoleWarn.mockImplementation(() => {})
 	const { kv } = memoryKv()

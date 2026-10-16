@@ -138,6 +138,20 @@ export async function checkDlqDepthAndAlert(input: {
 		cooldown: 0,
 	}
 	const failures: Array<string> = []
+	const persist = async (
+		queueName: string,
+		stored: DlqDepthState,
+		state: DlqDepthState,
+	) => {
+		try {
+			await writeStateIfChanged(kv, queueName, stored, state)
+			return true
+		} catch (error) {
+			failures.push(`${queueName} (state write failed)`)
+			console.debug('dlq-depth-alert-state-write-failed', { queueName, error })
+			return false
+		}
+	}
 
 	await Promise.all(
 		productionDeadLetterQueueNames.map(async (queueName) => {
@@ -168,7 +182,7 @@ export async function checkDlqDepthAndAlert(input: {
 			})
 			if (verdict.kind === 'healthy') {
 				counts.healthy += 1
-				await writeStateIfChanged(kv, queueName, stored, {})
+				await persist(queueName, stored, {})
 				return
 			}
 			// Keep the start of this nonempty episode even when a later sample
@@ -184,15 +198,22 @@ export async function checkDlqDepthAndAlert(input: {
 			}
 			if (verdict.kind === 'pending') {
 				counts.pending += 1
-				await writeStateIfChanged(kv, queueName, stored, next)
+				await persist(queueName, stored, next)
 				return
 			}
 			counts.sustained += 1
 			if (isOnCooldown(stored.alertedMs, now, cooldownMinutes)) {
 				counts.cooldown += 1
-				await writeStateIfChanged(kv, queueName, stored, next)
+				await persist(queueName, stored, next)
 				return
 			}
+			// Store the cooldown before paging. A failed write must not leave a
+			// page that the next tick will send again.
+			const recorded = await persist(queueName, stored, {
+				...next,
+				alertedMs: now.getTime(),
+			})
+			if (!recorded) return
 			reportDlqDepth({
 				queueName,
 				queueId,
@@ -200,17 +221,11 @@ export async function checkDlqDepthAndAlert(input: {
 				verdict,
 			})
 			counts.alerted += 1
-			await writeStateIfChanged(kv, queueName, stored, {
-				...next,
-				alertedMs: now.getTime(),
-			})
 		}),
 	)
 
 	if (failures.length > 0) {
-		throw new Error(
-			`DLQ depth alert could not read ${failures.sort().join(', ')}.`,
-		)
+		throw new Error(`DLQ depth alert failed for ${failures.sort().join(', ')}.`)
 	}
 	return { status: 'checked', ...counts }
 }
