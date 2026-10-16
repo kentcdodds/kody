@@ -275,11 +275,13 @@ jobs:
       github.event_name != 'pull_request' || github.event.pull_request.draft ==
       false
     steps:
-      # Self-driving test-time budget: this job fails itself when wall-clock
-      # exceeds 720s (tools/ci/enforce-unit-job-budget.ts). Cap is a cold-run
-      # baseline with headroom; cache hit or miss does not change it. Setup +
-      # tests both count; do not delete tests to stay under. A mid-suite hit
-      # of that budget retries the suite once; assertion failures do not.
+      # Self-driving attempt budget: each Workers suite attempt soft-caps at
+      # ≤720s (tools/ci/enforce-unit-job-budget.ts). Cap is a cold-run
+      # baseline with headroom; cache hit or miss does not change it. Do not
+      # delete tests to stay under. A mid-suite hit retries once; assertion
+      # failures do not. On retry the start epoch resets so the post-suite
+      # check measures the successful attempt; overall job wall is the
+      # 30-minute timeout above.
       - name: ⏱️ Mark job start
         run: echo "UNIT_JOB_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
 
@@ -295,10 +297,11 @@ jobs:
 
       # Soft-cap the first attempt at the remaining unit-job budget so a slow
       # runner cannot burn the whole job timeout and leave Validate as
-      # workers=cancelled (#3763). GNU timeout exits 124 on soft-cap; vitest
-      # assertion failures keep their own non-zero status and never retry.
-      # Keep ADR 0011 per-file isolation (do not disable isolate, warm DOs
-      # from setupFiles, or skip verify).
+      # workers=cancelled (#3763). GNU timeout exits 124 on soft-cap, or 137
+      # when --kill-after must SIGKILL; both are retryable. Vitest assertion
+      # failures keep their own non-zero status and never retry. Keep ADR
+      # 0011 per-file isolation (do not disable isolate, warm DOs from
+      # setupFiles, or skip verify).
       - name: ☁️ Workers unit tests
         run: |
           set -u
@@ -318,18 +321,24 @@ jobs:
           if [ "$status" -eq 0 ]; then
             exit 0
           fi
-          if [ "$status" -ne 124 ]; then
+          # 124 = soft-cap TERM; 137 = --kill-after SIGKILL (128+9).
+          if [ "$status" -ne 124 ] && [ "$status" -ne 137 ]; then
             exit "$status"
           fi
           echo "::warning::Workers unit hit the ≤${attempt_budget_seconds}s attempt budget mid-suite; retrying once (#3763)."
           # Measure the post-suite budget against the successful attempt only.
           echo "UNIT_JOB_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
-          timeout --signal=TERM --kill-after=60s "${attempt_budget_seconds}s" \
-            npm run test:workers
-          status=$?
-          if [ "$status" -eq 124 ]; then
+          # Capture under bash -e: a bare failing timeout would abort before
+          # status=$? and skip the ::error:: annotation.
+          if timeout --signal=TERM --kill-after=60s "${attempt_budget_seconds}s" \
+            npm run test:workers; then
+            status=0
+          else
+            status=$?
+          fi
+          if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
             echo "::error::Workers unit exceeded ≤${attempt_budget_seconds}s on retry (#3763)."
-            exit 124
+            exit "$status"
           fi
           exit "$status"
 

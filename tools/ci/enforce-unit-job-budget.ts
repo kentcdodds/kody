@@ -4,9 +4,12 @@
  * the beginning of the same job. Cache hit or miss does not change the cap.
  *
  * Workers also soft-caps each suite attempt at this budget in Validate and
- * retries once on GNU `timeout` exit 124 so a mid-suite cancel does not paint
- * ✅ Validate red (#3763). Assertion failures keep their own status and never
- * retry. ADR 0011 isolation is unchanged.
+ * retries once on GNU `timeout` exit 124 (or 137 when `--kill-after` must
+ * SIGKILL) so a mid-suite cancel does not paint ✅ Validate red (#3763).
+ * Assertion failures keep their own status and never retry. ADR 0011
+ * isolation is unchanged. On retry, Validate resets the start epoch so the
+ * post-suite check measures the successful attempt only (job wall is the
+ * 30-minute Workers timeout).
  *
  * Usage:
  *   node tools/ci/enforce-unit-job-budget.ts --leg node --start-epoch 1710000000
@@ -14,8 +17,14 @@
  */
 import { isExecutedDirectly } from '../node-runtime.ts'
 
-/** GNU `timeout(1)` exit status when the soft attempt budget fires. */
+/** GNU `timeout(1)` exit status when the soft attempt budget fires (TERM). */
 export const unitJobAttemptTimeoutExitCode = 124
+
+/**
+ * GNU `timeout(1)` exit status when `--kill-after` must SIGKILL (128+9).
+ * Still a soft-cap timeout, not an assertion failure.
+ */
+export const unitJobAttemptKillAfterExitCode = 137
 
 const unitJobBudgets = {
 	node: {
@@ -36,9 +45,12 @@ export function getUnitJobMaxSeconds(leg: UnitJobLeg) {
 	return unitJobBudgets[leg].maxSeconds
 }
 
-/** Soft-cap / job-budget overruns are retryable once; assertion failures are not. */
+/** Soft-cap / kill-after overruns are retryable once; assertion failures are not. */
 export function isRetryableUnitJobAttemptExit(status: number) {
-	return status === unitJobAttemptTimeoutExitCode
+	return (
+		status === unitJobAttemptTimeoutExitCode ||
+		status === unitJobAttemptKillAfterExitCode
+	)
 }
 
 export type UnitJobBudgetResult = {
