@@ -790,6 +790,20 @@ test('fetch placements are one audit row each, and a later place does not read t
 			},
 		}),
 	).toBe(false)
+	// A different package stamp was not authorized by the earlier read.
+	expect(
+		auditResolvedFetchPlacements({
+			env: t.env,
+			orgId: t.orgId,
+			actor: owner,
+			packageStamp: claimedPackageStamp(t.packageId),
+			baseUrl: 'https://example.com',
+			credential: {
+				...credential,
+				placements: [{ kind: 'body' }],
+			},
+		}),
+	).toBe(false)
 	expect(
 		auditResolvedFetchPlacements({
 			env: t.env,
@@ -819,7 +833,41 @@ test('fetch placements are one audit row each, and a later place does not read t
 	expect(details(rows[2])).toMatchObject({
 		host: 'api.example.com',
 		name: 'orgToken',
+		packageStampKind: 'none',
 	})
+	expect(JSON.stringify(rows)).not.toContain(secretValue)
+})
+
+test('a header named body stays distinct from a body placement', async () => {
+	const t = await setup()
+	const owner = t.personRequest(t.ownerStableId, 'owner', 'owner')
+	await setSecretAllowedHosts({
+		env: t.env,
+		userId: t.orgId,
+		name: 'orgToken',
+		scope: 'user',
+		allowedHosts: ['api.example.com'],
+	})
+	const readsBefore = valueReads.length
+	await resolveCredential({
+		env: t.env,
+		orgId: t.orgId,
+		actor: owner,
+		baseUrl: 'https://example.com',
+		credential: {
+			use: 'secret',
+			name: 'orgToken',
+			storageContext: { sessionId: null, appId: null, packageId: null },
+			requestHost: 'api.example.com',
+			placements: [{ kind: 'header', name: 'Body' }, { kind: 'body' }],
+		},
+	})
+	expect(valueReads.length - readsBefore).toBe(1)
+	const rows = await t.auditRows()
+	expect(rows.map((row) => details(row).placement)).toEqual([
+		'header:body',
+		'body',
+	])
 	expect(JSON.stringify(rows)).not.toContain(secretValue)
 })
 

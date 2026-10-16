@@ -71,6 +71,7 @@ import {
 	vaultSecretResolver,
 	webhookSecretResolver,
 } from './secret-resolvers.ts'
+import { type PackageStamp } from './package-stamp.ts'
 import { assertSelfPublishedPackageResolvesNothing } from './self-published-package-guard.ts'
 import { signingCredentialResolver } from './signing-resolver.ts'
 import { urlCredentialResolver } from './url-resolver.ts'
@@ -128,6 +129,8 @@ async function resolveWith<U extends CredentialUse>(
 		if (outcome.result === 'success') {
 			rememberResolvedFetchAudit({
 				actor: input.actor,
+				orgId: input.orgId,
+				packageStamp: input.packageStamp,
 				credential,
 				subject,
 				labels: subjects.flatMap((row) =>
@@ -232,12 +235,25 @@ function auditSubjectFor(
 	}))
 }
 
-function fetchAuditCacheKey(credential: CredentialTarget): string | null {
+function fetchAuditCacheKey(input: {
+	orgId: string
+	packageStamp?: PackageStamp | null
+	credential: CredentialTarget
+}): string | null {
+	const { credential } = input
+	const identity = fetchCredentialIdentity(credential)
+	if (!identity) return null
+	const stamp = input.packageStamp
+	const stampKey = stamp ? `${stamp.kind}:${stamp.packageId}` : 'none'
+	return `${identity}\0${input.orgId}\0${stampKey}\0${fetchStorageKey(credential)}`
+}
+
+function fetchCredentialIdentity(credential: CredentialTarget): string | null {
 	switch (credential.use) {
 		case 'secret':
 			return `secret\0${credential.requestHost ?? ''}\0${credential.scope ?? ''}\0${credential.name}`
 		case 'integration-token':
-			return `integration-token\0${credential.requestHost ?? ''}\0${credential.name}`
+			return `integration-token\0${credential.requestHost ?? ''}\0${credential.name}\0${credential.packageKodyId ?? ''}`
 		case 'provider-secret':
 			return `provider-secret\0${credential.requestHost ?? ''}\0${credential.provider}\0${credential.ref}`
 		case 'package-secret-mount':
@@ -258,13 +274,42 @@ function fetchAuditCacheKey(credential: CredentialTarget): string | null {
 	}
 }
 
+/** Package and storage buckets the resolution was authorized for. */
+function fetchStorageKey(credential: CredentialTarget): string {
+	switch (credential.use) {
+		case 'secret':
+		case 'provider-secret': {
+			const storage = credential.storageContext
+			return `${storage.packageId ?? ''}\0${storage.sessionId ?? ''}\0${storage.appId ?? ''}\0${storage.storageId ?? ''}`
+		}
+		case 'integration-token':
+		case 'package-secret-mount':
+		case 'webhook-secret':
+		case 'integration-refresh':
+		case 'mcp-connection':
+		case 'url':
+		case 'login':
+		case 'signing':
+		case 'client-key':
+		case 'client-oauth':
+		case 'client-oauth-refresh':
+			return ''
+		default: {
+			const exhaustive: never = credential
+			throw new Error(`Unhandled credential use: ${String(exhaustive)}`)
+		}
+	}
+}
+
 function rememberResolvedFetchAudit(input: {
 	actor: RequestContext | null
+	orgId: string
+	packageStamp?: PackageStamp | null
 	credential: CredentialTarget
 	subject: CredentialAuditSubject
 	labels: ReadonlyArray<string>
 }) {
-	const key = fetchAuditCacheKey(input.credential)
+	const key = fetchAuditCacheKey(input)
 	if (!input.actor || !key) return
 	let byCredential = resolvedFetchAudits.get(input.actor)
 	if (!byCredential) {
@@ -285,13 +330,14 @@ function rememberResolvedFetchAudit(input: {
 
 /**
  * Record fetch placements for a credential this request already resolved
- * successfully. Returns true when that resolution exists, so the caller can
- * skip another read. A miss returns false and the caller resolves as usual.
+ * successfully under the same org, package stamp, and storage buckets.
+ * Returns true when that resolution exists, so the caller can skip another
+ * read. A different authority is a miss: the caller resolves as usual.
  */
 export function auditResolvedFetchPlacements(
 	input: ResolveCredentialInput<CredentialTarget>,
 ): boolean {
-	const key = fetchAuditCacheKey(input.credential)
+	const key = fetchAuditCacheKey(input)
 	const actor = input.actor
 	if (!key || !actor) return false
 	const cached = resolvedFetchAudits.get(actor)?.get(key)

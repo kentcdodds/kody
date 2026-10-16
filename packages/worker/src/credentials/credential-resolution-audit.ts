@@ -28,7 +28,8 @@ export const credentialResolveAuditAction = 'credential.resolve'
  * the name the caller asked for goes in the details. Fetch uses record
  * `details.host`, the host the value is sent to, so a review can compare
  * declared and used hosts. Placeholder fills also record `details.placement`:
- * the lowercase header name, or `url` / `body`.
+ * the lowercase header name, or `url` / `body`. A header named `url` or `body`
+ * is `header:url` or `header:body`.
  */
 export type CredentialAuditSubject = {
 	use: string

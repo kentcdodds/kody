@@ -40,13 +40,16 @@ export type ClientPlacement =
 
 /**
  * Where the fetch gateway filled or refused a placeholder. The audit row
- * stores the lowercase header name, or `url` / `body`. A review counts
- * non-header placements with `placement IN ('url', 'body')`.
+ * stores the lowercase header name, or `url` / `body`. A header named `url`
+ * or `body` is stored as `header:url` or `header:body`, so
+ * `placement IN ('url', 'body')` counts only non-header placements.
  */
 export type CredentialFetchPlacement =
 	| { kind: 'header'; name: string }
 	| { kind: 'url' }
 	| { kind: 'body' }
+
+const reservedFetchPlacementLabels = new Set(['url', 'body'])
 
 /** Audit value for one fetch placement. Header names are lowercased. */
 export function credentialFetchPlacementKey(
@@ -58,6 +61,8 @@ export function credentialFetchPlacementKey(
 			if (!name) {
 				throw new Error('A header credential placement needs a header name.')
 			}
+			// A header literally named url or body must not count as that place.
+			if (reservedFetchPlacementLabels.has(name)) return `header:${name}`
 			return name
 		}
 		case 'url':
