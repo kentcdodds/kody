@@ -22,6 +22,8 @@ import {
 import { insertPackageSecurityAudit } from '#worker/package-capabilities/security-audits-repo.ts'
 import { approvePackageCapabilitySet } from '#worker/package-capabilities/capability-approval-service.ts'
 import { enqueueWentPublicApproval } from '#worker/package-capabilities/went-public-approval.ts'
+import { upsertGrant } from '#worker/orgs/access-writes.ts'
+import { createTestOrgAuditWriter } from '#worker/test-support/create-audit-db.ts'
 import {
 	type ApprovalViewer,
 	capabilityGrantLines,
@@ -306,6 +308,69 @@ test('denying a paused publish drops it and records the denial', async () => {
 		'approval.bundle.create',
 		'approval.bundle.deny',
 	])
+})
+
+test('write-only members see went_public but cannot deny it', async () => {
+	const t = await setup()
+	await upsertGrant({
+		db: t.db,
+		orgId: t.acmeId,
+		resourceType: 'package',
+		resourceId: t.savedPackage.id,
+		family: 'package',
+		subject: { type: 'user', id: t.people.ann.stableUserId },
+		preset: null,
+		permissions: ['package:read', 'package:write'],
+		createdByUserId: t.people.bea.stableUserId,
+		audit: createTestOrgAuditWriter(),
+	})
+	const capabilities = await loadApprovalItemView(t.viewerFor('bea'), {
+		type: 'capabilities',
+		packageId: t.savedPackage.id,
+	})
+	const request = await enqueueWentPublicApproval({
+		env: t.env,
+		ownerUserId: t.acmeId,
+		savedPackage: t.savedPackage,
+		publishedCommit: 'commit-1',
+		fingerprint: capabilities.fingerprint!,
+		requestedByUserId: t.people.bea.stableUserId,
+	})
+	const listed = await approvalPendingListCapability.handler(
+		{ types: ['publish'] },
+		t.agent('ann'),
+	)
+	expect(listed.items).toEqual([
+		expect.objectContaining({
+			type: 'publish',
+			canApprove: false,
+			statusMessage: expect.stringContaining('package:publish'),
+		}),
+	])
+	const view = await loadApprovalItemView(t.viewerFor('ann'), {
+		type: 'publish',
+		requestId: request.id,
+	})
+	expect(view).toMatchObject({ canApprove: false, canDeny: false })
+	const created = await createApprovalBundle({
+		viewer: t.viewerFor('ann'),
+		items: [{ type: 'publish', requestId: request.id }],
+	})
+	const [item] = created.items
+	expect(item).toMatchObject({ canApprove: false, canDeny: false })
+	const denied = await t.decide({
+		person: 'ann',
+		bundleId: created.bundle.id,
+		action: 'deny',
+		item: item!.key,
+		fingerprint: item!.fingerprint!,
+	})
+	expect(denied).toMatchObject({ ok: false, status: 409 })
+	const row = await t.db
+		.prepare(`SELECT status FROM package_approval_requests WHERE id = ?`)
+		.bind(request.id)
+		.first<{ status: string }>()
+	expect(row?.status).toBe('pending')
 })
 
 test('concurrent approve and deny on one item: only the winning decision acts', async () => {

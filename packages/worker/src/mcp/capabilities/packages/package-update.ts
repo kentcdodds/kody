@@ -357,6 +357,19 @@ export const packageUpdateCapability = defineDomainCapability(
 						fingerprint: summary.capabilitySet.fingerprint,
 					})
 					if (!applied.ok) {
+						// A concurrent clear may have removed the pending row —
+						// only hand the owner an approval_url when something
+						// still waits; otherwise ask the agent to retry.
+						const pending = await getPendingWentPublicApproval({
+							env: ctx.env,
+							ownerUserId: owner.ownerUserId,
+							packageId: existing.id,
+						})
+						if (!pending) {
+							throw new McpCallerError(
+								`${applied.error} Nothing is pending for the owner; call packageUpdate with internet_visible true again.`,
+							)
+						}
 						selfPublishError = applied.error
 					}
 				} else {
@@ -372,8 +385,8 @@ export const packageUpdateCapability = defineDomainCapability(
 					})
 				}
 				// Pending when the owner still must Approve (no matching pin yet,
-				// or applying a matching pin's went_public failed). A matching
-				// pin that applied successfully is already internet-visible.
+				// or applying a matching pin's went_public failed with a row
+				// still waiting). A matching pin that applied is already on.
 				if (attempt.status === 'self_published') {
 					internetVisiblePending = false
 				} else if (

@@ -20,10 +20,7 @@ import {
 import { findPackageCapabilityApprovalByFingerprint } from '#worker/package-capabilities/capability-approvals-repo.ts'
 import { loadCapabilityApprovalSummary } from '#worker/package-capabilities/capability-approval-service.ts'
 import { serializeDependencySnapshot } from '#worker/package-capabilities/dependency-snapshot.ts'
-import {
-	enqueueWentPublicApproval,
-	readWentPublicSummary,
-} from '#worker/package-capabilities/went-public-approval.ts'
+import { readWentPublicSummary } from '#worker/package-capabilities/went-public-approval.ts'
 import {
 	getSavedPackageById,
 	updateSavedPackage,
@@ -428,20 +425,9 @@ export async function approveWentPublicRequest(input: {
 	})
 	if (!changed) {
 		// Clear (or another writer) won the race after we claimed the request.
-		// Re-queue so Approve is not lost: claimed-with-no-flag left the
-		// package private and approvalPendingList empty.
-		const fingerprint =
-			typeof approval.details['fingerprint'] === 'string'
-				? approval.details['fingerprint']
-				: summary.capabilitySet.fingerprint
-		await enqueueWentPublicApproval({
-			env: input.env,
-			ownerUserId: input.ownerUserId,
-			savedPackage: livePackage,
-			publishedCommit: summary.publishedCommit,
-			fingerprint,
-			requestedByUserId: input.actorUserId,
-		})
+		// Do not re-enqueue: a concurrent clear deliberately withdrew the ask;
+		// recreating a pending row would undo that cancellation. Callers that
+		// still want internet-visible call packageUpdate / the toggle again.
 		return {
 			ok: false,
 			status: 409,

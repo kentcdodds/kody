@@ -229,12 +229,32 @@ async function approveItem(input: {
 }
 
 /** Denying a paused publish drops it; other denials leave everything as is. */
-async function denyItem(
-	viewer: ApprovalViewer,
-	ref: ApprovalItemRef,
-): Promise<ApproveOutcome> {
+async function denyItem(input: {
+	viewer: ApprovalViewer
+	user: AuthenticatedAppUser
+	ref: ApprovalItemRef
+}): Promise<ApproveOutcome> {
+	const { viewer, ref } = input
+	const notFound = { ok: false as const, error: 'This item is not available.' }
 	switch (ref.type) {
 		case 'publish': {
+			const approval = await getPackageApprovalRequestForOwner(
+				viewer.env.APP_DB,
+				{ id: ref.requestId, ownerUserId: viewer.request.org.id },
+			)
+			if (!approval) return notFound
+			const writable = await loadWritableAccountSavedPackage({
+				env: viewer.env,
+				user: input.user,
+				packageId: approval.packageId,
+				permission: 'package:publish',
+			})
+			if (
+				!writable.ok ||
+				writable.package.ownerUserId !== viewer.request.org.id
+			) {
+				return notFound
+			}
 			const superseded = await resolvePackageApprovalRequest(
 				viewer.env.APP_DB,
 				{
@@ -403,7 +423,11 @@ export async function decideApprovalBundleItem(input: {
 					ref,
 					fingerprint: input.decision.fingerprint,
 				})
-			: await denyItem(viewer, ref)
+			: await denyItem({
+					viewer,
+					user: input.user,
+					ref,
+				})
 	} catch (error) {
 		await releaseApprovalBundleDecision(viewer.env.APP_DB, claim)
 		throw error

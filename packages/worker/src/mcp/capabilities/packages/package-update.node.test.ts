@@ -319,6 +319,42 @@ test('packageUpdate internet_visible with a matching pin turns serving on withou
 	expect(mockModule.enqueueWentPublicApproval).not.toHaveBeenCalled()
 })
 
+test('packageUpdate internet_visible with a matching pin asks to retry when apply fails and nothing is pending', async () => {
+	mockModule.applyMatchingPinInternetVisible.mockReset()
+	mockModule.enqueueWentPublicApproval.mockReset()
+	mockModule.getPendingWentPublicApproval.mockReset()
+	mockModule.getSavedPackageById.mockResolvedValue(createSavedPackage())
+	mockModule.loadCapabilityApprovalSummary.mockResolvedValue({
+		capabilitySet: { entries: [], fingerprint: 'fp-1' },
+		publishedCommit: 'commit-1',
+		fingerprintMatchesApproval: true,
+	})
+	mockModule.attemptSelfPublish.mockResolvedValue({
+		status: 'blocked',
+		blocker: 'enforcement_off',
+	})
+	mockModule.applyMatchingPinInternetVisible.mockResolvedValue({
+		ok: false,
+		error: 'The published version changed.',
+	})
+	mockModule.getPendingWentPublicApproval.mockResolvedValueOnce(null)
+
+	await expect(update({ internet_visible: true })).rejects.toThrow(
+		'The published version changed. Nothing is pending for the owner',
+	)
+	expect(mockModule.enqueueWentPublicApproval).not.toHaveBeenCalled()
+
+	mockModule.getPendingWentPublicApproval.mockResolvedValueOnce({
+		id: 'request-1',
+	})
+	const result = await update({ internet_visible: true })
+	expect(result).toMatchObject({
+		internet_visible_pending: true,
+		approval_url: 'https://heykody.dev/@user/notes/approve-capabilities',
+		self_publish_error: 'The published version changed.',
+	})
+})
+
 test('packageUpdate internet_visible self-publishes a package that declares nothing', async () => {
 	mockModule.approvePackageCapabilitySet.mockReset()
 	mockModule.enqueueWentPublicApproval.mockReset()

@@ -322,17 +322,16 @@ async function publishItemView(
 		decision: decisionView(decision),
 	}
 	const state = publishItemState(request, publishedCommit, decision)
-	const mayApprove =
-		state.canApprove && (await viewerCanApprovePublish(viewer, savedPackage))
-	const publishState = mayApprove
-		? state
-		: state.status === 'pending'
+	const mayPublish = await viewerCanApprovePublish(viewer, savedPackage)
+	const publishState =
+		state.status === 'pending' && !mayPublish
 			? {
 					...state,
 					canApprove: false,
+					canDeny: false,
 					statusMessage:
 						state.statusMessage ??
-						'You can review this on the package’s approval page; approving needs package:publish.',
+						'You can review this on the package’s approval page; deciding needs package:publish.',
 				}
 			: state
 	switch (request.reason) {
