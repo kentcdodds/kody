@@ -314,7 +314,7 @@ function buildGatewayFetchStreamOperation(
 		responses: {
 			'200': {
 				description:
-					'Upstream HTTP response: status, headers, and body, streamed. Not a JSON envelope.',
+					'Upstream HTTP response: status, headers, and body, streamed. Not a JSON envelope. Upstream 4xx/5xx (including 429) are forwarded as the stream, not the JSON Error envelope.',
 				content: {
 					'*/*': {
 						schema: { type: 'string', format: 'binary' },
@@ -322,7 +322,9 @@ function buildGatewayFetchStreamOperation(
 					},
 				},
 			},
-			...documentedErrorResponses(),
+			// Origin-side failures before the stream starts (auth, validation).
+			// Do not list per-status Error refs: upstream statuses ride the 200 stream.
+			default: errorResponseRef,
 		},
 		security: [{ apiToken: [] }],
 		'x-kody-permission': resolved.permission,

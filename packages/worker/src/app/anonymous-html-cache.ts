@@ -43,6 +43,8 @@ const cacheableAnonymousExactPaths = new Set([
 	'/pricing',
 	'/for/business',
 	'/faq',
+	'/about',
+	'/contact',
 	'/case-studies',
 	'/believe',
 	...withAgents.map((agent) => withAgentHref(agent.slug)),

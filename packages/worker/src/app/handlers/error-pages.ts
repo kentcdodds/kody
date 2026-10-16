@@ -22,7 +22,11 @@ export async function renderIllustratedNotFoundPage(input: {
 			env: input.env,
 			requestUrl: input.request.url,
 		})
-		return markdownResponse(buildNotFoundMarkdown(origin), 404)
+		const response = markdownResponse(buildNotFoundMarkdown(origin), 404)
+		// Match HTML 404s: never cache a not-found so a later-created route is not
+		// stuck behind a stale markdown miss for agents or shared caches.
+		response.headers.set('Cache-Control', 'no-store')
+		return response
 	}
 	return withVaryAccept(
 		await renderAppPage({

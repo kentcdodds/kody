@@ -105,6 +105,7 @@ test('GET /404 and /500 are explicit illustrated error routes', async () => {
 	expect(markdownNotFound.headers.get('content-type')).toBe(
 		'text/markdown; charset=utf-8',
 	)
+	expect(markdownNotFound.headers.get('Cache-Control')).toBe('no-store')
 	const markdownBody = await markdownNotFound.text()
 	expect(markdownBody.length).toBeGreaterThan(20)
 	expect(markdownBody).toContain('# Not found')
