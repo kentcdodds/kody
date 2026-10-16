@@ -85,9 +85,10 @@ WHERE g.deleted_at IS NULL
 
 /**
  * Org audit rows for credentials where the actor is not the org id. A
- * `credential.resolve` row's resource id is the credential id. AUDIT_DB has
- * no org_memberships / grants (APP_DB only), so owner and grant filtering
- * happens in JS after APP_DB membership and grant queries.
+ * `credential.resolve` row's resource id is the credential id. The action
+ * filter keeps per-invocation `mcp.call` rows out of this capped scan.
+ * AUDIT_DB has no org_memberships / grants (APP_DB only), so owner and
+ * grant filtering happens in JS after APP_DB membership and grant queries.
  */
 /** Cap on AUDIT_DB candidates before APP_DB owner/grant filtering. */
 export const credentialAuditCandidateLimit = 500
@@ -97,7 +98,8 @@ export const credentialAuditCandidateSql = `SELECT e.org_id AS org_id,
 	e.resource_id AS resource_id, e.actor_user_id AS actor_user_id,
 	e.result AS result, e.created_at AS created_at
 FROM org_audit_events e
-WHERE e.resource_type IN ('secret', 'secret-provider', 'integration', 'mcp-server')
+WHERE e.action = 'credential.resolve'
+	AND e.resource_type IN ('secret', 'secret-provider', 'integration', 'mcp-server')
 	AND e.actor_user_id IS NOT NULL
 	AND e.actor_user_id != e.org_id
 ORDER BY e.created_at DESC

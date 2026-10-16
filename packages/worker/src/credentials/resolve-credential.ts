@@ -22,7 +22,10 @@
  * 4. only then applies the credential, the one step that reads storage;
  * 5. schedules exactly one `credential.resolve` org audit row for every
  *    outcome (success, not found, denied, failed), for every kind of actor.
- *    The row never holds the credential value.
+ *    The row never holds the credential value. A later MCP tool call is not
+ *    part of that row: each `callTool` on the connection handle writes its
+ *    own `mcp.call` row (tool name, connection, success or failure, error
+ *    class, duration) and never the arguments or return value.
  *
  * A request with no acting person holds no permissions. The only path with
  * no request at all is webhook ingress verifying a signature, which passes an

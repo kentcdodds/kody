@@ -96,9 +96,12 @@ test('credential exposure SQL is read-only and matches multi-member / outside-gr
 	])
 })
 
-test('audit candidate SQL embeds the truncation limit', () => {
+test('audit candidate SQL embeds the truncation limit and only credential.resolve', () => {
 	expect(credentialAuditCandidateSql).toContain(
 		`LIMIT ${credentialAuditCandidateLimit}`,
+	)
+	expect(credentialAuditCandidateSql).toContain(
+		"e.action = 'credential.resolve'",
 	)
 })
 

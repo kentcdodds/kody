@@ -1,0 +1,162 @@
+/**
+ * One `org_audit_events` row per MCP tool invocation, action `mcp.call`.
+ *
+ * `credential.resolve` stays one row for the connection decision. This row
+ * records the tool name, the connection, success or failure, the error
+ * class, and how long the call took. It never records arguments, return
+ * values, or error messages: those are caller data and would make every
+ * tool call a place to leak credentials into the audit log.
+ */
+import * as Sentry from '@sentry/cloudflare'
+import { waitUntil } from 'cloudflare:workers'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { type RequestContext } from '@kody-internal/shared/request-context.ts'
+import { auditDatabaseFromEnv } from '#worker/audit-log.ts'
+import { logOrgAuditEvent } from '#worker/orgs/org-audit.ts'
+import { type PackageStamp } from './package-stamp.ts'
+
+export const mcpCallAuditAction = 'mcp.call'
+
+/** Tool result with `isError: true`. The flag is read; the body is not. */
+const mcpToolResultErrorClass = 'McpToolResult'
+
+const errorClassNamePattern = /^[A-Za-z][A-Za-z0-9_]{0,63}$/
+const storedErrorClassPattern = /^[A-Za-z][A-Za-z0-9_]{0,63}(?::-?\d{1,6})?$/
+const maxErrorCode = 999_999
+const maxAuditLabelLength = 128
+
+export type McpCallAuditOutcome =
+	| { result: 'success' }
+	| { result: 'failure'; errorClass: string }
+
+/**
+ * Error class only: the constructor name, plus a small integer code when
+ * the thrown value has one (MCP `McpError`). Messages, string codes, and
+ * arbitrary `data` stay out — they often echo arguments.
+ */
+export function mcpCallErrorClass(error: unknown): string {
+	if (!(error instanceof Error) || !errorClassNamePattern.test(error.name)) {
+		return 'unknown'
+	}
+	const code = (error as { code?: unknown }).code
+	if (
+		typeof code === 'number' &&
+		Number.isInteger(code) &&
+		Math.abs(code) <= maxErrorCode
+	) {
+		return `${error.name}:${code}`
+	}
+	return error.name
+}
+
+export function mcpCallOutcomeFromResult(result: {
+	isError?: boolean
+}): McpCallAuditOutcome {
+	if (result.isError === true) {
+		return { result: 'failure', errorClass: mcpToolResultErrorClass }
+	}
+	return { result: 'success' }
+}
+
+/** Bound a server or tool name. Control characters are dropped, not stored. */
+function mcpCallAuditLabel(value: string): string {
+	const cleaned = value.replace(/[\p{Cc}\p{Cf}]/gu, '').trim()
+	if (cleaned.length === 0) return 'unknown'
+	return cleaned.length > maxAuditLabelLength
+		? cleaned.slice(0, maxAuditLabelLength)
+		: cleaned
+}
+
+function storedErrorClass(errorClass: string) {
+	return storedErrorClassPattern.test(errorClass) ? errorClass : 'unknown'
+}
+
+function actorKind(actor: RequestContext | null) {
+	if (!actor) return 'platform'
+	return actor.actor ? 'person' : 'automation'
+}
+
+/**
+ * Written after the call via `waitUntil`. A failed write is logged and
+ * reported, never thrown, so the tool result the caller saw still wins.
+ */
+export function scheduleMcpCallAudit(input: {
+	env: Env
+	orgId: OwnerId
+	actor: RequestContext | null
+	packageStamp: PackageStamp | null | undefined
+	serverId: string
+	serverName: string
+	toolName: string
+	durationMs: number
+	outcome: McpCallAuditOutcome
+}) {
+	const db = auditDatabaseFromEnv(input.env)
+	// `undefined` is the generic-test opt-out (see `auditDatabaseFromEnv`).
+	if (db === undefined) return
+	const request = input.actor
+	const { outcome } = input
+	const durationMs = Math.max(0, Math.round(input.durationMs))
+	const event = {
+		orgId: input.orgId,
+		action: mcpCallAuditAction,
+		resourceType: 'mcp-server',
+		resourceId: input.serverId,
+		result: outcome.result,
+	}
+	const details = {
+		use: 'mcp-connection',
+		toolName: mcpCallAuditLabel(input.toolName),
+		serverName: mcpCallAuditLabel(input.serverName),
+		serverId: input.serverId,
+		durationMs,
+		actorKind: actorKind(request),
+		ownerKind: 'org',
+		packageStampKind: input.packageStamp?.kind ?? 'none',
+		packageId: input.packageStamp?.packageId ?? null,
+		...(outcome.result === 'success'
+			? {}
+			: { errorClass: storedErrorClass(outcome.errorClass) }),
+	}
+	try {
+		waitUntil(
+			(async () => {
+				if (!db) throw new Error('AUDIT_DB binding is not configured.')
+				await logOrgAuditEvent({
+					db,
+					...event,
+					actorUserId: request?.actor?.userId ?? null,
+					actorUsername: request?.actor?.username ?? null,
+					credentialKind: request?.credential.kind ?? null,
+					credentialId: request?.credential.id ?? null,
+					details,
+				})
+			})().catch((error: unknown) => {
+				reportMcpCallAuditFailure(event, error)
+			}),
+		)
+	} catch (error) {
+		reportMcpCallAuditFailure(event, error)
+	}
+}
+
+function reportMcpCallAuditFailure(
+	event: { action: string; orgId: string; result: string },
+	error: unknown,
+) {
+	console.error('Failed to record MCP tool call audit event:', {
+		action: event.action,
+		orgId: event.orgId,
+		result: event.result,
+		error,
+	})
+	Sentry.withScope((scope) => {
+		scope.setTag('org_audit.action', event.action)
+		scope.setContext('org_audit', {
+			action: event.action,
+			orgId: event.orgId,
+			result: event.result,
+		})
+		Sentry.captureException(error)
+	})
+}

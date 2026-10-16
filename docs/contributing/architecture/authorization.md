@@ -97,7 +97,10 @@ Profiles and the signed-in step are the other denials that can fire.
 5. schedules one `credential.resolve` row in `org_audit_events` per resolution
    (success, not found, denied, failed) via `waitUntil`, with the actor, the
    credential id (null when nothing resolved) and requested name, owner kind,
-   and package stamp kind. It never holds the value.
+   and package stamp kind. It never holds the value. Each later call on an MCP
+   connection handle writes its own `mcp.call` row (tool name, connection,
+   success or failure, error class, and duration) and never the arguments or
+   return value. That row is not a second `credential.resolve`.
 
 **Credential ids and grants.** Org secrets, OAuth integrations, MCP servers, and
 vault bindings each have a stable credential id: the database assigns one on

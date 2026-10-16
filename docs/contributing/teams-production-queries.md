@@ -88,10 +88,12 @@ before and after counts were checked inside the migration, which aborts on any
 mismatch.
 
 `credential.resolve` audit rows carry the credential id as their resource id and
-are matched to grants by it. Rows written before stable ids carry a name instead
-and never match a grant. A package in the actor's personal org that is not an
-unadopted Community fork and is not internet-visible does not require declared
-needs.
+are matched to grants by it. The candidate query is limited to that action so
+per-invocation `mcp.call` rows (MCP tool name, connection, outcome, error class,
+and duration — never arguments or return values) cannot fill the 500-row cap.
+Rows written before stable ids carry a name instead and never match a grant. A
+package in the actor's personal org that is not an unadopted Community fork and
+is not internet-visible does not require declared needs.
 
 ## Read-only guarantees
 

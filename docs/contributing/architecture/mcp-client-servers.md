@@ -246,11 +246,15 @@ API response, MCP tool, or page returns the secret after save.
 - Execute: the `kody.mcp` proxy exposes tools as
   `kody.mcp["<server-name>"].<tool>(input)` and never as flat `kody.*`
   functions. Search capability detail returns the exact accessor.
-- Tool calls flow worker → hub DO `callTool` → `MCPClientManager.callTool` →
-  remote server. At the synthesized capability boundary, results are wrapped
-  with explicit `__mcpContent` / companion markers when protocol content must
-  reach the upstream client (especially non-text blocks such as images).
-  Structured content remains available for code; `isError` is preserved. See
+- Tool calls flow worker → credential door `callTool` → hub DO `callTool` →
+  `MCPClientManager.callTool` → remote server. The door writes one `mcp.call`
+  org audit row per invocation (tool name, server, success or failure, error
+  class, duration) and does not record arguments or return values.
+  `credential.resolve` stays the single row for the connection decision. At the
+  synthesized capability boundary, results are wrapped with explicit
+  `__mcpContent` / companion markers when protocol content must reach the
+  upstream client (especially non-text blocks such as images). Structured
+  content remains available for code; `isError` is preserved. See
   [Raw MCP content blocks](../../use/raw-content-blocks.md).
 - Malformed third-party content blocks are rejected with a source-specific
   error. Image/audio URL-only payloads are not fetched.

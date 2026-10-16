@@ -93,6 +93,8 @@ export type McpClientHubClient = {
 /**
  * Call a tool with the org's stored MCP OAuth credentials. Only
  * `resolveCredential` may call this (credential-storage-boundary test).
+ * The mcp-connection handle audits each invocation; this function does not,
+ * and it must not grow an audit of arguments or return values.
  */
 export async function callMcpServerTool(
 	input: McpClientHubClientInput & {
