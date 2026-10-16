@@ -109,13 +109,16 @@ function warningFor(input: {
 
 /**
  * Materialize a StorageRunner SQL cursor. Read cursors stop once `rowsRead`
- * passes the ceiling so a streaming scan cannot keep going. Mutating
- * statements (`drainOverflow`) keep stepping so RETURNING writes finish.
+ * passes the ceiling so a streaming scan cannot keep going. `drainOverflow`
+ * keeps stepping so a RETURNING write finishes. `writeFinished` is any
+ * statement that already changed the bucket, including DDL such as
+ * `CREATE TABLE AS SELECT`: those warn and meter instead of failing the call.
  */
 export function collectStorageSqlCursor(
 	cursor: StorageSqlReadCursor,
 	options: {
 		drainOverflow: boolean
+		writeFinished: boolean
 		maxRows: number
 	},
 ): StorageSqlReadCollection {
@@ -123,7 +126,7 @@ export function collectStorageSqlCursor(
 	let truncated = false
 	let readCeilingExceeded = false
 	for (const row of cursor) {
-		if (!options.drainOverflow && cursor.rowsRead > storageSqlRowsReadCeiling) {
+		if (!options.writeFinished && cursor.rowsRead > storageSqlRowsReadCeiling) {
 			readCeilingExceeded = true
 			break
 		}
@@ -134,10 +137,10 @@ export function collectStorageSqlCursor(
 		}
 		rows.push(row)
 	}
-	if (!options.drainOverflow && cursor.rowsRead > storageSqlRowsReadCeiling) {
+	if (!options.writeFinished && cursor.rowsRead > storageSqlRowsReadCeiling) {
 		readCeilingExceeded = true
 	}
-	const writeFinished = options.drainOverflow
+	const writeFinished = options.writeFinished
 	const disposition = storageSqlReadDisposition({
 		rowsRead: cursor.rowsRead,
 		writeFinished,

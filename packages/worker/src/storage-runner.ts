@@ -493,9 +493,125 @@ const storageSqlReturningMutationVerbs = [
 	'replace',
 ] as const
 
-/** Keyword token match for INSERT/UPDATE/DELETE/REPLACE after a WITH clause. */
+const storageSqlWriteVerbs = [
+	...storageSqlReturningMutationVerbs,
+	'create',
+	'drop',
+	'alter',
+] as const
+
+/** Keyword token match for a write verb after a WITH clause. */
+const storageSqlWriteVerbInWithPattern =
+	/(?:^|[^a-z0-9_])(?:insert|update|delete|replace|create|drop|alter)(?:[^a-z0-9_]|$)/
+
 const storageSqlReturningMutationVerbInWithPattern =
 	/(?:^|[^a-z0-9_])(?:insert|update|delete|replace)(?:[^a-z0-9_]|$)/
+
+/**
+ * Replace comments and quoted literals with spaces so verb checks cannot see
+ * words inside strings, identifiers, or comments.
+ */
+function maskSqlLiteralsAndComments(query: string) {
+	let masked = ''
+	let inSingleQuote = false
+	let inDoubleQuote = false
+	let inBacktickQuote = false
+	let inBracketQuote = false
+	let inLineComment = false
+	let inBlockComment = false
+
+	for (let index = 0; index < query.length; index += 1) {
+		const current = query.charAt(index)
+		const next = query.charAt(index + 1)
+
+		if (inLineComment) {
+			masked += current === '\n' ? '\n' : ' '
+			if (current === '\n') inLineComment = false
+			continue
+		}
+		if (inBlockComment) {
+			masked += ' '
+			if (current === '*' && next === '/') {
+				inBlockComment = false
+				masked += ' '
+				index += 1
+			}
+			continue
+		}
+		if (inSingleQuote) {
+			masked += ' '
+			if (current === "'" && next === "'") {
+				masked += ' '
+				index += 1
+				continue
+			}
+			if (current === "'") inSingleQuote = false
+			continue
+		}
+		if (inDoubleQuote) {
+			masked += ' '
+			if (current === '"' && next === '"') {
+				masked += ' '
+				index += 1
+				continue
+			}
+			if (current === '"') inDoubleQuote = false
+			continue
+		}
+		if (inBacktickQuote) {
+			masked += ' '
+			if (current === '`') inBacktickQuote = false
+			continue
+		}
+		if (inBracketQuote) {
+			masked += ' '
+			if (current === ']') inBracketQuote = false
+			continue
+		}
+		if (current === '-' && next === '-') {
+			inLineComment = true
+			masked += '  '
+			index += 1
+			continue
+		}
+		if (current === '/' && next === '*') {
+			inBlockComment = true
+			masked += '  '
+			index += 1
+			continue
+		}
+		if (current === "'") {
+			inSingleQuote = true
+			masked += ' '
+			continue
+		}
+		if (current === '"') {
+			inDoubleQuote = true
+			masked += ' '
+			continue
+		}
+		if (current === '`') {
+			inBacktickQuote = true
+			masked += ' '
+			continue
+		}
+		if (current === '[') {
+			inBracketQuote = true
+			masked += ' '
+			continue
+		}
+		masked += current
+	}
+
+	return masked
+}
+
+function sqlStartsWithVerb(normalized: string, verbs: ReadonlyArray<string>) {
+	for (const verb of verbs) {
+		if (normalized.startsWith(verb)) return true
+	}
+	return false
+}
 
 /**
  * True when `query` can mutate while yielding rows (SQLite RETURNING on
@@ -504,22 +620,29 @@ const storageSqlReturningMutationVerbInWithPattern =
  * Used by {@link collectStorageSqlCursor} drainOverflow: only these statements must
  * keep stepping past the row cap so the write finishes. Pure reads — including
  * `WITH … SELECT` sent with `writable: true` from packageStorage — stop early.
+ * Words inside strings, identifiers, and comments are ignored.
  */
 export function isStorageSqlReturningMutation(query: string) {
-	const trimmed = query.trim()
-	if (!trimmed) {
-		return false
+	const normalized = maskSqlLiteralsAndComments(query).trim().toLowerCase()
+	if (!normalized) return false
+	if (sqlStartsWithVerb(normalized, storageSqlReturningMutationVerbs)) {
+		return true
 	}
-	const normalized = trimmed.toLowerCase()
-	for (const verb of storageSqlReturningMutationVerbs) {
-		if (normalized.startsWith(verb)) {
-			return true
-		}
-	}
-	if (!normalized.startsWith('with')) {
-		return false
-	}
+	if (!normalized.startsWith('with')) return false
 	return storageSqlReturningMutationVerbInWithPattern.test(normalized)
+}
+
+/**
+ * True when the statement can change the bucket, including DDL such as
+ * `CREATE TABLE AS SELECT`. Unlike {@link isStorageSqlReturningMutation}, this
+ * does not require a row-yielding DML verb. Quoted words do not count.
+ */
+export function isStorageSqlWrite(query: string) {
+	const normalized = maskSqlLiteralsAndComments(query).trim().toLowerCase()
+	if (!normalized) return false
+	if (sqlStartsWithVerb(normalized, storageSqlWriteVerbs)) return true
+	if (!normalized.startsWith('with')) return false
+	return storageSqlWriteVerbInWithPattern.test(normalized)
 }
 
 export const readOnlyStorageSqlDeniedMessage =
@@ -747,10 +870,11 @@ class StorageRunnerBase extends DurableObject<Env> {
 			query,
 			...params,
 		)
-		const drainOverflow =
-			Boolean(input.writable) && isStorageSqlReturningMutation(query)
+		const writable = Boolean(input.writable)
+		const drainOverflow = writable && isStorageSqlReturningMutation(query)
 		return collectStorageSqlCursor(cursor, {
 			drainOverflow,
+			writeFinished: writable && isStorageSqlWrite(query),
 			maxRows: maxStorageSqlQueryRows,
 		})
 	}

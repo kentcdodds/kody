@@ -183,9 +183,12 @@ The returned row list stays capped at `maxStorageSqlQueryRows` (1,000) with
 | `storageSqlRowsReadCeiling` | 1,000,000,000 | A read cursor stops. The call fails with `storage.sql read stopped…`. Rows already examined are still metered (`outcome: error`, so they stay in `event_count` and the credit debit). |
 
 Mutating statements (`INSERT` / `UPDATE` / `DELETE` / `REPLACE`, including after
-`WITH`) keep stepping so a write is not cut off. If that scan passes the
-ceiling, the call succeeds and `warning` says the write finished and the rows
-are metered.
+`WITH`) keep stepping so a write is not cut off. Other writes, including
+`CREATE TABLE AS SELECT`, also succeed when the scan passes the ceiling:
+`warning` says the write finished and the rows are metered, because the bucket
+change is already committed. Verb checks ignore words inside strings,
+identifiers, and comments, so a `WITH … SELECT` that only mentions `insert`
+inside quotes stays a read and still stops at the ceiling.
 
 Both constants live in `packages/worker/src/storage-sql-read-policy.ts`. They
 are a gut feel, not a price: 1,000,000 rows is one unit at the published

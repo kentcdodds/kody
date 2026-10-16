@@ -57,6 +57,7 @@ test('storage sql reads under the warn line stay quiet', () => {
 	})
 	const collected = collectStorageSqlCursor(source, {
 		drainOverflow: false,
+		writeFinished: false,
 		maxRows: 1_000,
 	})
 	expect(collected.warning).toBeNull()
@@ -84,6 +85,7 @@ test('an oversized storage sql read is allowed and warned', () => {
 	})
 	const collected = collectStorageSqlCursor(source, {
 		drainOverflow: false,
+		writeFinished: false,
 		maxRows: 1_000,
 	})
 	expect(collected.readCeilingExceeded).toBe(false)
@@ -112,6 +114,7 @@ test('a read cursor stops after the ceiling and the error stays caller-clearable
 	})
 	const collected = collectStorageSqlCursor(source, {
 		drainOverflow: false,
+		writeFinished: false,
 		maxRows: 1_000,
 	})
 	expect(source.pulled).toBe(1)
@@ -138,6 +141,7 @@ test('a zero-row scan that already passed the ceiling still stops', () => {
 	})
 	const collected = collectStorageSqlCursor(source, {
 		drainOverflow: false,
+		writeFinished: false,
 		maxRows: 1_000,
 	})
 	expect(collected.readCeilingExceeded).toBe(true)
@@ -158,6 +162,7 @@ test('a mutating statement past the ceiling finishes and warns', () => {
 	})
 	const collected = collectStorageSqlCursor(source, {
 		drainOverflow: true,
+		writeFinished: true,
 		maxRows: 1,
 	})
 	expect(source.pulled).toBe(2)
@@ -169,6 +174,24 @@ test('a mutating statement past the ceiling finishes and warns', () => {
 	expect(settleStorageSqlRead(collected).outcome).toBe('success')
 })
 
+test('a committed write that is not a RETURNING statement warns instead of failing', () => {
+	const source = cursor({
+		rows: [],
+		rowsReadAt: () => 0,
+	})
+	Object.defineProperty(source, 'rowsRead', {
+		get: () => storageSqlRowsReadCeiling + 1,
+	})
+	const collected = collectStorageSqlCursor(source, {
+		drainOverflow: false,
+		writeFinished: true,
+		maxRows: 1_000,
+	})
+	expect(collected.readCeilingExceeded).toBe(false)
+	expect(collected.warning).toContain('write finished')
+	expect(settleStorageSqlRead(collected).outcome).toBe('success')
+})
+
 test('read cursors still truncate at the return cap before the ceiling', () => {
 	const source = cursor({
 		rows: [{ value: 1 }, { value: 2 }, { value: 3 }],
@@ -176,6 +199,7 @@ test('read cursors still truncate at the return cap before the ceiling', () => {
 	})
 	const collected = collectStorageSqlCursor(source, {
 		drainOverflow: false,
+		writeFinished: false,
 		maxRows: 2,
 	})
 	expect(source.pulled).toBe(3)
