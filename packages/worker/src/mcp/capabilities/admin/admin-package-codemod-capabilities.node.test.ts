@@ -70,6 +70,8 @@ test('admin package codemod capabilities are fleet-scoped, audited, and role-gat
 	expect(byName.get('adminPackageCodemodScan')?.readOnly).toBe(true)
 	expect(byName.get('adminPackageCodemodApply')?.destructive).toBe(true)
 	expect(byName.get('adminPackageCodemodRevert')?.destructive).toBe(true)
+	expect(byName.get('adminCredentialStampMigrate')?.destructive).toBe(true)
+	expect(byName.get('adminCredentialStampMigrate')?.requiredRole).toBe('admin')
 	expect(adminPackageCodemodApplyCapability.destructive).toBe(true)
 
 	mockModule.runPackageCodemodStep.mockResolvedValue(
