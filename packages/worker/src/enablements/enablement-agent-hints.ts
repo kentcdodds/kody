@@ -107,6 +107,16 @@ export function buildMultiTriggerEnablementHint(
 				? `- ${label} (paused): ask the user to fix the pause; turn-on is Approve, not enablementEnable.`
 				: `- ${label}: ask the user whether to Approve it (enablementEnable cannot turn a webhook on the first time).`
 		}
+		if (trigger.kind === 'cron') {
+			const call = formatEnablementEnableCall({
+				...input,
+				triggerKind: 'cron',
+				triggerName: trigger.name,
+			})
+			return trigger.reason === 'paused'
+				? `- ${label} (paused): ask the user to fix the pause, or re-enable with ${call}.`
+				: `- ${label}: call ${call} to turn it on for the owner (creating a job enables the owner automatically).`
+		}
 		if (isEmailSubscriptionTopic(trigger.name)) {
 			return trigger.reason === 'paused'
 				? `- ${label} (paused): ask the user to fix the pause; turn-on is Approve from the inbox.`
@@ -122,7 +132,7 @@ export function buildMultiTriggerEnablementHint(
 			: `- ${label}: ask the user whether to enable it with ${call}.`
 	})
 	return [
-		'Ask the user whether to turn these triggers on for them (publishing does not auto-enable webhooks or subscriptions; new package jobs enable for the owner on create):',
+		'Enable missing triggers as follows (publishing does not auto-enable webhooks or subscriptions; new package jobs enable for the owner on create):',
 		...lines,
 	].join('\n')
 }

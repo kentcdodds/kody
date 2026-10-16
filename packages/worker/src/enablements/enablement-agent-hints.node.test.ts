@@ -104,10 +104,10 @@ test('multi-trigger publish hint lists each enablementEnable call', () => {
 		],
 	})
 	expect(message).toContain(
-		'Ask the user whether to turn these triggers on for them (publishing does not auto-enable webhooks or subscriptions; new package jobs enable for the owner on create):',
+		'Enable missing triggers as follows (publishing does not auto-enable webhooks or subscriptions; new package jobs enable for the owner on create):',
 	)
 	expect(message).toContain(
-		'enablementEnable({ packageId: "pkg-1", triggerKind: "cron", triggerName: "inbox-refresh" })',
+		'call enablementEnable({ packageId: "pkg-1", triggerKind: "cron", triggerName: "inbox-refresh" }) to turn it on for the owner',
 	)
 	expect(message).toContain(
 		'enablementEnable({ packageId: "pkg-1", triggerKind: "subscription", triggerName: "desk.tick" })',

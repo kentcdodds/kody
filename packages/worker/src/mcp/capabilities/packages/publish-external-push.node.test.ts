@@ -274,7 +274,7 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 				],
 				enablements: {
 					message: expect.stringContaining(
-						'Ask the user whether to turn these triggers on for them',
+						'Enable missing triggers as follows',
 					),
 					triggers: [
 						{
