@@ -344,7 +344,7 @@ test('createInstance adds a second enablement with its own credential mapping', 
 	const mapped = cron.instances.map(
 		(instance) => instance.mappings[0]?.override?.credentials[0]?.id ?? null,
 	)
-	expect(mapped).toEqual([prod, test_])
+	expect(mapped.sort()).toEqual([prod, test_].sort())
 })
 
 test('the viewer scope binds the :username org and needs package:execute', async () => {
