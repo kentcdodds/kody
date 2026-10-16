@@ -109,7 +109,6 @@ function readAppSlugFromReturnTo(returnTo: string) {
 	return raw ? raw.toLowerCase() : undefined
 }
 
-<<<<<<< HEAD
 async function resolveVerifiedHostApp(input: {
 	env: Env
 	orgUsername: string
@@ -129,7 +128,6 @@ async function resolveVerifiedHostApp(input: {
 	}
 }
 
-=======
 /**
  * Leaf from a same-origin `Referer` path `/packages/{leaf}/…`. Used on shared
  * hosts so logout binds to the app that initiated the navigation, not an
@@ -191,7 +189,6 @@ async function resolveLogoutAppSlug(input: {
 	return hostApp?.kodyId ?? null
 }
 
->>>>>>> 559e75e9c (fix(package-apps): bind logout to Referer; keep legacy logout working)
 async function resolveHostApp(input: {
 	request: Request
 	env: Env
