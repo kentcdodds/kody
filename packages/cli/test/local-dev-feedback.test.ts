@@ -198,15 +198,23 @@ test('kody dev check warns on a forwarded fetch body and still passes', async ()
 		)
 		await writeFile(join(root, 'README.md'), '# forward\n')
 		await writeFile(join(root, 'AGENTS.md'), '# Agents\n')
-		await mkdir(join(root, 'src'), { recursive: true })
+		await mkdir(join(root, 'src', 'lib'), { recursive: true })
 		await writeFile(
-			join(root, 'src/post.ts'),
-			`export default async function post(userReport: string) {
+			join(root, 'src', 'lib', 'index.ts'),
+			`export async function postIssue(userReport: string) {
 	await fetch('https://api.example.com/issues', {
 		method: 'POST',
 		headers: { Authorization: 'Bearer {{secret:github}}' },
 		body: JSON.stringify({ body: userReport }),
 	})
+}
+`,
+		)
+		await writeFile(
+			join(root, 'src/post.ts'),
+			`import { postIssue } from './lib'
+export default async function post(userReport: string) {
+	await postIssue(userReport)
 }
 `,
 		)
@@ -224,12 +232,12 @@ test('kody dev check warns on a forwarded fetch body and still passes', async ()
 		assert.equal(code, 0)
 		assert.match(stdout, /^WARN\s+secret-resolution/m)
 		assert.match(stdout, /x-kody-secret-resolution: headers-only/)
-		assert.match(stdout, /src\/post\.ts:/)
+		assert.match(stdout, /src\/lib\/index\.ts:/)
 		assert.match(stdout, /kody dev check passed/)
 
 		await writeFile(
-			join(root, 'src/post.ts'),
-			`export default async function post(userReport: string) {
+			join(root, 'src', 'lib', 'index.ts'),
+			`export async function postIssue(userReport: string) {
 	await fetch('https://api.example.com/issues', {
 		method: 'POST',
 		headers: {

@@ -3,7 +3,7 @@
  * go through secret resolution. Stays off node_modules and test files.
  */
 
-import { access, readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { dirname, extname, join, relative, resolve } from 'node:path'
 import {
 	init as initEsModuleLexer,
@@ -85,8 +85,8 @@ async function resolveSourceFile(absPath: string): Promise<string | null> {
 	}
 	for (const candidate of candidates) {
 		try {
-			await access(candidate)
-			return candidate
+			const info = await stat(candidate)
+			if (info.isFile()) return candidate
 		} catch {
 			// Try the next extension or index file.
 		}
