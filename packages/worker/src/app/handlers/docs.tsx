@@ -1,3 +1,4 @@
+import { buildOpenApiDiscoveryMarkdown } from '#app/agent-discovery.ts'
 import {
 	listPublicWebsitePages,
 	listPublicBlogPages,
@@ -90,6 +91,8 @@ export function buildDocsIndexMarkdown(baseUrl: string): string {
 		'`search({ entity: "guide:{id}" })`. Compact index:',
 		`[${baseUrl}/llms.txt](${baseUrl}/llms.txt).`,
 		'',
+		buildOpenApiDiscoveryMarkdown(baseUrl).trimEnd(),
+		'',
 		...buildDocsIndexSections(baseUrl),
 	]
 	return lines.join('\n')
@@ -121,6 +124,8 @@ export function buildLlmsTxt(baseUrl: string): string {
 		`Start with [What is Kody?](${baseUrl}/docs.md). Each documentation link below is`,
 		'plain markdown; the same content is available to connected agents as',
 		'`search({ entity: "guide:{id}" })`.',
+		'',
+		buildOpenApiDiscoveryMarkdown(baseUrl).trimEnd(),
 		'',
 		...buildDocsIndexSections(baseUrl),
 		'## Website',

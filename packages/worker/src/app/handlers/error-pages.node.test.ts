@@ -87,11 +87,30 @@ test('GET /404 and /500 are explicit illustrated error routes', async () => {
 		request: new Request('https://example.com/404'),
 	} as never)
 	expect(notFoundResponse.status).toBe(404)
+	expect(notFoundResponse.headers.get('vary')?.toLowerCase()).toContain(
+		'accept',
+	)
 	const notFoundHtml = await notFoundResponse.text()
 	expect(notFoundHtml).toContain('<title>Not found</title>')
 	expect(notFoundHtml).toContain('data-testid="not-found-page"')
 	expect(notFoundHtml).toContain('data-error-agent-prompt')
 	expect(readAppRootProps(notFoundHtml).notFound).toBe(true)
+
+	const markdownNotFound = await createNotFoundPageHandler(env).handler({
+		request: new Request('https://example.com/404', {
+			headers: { Accept: 'text/markdown' },
+		}),
+	} as never)
+	expect(markdownNotFound.status).toBe(404)
+	expect(markdownNotFound.headers.get('content-type')).toBe(
+		'text/markdown; charset=utf-8',
+	)
+	const markdownBody = await markdownNotFound.text()
+	expect(markdownBody.length).toBeGreaterThan(20)
+	expect(markdownBody).toContain('# Not found')
+	expect(markdownBody).toContain('/docs')
+	expect(markdownBody).toContain('/sitemap.xml')
+	expect(markdownBody).toContain('/llms.txt')
 
 	const internalErrorResponse = await createInternalErrorPageHandler(
 		env,

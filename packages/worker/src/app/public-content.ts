@@ -27,7 +27,7 @@ export function listPublicWebsitePages() {
 		})),
 		{
 			path: '/docs',
-			title: 'Documentation',
+			title: 'Kody Docs',
 			description: 'Learn how to use Kody.',
 		},
 		{

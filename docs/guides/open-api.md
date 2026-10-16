@@ -1,6 +1,6 @@
 ---
 id: open_api
-title: Open API
+title: Kody Open API
 summary:
   Call Kody over HTTPS at api.kody.codes. MCP api runs one operation
   (operationId + params), including tokenCreate / tokenList / tokenRevoke.
@@ -8,15 +8,16 @@ summary:
 category: platform
 ---
 
-# Open API
+# Kody Open API
 
-The Open API and MCP `api` tool are available to every signed-in account. Call
-Kody over HTTPS at [api.kody.codes](https://api.kody.codes) (`/openapi.json` and
-`/v1/*`). Interactive docs: [api-docs.kody.codes](https://api-docs.kody.codes).
+The Kody Open API and MCP `api` tool are available to every signed-in account.
+Call Kody over HTTPS at [api.kody.codes](https://api.kody.codes)
+(`/openapi.json` and `/v1/*`). Interactive docs:
+[api-docs.kody.codes](https://api-docs.kody.codes).
 
 ## What it is
 
-- **Open API** — JSON HTTP at [api.kody.codes](https://api.kody.codes)
+- **Kody Open API** — JSON HTTP at [api.kody.codes](https://api.kody.codes)
   (`/openapi.json` and `/v1/*`).
 - **MCP `api` tool** — run one Open API operation (`operationId` + `params`)
   from a connected agent. Use it to mint, list, and revoke scoped API tokens

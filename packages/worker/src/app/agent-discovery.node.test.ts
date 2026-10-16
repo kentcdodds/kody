@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { expect, test } from 'vitest'
 import { listBlogPosts } from '#worker/blog/catalog.ts'
 import { listGuides } from '#worker/guides/catalog.ts'
@@ -8,13 +9,22 @@ import {
 	buildApiCatalog,
 	buildAuthMarkdown,
 	buildHomeMarkdown,
+	buildHomeSoftwareApplicationJsonLd,
+	buildNotFoundMarkdown,
+	buildOpenApiDiscoveryMarkdown,
 	buildMcpServerCard,
 	buildRobotsTxt,
 	buildSecurityTxt,
 	buildSitemapXml,
 	formatLinkHeader,
 	getAgentSkill,
+	homeSoftwareApplicationJsonLdCspHash,
+	homeSoftwareApplicationJsonLdScriptText,
+	kodyApiDocsOrigin,
+	kodyGithubUrl,
 	kodyMcpServerCardVersion,
+	kodyOpenApiSpecUrl,
+	kodyOpenApiV1Anchor,
 	listAgentDiscoveryLinks,
 	listPublicSitemapEntries,
 	mcpResourcePath,
@@ -98,6 +108,48 @@ test('agent discovery documents describe the MCP server and public pages', async
 	expect(catalog.linkset[0]?.anchor).toBe(`${origin}${mcpResourcePath}`)
 	expect(catalog.linkset[0]?.['service-desc']?.[0]?.href).toBe(
 		`${origin}/.well-known/mcp/server-card.json`,
+	)
+	const openApiEntry = catalog.linkset.find(
+		(entry) => entry.anchor === kodyOpenApiV1Anchor,
+	)
+	expect(openApiEntry?.['service-desc']?.[0]).toEqual({
+		href: kodyOpenApiSpecUrl,
+		type: 'application/json',
+	})
+	expect(openApiEntry?.['service-doc']?.[0]).toEqual({
+		href: `${kodyApiDocsOrigin}/`,
+		type: 'text/html',
+	})
+	expect(openApiEntry?.['service-doc']?.[1]).toEqual({
+		href: `${origin}/docs/open-api.md`,
+		type: 'text/markdown',
+	})
+
+	const notFoundMd = buildNotFoundMarkdown(origin)
+	expect(notFoundMd.length).toBeGreaterThan(20)
+	expect(notFoundMd).toContain('# Not found')
+	expect(notFoundMd).toContain(`${origin}/docs`)
+	expect(notFoundMd).toContain(`${origin}/sitemap.xml`)
+	expect(notFoundMd).toContain(`${origin}/llms.txt`)
+
+	const openApiMd = buildOpenApiDiscoveryMarkdown(origin)
+	expect(openApiMd).toContain('## Kody Open API')
+	expect(openApiMd).toContain(kodyOpenApiSpecUrl)
+	expect(openApiMd).toContain(`${kodyApiDocsOrigin}/`)
+	expect(openApiMd).toContain(`${origin}/docs/open-api.md`)
+
+	const jsonLd = buildHomeSoftwareApplicationJsonLd()
+	expect(jsonLd).toMatchObject({
+		'@type': 'SoftwareApplication',
+		name: 'Kody',
+		url: 'https://kody.codes',
+		offers: { name: 'Free', price: '0', priceCurrency: 'USD' },
+		sameAs: [kodyGithubUrl],
+	})
+	expect(jsonLd.description.length).toBeGreaterThan(20)
+	const jsonLdText = homeSoftwareApplicationJsonLdScriptText()
+	expect(homeSoftwareApplicationJsonLdCspHash).toBe(
+		`'sha256-${createHash('sha256').update(jsonLdText, 'utf8').digest('base64')}'`,
 	)
 
 	const authMd = buildAuthMarkdown(origin)

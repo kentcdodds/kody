@@ -1,3 +1,4 @@
+import { homeSoftwareApplicationJsonLdCspHash } from '#app/agent-discovery.ts'
 import { scrollRestorationInlineScriptCspHash } from '#universal/router-scroll-restoration.ts'
 
 /**
@@ -13,10 +14,11 @@ import { scrollRestorationInlineScriptCspHash } from '#universal/router-scroll-r
  * - `script-src 'self'` (no `'unsafe-inline'`) is the important protection: the
  *   client bundle is loaded as an external module from the same origin, so an
  *   injected inline `<script>` cannot execute. Do NOT add `'unsafe-inline'` to
- *   `script-src`. The one first-party exception is the scroll-restoration
- *   restore script in the SSR body, allowed only by its sha256 hash (React
- *   Router's `<ScrollRestoration />` pattern) so a refresh can restore
- *   `scrollY` before paint.
+ *   `script-src`. First-party exceptions are the scroll-restoration restore
+ *   script in the SSR body (React Router's `<ScrollRestoration />` pattern so
+ *   a refresh can restore `scrollY` before paint) and the homepage
+ *   `application/ld+json` SoftwareApplication block — each allowed only by its
+ *   sha256 hash.
  * - `style-src` allows `'unsafe-inline'` because SSR streamed styles arrive as
  *   inline `<style>` tags; style injection is far lower risk than script
  *   injection. Client-side styles use constructable stylesheets, which CSP does
@@ -62,7 +64,7 @@ const contentSecurityPolicy = [
 	"img-src 'self' data: blob: https://cdn.usefathom.com https://static.scarf.sh",
 	"font-src 'self' data:",
 	"style-src 'self' 'unsafe-inline'",
-	`script-src 'self' ${scrollRestorationInlineScriptCspHash} https://cdn.usefathom.com https://static.cloudflareinsights.com https://challenges.cloudflare.com`,
+	`script-src 'self' ${scrollRestorationInlineScriptCspHash} ${homeSoftwareApplicationJsonLdCspHash} https://cdn.usefathom.com https://static.cloudflareinsights.com https://challenges.cloudflare.com`,
 	"connect-src 'self' https://cdn.usefathom.com https://cloudflareinsights.com https://challenges.cloudflare.com",
 	'frame-src https://challenges.cloudflare.com https://www.youtube-nocookie.com',
 	"worker-src 'self' blob:",

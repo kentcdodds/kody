@@ -1,6 +1,10 @@
 /** @jsxImportSource remix/component */
 /** @jsxRuntime automatic */
 import { type Handle } from 'remix/component'
+import {
+	homeSoftwareApplicationJsonLdScriptText,
+	kodyCanonicalMarketingOrigin,
+} from '#app/agent-discovery.ts'
 import { HMR } from '#app/hmr.ts'
 import { AppRoot, type AppRootProps } from '#client/app-root.tsx'
 import {
@@ -173,6 +177,9 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 	const passwordManagerPageIgnore = passwordManagerPageIgnoreProps(
 		pathnameFromAppUrl(handle.props.url),
 	)
+	const homeJsonLdText = preloadHeroImage
+		? homeSoftwareApplicationJsonLdScriptText(kodyCanonicalMarketingOrigin)
+		: null
 
 	return () => (
 		<html lang="en">
@@ -208,6 +215,9 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 					content="#111417"
 					media="(prefers-color-scheme: dark)"
 				/>
+				{homeJsonLdText ? (
+					<script type="application/ld+json">{homeJsonLdText}</script>
+				) : null}
 				{/* Blocking on purpose: applies the `js` class before first
 				    paint so enhance-only motion can gate on it. CSP disallows
 				    inline scripts, hence the file. Color scheme is CSS-only. */}
