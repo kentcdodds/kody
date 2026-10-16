@@ -549,9 +549,14 @@ function findByName(
 				: {},
 		)
 	}
+	// Package-bound Keys share scope `org` with user-scope Keys. Name picks
+	// (call map / credential.named) keep the historical user-scope Key when
+	// both exist; package Keys fill declared needs via auto-pick instead.
+	const unbound = matches.filter((credential) => credential.packageId == null)
+	const candidates = unbound.length > 0 ? unbound : matches
 	return pickOne({
 		key,
-		candidates: matches,
+		candidates,
 		possibleMatches: [],
 		describe: `the name "${pick.name}"`,
 	})
