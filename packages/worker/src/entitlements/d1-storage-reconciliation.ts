@@ -1,3 +1,5 @@
+import { waitUntil } from 'cloudflare:workers'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type JobsStore } from '@kody-internal/shared/jobs/store.ts'
 import { type UserMeterEnv } from './user-meter-client.ts'
 import {
@@ -23,8 +25,64 @@ import {
  * platform-owned `d1_storage_reconcile_cursor` singleton, wrapping at the tail.
  * Row failures do not fail the lane; `env` is required (UserMeter is the
  * authority).
+ *
+ * Cold reserve and usage reads can also call
+ * {@link enqueueOwnerD1StorageReconcile} for an immediate per-owner pass so a
+ * cold meter is not stuck at 0 until the keyset sweep wraps. Concurrent
+ * callers share one in-flight promise (lazy enqueue).
  */
 export const d1StorageReconciliationBatchSize = 8
+
+const inFlightOwnerReconciles = new Map<OwnerId, Promise<unknown>>()
+
+/**
+ * Lazy per-owner physical reconcile. Dedupes in-flight work for the same
+ * owner, keeps the isolate alive via `waitUntil`, and returns the shared
+ * promise so the reserve hot path can await one SUM instead of zero-init.
+ * Failures are logged and swallowed — the keyset sweep remains the backstop.
+ */
+export function enqueueOwnerD1StorageReconcile(input: {
+	db: D1Database
+	env: UserMeterEnv
+	userId: OwnerId
+	now?: Date
+	jobs?: JobsStore
+}): Promise<unknown> {
+	const existing = inFlightOwnerReconciles.get(input.userId)
+	if (existing) {
+		waitUntil(existing)
+		return existing
+	}
+
+	const task = reconcileUserD1StorageBytes({
+		db: input.db,
+		env: input.env,
+		userId: input.userId,
+		now: input.now,
+		jobs: input.jobs,
+	})
+		.catch((error: unknown) => {
+			console.warn('d1-storage-owner-reconcile-failed', input.userId, error)
+		})
+		.finally(() => {
+			if (inFlightOwnerReconciles.get(input.userId) === task) {
+				inFlightOwnerReconciles.delete(input.userId)
+			}
+		})
+	inFlightOwnerReconciles.set(input.userId, task)
+	waitUntil(task)
+	return task
+}
+
+/** Test helper: await fire-and-forget per-owner reconciles in this isolate. */
+export async function flushOwnerD1StorageReconcilesForTests(): Promise<void> {
+	await Promise.all(inFlightOwnerReconciles.values())
+}
+
+/** Test helper: drop in-flight dedupe so a later enqueue runs fresh. */
+export function clearOwnerD1StorageReconcileDedupeForTests(): void {
+	inFlightOwnerReconciles.clear()
+}
 
 export async function reconcileD1StorageBytes(input: {
 	db: D1Database

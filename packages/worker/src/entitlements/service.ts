@@ -26,7 +26,7 @@ import {
 import { laterIsoTimestamp } from '#universal/referral-program.ts'
 import { resolvePlanOverlay } from '#universal/second-agent-standard-gift.ts'
 import { countInternalUserEmailMessages } from '#worker/email/mailbox-internal-read.ts'
-import { jobsData } from '#worker/jobs/jobs-data.ts'
+import { jobsData, type JobsDataEnv } from '#worker/jobs/jobs-data.ts'
 import { type RepoSessionIndexEnv } from '#worker/repo/repo-session-index-client.ts'
 import { countActiveRepoSessions } from '#worker/repo/repo-sessions.ts'
 import { countActiveWorkflowProjections } from '#worker/run-records/service.ts'
@@ -56,6 +56,7 @@ import {
 	userMeterRpc,
 	type UserMeterEnv,
 } from './user-meter-client.ts'
+import { enqueueOwnerD1StorageReconcile } from './d1-storage-reconciliation.ts'
 
 /** Env surface for authoritative entitlement usage readers. */
 import {
@@ -804,7 +805,12 @@ export async function readUserMeterEntitlementUsageSnapshot(input: {
 				}),
 			),
 			shouldInitializeStorage
-				? meter.initializeStorageBytes({ bytes: 0, updatedAt })
+				? seedStorageBytesFromPhysical({
+						db: input.db,
+						env: input.env,
+						userId: input.userId,
+						now: input.now,
+					}).then(() => undefined)
 				: Promise.resolve(),
 		])
 		if (missingDaily.length > 0 || shouldInitializeStorage) {
@@ -1336,11 +1342,49 @@ export async function readEntitlementResourceUsage(input: {
 }
 
 /**
+ * Seed a cold UserMeter storage singleton from the physical D1 payload sum
+ * (via {@link reconcileUserD1StorageBytes}). Usage reads use this so a cold
+ * or purged meter reflects real bytes immediately instead of zero-init.
+ */
+function jobsStoreForOwnerStorageReconcile(
+	db: D1Database,
+	env?: Partial<Pick<Env, 'JOBS'>>,
+) {
+	// JOBS is optional at runtime (falls back to APP_DB); JobsDataEnv types it
+	// as required because generated Env lists the binding.
+	return jobsData({ APP_DB: db, JOBS: env?.JOBS } as JobsDataEnv)
+}
+
+async function seedStorageBytesFromPhysical(input: {
+	db: D1Database
+	env: UserMeterEnv & Partial<Pick<Env, 'JOBS'>>
+	userId: OwnerId
+	now: Date
+}): Promise<number> {
+	const reconciled = await reconcileUserD1StorageBytes({
+		db: input.db,
+		env: input.env,
+		userId: input.userId,
+		now: input.now,
+		jobs: jobsStoreForOwnerStorageReconcile(input.db, input.env),
+	})
+	if (!reconciled.deferred) return reconciled.bytes
+	const meter = userMeterRpc({ env: input.env, userId: input.userId })
+	const result = await meter.readStorageBytes()
+	if (result.outcome === 'needs_bootstrap') {
+		throw new Error(
+			'UserMeter storage bytes still need bootstrap after physical seed.',
+		)
+	}
+	return result.bytes
+}
+
+/**
  * Read current storage bytes from UserMeter with cold bootstrap. On
- * `needs_bootstrap`, zero-initializes the singleton (matching the daily
- * counter cold path) and retries. The bounded reconcile lane recomputes
- * physical D1 payload bytes and corrects any drift via CAS. Always returns
- * the authoritative DO byte count.
+ * `needs_bootstrap`, seeds the singleton from the physical D1 payload sum
+ * and retries. The bounded reconcile lane (and reserve-path lazy enqueue)
+ * continue to correct drift via CAS. Always returns the authoritative DO
+ * byte count.
  */
 export async function readStorageBytesFromUserMeter(input: {
 	db: D1Database
@@ -1349,21 +1393,12 @@ export async function readStorageBytesFromUserMeter(input: {
 	now: Date
 }): Promise<number> {
 	const meter = userMeterRpc({ env: input.env, userId: input.userId })
-	let result = await meter.readStorageBytes()
+	const result = await meter.readStorageBytes()
 	if (result.outcome === 'needs_bootstrap') {
 		// Synthetic/unknown contexts have no account row. Preserve their zero
 		// usage semantics without materializing durable state for a non-user.
 		if (!(await userAccountRowExists(input))) return 0
-		await meter.initializeStorageBytes({
-			bytes: 0,
-			updatedAt: input.now.toISOString(),
-		})
-		result = await meter.readStorageBytes()
-		if (result.outcome === 'needs_bootstrap') {
-			throw new Error(
-				'UserMeter storage bytes read still needs bootstrap after initialize.',
-			)
-		}
+		return await seedStorageBytesFromPhysical(input)
 	}
 	return result.bytes
 }
@@ -1432,11 +1467,13 @@ const storageBytesBootstrapMaxAttempts = 2
 
 /**
  * Atomically reserve storage bytes in the per-user UserMeter Durable Object.
- * On `needs_bootstrap`, zero-initializes the DO singleton via
- * `initializeStorageBytes` (INSERT OR IGNORE — concurrent-safe, matching the
- * daily counter cold path), then retries once. The bounded reconcile lane
- * recomputes physical D1 payload bytes and corrects drift via CAS.
- * Missing-user synthetic contexts (no `users` row) preserve current free-plan
+ * On `needs_bootstrap`, lazily enqueues (and awaits) an immediate per-owner
+ * physical reconcile so concurrent cold reserves share one D1 SUM and the
+ * meter seeds from real payload bytes instead of zero. If that pass still
+ * leaves the singleton missing, falls back to zero-init via
+ * `initializeStorageBytes` (INSERT OR IGNORE — concurrent-safe), then retries.
+ * The bounded reconcile lane remains the backstop for drift via CAS.
+ * Missing-user synthetic contexts (no account row) preserve current free-plan
  * allow/deny semantics without touching the DO.
  *
  * `getCurrent` is a check-only path for StorageRunner bucket totals and does
@@ -1529,12 +1566,27 @@ export async function assertWithinStorageBytesEntitlement(input: {
 					}),
 				})
 			}
-			// Real user with no DO row: zero-initialize, then retry. The
-			// reconcile lane corrects the counter from physical payload bytes.
-			await meter.initializeStorageBytes({
-				bytes: 0,
-				updatedAt,
+			// Real owner with no DO row: lazy-enqueue a shared per-owner
+			// physical reconcile (one SUM for concurrent cold callers), then
+			// retry the reserve. Zero-init remains a fallback when reconcile
+			// cannot materialize the singleton.
+			await enqueueOwnerD1StorageReconcile({
+				db: input.db,
+				env: input.env,
+				userId: input.userId,
+				now: new Date(updatedAt),
+				jobs: jobsStoreForOwnerStorageReconcile(
+					input.db,
+					input.env as Partial<Pick<Env, 'JOBS'>>,
+				),
 			})
+			const afterReconcile = await meter.readStorageBytes()
+			if (afterReconcile.outcome === 'needs_bootstrap') {
+				await meter.initializeStorageBytes({
+					bytes: 0,
+					updatedAt,
+				})
+			}
 			continue
 		}
 

@@ -6,8 +6,14 @@ import {
 	calculateUserD1StorageBytes,
 	listUsersForD1StorageReconciliation,
 	reconcileUserD1StorageBytes,
+	assertWithinStorageBytesEntitlement,
 } from './service.ts'
-import { reconcileD1StorageBytes } from './d1-storage-reconciliation.ts'
+import {
+	clearOwnerD1StorageReconcileDedupeForTests,
+	enqueueOwnerD1StorageReconcile,
+	flushOwnerD1StorageReconcilesForTests,
+	reconcileD1StorageBytes,
+} from './d1-storage-reconciliation.ts'
 import { userMeterRpc } from './user-meter-client.ts'
 
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
@@ -313,6 +319,55 @@ test('reconcile defers and preserves reserve when CAS misses a concurrent reserv
 	])
 	// Real DO still has 150 bytes (initial 100 + reserve 50).
 	expect(await meter.readStorageBytes()).toMatchObject({ bytes: 150 })
+})
+
+test('lazy per-owner enqueue seeds a cold meter from physical bytes and dedupes in-flight work', async () => {
+	clearOwnerD1StorageReconcileDedupeForTests()
+	const owner = await seedUser('a'.repeat(63) + 'e', { payloadBytes: 256 })
+	const expectedBytes = await owner.physicalBytes()
+	expect(expectedBytes).toBeGreaterThan(128)
+	expect(await owner.meter.readStorageBytes()).toEqual({
+		outcome: 'needs_bootstrap',
+	})
+
+	const first = enqueueOwnerD1StorageReconcile({
+		db: env.APP_DB,
+		env,
+		userId: ownerIdFromStored(owner.userId),
+		now: new Date('2026-08-01T03:00:00.000Z'),
+	})
+	const second = enqueueOwnerD1StorageReconcile({
+		db: env.APP_DB,
+		env,
+		userId: ownerIdFromStored(owner.userId),
+		now: new Date('2026-08-01T03:00:00.000Z'),
+	})
+	expect(second).toBe(first)
+	await flushOwnerD1StorageReconcilesForTests()
+	expect(await owner.meter.readStorageBytes()).toMatchObject({
+		outcome: 'ready',
+		bytes: expectedBytes,
+	})
+})
+
+test('cold storage reserve awaits the lazy per-owner reconcile before adding the reservation', async () => {
+	clearOwnerD1StorageReconcileDedupeForTests()
+	const owner = await seedUser('a'.repeat(63) + 'f', { payloadBytes: 256 })
+	const expectedBytes = await owner.physicalBytes()
+	expect(expectedBytes).toBeGreaterThan(128)
+
+	await assertWithinStorageBytesEntitlement({
+		db: env.APP_DB,
+		env,
+		userId: ownerIdFromStored(owner.userId),
+		email: `${owner.userId}@example.test`,
+		requested: 40,
+	})
+	await flushOwnerD1StorageReconcilesForTests()
+	expect(await owner.meter.readStorageBytes()).toMatchObject({
+		outcome: 'ready',
+		bytes: expectedBytes + 40,
+	})
 })
 
 test('reconcile defers without overwriting when cold init race: another caller created meter state first', async () => {

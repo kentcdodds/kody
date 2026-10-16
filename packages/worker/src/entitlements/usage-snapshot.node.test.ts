@@ -55,7 +55,12 @@ function createUsageTestDb(input: {
 									return { count: input.packageCount ?? 0 } as T
 								}
 								if (normalized.includes('select 1 as present from users')) {
-									return { present: 1 } as T
+									// Only the fixture owner is a real account; other
+									// stable ids stay synthetic so cold storage bootstrap
+									// does not materialize a meter for them.
+									return params[0] === stableUserId
+										? ({ present: 1 } as T)
+										: null
 								}
 								if (
 									normalized.includes('count(*)') ||

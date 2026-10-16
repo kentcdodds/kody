@@ -805,11 +805,13 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
 - `storage_bytes_state` — **authoritative** D1 payload byte counter (`id = 1`
   CHECK constraint, `bytes`, monotonic `revision`, `updated_at`). Written by
   `reserveStorageBytes` (atomic increment with limit check),
-  `initializeStorageBytes` (INSERT OR IGNORE cold zero-init bootstrap), and
-  `setStorageBytes` (absolute set from reconcile). Authoritative for enforcement
-  and usage reads via `readStorageBytes`; the reconcile lane sweeps personal and
-  team org owner ids by keyset from `d1_storage_reconcile_cursor`. StorageRunner
-  and RepoSession bucket estimates stay outside this row (see
+  `initializeStorageBytes` (INSERT OR IGNORE cold bootstrap / zero-init
+  fallback), and `setStorageBytes` / `reconcileStorageBytes` (absolute set from
+  reconcile). Authoritative for enforcement and usage reads via
+  `readStorageBytes`; cold bootstrap seeds from the physical D1 sum via an
+  immediate per-owner reconcile enqueue, and the reconcile lane sweeps personal
+  and team org owner ids by keyset from `d1_storage_reconcile_cursor`.
+  StorageRunner and RepoSession bucket estimates stay outside this row (see
   [Entitlements](./entitlements.md#usermeter)).
 - `deletion_state` / `account_write_leases` — deletion tombstone plus write
   leases (singleton `deleting_at`; lease rows `token` / `holder` / `acquired_at`
