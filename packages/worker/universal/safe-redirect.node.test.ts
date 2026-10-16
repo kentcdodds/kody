@@ -36,7 +36,7 @@ test('normalizeRedirectTo accepts same-origin paths and rejects open redirects',
 	}
 })
 
-test('stripLoginFromAuthorizePrompt drops login from absolute and path resumes', () => {
+test('stripLoginFromAuthorizePrompt drops login and id_token_hint from resumes', () => {
 	expect(
 		stripLoginFromAuthorizePrompt(
 			'https://kody.codes/oauth/authorize?client_id=c&prompt=login',
@@ -50,12 +50,22 @@ test('stripLoginFromAuthorizePrompt drops login from absolute and path resumes',
 	expect(stripLoginFromAuthorizePrompt('/oauth/authorize?prompt=consent')).toBe(
 		'/oauth/authorize?prompt=consent',
 	)
+	expect(
+		stripLoginFromAuthorizePrompt(
+			'/oauth/authorize?client_id=c&id_token_hint=eyJ.stale&prompt=login',
+		),
+	).toBe('/oauth/authorize?client_id=c')
 })
 
-test('resolvePostAuthLandingPath strips prompt=login only for authorize', () => {
+test('resolvePostAuthLandingPath strips prompt=login and id_token_hint for authorize', () => {
 	expect(
 		resolvePostAuthLandingPath(
 			'/oauth/authorize?client_id=c&prompt=login&state=s',
+		),
+	).toBe('/oauth/authorize?client_id=c&state=s')
+	expect(
+		resolvePostAuthLandingPath(
+			'/oauth/authorize?client_id=c&id_token_hint=eyJ.stale&state=s',
 		),
 	).toBe('/oauth/authorize?client_id=c&state=s')
 	expect(resolvePostAuthLandingPath('/account')).toBe('/account')

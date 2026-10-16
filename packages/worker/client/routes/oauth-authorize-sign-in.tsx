@@ -31,7 +31,7 @@ function readOauthAuthorizeFormProtection() {
 
 /**
  * Shared with `/login`: social start + passkey verification, then resume the
- * authorize URL (post-auth landing strips `prompt=login`).
+ * authorize URL (post-auth landing strips `prompt=login` and `id_token_hint`).
  */
 export async function startOauthAuthorizeProviderSignIn(input: {
 	providerId: string

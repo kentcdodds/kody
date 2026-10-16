@@ -13,11 +13,16 @@ import {
 } from '#worker/audit-log.ts'
 import {
 	createAuthCookie,
+	destroyAuthCookie,
 	isSecureRequest,
 	readAuthSessionResult,
 	readParsedAuthSession,
 	setAuthSessionSecret,
 } from '#app/auth-session.ts'
+import {
+	createVerifySessionCookie,
+	setVerifySessionSecret,
+} from '#app/verify-session.ts'
 import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
 import { getEnv } from '#app/env.ts'
 import {
@@ -1577,35 +1582,53 @@ export async function handleAuthorizeRequest(
 			})
 			return respondAuthorizeError(request, 'Username is required.', 401)
 		}
-		// The inline OAuth password form has no TOTP step, so 2FA accounts must
-		// establish a browser session (which enforces the second factor) first.
+		// Password alone is not enough when 2FA is on: park a pending verify
+		// cookie and send the user through /verify (TOTP), then resume authorize
+		// without prompt=login / id_token_hint so consent can use the new session.
 		if (await isTwoFactorEnabled(env.APP_DB, userRecord.id)) {
+			const stableUserId = personIdFromStored(userRecord.stable_user_id)
+			setVerifySessionSecret(env.COOKIE_SECRET)
+			const secure = isSecureRequest(request)
+			const verifyCookie = await createVerifySessionCookie(
+				{
+					stableUserId,
+					email: normalizedEmail,
+					rememberMe: false,
+				},
+				secure,
+			)
+			const clearSessionCookie = await destroyAuthCookie(secure)
+			const authorizeResume = stripLoginFromAuthorizePrompt(
+				`${new URL(request.url).pathname}${new URL(request.url).search}`,
+			)
+			const redirectTo = `/verify?redirectTo=${encodeURIComponent(authorizeResume)}`
 			void logAuditEvent({
 				db: auditDatabaseFromEnv(env),
 				category: 'oauth',
-				action: 'authorize',
-				result: 'failure',
+				action: 'authorize_2fa_challenge',
+				result: 'success',
 				email: normalizedEmail,
 				ip: requestIp,
 				clientId: authRequest.clientId,
-				reason: 'two_factor_required',
 			})
 			recordMcpConnectFunnelEvent(env, {
 				stage: 'mcp_connect_started',
-				userId: personIdFromStored(userRecord.stable_user_id),
+				userId: stableUserId,
 				clientId: authRequest.clientId,
 			})
-			recordMcpConnectFunnelEvent(env, {
-				stage: 'mcp_connect_failed',
-				userId: personIdFromStored(userRecord.stable_user_id),
-				clientId: authRequest.clientId,
-				errorClass: 'two_factor_required',
+			const headers = createSetCookieHeaders([verifyCookie, clearSessionCookie])
+			if (wantsJson(request)) {
+				return jsonResponse(
+					{ ok: true, redirectTo, requiresTwoFactor: true },
+					{ headers },
+				)
+			}
+			const redirectHeaders = headers ?? new Headers()
+			redirectHeaders.set('Location', redirectTo)
+			return new Response(null, {
+				status: 302,
+				headers: redirectHeaders,
 			})
-			return respondAuthorizeError(
-				request,
-				'Two-factor authentication is enabled for this account. Log in on this device first, then retry connecting.',
-				401,
-			)
 		}
 		approvedEmail = normalizedEmail
 		approvedUsername = username

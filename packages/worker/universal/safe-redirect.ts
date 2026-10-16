@@ -31,9 +31,10 @@ export function normalizeRedirectTo(value: string | null | undefined) {
 }
 
 /**
- * After authentication, drop `login` from OIDC `prompt` on an authorize
- * resume so the new session is not treated as signed-out (`prompt=login`).
- * Accepts absolute URLs or same-origin paths; preserves the input shape.
+ * After authentication, sanitize an authorize resume so the new session can
+ * reach consent: drop `login` from OIDC `prompt`, and drop `id_token_hint`
+ * (a stale or subject-mismatched hint must not force another signed-out
+ * round-trip). Accepts absolute URLs or same-origin paths; preserves shape.
  * Other prompt values are kept.
  */
 export function stripLoginFromAuthorizePrompt(requestUrl: string): string {
@@ -52,13 +53,15 @@ export function stripLoginFromAuthorizePrompt(requestUrl: string): string {
 			url.searchParams.delete('prompt')
 		}
 	}
+	url.searchParams.delete('id_token_hint')
 	if (absolute) return url.toString()
 	return `${url.pathname}${url.search}${url.hash}`
 }
 
 /**
  * Safe post-auth landing path. When the resume target is `/oauth/authorize`,
- * strips `prompt=login` so consent can use the session just established.
+ * strips `prompt=login` and `id_token_hint` so consent can use the session
+ * just established without looping on a stale reconnect hint.
  */
 export function resolvePostAuthLandingPath(
 	redirectTo: string | null | undefined,
