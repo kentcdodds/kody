@@ -12,6 +12,7 @@ import { ownerScopeFollowsRegistryCodemod } from './codemods/0011-owner-scope-fo
 import { explicitWebhookUrlSecretVerificationCodemod } from './codemods/0012-explicit-webhook-url-secret-verification.ts'
 import { declareCredentialNeedsCodemod } from './codemods/0013-declare-credential-needs.ts'
 import { sealCredentialStampsCodemod } from './codemods/0014-seal-credential-stamps.ts'
+import { convertCredentialStampsCodemod } from './codemods/0015-convert-credential-stamps.ts'
 import { type PackageCodemod } from './types.ts'
 
 const packageCodemods: Array<PackageCodemod> = [
@@ -29,6 +30,7 @@ const packageCodemods: Array<PackageCodemod> = [
 	explicitWebhookUrlSecretVerificationCodemod,
 	declareCredentialNeedsCodemod,
 	sealCredentialStampsCodemod,
+	convertCredentialStampsCodemod,
 ]
 
 const packageCodemodsById = new Map(

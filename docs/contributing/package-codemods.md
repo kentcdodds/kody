@@ -524,15 +524,44 @@ signing names get `kind: "signing"`.
 
 Packages with unstampable patterns (non-literal names, `|scope=`,
 `secretMounts`, `packageSecrets.get`, `credential.named`, server eval, dynamic
-`kody.mcp`) stay `needs_manual`: an agent tries converting them first, then
-stop-and-notify Kent on #3836 if they still fail. It uses
-`applyMode: 'published-only'`.
+`kody.mcp`) stay `needs_manual`. Prefer `0015-convert-credential-stamps` /
+`adminCredentialStampMigrate` for behavior-preserving conversion before leaving
+packages on the publish gate. It uses `applyMode: 'published-only'`.
 
 After apply (or for packages that were already seal-ready), run
 `adminCredentialStampBackfill` to restamp seal-ready packages that still lack a
 KV stamp at the current `published_commit`. Phase 3 must not start until that
 fleet report shows zero `missing_stamp` / `needs_manifest` / `unconvertible` /
 `deferred_scan_budget` packages among published packages that need stamps.
+
+### `0015-convert-credential-stamps`
+
+Platform migration for
+[issue #3836](https://github.com/kentcdodds/kody/issues/3836): convert other
+owners' published packages (including `@kody/*`) when the result is
+stamp-sealable without disruption. Operator surface:
+`adminCredentialStampMigrate` (audited admin mutation; dry-run default).
+
+Safe transforms only:
+
+- Strip literal `|scope=package` placeholder suffixes (unsuffixed secrets
+  already prefer the package-scoped bucket).
+- Declare allowlisted missing bare npm deps the tree already imports (today:
+  `remix@3.0.0`).
+- Seal inferred `kody.credentials` descriptions (same plan as `0014`).
+
+Skips without writing when:
+
+- The package is a Kent holdout (`@kentcdodds/raycast`,
+  `@kentcdodds/oauth-integration-health`).
+- Blocking stamp-gate failures remain (computed names, `|scope=user` / session,
+  `secretMounts`, vault placeholders, `server_eval`, `credential.named`, …).
+
+Never emails or notifies owners, never creates credential values, and relies on
+the existing republish path so job/trigger enablements stay as they are. Uses
+`applyMode: 'published-only'`. After apply pages finish, run
+`adminCredentialStampBackfill` to write KV stamps. Leftover cleanup is tracked
+in the linked #3836 cleanup issue.
 
 ## Engine
 
