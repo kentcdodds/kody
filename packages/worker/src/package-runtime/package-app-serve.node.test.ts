@@ -730,6 +730,90 @@ test('published leftover kody.app.runtime does not brick host-setup', async () =
 	expect(mockModule.buildPackageAppWorker).toHaveBeenCalled()
 })
 
+test('OPTIONS that the app answers is forwarded unchanged', async () => {
+	seedFixture({ kodyId: 'options-handled-app' })
+	mockModule.buildPackageAppWorker.mockResolvedValue({
+		entrypointName: 'PackageAppWorker',
+		stub: {
+			getEntrypoint: () => ({
+				async fetch(request: Request) {
+					expect(request.method).toBe('OPTIONS')
+					return new Response(null, {
+						status: 204,
+						headers: { 'access-control-allow-origin': '*' },
+					})
+				},
+			}),
+		},
+	})
+
+	const response = await serveHelloWorld({
+		kodyId: 'options-handled-app',
+		init: { method: 'OPTIONS' },
+	})
+	expect(response.status).toBe(204)
+	expect(response.headers.get('access-control-allow-origin')).toBe('*')
+	expect(response.headers.get('server-timing')).toContain('entrypoint')
+})
+
+test('an OPTIONS handler throw becomes a 204, not the package-entrypoint page', async () => {
+	consoleError.mockImplementation(() => {})
+	seedFixture({ kodyId: 'options-throw-app' })
+	mockModule.buildPackageAppWorker.mockResolvedValue({
+		entrypointName: 'PackageAppWorker',
+		stub: {
+			getEntrypoint: () => ({
+				async fetch() {
+					return new Response(null, {
+						status: 500,
+						headers: {
+							[packageAppRuntimeErrorHeader]: '1',
+							[packageAppRuntimeRunIdHeader]: 'run-options-1',
+						},
+					})
+				},
+			}),
+		},
+	})
+
+	const response = await serveHelloWorld({
+		kodyId: 'options-throw-app',
+		init: {
+			method: 'OPTIONS',
+			headers: { Accept: 'application/json' },
+		},
+	})
+	expect(response.status).toBe(204)
+	expect(response.headers.get('Allow')).toContain('OPTIONS')
+	expect(response.headers.get(packageAppRuntimeErrorHeader)).toBeNull()
+	await expect(response.text()).resolves.toBe('')
+	expect(consoleError).not.toHaveBeenCalledWith(
+		'package-app-http-error',
+		expect.anything(),
+	)
+})
+
+test('an OPTIONS entrypoint rejection becomes a 204', async () => {
+	seedFixture({ kodyId: 'options-reject-app' })
+	mockModule.buildPackageAppWorker.mockResolvedValue({
+		entrypointName: 'PackageAppWorker',
+		stub: {
+			getEntrypoint: () => ({
+				async fetch() {
+					throw new Error('app has no OPTIONS route')
+				},
+			}),
+		},
+	})
+
+	const response = await serveHelloWorld({
+		kodyId: 'options-reject-app',
+		init: { method: 'OPTIONS' },
+	})
+	expect(response.status).toBe(204)
+	expect(response.body).toBeNull()
+})
+
 test('a tagged runtime throw becomes the package-entrypoint page with the run id', async () => {
 	consoleError.mockImplementation(() => {})
 	seedFixture({ kodyId: 'runtime-throw-app' })

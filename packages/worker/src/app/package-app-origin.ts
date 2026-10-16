@@ -960,6 +960,44 @@ async function servePackageAppForSession(input: {
 	}
 }
 
+/**
+ * Sibling package-app subdomains are same-site, so until the package-app
+ * domain is on the Public Suffix List a `SameSite=Lax` session cookie still
+ * attaches to their cross-origin requests. A browser that holds sessions
+ * for two accounts (shared machine, multiple sign-ins) could therefore let
+ * one user's package code send a credentialed mutating request to another
+ * user's app — CORS blocks the response, not the side effect. Mutating
+ * browser requests must originate from this host itself; requests without
+ * an `Origin` header (non-browser clients, synthetic dispatch) authenticate
+ * through their own paths and are unaffected.
+ *
+ * OPTIONS is the CORS preflight and is not a mutation. It is forwarded to
+ * the app, which answers with its own headers, or with a platform 204 when
+ * the handler throws.
+ */
+function rejectCrossOriginMutatingPackageAppRequest(input: {
+	request: Request
+	url: URL
+	message: string
+}): Response | null {
+	if (
+		input.request.method === 'GET' ||
+		input.request.method === 'HEAD' ||
+		input.request.method === 'OPTIONS'
+	) {
+		return null
+	}
+	const originHeader = input.request.headers.get('Origin')
+	if (originHeader === null || originHeader === input.url.origin) return null
+	return new Response(input.message, {
+		status: 403,
+		headers: {
+			'Cache-Control': 'no-store',
+			'Content-Type': 'text/plain; charset=utf-8',
+		},
+	})
+}
+
 async function handleUserSubdomainRequest(input: {
 	request: Request
 	env: Env
@@ -997,30 +1035,13 @@ async function handleUserSubdomainRequest(input: {
 	})
 	if (retiredRedirect) return retiredRedirect
 
-	// Sibling package-app subdomains are same-site, so until the package-app
-	// domain is on the Public Suffix List a `SameSite=Lax` session cookie still
-	// attaches to their cross-origin requests. A browser that holds sessions
-	// for two accounts (shared machine, multiple sign-ins) could therefore let
-	// one user's package code send a credentialed mutating request to another
-	// user's app — CORS blocks the response, not the side effect. Mutating
-	// browser requests must originate from this subdomain itself; requests
-	// without an `Origin` header (non-browser clients, synthetic dispatch)
-	// authenticate through their own paths and are unaffected.
-	if (request.method !== 'GET' && request.method !== 'HEAD') {
-		const originHeader = request.headers.get('Origin')
-		if (originHeader !== null && originHeader !== url.origin) {
-			return new Response(
-				'Cross-origin mutating requests to a package-app subdomain are not allowed.',
-				{
-					status: 403,
-					headers: {
-						'Cache-Control': 'no-store',
-						'Content-Type': 'text/plain; charset=utf-8',
-					},
-				},
-			)
-		}
-	}
+	const crossOriginMutating = rejectCrossOriginMutatingPackageAppRequest({
+		request,
+		url,
+		message:
+			'Cross-origin mutating requests to a package-app subdomain are not allowed.',
+	})
+	if (crossOriginMutating) return crossOriginMutating
 
 	return await servePackageAppForSession({
 		request,
@@ -1096,21 +1117,13 @@ async function handleCustomHostnameRequest(input: {
 		kodyId: mapping.kodyId,
 	})
 
-	if (request.method !== 'GET' && request.method !== 'HEAD') {
-		const originHeader = request.headers.get('Origin')
-		if (originHeader !== null && originHeader !== url.origin) {
-			return new Response(
-				'Cross-origin mutating requests to a package-app custom hostname are not allowed.',
-				{
-					status: 403,
-					headers: {
-						'Cache-Control': 'no-store',
-						'Content-Type': 'text/plain; charset=utf-8',
-					},
-				},
-			)
-		}
-	}
+	const crossOriginMutating = rejectCrossOriginMutatingPackageAppRequest({
+		request,
+		url,
+		message:
+			'Cross-origin mutating requests to a package-app custom hostname are not allowed.',
+	})
+	if (crossOriginMutating) return crossOriginMutating
 
 	return await servePackageAppForSession({
 		request,

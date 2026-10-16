@@ -308,11 +308,15 @@ on the Public Suffix List, so a `SameSite=Lax` cookie still attaches to their
 cross-origin requests. In a browser holding sessions for two accounts (a shared
 machine), one user's package code could otherwise send a credentialed mutating
 request to the other user's app — CORS blocks the response, not the side effect.
-Mutating requests on a subdomain therefore require any `Origin` header to match
-the subdomain itself; requests without one (non-browser clients, synthetic
-dispatch) authenticate through their own paths. Same-site credentialed GETs
-remain possible until the PSL entry lands; package apps must not mutate on GET,
-which HTTP already demands.
+Mutating requests on a subdomain or a package-app custom hostname therefore
+require any `Origin` header to match that host; requests without one
+(non-browser clients, synthetic dispatch) authenticate through their own paths.
+`OPTIONS` is not part of that block: it is the CORS preflight and is forwarded
+to the app. If the app handler throws on `OPTIONS`, the platform answers `204`
+instead of the package-entrypoint crash page. Same-site credentialed GETs remain
+possible until the PSL entry lands; package apps must not mutate on GET, which
+HTTP already demands. Cross-origin `POST`, `PUT`, `PATCH`, and `DELETE` stay
+`403`.
 
 - **No redirect cycle:** the app origin only ever redirects _to_ a package-app
   subdomain, the apex only redirects to a subdomain or the app origin, and a

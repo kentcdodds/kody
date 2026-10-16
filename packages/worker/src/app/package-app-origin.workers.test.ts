@@ -284,19 +284,31 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 	// this subdomain is rejected before package code runs; same-origin passes.
 	const staleTokenUrl = new URL(cleanLocation)
 	staleTokenUrl.searchParams.set(packageAppHandoffQueryParam, `${handoffToken}`)
-	const servingCases = [
+	const servingCases: Array<{
+		name: string
+		url: URL
+		method?: string
+		origin?: string
+	}> = [
 		{ name: 'clean URL', url: cleanLocation },
 		{ name: 'stale token', url: staleTokenUrl },
 		{
 			name: 'same-origin POST',
 			url: cleanLocation,
-			postFrom: ownerPackageAppOrigin,
+			method: 'POST',
+			origin: ownerPackageAppOrigin,
+		},
+		{
+			name: 'cross-origin OPTIONS',
+			url: cleanLocation,
+			method: 'OPTIONS',
+			origin: 'https://other-user.packages.isolated.test',
 		},
 	]
-	for (const { name, url, postFrom } of servingCases) {
+	for (const { name, url, method, origin } of servingCases) {
 		const response = await workerFetch(url, {
-			...(postFrom ? { method: 'POST' } : {}),
-			...withPackageSession(postFrom ? { Origin: postFrom } : {}),
+			...(method ? { method } : {}),
+			...withPackageSession(origin ? { Origin: origin } : {}),
 		})
 		expect({ name, ...(await outcome(response)) }).toEqual({
 			name,

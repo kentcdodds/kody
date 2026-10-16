@@ -503,10 +503,32 @@ function attachPackageAppServerTiming(
 	if (response.webSocket || response.status === 101) return response
 	const headers = new Headers(response.headers)
 	applyServerTimingHeader(headers, serverTiming)
-	return new Response(response.body, {
+	// 204, 205, and 304 cannot carry a body. Drop it before rewrapping so
+	// attaching Server-Timing cannot throw on a null-body app response.
+	const nullBody =
+		response.status === 204 ||
+		response.status === 205 ||
+		response.status === 304
+	return new Response(nullBody ? null : response.body, {
 		status: response.status,
 		statusText: response.statusText,
 		headers,
+	})
+}
+
+/**
+ * OPTIONS is not a package mutation. When the app handler throws instead of
+ * answering, browsers still need a finished preflight rather than the
+ * platform crash page. Apps that return their own OPTIONS response are
+ * unchanged.
+ */
+function unhandledPackageAppOptionsResponse() {
+	return new Response(null, {
+		status: 204,
+		headers: {
+			Allow: 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS',
+			'Cache-Control': 'no-store',
+		},
 	})
 }
 
@@ -884,32 +906,18 @@ export async function servePackageAppRequest(input: {
 		)
 	}
 
+	let fetched: Response
 	try {
-		const fetched = await pushServerTiming(serverTiming, 'entrypoint', () =>
+		fetched = await pushServerTiming(serverTiming, 'entrypoint', () =>
 			entrypoint.fetch(forwardedRequest),
 		)
-		if (isPackageAppRuntimeThrownResponse(fetched)) {
+	} catch (error) {
+		if (request.method === 'OPTIONS') {
 			return attachPackageAppServerTiming(
-				createPackageAppErrorResponse({
-					request,
-					kind: 'package-entrypoint',
-					kodyId: savedPackage.kodyId,
-					packageName: savedPackage.name,
-					runtimeRunId: fetched.headers.get(packageAppRuntimeRunIdHeader),
-				}),
+				unhandledPackageAppOptionsResponse(),
 				serverTiming,
 			)
 		}
-		// Leave x-kody-runtime-run-id on the response. The origin forward reads
-		// it for the runtime-worker hop log, then strips it before the browser.
-		logPackageAppHttpError({
-			request,
-			status: fetched.status,
-			phase: 'entrypoint-response',
-			runtimeRunId: fetched.headers.get(packageAppRuntimeRunIdHeader),
-		})
-		return attachPackageAppServerTiming(fetched, serverTiming)
-	} catch (error) {
 		console.error('Package app entrypoint failed:', error)
 		return attachPackageAppServerTiming(
 			createPackageAppErrorResponse({
@@ -922,6 +930,33 @@ export async function servePackageAppRequest(input: {
 			serverTiming,
 		)
 	}
+	if (isPackageAppRuntimeThrownResponse(fetched)) {
+		if (request.method === 'OPTIONS') {
+			return attachPackageAppServerTiming(
+				unhandledPackageAppOptionsResponse(),
+				serverTiming,
+			)
+		}
+		return attachPackageAppServerTiming(
+			createPackageAppErrorResponse({
+				request,
+				kind: 'package-entrypoint',
+				kodyId: savedPackage.kodyId,
+				packageName: savedPackage.name,
+				runtimeRunId: fetched.headers.get(packageAppRuntimeRunIdHeader),
+			}),
+			serverTiming,
+		)
+	}
+	// Leave x-kody-runtime-run-id on the response. The origin forward reads
+	// it for the runtime-worker hop log, then strips it before the browser.
+	logPackageAppHttpError({
+		request,
+		status: fetched.status,
+		phase: 'entrypoint-response',
+		runtimeRunId: fetched.headers.get(packageAppRuntimeRunIdHeader),
+	})
+	return attachPackageAppServerTiming(fetched, serverTiming)
 }
 
 export { isPackageAppSyntheticRequest }

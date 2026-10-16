@@ -273,6 +273,31 @@ test('a verified app custom hostname serves at / behind the same host-only hando
 		expect(servedBody).toBe(buildPackageAppNotFoundMessage())
 	}
 
+	// OPTIONS is a preflight, not a mutation, so a foreign Origin still reaches
+	// the app gate. POST from that Origin stays blocked.
+	const crossOriginOptions = await workerFetch(`${customOrigin}/`, {
+		method: 'OPTIONS',
+		headers: {
+			Cookie: packageSessionCookie,
+			Origin: 'https://example.com',
+		},
+	})
+	expect(crossOriginOptions.headers.get('X-Kody-Handoff')).toBeNull()
+	await expect(crossOriginOptions.text()).resolves.not.toContain(
+		'Cross-origin mutating requests',
+	)
+	const crossOriginPost = await workerFetch(`${customOrigin}/`, {
+		method: 'POST',
+		headers: {
+			Cookie: packageSessionCookie,
+			Origin: 'https://example.com',
+		},
+	})
+	expect(crossOriginPost.status).toBe(403)
+	await expect(crossOriginPost.text()).resolves.toContain(
+		'Cross-origin mutating requests to a package-app custom hostname are not allowed.',
+	)
+
 	await setCustomDomainsFlag(false)
 })
 
