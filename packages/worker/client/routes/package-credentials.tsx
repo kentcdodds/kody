@@ -39,8 +39,8 @@ import {
 	type TriggerEnablementActionInput,
 	renderCredentialsTab,
 	renderMappingsTab,
-	renderTriggersTab,
 } from './package-credentials-tabs.tsx'
+import { renderTriggersTab } from './package-credentials-triggers-tab.tsx'
 
 function renderTab(tab: PackageCredentialsTab, context: PackageTabContext) {
 	switch (tab) {
