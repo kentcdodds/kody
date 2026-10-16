@@ -250,35 +250,44 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 		}),
 	).toBe(false)
 
-	const cancelled = {
+	const olderSuccess = {
 		databaseId: 10,
 		status: 'completed',
-		conclusion: 'cancelled',
+		conclusion: 'success',
 		headSha: 'headsha',
 		event: 'pull_request',
 		url: 'https://github.com/kentcdodds/kody/actions/runs/10',
 		displayTitle: 'Preview #42',
 	}
-	const newerSuccess = {
+	const cancelled = {
 		databaseId: 11,
 		status: 'completed',
-		conclusion: 'success',
+		conclusion: 'cancelled',
 		headSha: 'headsha',
 		event: 'pull_request',
 		url: 'https://github.com/kentcdodds/kody/actions/runs/11',
 		displayTitle: 'Preview #42',
 	}
-	const olderOtherPr = {
+	const newerSuccess = {
 		databaseId: 12,
+		status: 'completed',
+		conclusion: 'success',
+		headSha: 'headsha',
+		event: 'pull_request',
+		url: 'https://github.com/kentcdodds/kody/actions/runs/12',
+		displayTitle: 'Preview #42',
+	}
+	const olderOtherPr = {
+		databaseId: 13,
 		status: 'completed',
 		conclusion: 'success',
 		headSha: 'other',
 		event: 'pull_request',
-		url: 'https://github.com/kentcdodds/kody/actions/runs/12',
+		url: 'https://github.com/kentcdodds/kody/actions/runs/13',
 		displayTitle: 'Preview #99',
 	}
 	// Cancelled first in the list (the latch bug): still follow the newest
-	// non-cancelled run for the PR head SHA (#3770).
+	// runnable run for the PR head SHA (#3770).
 	expect(
 		selectPreviewWorkflowRun([cancelled, newerSuccess, olderOtherPr], {
 			number: 42,
@@ -287,6 +296,13 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 	).toEqual(newerSuccess)
 	expect(
 		selectPreviewWorkflowRun([cancelled], {
+			number: 42,
+			headRefOid: 'headsha',
+		}),
+	).toBeNull()
+	// Newer cancelled same-SHA redeploy: do not fall back to older success.
+	expect(
+		selectPreviewWorkflowRun([olderSuccess, cancelled], {
 			number: 42,
 			headRefOid: 'headsha',
 		}),
@@ -1025,6 +1041,51 @@ test('preview manual test keeps waiting when the only head-SHA run is cancelled 
 	expect(result).toBeNull()
 	expect(logs.join('\n')).toMatch(/Timed out/)
 	expect(logs.join('\n')).not.toMatch(/Preview workflow cancelled/)
+})
+
+test('preview manual test does not treat an older success as ready behind a newer cancelled same-SHA run', async () => {
+	await using server = await createPreviewFixtureServer('headsha')
+	let now = 0
+	const logs: Array<string> = []
+	const olderSuccess = {
+		databaseId: 10,
+		status: 'completed',
+		conclusion: 'success',
+		headSha: 'headsha',
+		event: 'pull_request',
+		url: 'https://github.com/kentcdodds/kody/actions/runs/10',
+		displayTitle: 'Preview #42',
+	}
+	const newerCancelled = {
+		databaseId: 11,
+		status: 'completed',
+		conclusion: 'cancelled',
+		headSha: 'headsha',
+		event: 'pull_request',
+		url: 'https://github.com/kentcdodds/kody/actions/runs/11',
+		displayTitle: 'Preview #42',
+	}
+	const { exitCode, result } = await runPreviewManualTest(
+		['--pr', '42', '--timeout-ms', '2500', '--poll-ms', '1000', '--skip-login'],
+		createSilentDeps({
+			logs,
+			now: () => now,
+			sleep: async (ms) => {
+				now += ms
+			},
+			execGh: async (args) =>
+				fakeGh(args, {
+					// Healthy old preview URL must not short-circuit the wait.
+					commentBody: sampleCommentWithUrl(server.origin),
+					headSha: 'headsha',
+					runs: [olderSuccess, newerCancelled],
+				}),
+		}),
+	)
+
+	expect(exitCode).toBe(1)
+	expect(result).toBeNull()
+	expect(logs.join('\n')).toMatch(/Timed out/)
 })
 
 function sampleCommentWithUrl(previewUrl: string) {

@@ -833,24 +833,43 @@ export function isCancelledOrSupersededPreviewRun(run: {
 	return conclusion === 'cancelled' || conclusion === 'skipped'
 }
 
+function newestFirst(a: WorkflowRun, b: WorkflowRun) {
+	return b.databaseId - a.databaseId
+}
+
 /**
- * Pick the preview workflow run to follow: newest non-cancelled run for the PR
- * head SHA, else newest non-cancelled run whose display title mentions the PR.
+ * Follow the newest matching run. If that run is cancelled/skipped, wait for a
+ * successor instead of falling back to an older success (same-SHA redeploy).
+ */
+function followNewestMatchingRun(
+	runs: ReadonlyArray<WorkflowRun>,
+): WorkflowRun | null {
+	const newest = runs.toSorted(newestFirst)[0]
+	if (!newest) return null
+	if (isCancelledOrSupersededPreviewRun(newest)) return null
+	return newest
+}
+
+/**
+ * Pick the preview workflow run to follow: newest runnable run for the PR head
+ * SHA, else newest runnable run whose display title mentions the PR. A newer
+ * cancelled/skipped run is a boundary — do not adopt an older success behind it.
  */
 export function selectPreviewWorkflowRun(
 	runs: ReadonlyArray<WorkflowRun>,
 	pr: Pick<PrView, 'number' | 'headRefOid'>,
 ): WorkflowRun | null {
-	const candidates = runs
-		.filter((run) => !isCancelledOrSupersededPreviewRun(run))
-		.toSorted((a, b) => b.databaseId - a.databaseId)
-	return (
-		candidates.find((run) => run.headSha === pr.headRefOid) ??
-		candidates.find((run) =>
-			displayTitleMentionsPr(run.displayTitle, pr.number),
-		) ??
-		null
+	const headMatches = runs.filter((run) => run.headSha === pr.headRefOid)
+	const headPick = followNewestMatchingRun(headMatches)
+	if (headPick) return headPick
+	if (headMatches.some((run) => isCancelledOrSupersededPreviewRun(run))) {
+		// Newest head-SHA run was cancelled/skipped; wait for its replacement.
+		return null
+	}
+	const titleMatches = runs.filter((run) =>
+		displayTitleMentionsPr(run.displayTitle, pr.number),
 	)
+	return followNewestMatchingRun(titleMatches)
 }
 
 export function flattenGhJsonPages(parsed: unknown): Array<unknown> {
