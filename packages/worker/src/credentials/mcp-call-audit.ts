@@ -165,7 +165,7 @@ function reportMcpCallAuditFailure(
 		action: event.action,
 		orgId: event.orgId,
 		result: event.result,
-		error,
+		errorName: error instanceof Error ? error.name : typeof error,
 	})
 	Sentry.withScope((scope) => {
 		scope.setTag('org_audit.action', event.action)
