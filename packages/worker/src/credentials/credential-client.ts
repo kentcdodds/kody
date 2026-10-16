@@ -865,35 +865,56 @@ export async function validateCredentialCallMap(input: {
 				'A credentials map needs a person. This run has no acting person.',
 			)
 		}
-		const packageIds = input.packageIds.length > 0 ? input.packageIds : [null]
-		const [usableLists, needs] = await Promise.all([
+		const entryPackageIds = input.packageIds
+		const [baseUsable, needLists, boundLists] = await Promise.all([
+			listUsableCredentials({
+				env: input.env,
+				request,
+				packageId: null,
+			}),
 			Promise.all(
-				packageIds.map((packageId) =>
-					listUsableCredentials({
+				entryPackageIds.map(async (packageId) => ({
+					packageId,
+					needs: await loadPackageNeeds({
 						env: input.env,
-						request,
+						orgId: request.org.id,
 						packageId,
 					}),
-				),
+				})),
 			),
-			loadRunCredentialNeeds({
-				env: input.env,
-				orgId: request.org.id,
-				packageIds: input.packageIds,
-			}),
+			Promise.all(
+				entryPackageIds.map(async (packageId) => ({
+					packageId,
+					bound: (
+						await listUsableCredentials({
+							env: input.env,
+							request,
+							packageId,
+						})
+					).filter((credential) => credential.packageId === packageId),
+				})),
+			),
 		])
-		const usableById = new Map<string, UsableCredential>()
-		for (const list of usableLists) {
-			for (const credential of list) usableById.set(credential.id, credential)
+		const needs = new Map<string, CredentialNeed>()
+		const needDeclaredBy = new Map<string, Array<string>>()
+		for (const { packageId, needs: list } of needLists) {
+			for (const need of list) {
+				if (!needs.has(need.key)) needs.set(need.key, need)
+				const owners = needDeclaredBy.get(need.key) ?? []
+				owners.push(packageId)
+				needDeclaredBy.set(need.key, owners)
+			}
 		}
-		const usable = [...usableById.values()]
+		const boundByPackage = new Map(
+			boundLists.map(({ packageId, bound }) => [packageId, bound]),
+		)
 		const warnings: Array<string> = []
 		for (const [key, picks] of input.map) {
 			const need = needs.get(key) ?? null
 			if (!need) {
 				const declared = [...needs.keys()]
 				const message = `credentials.${key} is not a need ${
-					input.packageIds.length > 0
+					entryPackageIds.length > 0
 						? 'any package in this run declares'
 						: 'of this code'
 				}${declared.length > 0 ? ` (declared: ${declared.join(', ')})` : ''}.`
@@ -905,15 +926,36 @@ export async function validateCredentialCallMap(input: {
 				)
 			}
 			const target = needTarget(key, need)
+			// Keep package-bound Keys inside the declaring package's pool so a
+			// multi-entry run cannot pick package A's Key for package B's need.
+			const owners = needDeclaredBy.get(key) ?? []
+			const pools =
+				owners.length > 0
+					? owners.map((packageId) => [
+							...baseUsable,
+							...(boundByPackage.get(packageId) ?? []),
+						])
+					: [baseUsable]
 			for (const pick of picks) {
-				pickExplicit({
-					key,
-					pick,
-					usable,
-					target,
-					baseUrl: input.baseUrl,
-					orgSlug: request.org.slug,
-				})
+				let lastError: unknown
+				let ok = false
+				for (const usable of pools) {
+					try {
+						pickExplicit({
+							key,
+							pick,
+							usable,
+							target,
+							baseUrl: input.baseUrl,
+							orgSlug: request.org.slug,
+						})
+						ok = true
+						break
+					} catch (error) {
+						lastError = error
+					}
+				}
+				if (!ok) throw lastError
 			}
 		}
 		return { warnings }

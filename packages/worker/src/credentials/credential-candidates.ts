@@ -428,11 +428,13 @@ export function resolveNeedCandidates(
 	const [packageOnly, packageSecond] = packageNameMatch
 	let autoPick: UsableCredential | null = null
 	let status: NeedResolution['status']
-	if (candidates.length === 1 && only) {
-		autoPick = only
-		status = 'ready'
-	} else if (packageOnly && !packageSecond) {
+	// Exact-name package-bound Keys win over a sole provider match so a
+	// package's own legacy Key is preferred when the need key matches.
+	if (packageOnly && !packageSecond) {
 		autoPick = packageOnly
+		status = 'ready'
+	} else if (candidates.length === 1 && only) {
+		autoPick = only
 		status = 'ready'
 	} else if (candidates.length === 0) {
 		autoPick = null

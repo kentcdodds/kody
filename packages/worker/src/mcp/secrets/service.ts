@@ -935,7 +935,8 @@ export type StoredCredential = {
 /**
  * A stored credential by id for a later-kind resolver: its metadata, and a
  * `readValue` that decrypts only when the door calls it after authorizing.
- * Null when `ownerId` has no live, unexpired user-scope entry with that id.
+ * Null when `ownerId` has no live, unexpired user-scope or package-bound
+ * entry with that id.
  */
 export async function findStoredCredentialForUse(input: {
 	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>

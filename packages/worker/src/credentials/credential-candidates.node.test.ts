@@ -548,6 +548,24 @@ test('package-bound Keys fill that package’s needs by name or as the only cand
 		packageId,
 		provider: null,
 	})
+	// Exact-name package Key wins over a sole provider-matching org Key.
+	await t.storeSecret({
+		ownerId: t.acmeId,
+		name: 'global-hooks',
+		provider: 'hooks',
+	})
+	const withProviderMatch = await t.usableAs(
+		'bea',
+		'owner',
+		undefined,
+		packageId,
+	)
+	expect(
+		resolveNeedCandidates(
+			{ key: 'webhook', kind: 'secret', provider: 'hooks' },
+			withProviderMatch,
+		).autoPick,
+	).toMatchObject({ name: 'webhook', packageId })
 	// Without a name match, a null-provider package Key stays an option only.
 	expect(
 		resolveNeedCandidates(
@@ -565,13 +583,13 @@ test('package-bound Keys fill that package’s needs by name or as the only cand
 	await t.storeSecret({
 		ownerId: t.acmeId,
 		name: 'solo-hook',
-		provider: 'hooks',
+		provider: 'solo-provider',
 		packageId,
 	})
 	const withSolo = await t.usableAs('bea', 'owner', undefined, packageId)
 	expect(
 		resolveNeedCandidates(
-			{ key: 'anything', kind: 'secret', provider: 'hooks' },
+			{ key: 'anything', kind: 'secret', provider: 'solo-provider' },
 			withSolo,
 		).autoPick?.name,
 	).toBe('solo-hook')

@@ -75,36 +75,38 @@ async function listUsage(input: {
 	credentialId: string
 	packages: ReadonlyArray<SavedPackageRecord>
 }) {
-	const closures = await Promise.all(
-		input.packages.map(async (pkg) => ({
-			pkg,
-			needs: await loadPublishedCredentialNeeds({
-				env: input.env,
-				userId: input.orgId,
-				sourceId: pkg.sourceId,
-			}).catch((error: unknown) => {
-				Sentry.captureException(error, {
-					tags: { scope: 'credentials.detail.usage' },
-					extra: { packageId: pkg.id },
-				})
-				return null
-			}),
-		})),
+	// Load closures and per-package usable lists in parallel so a 40-package
+	// detail view does not re-walk credentials serially.
+	const packageViews = await Promise.all(
+		input.packages.map(async (pkg) => {
+			const [needs, usable] = await Promise.all([
+				loadPublishedCredentialNeeds({
+					env: input.env,
+					userId: input.orgId,
+					sourceId: pkg.sourceId,
+				}).catch((error: unknown) => {
+					Sentry.captureException(error, {
+						tags: { scope: 'credentials.detail.usage' },
+						extra: { packageId: pkg.id },
+					})
+					return null
+				}),
+				listUsableCredentials({
+					env: input.env,
+					request: input.request,
+					packageId: pkg.id,
+				}),
+			])
+			return { pkg, needs, usable }
+		}),
 	)
 	const usage: AccountCredentialDetail['usage'] = []
 	let unreadable = 0
-	for (const { pkg, needs } of closures) {
+	for (const { pkg, needs, usable } of packageViews) {
 		if (needs === null) {
 			unreadable += 1
 			continue
 		}
-		// Per package so Keys bound to that package appear as candidates for
-		// its needs (and Keys bound to other packages stay hidden).
-		const usable = await listUsableCredentials({
-			env: input.env,
-			request: input.request,
-			packageId: pkg.id,
-		})
 		for (const need of needs) {
 			const resolution = resolveNeedCandidates(need, usable)
 			const fit: CredentialNeedFit | null =

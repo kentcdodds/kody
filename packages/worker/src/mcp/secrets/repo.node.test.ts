@@ -123,9 +123,11 @@ test('secret reads return the stored kind and exchange config', async () => {
 	const { sqlite, db } = createSecretsDb()
 	sqlite.exec(`
 		INSERT INTO secret_buckets (id, user_id, scope, binding_key)
-		VALUES ('bucket-user', 'org-user', 'user', '');
+		VALUES ('bucket-user', 'org-user', 'user', ''),
+			('bucket-pkg', 'org-user', 'package', 'pkg-1');
 		INSERT INTO secret_entries (id, bucket_id, name, encrypted_value)
-		VALUES ('cred-openai', 'bucket-user', 'OPENAI_KEY', 'ct');
+		VALUES ('cred-openai', 'bucket-user', 'OPENAI_KEY', 'ct'),
+			('cred-pkg', 'bucket-pkg', 'WEBHOOK', 'ct-pkg');
 	`)
 	const readStored = () =>
 		getStoredCredentialEntry({
@@ -142,6 +144,21 @@ test('secret reads return the stored kind and exchange config', async () => {
 	)
 	await expect(readStored()).resolves.toEqual(
 		expect.objectContaining({ kind: 'secret', config_json: null }),
+	)
+	// Package-bound Keys resolve by id for credential() after need auto-pick.
+	await expect(
+		getStoredCredentialEntry({
+			db,
+			ownerId: 'org-user',
+			credentialId: 'cred-pkg',
+			now: '2026-10-12T00:00:00.000Z',
+		}),
+	).resolves.toEqual(
+		expect.objectContaining({
+			id: 'cred-pkg',
+			name: 'WEBHOOK',
+			kind: 'secret',
+		}),
 	)
 
 	sqlite.exec(

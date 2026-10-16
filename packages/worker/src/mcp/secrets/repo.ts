@@ -117,9 +117,10 @@ export type StoredCredentialRow = {
 }
 
 /**
- * A live, unexpired user-scope entry of `ownerId` by credential id, with the
- * fields a later-kind resolver reads. Package and session secrets are never
- * credentials of a kind.
+ * A live, unexpired credential entry of `ownerId` by credential id, with the
+ * fields a later-kind resolver reads. Includes user-scope Keys and
+ * package-bound Keys (which can fill that package's declared needs). Session
+ * secrets are never credentials of a kind.
  */
 export async function getStoredCredentialEntry(input: {
 	db: D1Database
@@ -135,8 +136,12 @@ export async function getStoredCredentialEntry(input: {
 				e.inject_json AS inject_json, e.config_json AS config_json
 			FROM secret_entries e
 			JOIN secret_buckets b ON b.id = e.bucket_id
-			WHERE b.user_id = ? AND b.scope = 'user' AND b.binding_key = ''
-				AND e.id = ? AND e.deleted_at IS NULL AND b.deleted_at IS NULL
+			WHERE b.user_id = ? AND e.id = ?
+				AND (
+					(b.scope = 'user' AND b.binding_key = '')
+					OR b.scope = 'package'
+				)
+				AND e.deleted_at IS NULL AND b.deleted_at IS NULL
 				AND (e.expires_at IS NULL OR e.expires_at > ?)
 				AND (b.expires_at IS NULL OR b.expires_at > ?)
 			LIMIT 1`,
