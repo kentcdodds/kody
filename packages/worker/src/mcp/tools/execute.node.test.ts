@@ -1720,6 +1720,14 @@ test('execute does not detach a caller cancel that lands before the follow respo
 	expect(response.isError).toBe(true)
 	expect(response.structuredContent.inProgress).toBeUndefined()
 	expect(response.structuredContent.error).toContain('aborted')
+	expect(mockModule.abandonRunRecord).not.toHaveBeenCalled()
+	expect(mockModule.finishRunRecord).toHaveBeenCalledWith(
+		expect.objectContaining({
+			handle,
+			status: 'error',
+			error: expect.objectContaining({ name: 'client_disconnected' }),
+		}),
+	)
 })
 
 test('execute records fleet last-success when a detached run finishes', async () => {
