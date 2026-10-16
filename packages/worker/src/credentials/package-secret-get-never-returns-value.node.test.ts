@@ -26,6 +26,8 @@ import { createAuditTestDb } from '#worker/test-support/create-audit-db.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import * as needsClosure from './credential-needs-closure.ts'
+import * as stampPresence from './credential-stamp-presence.ts'
 import { attestedPackageStamp, claimedPackageStamp } from './package-stamp.ts'
 import { resolveCredential } from './resolve-credential.ts'
 
@@ -212,6 +214,50 @@ test('packageSecrets.get resolves only opaque refs for every alias, stamp, and g
 	}
 	const granted = await t.resolve('SIGNING_KEY', attestedPackageStamp)
 	expect(granted.ref).toBe('{{secret:SIGNING_KEY|scope=user}}')
+})
+
+test('a stamped package secret mount checks the loaded secret name', async () => {
+	const stamp = vi
+		.spyOn(stampPresence, 'packageCarriesCredentialStamp')
+		.mockResolvedValue(true)
+	const needs = vi
+		.spyOn(needsClosure, 'loadPublishedCredentialNeeds')
+		.mockResolvedValue([
+			{
+				key: 'ALIAS',
+				provider: 'aws',
+				description: 'alias only',
+				multiple: false,
+			},
+		])
+	try {
+		const undeclared = await settle(
+			(await setup()).resolve('SIGNING_KEY', attestedPackageStamp),
+		)
+		expect(undeclared.ok).toBe(false)
+		if (!undeclared.ok) {
+			expect(undeclared.error).toMatchObject({
+				code: 'credential_need_undeclared',
+				key: 'SIGNING_KEY',
+			})
+		}
+		needs.mockResolvedValue([
+			{
+				key: 'SIGNING_KEY',
+				kind: 'signing',
+				provider: 'aws',
+				description: 'Signing key.',
+				multiple: false,
+			},
+		])
+		const declared = await settle(
+			(await setup()).resolve('SIGNING_KEY', attestedPackageStamp),
+		)
+		expect(declared.ok).toBe(true)
+	} finally {
+		stamp.mockRestore()
+		needs.mockRestore()
+	}
 })
 
 test('packageSecrets.has answers from metadata when ciphertext cannot decrypt', async () => {

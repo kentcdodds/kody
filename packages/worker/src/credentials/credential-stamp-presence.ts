@@ -2,7 +2,7 @@
  * Whether a package's current publish stored a credential stamp (issue #3836
  * phase 3). Presence is the per-package switch for fail-closed credential
  * checks. No stamp, a missing KV binding, or a missing publish keeps the
- * legacy credential path.
+ * legacy credential path. A stored blob that is not a valid stamp fail-closes.
  */
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
@@ -11,7 +11,14 @@ import {
 	readPublishedCredentialStamp,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
-import { isStoredCredentialStamp } from './credential-stamp.ts'
+/**
+ * Missing stamp stays on the legacy path. Any stored blob, including one
+ * `isStoredCredentialStamp` rejects, fail-closes so a malformed publish cannot
+ * restore undeclared credential access.
+ */
+export function storedCredentialStampEnforces(stored: unknown): boolean {
+	return stored != null
+}
 
 const presenceByRequest = new WeakMap<
 	RequestContext,
@@ -37,7 +44,7 @@ async function readPackageCarriesCredentialStamp(input: {
 		sourceId: saved.sourceId,
 		publishedCommit,
 	})
-	return isStoredCredentialStamp(stored)
+	return storedCredentialStampEnforces(stored)
 }
 
 /**

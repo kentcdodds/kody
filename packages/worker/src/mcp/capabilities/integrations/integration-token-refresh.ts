@@ -5,6 +5,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { assertCredentialUsesDeclared } from '#worker/credentials/credential-need-enforcement.ts'
 import { attestedPackageStampFromCaller } from '#worker/credentials/package-stamp.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import { IntegrationTokenRefreshCallerError } from '#worker/integrations/token-refresh.ts'
@@ -53,10 +54,22 @@ export const integrationTokenRefreshCapability = defineDomainCapability(
 			const { packageStamp } = attestedPackageStampFromCaller({
 				storageContext: ctx.callerContext.storageContext,
 			})
+			const orgId = ownerIdFromCaller(ctx.callerContext)
+			// Webhook 401 retry shares integration-refresh and picks names
+			// that are not stamp keys. Only this capability is package code.
+			if (packageStamp?.packageId && orgId) {
+				await assertCredentialUsesDeclared({
+					env: ctx.env,
+					request: ctx.callerContext.request,
+					orgId,
+					packageId: packageStamp.packageId,
+					references: [{ use: 'integration', name: args.name }],
+				})
+			}
 			try {
 				const result = await resolveCredential({
 					env: ctx.env,
-					orgId: ownerIdFromCaller(ctx.callerContext),
+					orgId,
 					actor: ctx.callerContext.request,
 					packageStamp,
 					baseUrl: ctx.callerContext.baseUrl,

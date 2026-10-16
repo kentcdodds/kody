@@ -111,10 +111,13 @@ export async function resolveCredential<T extends CredentialTarget>(
 }
 
 /**
- * Name-based uses a credential stamp seals. Webhook enablement secret and
- * integration names, and id-based client uses, stay on the legacy path:
- * enablement picks are not stamp keys, and client uses were already checked
- * as `credential(key)` before this door.
+ * Name-based uses a credential stamp seals. These stay off this door:
+ * webhook enablement secret and integration names (not stamp keys), id-based
+ * client uses (already checked as `credential(key)`), `package-secret-mount`
+ * (the resolver checks the loaded mount name, not the alias), `mcp-connection`
+ * (the synthesized server capability checks `ref.name`; the client already
+ * checked the key), and `integration-refresh` (webhook 401 retry shares this
+ * use; `integrationTokenRefresh` checks the name in its handler).
  */
 function credentialUseNeedReference(
 	credential: CredentialTarget,
@@ -128,12 +131,11 @@ function credentialUseNeedReference(
 			}
 		case 'provider-secret':
 			return { use: 'provider', provider: credential.provider }
-		case 'package-secret-mount':
-			return { use: 'secret', name: credential.alias, scope: null }
 		case 'webhook-secret':
 		case 'integration-token':
 		case 'integration-refresh':
 		case 'mcp-connection':
+		case 'package-secret-mount':
 		case 'url':
 		case 'login':
 		case 'signing':

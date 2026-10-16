@@ -9,6 +9,10 @@ import {
 	runWithSecretAuthorityScope,
 	secretAuthorityArgName,
 } from '#mcp/secrets/secret-authority.ts'
+import * as needsClosure from '#worker/credentials/credential-needs-closure.ts'
+import * as stampPresence from '#worker/credentials/credential-stamp-presence.ts'
+import * as packageRepo from '#worker/package-registry/repo.ts'
+import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { McpServerPackageAccessDeniedError } from '#worker/mcp-client/package-access.ts'
 import { type McpServerSnapshot } from '#worker/mcp-client/types.ts'
 import type * as McpClientStatus from '#worker/mcp-client/status.ts'
@@ -262,4 +266,77 @@ test('dispatcher restores grant set after ALS gap so secret-free package stamp r
 		),
 	)
 	expect(ungated.result).toBeNull()
+})
+
+test('a stamped package cannot call an undeclared MCP server capability', async () => {
+	mocks.callTool.mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] })
+	mocks.assertCanUseMcpServer.mockResolvedValue(undefined)
+	const stamp = vi
+		.spyOn(stampPresence, 'packageCarriesCredentialStamp')
+		.mockResolvedValue(true)
+	vi.spyOn(packageRepo, 'getSavedPackageById').mockResolvedValue({
+		id: approvedPackageId,
+		userId: personIdFromStored('user-alice'),
+		name: '@alice/notion',
+		kodyId: 'notion',
+		description: 'test',
+		tags: [],
+		searchText: null,
+		sourceId: 'source',
+		hasApp: false,
+		hasSkills: false,
+		hidden: false,
+		isPrivate: true,
+		isInternetVisible: false,
+		lockedAt: null,
+		createdAt: '2026-10-16T00:00:00.000Z',
+		updatedAt: '2026-10-16T00:00:00.000Z',
+	} as unknown as SavedPackageRecord)
+	const needs = vi
+		.spyOn(needsClosure, 'loadPublishedCredentialNeeds')
+		.mockResolvedValue([])
+	try {
+		const synthesized = synthesizeMcpServerToolDomain({
+			ref,
+			snapshot: createSnapshot(),
+		})
+		const capability = synthesized?.domain.capabilities[0]
+		expect(capability).toBeDefined()
+		const ctx = createExecuteContext()
+		const denied = await runWithSecretAuthorityScope(
+			new Set([approvedPackageId]),
+			() =>
+				runWithCurrentSecretAuthority(approvedPackageId, () =>
+					capability!.handler({}, ctx),
+				),
+		).then(
+			() => null,
+			(thrown: unknown) => thrown,
+		)
+		expect(denied).toMatchObject({
+			code: 'credential_need_undeclared',
+			key: 'notion',
+		})
+		expect(mocks.callTool).not.toHaveBeenCalled()
+
+		needs.mockResolvedValue([
+			{
+				key: 'notion',
+				kind: 'mcp',
+				provider: 'notion',
+				description: 'Notion',
+				multiple: false,
+			},
+		])
+		const allowed = createExecuteContext()
+		await runWithSecretAuthorityScope(new Set([approvedPackageId]), () =>
+			runWithCurrentSecretAuthority(approvedPackageId, () =>
+				capability!.handler({}, allowed),
+			),
+		)
+		expect(mocks.callTool).toHaveBeenCalledTimes(1)
+	} finally {
+		stamp.mockRestore()
+		needs.mockRestore()
+	}
 })

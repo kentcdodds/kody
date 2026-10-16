@@ -96,14 +96,23 @@ function referenceKey(reference: CredentialNeedReference) {
 	}
 }
 
-/** Declared slot kinds that may fill a use; an omitted kind fills any. */
-function fillingKind(reference: CredentialNeedReference) {
+/**
+ * Declared slot kinds that may fill a use. Null means any kind. An omitted
+ * kind fills any use.
+ */
+function fillingKinds(
+	reference: CredentialNeedReference,
+): ReadonlyArray<string> | null {
 	switch (reference.use) {
 		case 'secret':
+			// secretJwtSign and {{secret:NAME}} read a secret. Seal leaves an
+			// existing kind "signing" slot unchanged (credential(key).sign()
+			// uses that kind), so a declared signing key still fills them.
+			return ['secret', 'signing']
 		case 'provider':
-			return 'secret'
+			return ['secret']
 		case 'integration':
-			return 'oauth'
+			return ['oauth']
 		case 'key':
 			return null
 		default: {
@@ -119,12 +128,12 @@ export function findDeclaredNeed(
 	declarations: Declarations,
 ) {
 	const key = referenceKey(reference)
-	const kind = fillingKind(reference)
+	const kinds = fillingKinds(reference)
 	return (
 		declarations.find(
 			(need) =>
 				need.key === key &&
-				(kind === null || need.kind == null || need.kind === kind),
+				(kinds === null || need.kind == null || kinds.includes(need.kind)),
 		) ?? null
 	)
 }

@@ -34,6 +34,7 @@ import {
 } from '#mcp/secrets/service.ts'
 import { createUnresolvedSecretMessage } from '#mcp/secrets/unresolved-secret.ts'
 import { type StorageContext } from '#mcp/storage.ts'
+import { assertCredentialUsesDeclared } from './credential-need-enforcement.ts'
 import {
 	assertCredentialScopeAllows,
 	authorizeActorUse,
@@ -271,6 +272,14 @@ export const packageSecretMountResolver: CredentialResolver<'package-secret-moun
 					`Package "${packageInfo.savedPackage.kodyId}" does not declare secret mount "${credential.alias}".`,
 				)
 			}
+			// The alias is not a stamp key. Check the secret the mount loads.
+			await assertCredentialUsesDeclared({
+				env: input.env,
+				request: input.actor,
+				orgId: input.orgId,
+				packageId,
+				references: [{ use: 'secret', name: mount.name, scope: null }],
+			})
 			subject.name = mount.name
 			const storageContext: StorageContext = {
 				sessionId: callerContext.storageContext?.sessionId ?? null,

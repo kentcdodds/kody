@@ -327,6 +327,9 @@ test('a stamped package secret read by name is limited even when the flag is off
 	})
 	declare([need('RESEND')])
 	await expect(read('RESEND')).resolves.toMatchObject({ found: true })
+
+	declare([need('RESEND', { kind: 'signing' })])
+	await expect(read('RESEND')).resolves.toMatchObject({ found: true })
 })
 
 test('a stamped package webhook secret stays on the legacy access path', async () => {
@@ -569,6 +572,23 @@ test('credential.named is refused in a personal package limited to its declarati
 	await expect(openNamed(own)).resolves.toMatchObject({ name: 'RESEND' })
 })
 
+test('a missing stamp stays legacy and any stored blob fail-closes', () => {
+	expect(stampPresence.storedCredentialStampEnforces(null)).toBe(false)
+	expect(stampPresence.storedCredentialStampEnforces(undefined)).toBe(false)
+	expect(
+		stampPresence.storedCredentialStampEnforces({
+			version: 1,
+			stampHash: 'abc',
+			keys: ['RESEND'],
+			depStamps: [],
+		}),
+	).toBe(true)
+	expect(
+		stampPresence.storedCredentialStampEnforces({ version: 99, keys: [1] }),
+	).toBe(true)
+	expect(stampPresence.storedCredentialStampEnforces('not-a-stamp')).toBe(true)
+})
+
 test('a package with no artifact binding is unstamped', async () => {
 	const t = await setup()
 	const packageId = await t.savePackage({
@@ -599,6 +619,11 @@ test('a declared slot counts only when its kind can fill the use', () => {
 			{ use: 'secret', name: 'A', scope: null },
 			[need('A', { kind: 'oauth' })],
 			false,
+		],
+		[
+			{ use: 'secret', name: 'A', scope: null },
+			[need('A', { kind: 'signing' })],
+			true,
 		],
 		[{ use: 'secret', name: 'A', scope: 'package' }, [], true],
 		[{ use: 'secret', name: 'A', scope: 'user' }, [], false],

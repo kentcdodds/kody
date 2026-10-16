@@ -772,17 +772,23 @@ flag stays off.
 - **Who is limited.** A package whose current published commit has a stored
   credential stamp (`credential-stamp.json` next to the published artifact). The
   limit applies to every run of that package, including its author's. Ad hoc
-  code and packages with no stamp are not limited by this rule.
+  code and packages with no stamp are not limited by this rule. A stored blob
+  that is not a valid stamp fail-closes (treated as stamped). A missing blob
+  stays on the legacy path.
 - **What counts as declared.** The same needs closure as the 2026-10-15
   amendment: the package's `kody.credentials` slots, including needs its imports
   declare. A use the stored closure misses is checked again against a closure
   recomputed from imports.
 - **Where it is checked.** `credential(key)` / `credentials(key)`, fetch
   placeholders, vault placeholders, `secretJwtSign`, and `packageSecrets` mount
-  reads. `credential.named()` is refused. Webhook enablement `secretName` /
-  integration picks, and id-based credential-client uses that already passed the
-  key check, stay on the legacy access path so live webhooks and declared client
-  uses keep working.
+  reads (the resolved mount name, not the alias). A `kind: "signing"` slot fills
+  a secret use, so an existing signing declaration still covers `secretJwtSign`.
+  Literal `kody.mcp.SERVER` capabilities check the server name as a credential
+  key. `integrationTokenRefresh` checks the integration name.
+  `credential.named()` is refused. Webhook enablement `secretName` / integration
+  picks (including webhook 401 refresh), and id-based credential-client uses
+  that already passed the key check, stay on the legacy access path so live
+  webhooks and declared client uses keep working.
 - **Unstamped packages.** Unchanged: implicit user-secret read, author
   exemption, and the global flag (off). Owners convert by republishing through
   the publish gate. There is no forced migration and no owner email.

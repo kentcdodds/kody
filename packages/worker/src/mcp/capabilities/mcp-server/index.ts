@@ -9,6 +9,7 @@ import {
 } from '#mcp/capabilities/synthesized-domain.ts'
 import { type Capability, type DomainSpec } from '#mcp/capabilities/types.ts'
 import { wrapDownstreamMcpToolResult } from '#mcp/downstream-mcp-result.ts'
+import { assertCredentialUsesDeclared } from '#worker/credentials/credential-need-enforcement.ts'
 import { attestedPackageStampFromCaller } from '#worker/credentials/package-stamp.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
@@ -103,6 +104,18 @@ function createCapabilityFromTool(input: {
 			const { packageStamp } = attestedPackageStampFromCaller({
 				storageContext: ctx.callerContext.storageContext,
 			})
+			// Literal kody.mcp.SERVER names are stamp keys. The connection
+			// itself is not checked at the door: client callTool sets
+			// serverName to the credential display name, which can differ.
+			if (packageStamp?.packageId) {
+				await assertCredentialUsesDeclared({
+					env: ctx.env,
+					request: ctx.callerContext.request,
+					orgId: orgUserId,
+					packageId: packageStamp.packageId,
+					references: [{ use: 'key', key: ref.name }],
+				})
+			}
 			const connection = await resolveCredential({
 				env: ctx.env,
 				orgId: orgUserId,

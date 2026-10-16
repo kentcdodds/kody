@@ -207,9 +207,12 @@ its `kody.credentials` closure declares. That includes a run by the package's
 author. It covers `{{secret:NAME}}`, `{{integration-token:NAME}}`, vault refs
 (declare the provider), `credential(key)` / `credentials(key)`, and
 `secretJwtSign`. An undeclared use fails with `credential_need_undeclared`,
-naming the package and the key to add. A slot with no `kind` covers any of them;
-slots its imports declare count too. `credential.named()` is refused. This does
-not depend on the `credential-need-enforcement` flag.
+naming the package and the key to add. A slot with no `kind` covers any of them.
+A slot declared `kind: "signing"` also fills `secretJwtSign` and
+`{{secret:NAME}}`. Literal `kody.mcp.SERVER` calls and `integrationTokenRefresh`
+may use only a declared server or integration name. Slots its imports declare
+count too. `credential.named()` is refused. This does not depend on the
+`credential-need-enforcement` flag.
 
 A package with no stamp keeps the previous path. Your own unstamped package
 needs no declarations: a package in your personal org that is not an unadopted
