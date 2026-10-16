@@ -20,7 +20,7 @@ import {
 	isMissingFeatureFlagsTable,
 } from '#worker/feature-flags/service.ts'
 import { loadPersonalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
-import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import { getSavedPackageByIdInAnyOrg } from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { loadPublishedCredentialNeeds } from './credential-needs-closure.ts'
 import { type CredentialNeed } from './credential-needs.ts'
@@ -209,10 +209,12 @@ async function loadEnforcedPackage(input: {
 	orgId: string
 	packageId: string
 }): Promise<EnforcedPackage> {
-	const saved = await getSavedPackageById(input.env.APP_DB, {
-		userId: input.orgId,
-		packageId: input.packageId,
-	})
+	// Needs are a fact about the package. An imported dependency lives in
+	// another org than the run that is using it.
+	const saved = await getSavedPackageByIdInAnyOrg(
+		input.env.APP_DB,
+		input.packageId,
+	)
 	const empty = async (): Promise<Declarations> => []
 	const stamped = await packageCarriesCredentialStamp(input)
 	if (!saved) {

@@ -237,7 +237,8 @@ await resend.fetch('/emails', { method: 'POST', body: JSON.stringify(email) })
 
 - `credential(key)` picks the one credential you can Use with the need's kind
   and provider (an undeclared key is read as a provider in ad hoc code and your
-  own packages). It rejects with an Error carrying `code` (`credential_unbound`,
+  own unstamped packages). A stamped package may use only a declared key. The
+  call rejects with an Error carrying `code` (`credential_unbound`,
   `credential_ambiguous`, `credential_not_found`, `credential_need_undeclared`,
   `credential_denied`, `credential_rate_limited`, `invalid_request`,
   `host_not_allowed`, `insecure_transport`) and `retryWith`, a list of picks to
@@ -253,8 +254,8 @@ await resend.fetch('/emails', { method: 'POST', body: JSON.stringify(email) })
   `x-kody-credential-hint` naming only the credential's shape (for example
   `header Authorization Bearer`).
 - `credential.named(name, { scope })` picks by exact name. It works only in ad
-  hoc execute and in packages of your personal org that are not listed in
-  Community.
+  hoc execute and in unstamped packages of your personal org that are not listed
+  in Community. A stamped package refuses it.
 - The caller picks among several matches with a `credentials` map on `execute`
   (for `code` or `invoke`):
   `{ github: 'work', google: ['work', 'personal'], x: { name: 'work', scope: 'org' } }`.

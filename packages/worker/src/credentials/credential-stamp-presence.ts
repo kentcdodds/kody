@@ -5,7 +5,7 @@
  * legacy credential path. A stored blob that is not a valid stamp fail-closes.
  */
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
-import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import { getSavedPackageByIdInAnyOrg } from '#worker/package-registry/repo.ts'
 import {
 	hasPublishedRuntimeArtifacts,
 	readPublishedCredentialStamp,
@@ -31,10 +31,12 @@ async function readPackageCarriesCredentialStamp(input: {
 	packageId: string
 }): Promise<boolean> {
 	if (!hasPublishedRuntimeArtifacts(input.env)) return false
-	const saved = await getSavedPackageById(input.env.APP_DB, {
-		userId: input.orgId,
-		packageId: input.packageId,
-	})
+	// The acting org is not the package owner for an imported dependency.
+	// Stamp presence is a fact about the package, like its manifest.
+	const saved = await getSavedPackageByIdInAnyOrg(
+		input.env.APP_DB,
+		input.packageId,
+	)
 	if (!saved) return false
 	const source = await getEntitySourceById(input.env.APP_DB, saved.sourceId)
 	const publishedCommit = source?.published_commit

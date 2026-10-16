@@ -14,6 +14,8 @@ import * as featureFlags from '#worker/feature-flags/service.ts'
 import { createOrganization } from '#worker/orgs/create-organization.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
+import * as runtimeArtifacts from '#worker/package-runtime/published-runtime-artifacts.ts'
+import * as entitySources from '#worker/repo/entity-sources.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import {
@@ -264,6 +266,64 @@ test('a stamped package fills only declared slots even when the flag is off', as
 	await expect(
 		t.fill({ orgId: t.acmeId, packageId, header: 'Bearer {{secret:RESEND}}' }),
 	).resolves.toBe(`Bearer ${keyValue}`)
+})
+
+test('a stamped package owned by another org is still limited to its declarations', async () => {
+	const t = await setup()
+	await t.storeSecret(t.personalId, 'RESEND')
+	const packageId = await t.savePackage({
+		ownerId: t.acmeId,
+		name: '@acme/mailer',
+	})
+	enforcement(false)
+	stamp(true)
+	declare([need('RESEND')])
+	const declared = await t
+		.fill({
+			orgId: t.personalId,
+			packageId,
+			header: 'Bearer {{secret:RESEND}}',
+		})
+		.catch((caught: unknown) => caught)
+	expect(declared).not.toMatchObject({ code: 'credential_need_undeclared' })
+
+	declare([])
+	await expect(
+		t.fill({
+			orgId: t.personalId,
+			packageId,
+			header: 'Bearer {{secret:RESEND}}',
+		}),
+	).rejects.toMatchObject({ code: 'credential_need_undeclared' })
+})
+
+test('stamp presence follows a package owned by another org', async () => {
+	const t = await setup()
+	const packageId = await t.savePackage({
+		ownerId: t.acmeId,
+		name: '@acme/mailer',
+	})
+	vi.spyOn(runtimeArtifacts, 'hasPublishedRuntimeArtifacts').mockReturnValue(
+		true,
+	)
+	vi.spyOn(runtimeArtifacts, 'readPublishedCredentialStamp').mockResolvedValue({
+		version: 1,
+		keys: ['RESEND'],
+		depStamps: [],
+		stampHash: 'abc',
+	})
+	vi.spyOn(entitySources, 'getEntitySourceById').mockResolvedValue({
+		published_commit: 'commit-1',
+		user_id: t.acmeId,
+	} as unknown as Awaited<ReturnType<typeof entitySources.getEntitySourceById>>)
+	await expect(
+		stampPresence.packageCarriesCredentialStamp({
+			env: t.env,
+			request: null,
+			orgId: t.personalId,
+			packageId,
+		}),
+	).resolves.toBe(true)
 })
 
 test('a stamped package limits its author; an unstamped author package does not', async () => {

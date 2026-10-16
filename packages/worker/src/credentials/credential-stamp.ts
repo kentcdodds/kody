@@ -112,7 +112,20 @@ export function isStoredCredentialStamp(
 		typeof record.stampHash === 'string' &&
 		Array.isArray(record.keys) &&
 		record.keys.every((key) => typeof key === 'string') &&
-		Array.isArray(record.depStamps)
+		Array.isArray(record.depStamps) &&
+		record.depStamps.every(isCredentialDepStamp)
+	)
+}
+
+function isCredentialDepStamp(value: unknown): value is CredentialDepStamp {
+	if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+		return false
+	}
+	const record = value as Record<string, unknown>
+	return (
+		typeof record.packageId === 'string' &&
+		typeof record.publishedCommit === 'string' &&
+		typeof record.stampHash === 'string'
 	)
 }
 

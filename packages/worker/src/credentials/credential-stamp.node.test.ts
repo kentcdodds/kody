@@ -6,6 +6,7 @@ import {
 	mergeCredentialStampIntoManifestFiles,
 	omitOversizedCredentialStampModules,
 	planCredentialStampSeal,
+	isStoredCredentialStamp,
 	scanCredentialStamp,
 	scanLiteralMcpServerKeys,
 } from './credential-stamp.ts'
@@ -697,4 +698,26 @@ test('computed |scope= and secretMounts fail the stamp gate', () => {
 	expect(mounts.failures.some((f) => f.message.includes('secretMounts'))).toBe(
 		true,
 	)
+})
+
+test('isStoredCredentialStamp rejects a dependency pin that is not an object', () => {
+	const stamp = {
+		version: 1,
+		keys: ['RESEND'],
+		depStamps: [null],
+		stampHash: 'abc',
+	}
+	expect(isStoredCredentialStamp(stamp)).toBe(false)
+	expect(
+		isStoredCredentialStamp({
+			...stamp,
+			depStamps: [
+				{
+					packageId: 'pkg',
+					publishedCommit: 'commit',
+					stampHash: 'dep',
+				},
+			],
+		}),
+	).toBe(true)
 })
