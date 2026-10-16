@@ -297,15 +297,17 @@ jobs:
 
       # Soft-cap the first attempt at the remaining unit-job budget so a slow
       # runner cannot burn the whole job timeout and leave Validate as
-      # workers=cancelled (#3763). GNU timeout exits 124 on soft-cap, or 137
-      # when --kill-after must SIGKILL; both are retryable. Vitest assertion
-      # failures keep their own non-zero status and never retry. Keep ADR
-      # 0011 per-file isolation (do not disable isolate, warm DOs from
-      # setupFiles, or skip verify).
+      # workers=cancelled (#3763). GNU timeout exits 124 on soft-cap; exit
+      # 137 is retryable only after the soft deadline (--kill-after SIGKILL).
+      # Early SIGKILL before the deadline is not a budget timeout. Vitest
+      # assertion failures keep their own non-zero status and never retry.
+      # Keep ADR 0011 per-file isolation (do not disable isolate, warm DOs
+      # from setupFiles, or skip verify).
       - name: ☁️ Workers unit tests
         run: |
           set -u
           attempt_budget_seconds=720
+          kill_after_seconds=60
           now=$(date +%s)
           elapsed=$((now - UNIT_JOB_START_EPOCH))
           remaining=$((attempt_budget_seconds - elapsed))
@@ -315,14 +317,24 @@ jobs:
           # No pipefail: the runner's implicit `bash -e` would abort on the
           # failing pipeline before the timeout check; PIPESTATUS captures
           # timeout/vitest's exit code instead.
-          timeout --signal=TERM --kill-after=60s "${remaining}s" \
+          attempt_started=$(date +%s)
+          timeout --signal=TERM --kill-after="${kill_after_seconds}s" "${remaining}s" \
             npm run test:workers 2>&1 | tee workers-attempt-1.log
           status=${PIPESTATUS[0]}
+          attempt_elapsed=$(( $(date +%s) - attempt_started ))
           if [ "$status" -eq 0 ]; then
             exit 0
           fi
-          # 124 = soft-cap TERM; 137 = --kill-after SIGKILL (128+9).
-          if [ "$status" -ne 124 ] && [ "$status" -ne 137 ]; then
+          # 124 = soft-cap TERM. 137 = SIGKILL (128+9): retryable only once
+          # the soft deadline has been reached (kill-after), not for an early
+          # OS kill before the budget.
+          retryable=0
+          if [ "$status" -eq 124 ]; then
+            retryable=1
+          elif [ "$status" -eq 137 ] && [ "$attempt_elapsed" -ge "$remaining" ]; then
+            retryable=1
+          fi
+          if [ "$retryable" -ne 1 ]; then
             exit "$status"
           fi
           echo "::warning::Workers unit hit the ≤${attempt_budget_seconds}s attempt budget mid-suite; retrying once (#3763)."
@@ -330,13 +342,21 @@ jobs:
           echo "UNIT_JOB_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
           # Capture under bash -e: a bare failing timeout would abort before
           # status=$? and skip the ::error:: annotation.
-          if timeout --signal=TERM --kill-after=60s "${attempt_budget_seconds}s" \
+          attempt_started=$(date +%s)
+          if timeout --signal=TERM --kill-after="${kill_after_seconds}s" "${attempt_budget_seconds}s" \
             npm run test:workers; then
             status=0
           else
             status=$?
           fi
-          if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
+          attempt_elapsed=$(( $(date +%s) - attempt_started ))
+          retry_timeout=0
+          if [ "$status" -eq 124 ]; then
+            retry_timeout=1
+          elif [ "$status" -eq 137 ] && [ "$attempt_elapsed" -ge "$attempt_budget_seconds" ]; then
+            retry_timeout=1
+          fi
+          if [ "$retry_timeout" -eq 1 ]; then
             echo "::error::Workers unit exceeded ≤${attempt_budget_seconds}s on retry (#3763)."
             exit "$status"
           fi

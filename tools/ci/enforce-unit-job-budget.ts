@@ -4,12 +4,12 @@
  * the beginning of the same job. Cache hit or miss does not change the cap.
  *
  * Workers also soft-caps each suite attempt at this budget in Validate and
- * retries once on GNU `timeout` exit 124 (or 137 when `--kill-after` must
- * SIGKILL) so a mid-suite cancel does not paint ✅ Validate red (#3763).
- * Assertion failures keep their own status and never retry. ADR 0011
- * isolation is unchanged. On retry, Validate resets the start epoch so the
- * post-suite check measures the successful attempt only (job wall is the
- * 30-minute Workers timeout).
+ * retries once on GNU `timeout` exit 124, or 137 when `--kill-after` must
+ * SIGKILL **after** the soft deadline. Exit 137 before the deadline is an
+ * early SIGKILL (not retryable). Assertion failures keep their own status
+ * and never retry. ADR 0011 isolation is unchanged. On retry, Validate
+ * resets the start epoch so the post-suite check measures the successful
+ * attempt only (job wall is the 30-minute Workers timeout).
  *
  * Usage:
  *   node tools/ci/enforce-unit-job-budget.ts --leg node --start-epoch 1710000000
@@ -21,10 +21,14 @@ import { isExecutedDirectly } from '../node-runtime.ts'
 export const unitJobAttemptTimeoutExitCode = 124
 
 /**
- * GNU `timeout(1)` exit status when `--kill-after` must SIGKILL (128+9).
- * Still a soft-cap timeout, not an assertion failure.
+ * GNU `timeout(1)` exit status when the child is SIGKILL'd (128+9). This is a
+ * soft-cap timeout only when elapsed time has reached the attempt budget
+ * (`--kill-after`); an early OS kill before the deadline is not retryable.
  */
 export const unitJobAttemptKillAfterExitCode = 137
+
+/** Grace period after the soft deadline before `--kill-after` sends SIGKILL. */
+export const unitJobAttemptKillAfterSeconds = 60
 
 const unitJobBudgets = {
 	node: {
@@ -45,12 +49,31 @@ export function getUnitJobMaxSeconds(leg: UnitJobLeg) {
 	return unitJobBudgets[leg].maxSeconds
 }
 
-/** Soft-cap / kill-after overruns are retryable once; assertion failures are not. */
-export function isRetryableUnitJobAttemptExit(status: number) {
-	return (
-		status === unitJobAttemptTimeoutExitCode ||
-		status === unitJobAttemptKillAfterExitCode
-	)
+export type UnitJobAttemptExitTiming = {
+	/** Wall-clock seconds the attempt ran before exiting. */
+	elapsedSeconds: number
+	/** Soft-cap duration passed to `timeout` for this attempt. */
+	budgetSeconds: number
+}
+
+/**
+ * Soft-cap overruns are retryable once; assertion failures and early SIGKILL
+ * (137 before the soft deadline) are not.
+ */
+export function isRetryableUnitJobAttemptExit(
+	status: number,
+	timing?: UnitJobAttemptExitTiming,
+) {
+	if (status === unitJobAttemptTimeoutExitCode) {
+		return true
+	}
+	if (status === unitJobAttemptKillAfterExitCode) {
+		if (!timing) {
+			return false
+		}
+		return timing.elapsedSeconds >= timing.budgetSeconds
+	}
+	return false
 }
 
 export type UnitJobBudgetResult = {
