@@ -357,11 +357,12 @@ Supported path:
    `downloadUrl`).
 4. Launch a Cloud Agent on that repo with `kody:@kentcdodds/cursor/agents`
    `createAgent` (`repository: 'https://github.com/kody-bot/cli'`,
-   `ref: 'main'`). Tell it to apply the patch, push, and open the PR itself via
-   ManagePullRequest as the Kent C. Dodds Cursor/GitHub account. The delegated
-   agent may add its own branch suffix.
+   `ref: 'main'`). Put the patch `downloadUrl` in the prompt text (not
+   `prompt.images`). Tell it to apply the patch, push, and open the PR itself
+   via ManagePullRequest as the Kent C. Dodds Cursor/GitHub account. The
+   delegated agent may add its own branch suffix.
 5. Follow-up review fixes: `kody:@kentcdodds/cursor/runs` `createRun` with
-   another patch upload.
+   another patch upload and that upload's `downloadUrl` in the prompt.
 
 Squash titles must be conventional (`fix:` / `feat:`). Merges to `main` publish
 `@kodycodes/cli` through semantic-release. Origin-side contracts to apply in
