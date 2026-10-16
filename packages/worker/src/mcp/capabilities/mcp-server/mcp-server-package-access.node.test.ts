@@ -274,7 +274,7 @@ test('a stamped package cannot call an undeclared MCP server capability', async 
 	const stamp = vi
 		.spyOn(stampPresence, 'packageCarriesCredentialStamp')
 		.mockResolvedValue(true)
-	vi.spyOn(packageRepo, 'getSavedPackageById').mockResolvedValue({
+	vi.spyOn(packageRepo, 'getSavedPackageByIdInAnyOrg').mockResolvedValue({
 		id: approvedPackageId,
 		userId: personIdFromStored('user-alice'),
 		name: '@alice/notion',

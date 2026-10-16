@@ -60,7 +60,7 @@ test('integrationTokenRefresh on a stamped package requires a declared integrati
 	const stamp = vi
 		.spyOn(stampPresence, 'packageCarriesCredentialStamp')
 		.mockResolvedValue(true)
-	vi.spyOn(packageRepo, 'getSavedPackageById').mockResolvedValue({
+	vi.spyOn(packageRepo, 'getSavedPackageByIdInAnyOrg').mockResolvedValue({
 		id: packageId,
 		userId: personIdFromStored('user-alice'),
 		name: '@alice/mailer',
