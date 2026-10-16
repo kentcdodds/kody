@@ -21,6 +21,7 @@ import {
 import { InternalErrorPage } from '#client/internal-error-page.tsx'
 import { NotFoundPage } from '#client/not-found-page.tsx'
 import { oauthPaths } from '#universal/oauth-paths.ts'
+import { packageAppOauthPaths } from '#universal/package-app-oauth-paths.ts'
 import { routePattern } from '#universal/route-pattern.ts'
 import { routes } from '#universal/routes.ts'
 import {
@@ -222,6 +223,10 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 	[oauthPaths.authorize]: lazyRouteLoader(
 		onboardingArea,
 		(m) => m.oauthAuthorizeRouteLoader,
+	),
+	[packageAppOauthPaths.authorize]: lazyRouteLoader(
+		onboardingArea,
+		(m) => m.packageAppOauthConsentRouteLoader,
 	),
 	[routePattern(routes.onboarding)]: lazyRouteLoader(
 		onboardingArea,
@@ -599,6 +604,9 @@ export const clientRoutes = {
 	),
 	[oauthPaths.authorize]: (
 		<LazyOnboardingRoute render={(m) => <m.OAuthAuthorizeRoute />} />
+	),
+	[packageAppOauthPaths.authorize]: (
+		<LazyOnboardingRoute render={(m) => <m.PackageAppOauthConsentRoute />} />
 	),
 	[oauthPaths.callback]: <OAuthCallbackRoute />,
 	...orgAccountClientRoutes,

@@ -3,6 +3,10 @@ import {
 	readParsedAuthSession,
 } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import {
+	packageAppOauthAppDomain,
+	packageAppOauthClaimLabels,
+} from '#app/package-app-oauth-consent-copy.ts'
 import { mintPackageAppOauthCode } from '#app/package-app-oauth-codes.ts'
 import { parsePackageAppOauthClientId } from '#app/package-app-oauth-client-id.ts'
 import {
@@ -16,17 +20,19 @@ import {
 	scopesIncludeEmail,
 	type PackageAppOauthScope,
 } from '#app/package-app-oauth-scopes.ts'
-import { packageAppOauthPaths } from '#universal/package-app-oauth-paths.ts'
-import { getPkceValidationError } from '#worker/oauth-pkce.ts'
 import { resolvePackageAppOrgOwnerByHandle } from '#app/package-app-owner.ts'
 import { viewerCanExecutePackageApp } from '#app/package-viewer-access.ts'
+import { redirectToLoginWhenUnauthenticated } from '#app/auth-redirect.ts'
+import { renderAppPage } from '#app/ssr-render.tsx'
+import { resolvePackageListIconUrl } from '#universal/identity-icon-urls.ts'
+import { type PackageAppOauthConsentLoaderData } from '#universal/loader-data.ts'
+import { packageAppOauthPaths } from '#universal/package-app-oauth-paths.ts'
+import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { resolveDisplayName } from '#worker/identity/username.ts'
 import { resolveSavedPackageForPackageAppSlug } from '#worker/package-invocations/module-artifacts.ts'
 import { getPackageNameLeaf } from '#worker/package-registry/package-name.ts'
-import { resolveDisplayName } from '#worker/identity/username.ts'
-import { createHtmlResponse } from 'remix/response/html'
-import { html } from 'remix/html-template'
-import { redirectToLoginWhenUnauthenticated } from '#app/auth-redirect.ts'
-import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import { getPkceValidationError } from '#worker/oauth-pkce.ts'
 
 /**
  * App-origin authorize + consent for hosted package apps.
@@ -191,224 +197,61 @@ async function issueCodeAndRedirect(input: {
 	})
 }
 
-function renderConsentPage(input: {
-	appTitle: string
-	clientId: string
+async function loadConsentPackageMeta(input: {
+	env: Env
 	orgUsername: string
 	kodyId: string
-	displayName: string
-	scopes: ReadonlyArray<PackageAppOauthScope>
-	authorizeAction: string
-	hiddenFields: Record<string, string>
 }) {
-	const asksEmail = scopesIncludeEmail(input.scopes)
-	return createHtmlResponse(
-		html`<!doctype html>
-			<html lang="en">
-				<head>
-					<meta charset="utf-8" />
-					<meta name="viewport" content="width=device-width, initial-scale=1" />
-					<meta name="referrer" content="no-referrer" />
-					<title>Authorize ${input.appTitle} — Kody</title>
-					<style>
-						:root {
-							color-scheme: light dark;
-							--bg: #0f1419;
-							--card: #1a222c;
-							--ink: #f4f7fb;
-							--muted: #9aa7b5;
-							--line: #2a3542;
-							--accent: #3d9cf0;
-							--accent-ink: #041018;
-							--danger: #f07178;
-							font-family: 'Segoe UI', ui-sans-serif, system-ui, sans-serif;
-							line-height: 1.45;
-						}
-						@media (prefers-color-scheme: light) {
-							:root {
-								--bg: #f3f6f9;
-								--card: #ffffff;
-								--ink: #14202b;
-								--muted: #5b6b7a;
-								--line: #d7e0ea;
-								--accent: #0b6bcb;
-								--accent-ink: #ffffff;
-								--danger: #b42318;
-							}
-						}
-						* {
-							box-sizing: border-box;
-						}
-						body {
-							margin: 0;
-							min-height: 100vh;
-							background:
-								radial-gradient(
-									1200px 600px at 10% -10%,
-									color-mix(in oklab, var(--accent) 22%, transparent),
-									transparent 60%
-								),
-								var(--bg);
-							color: var(--ink);
-						}
-						main {
-							width: min(28rem, calc(100% - 2rem));
-							margin: 0 auto;
-							padding: min(12vh, 5rem) 0 3rem;
-						}
-						.brand {
-							font-size: 0.85rem;
-							letter-spacing: 0.08em;
-							text-transform: uppercase;
-							color: var(--muted);
-							margin: 0 0 0.75rem;
-						}
-						.card {
-							background: var(--card);
-							border: 1px solid var(--line);
-							border-radius: 1rem;
-							padding: 1.5rem;
-							box-shadow: 0 18px 40px color-mix(in oklab, #000 18%, transparent);
-						}
-						h1 {
-							font-size: 1.45rem;
-							margin: 0 0 0.5rem;
-							line-height: 1.25;
-						}
-						.lead {
-							margin: 0 0 1.25rem;
-							color: var(--muted);
-						}
-						ul {
-							margin: 0 0 1.5rem;
-							padding-left: 1.1rem;
-							color: var(--ink);
-						}
-						li + li {
-							margin-top: 0.35rem;
-						}
-						.actions {
-							display: flex;
-							flex-wrap: wrap;
-							gap: 0.75rem;
-						}
-						button {
-							appearance: none;
-							border: 0;
-							border-radius: 0.65rem;
-							padding: 0.75rem 1.1rem;
-							font: inherit;
-							font-weight: 600;
-							cursor: pointer;
-							min-height: 48px;
-						}
-						.approve {
-							background: var(--accent);
-							color: var(--accent-ink);
-						}
-						.deny {
-							background: transparent;
-							color: var(--danger);
-							border: 1px solid
-								color-mix(in oklab, var(--danger) 45%, var(--line));
-						}
-						.meta {
-							margin-top: 1.25rem;
-							font-size: 0.85rem;
-							color: var(--muted);
-						}
-						code {
-							font-size: 0.9em;
-						}
-					</style>
-				</head>
-				<body>
-					<main>
-						<p class="brand">Kody</p>
-						<section class="card" data-testid="package-app-oauth-consent">
-							<h1>Allow ${input.appTitle} to use your Kody account?</h1>
-							<p class="lead">
-								Signed in as <strong>${input.displayName}</strong>. This app
-								(<code>${input.clientId}</code>) is hosted on Kody.
-							</p>
-							<ul>
-								<li>See your name, username, and avatar</li>
-								<li>See your access level for this app</li>
-								${asksEmail ? html`<li>See your email address</li>` : null}
-							</ul>
-							<form method="post" action="${input.authorizeAction}">
-								<input
-									type="hidden"
-									name="client_id"
-									value="${input.hiddenFields.client_id ?? ''}"
-								/>
-								<input
-									type="hidden"
-									name="redirect_uri"
-									value="${input.hiddenFields.redirect_uri ?? ''}"
-								/>
-								<input
-									type="hidden"
-									name="response_type"
-									value="${input.hiddenFields.response_type ?? 'code'}"
-								/>
-								<input
-									type="hidden"
-									name="code_challenge"
-									value="${input.hiddenFields.code_challenge ?? ''}"
-								/>
-								<input
-									type="hidden"
-									name="code_challenge_method"
-									value="${input.hiddenFields.code_challenge_method ?? 'S256'}"
-								/>
-								<input
-									type="hidden"
-									name="scope"
-									value="${input.hiddenFields.scope ?? ''}"
-								/>
-								<input
-									type="hidden"
-									name="state"
-									value="${input.hiddenFields.state ?? ''}"
-								/>
-								<div class="actions">
-									<button
-										class="approve"
-										type="submit"
-										name="decision"
-										value="approve"
-										data-testid="package-app-oauth-approve"
-									>
-										Allow
-									</button>
-									<button
-										class="deny"
-										type="submit"
-										name="decision"
-										value="deny"
-										data-testid="package-app-oauth-deny"
-									>
-										Deny
-									</button>
-								</div>
-							</form>
-							<p class="meta">
-								You can sign out of this app later from the app itself. Revoking
-								access on kody.codes will stop new sessions.
-							</p>
-						</section>
-					</main>
-				</body>
-			</html>`,
-		{
-			status: 200,
-			headers: {
-				'Cache-Control': 'no-store',
-				'Referrer-Policy': 'no-referrer',
-			},
-		},
-	)
+	let packageName = input.kodyId
+	let publisherDisplayName = input.orgUsername
+	let iconUrl: string | null = null
+	try {
+		const org = await resolvePackageAppOrgOwnerByHandle({
+			env: input.env,
+			handle: input.orgUsername,
+		})
+		if (org) {
+			publisherDisplayName = org.displayName || input.orgUsername
+			const lookup = await resolveSavedPackageForPackageAppSlug({
+				db: input.env.APP_DB,
+				userId: org.userId,
+				slug: input.kodyId,
+			})
+			if (lookup) {
+				packageName = getPackageNameLeaf(lookup.savedPackage.name)
+				const source = await getEntitySourceById(
+					input.env.APP_DB,
+					lookup.savedPackage.sourceId,
+				)
+				iconUrl = resolvePackageListIconUrl({
+					username: input.orgUsername,
+					kodyId: input.kodyId,
+					listingId: null,
+					listingIconCommit: null,
+					publishedCommit: source?.published_commit ?? null,
+				})
+			}
+		}
+	} catch {
+		// Consent still renders when package metadata tables are unavailable.
+	}
+	return { packageName, publisherDisplayName, iconUrl }
+}
+
+async function renderConsentPage(input: {
+	request: Request
+	env: Env
+	consent: PackageAppOauthConsentLoaderData
+}) {
+	const response = await renderAppPage({
+		request: input.request,
+		env: input.env,
+		title: `Allow ${input.consent.packageName} — Kody`,
+		loaderData: { packageAppOauthConsent: input.consent },
+	})
+	response.headers.set('Cache-Control', 'no-store')
+	response.headers.set('Referrer-Policy', 'no-referrer')
+	return response
 }
 
 async function parseAndValidateAuthorizeRequest(input: {
@@ -631,48 +474,44 @@ export async function handlePackageAppOauthAuthorizeRequest(
 		})
 	}
 
-	let appTitle = validated.client.kodyId
-	try {
-		const org = await resolvePackageAppOrgOwnerByHandle({
-			env,
-			handle: validated.client.username,
-		})
-		const lookup = org
-			? await resolveSavedPackageForPackageAppSlug({
-					db: env.APP_DB,
-					userId: org.userId,
-					slug: validated.client.kodyId,
-				})
-			: null
-		if (lookup) {
-			appTitle = getPackageNameLeaf(lookup.savedPackage.name)
-		}
-	} catch {
-		// Consent still renders when package metadata tables are unavailable.
-	}
-
-	const authorizeAction = packageAppOauthPaths.authorize
-	return renderConsentPage({
-		appTitle,
-		clientId: validated.client.clientId,
+	const meta = await loadConsentPackageMeta({
+		env,
 		orgUsername: validated.client.username,
 		kodyId: validated.client.kodyId,
-		displayName:
-			user.displayName ||
-			resolveDisplayName({
-				email: user.email,
-				username: user.username,
-			}),
-		scopes: validated.scopes,
-		authorizeAction,
-		hiddenFields: {
-			client_id: validated.client.clientId,
-			redirect_uri: validated.redirectUri,
-			response_type: 'code',
-			code_challenge: validated.codeChallenge,
-			code_challenge_method: 'S256',
-			scope: validated.scopes.join(' '),
-			...(validated.state ? { state: validated.state } : {}),
+	})
+	const viewerDisplayName =
+		user.displayName ||
+		resolveDisplayName({
+			email: user.email,
+			username: user.username,
+		})
+	const hiddenFields: Record<string, string> = {
+		client_id: validated.client.clientId,
+		redirect_uri: validated.redirectUri,
+		response_type: 'code',
+		code_challenge: validated.codeChallenge,
+		code_challenge_method: 'S256',
+		scope: validated.scopes.join(' '),
+	}
+	if (validated.state) hiddenFields.state = validated.state
+
+	return renderConsentPage({
+		request,
+		env,
+		consent: {
+			ok: true,
+			packageName: meta.packageName,
+			iconUrl: meta.iconUrl,
+			publisherDisplayName: meta.publisherDisplayName,
+			publisherUsername: validated.client.username,
+			appDomain: packageAppOauthAppDomain(validated.redirectUri),
+			viewerDisplayName,
+			clientId: validated.client.clientId,
+			kodyId: validated.client.kodyId,
+			redirectUri: validated.redirectUri,
+			scopes: [...validated.scopes],
+			claimLabels: packageAppOauthClaimLabels(validated.scopes),
+			hiddenFields,
 		},
 	})
 }
