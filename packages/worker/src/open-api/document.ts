@@ -324,7 +324,15 @@ function buildGatewayFetchStreamOperation(
 			},
 			// Origin-side failures before the stream starts (auth, validation).
 			// Do not list per-status Error refs: upstream statuses ride the 200 stream.
-			default: errorResponseRef,
+			default: {
+				description:
+					'Origin-side failure before the upstream stream starts (auth, validation, etc.). Upstream 4xx/5xx are not this response — they are forwarded on the 200 stream with the upstream status, headers, and body.',
+				content: {
+					'application/json': {
+						schema: { $ref: '#/components/schemas/Error' },
+					},
+				},
+			},
 		},
 		security: [{ apiToken: [] }],
 		'x-kody-permission': resolved.permission,
