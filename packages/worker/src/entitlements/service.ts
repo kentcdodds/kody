@@ -1118,6 +1118,45 @@ async function userAccountRowExists(input: {
 }
 
 /**
+ * Cold-only physical seed for a missing UserMeter storage singleton.
+ * Computes the D1 payload sum and `initializeStorageBytes` (INSERT OR IGNORE).
+ * Never CAS/absolute-sets a live meter — that would wipe reservations for
+ * bytes reserved but not yet written. The keyset reconcile lane owns CAS.
+ * On an init race, re-reads the winner's value.
+ */
+export async function bootstrapOwnerD1StorageBytes(input: {
+	db: D1Database
+	userId: OwnerId
+	now?: Date
+	/** Required because UserMeter is the storage-usage authority. */
+	env: UserMeterEnv
+	/** Jobs-worker byte contribution (see calculateUserD1StorageBytes). */
+	jobs?: JobsStore
+}): Promise<{ bytes: number; created: boolean }> {
+	const nowIso = (input.now ?? new Date()).toISOString()
+	const meter = userMeterRpc({ env: input.env, userId: input.userId })
+	const current = await meter.readStorageBytes()
+	if (current.outcome === 'ready') {
+		return { bytes: current.bytes, created: false }
+	}
+	const bytes = await calculateUserD1StorageBytes(input)
+	const initResult = await meter.initializeStorageBytes({
+		bytes,
+		updatedAt: nowIso,
+	})
+	if (initResult.created) {
+		return { bytes, created: true }
+	}
+	const after = await meter.readStorageBytes()
+	if (after.outcome === 'needs_bootstrap') {
+		throw new Error(
+			'UserMeter storage bytes still need bootstrap after cold init race.',
+		)
+	}
+	return { bytes: after.bytes, created: false }
+}
+
+/**
  * Recompute one user's authoritative storage bytes from D1 payload tables
  * (physical source of truth) and set UserMeter via a revision-guarded CAS.
  *
@@ -1133,6 +1172,10 @@ async function userAccountRowExists(input: {
  * Returns `{ bytes, updated, deferred }`. `deferred` is true when a CAS miss
  * or init race prevented the write; the row should be rotated for retry.
  * `deferred` is never a failure and is not counted as `updated`.
+ *
+ * Hot cold-bootstrap callers must use {@link bootstrapOwnerD1StorageBytes}
+ * (or {@link enqueueOwnerD1StorageReconcile}) instead — those never CAS a
+ * live meter.
  */
 export async function reconcileUserD1StorageBytes(input: {
 	db: D1Database
@@ -1350,10 +1393,10 @@ export async function readEntitlementResourceUsage(input: {
 
 /**
  * Seed a cold UserMeter storage singleton from the physical D1 payload sum
- * (via {@link reconcileUserD1StorageBytes}). Usage reads use this so a cold
- * or purged meter reflects real bytes immediately instead of zero-init.
- * Scan failures propagate (fail closed): we do not materialize an inaccurate
- * zero that would understate usage and StorageRunner baselines.
+ * via the shared lazy enqueue (cold init only — never CAS). Usage reads use
+ * this so a cold or purged meter reflects real bytes immediately instead of
+ * zero-init. Scan failures propagate (fail closed): we do not materialize an
+ * inaccurate zero that would understate usage and StorageRunner baselines.
  */
 function jobsStoreForOwnerStorageReconcile(
 	db: D1Database,
@@ -1370,14 +1413,13 @@ async function seedStorageBytesFromPhysical(input: {
 	userId: OwnerId
 	now: Date
 }): Promise<number> {
-	const reconciled = await reconcileUserD1StorageBytes({
+	await enqueueOwnerD1StorageReconcile({
 		db: input.db,
 		env: input.env,
 		userId: input.userId,
 		now: input.now,
 		jobs: jobsStoreForOwnerStorageReconcile(input.db, input.env),
 	})
-	if (!reconciled.deferred) return reconciled.bytes
 	const meter = userMeterRpc({ env: input.env, userId: input.userId })
 	const result = await meter.readStorageBytes()
 	if (result.outcome === 'needs_bootstrap') {

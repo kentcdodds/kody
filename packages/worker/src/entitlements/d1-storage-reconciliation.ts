@@ -3,6 +3,7 @@ import { type JobsStore } from '@kody-internal/shared/jobs/store.ts'
 import { type UserMeterEnv } from './user-meter-client.ts'
 import {
 	advanceD1StorageReconciliationCursor,
+	bootstrapOwnerD1StorageBytes,
 	listUsersForD1StorageReconciliation,
 	reconcileUserD1StorageBytes,
 } from './service.ts'
@@ -25,25 +26,25 @@ import {
  * Row failures do not fail the lane; `env` is required (UserMeter is the
  * authority).
  *
- * Cold reserve and usage reads can also call
- * {@link enqueueOwnerD1StorageReconcile} for an immediate per-owner pass so a
- * cold meter is not stuck at 0 until the keyset sweep wraps. Concurrent
- * callers share one in-flight promise (lazy enqueue).
+ * Cold reserve and usage reads call {@link enqueueOwnerD1StorageReconcile}
+ * for an immediate per-owner cold bootstrap (initialize only — never CAS a
+ * live meter) so a cold meter is not stuck at 0 until the keyset sweep wraps.
+ * Concurrent callers share one in-flight promise (lazy enqueue).
  */
 export const d1StorageReconciliationBatchSize = 8
 
 const inFlightOwnerReconciles = new Map<OwnerId, Promise<unknown>>()
 
 /**
- * Lazy per-owner physical reconcile. Dedupes in-flight work for the same
- * owner and returns the shared promise so the reserve hot path can await one
- * SUM instead of zero-init. Callers that detach without awaiting should pass
- * `waitUntil` so the isolate stays alive.
+ * Lazy per-owner cold physical bootstrap. Dedupes in-flight work for the same
+ * owner and returns the shared promise so reserve and usage reads share one
+ * SUM. Uses {@link bootstrapOwnerD1StorageBytes} (initialize only) — never the
+ * CAS path, so a concurrent reserve cannot be wiped by an absolute set.
+ * Callers that detach without awaiting should pass `waitUntil`.
  *
  * By default failures propagate (fail closed for awaited reserve/seed). Pass
  * `soft: true` only for fire-and-forget backstop work that may log and drop
- * the error — never use soft on the reserve path, or a failed scan would be
- * followed by a zero-init that under-enforces until the keyset sweep.
+ * the error — never use soft on the reserve path.
  */
 export function enqueueOwnerD1StorageReconcile(input: {
 	db: D1Database
@@ -53,7 +54,7 @@ export function enqueueOwnerD1StorageReconcile(input: {
 	jobs?: JobsStore
 	waitUntil?: (promise: Promise<unknown>) => void
 	/**
-	 * When true, log and swallow reconcile failures. Default false so awaited
+	 * When true, log and swallow bootstrap failures. Default false so awaited
 	 * callers fail closed instead of zero-initing past existing payload.
 	 */
 	soft?: boolean
@@ -65,7 +66,7 @@ export function enqueueOwnerD1StorageReconcile(input: {
 	}
 
 	const soft = input.soft === true
-	const task = reconcileUserD1StorageBytes({
+	const task = bootstrapOwnerD1StorageBytes({
 		db: input.db,
 		env: input.env,
 		userId: input.userId,
