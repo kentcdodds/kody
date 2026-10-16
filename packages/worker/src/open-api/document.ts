@@ -544,7 +544,7 @@ function buildDocumentBody(registry: BuiltCapabilityRegistry) {
 						},
 						'RateLimit-Policy': {
 							description:
-								'Advertised edge policies (`ip` 600/min, `token` 300/min). Remaining counts are not exposed.',
+								'Edge-generated 429s only: advertised policies (`ip` 600/min, `token` 300/min). Remaining counts are not exposed. Entitlement 429s omit this header.',
 							schema: { type: 'string' },
 						},
 					},
