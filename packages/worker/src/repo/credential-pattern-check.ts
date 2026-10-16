@@ -5,6 +5,7 @@ import {
 	legacyCredentialPatternFromMessage,
 } from '#worker/package-codemods/codemods/0010-detect-legacy-credential-patterns.ts'
 import {
+	credentialStampConversionFixGuidance,
 	mergeCredentialStampIntoManifestFiles,
 	scanCredentialStamp,
 } from '#worker/credentials/credential-stamp.ts'
@@ -22,6 +23,8 @@ import { normalizeRepoWorkspacePath } from './manifest.ts'
 const credentialPatternCheckLabel = `codemod ${detectLegacyCredentialPatternsCodemodId}`
 const credentialStampGateHeading =
 	'Credential stamp publish gate (issue #3836 phase 1):'
+const credentialStampGateFixIntro =
+	'Publish failed. Packages must be conversion-ready: every credential use is a fixed kody.credentials slot with a real description, and every call site uses a literal key. Callers pick which saved credential fills each slot with the execute credentials call map ({ "SLOT": "credential-name" }) or a stored/trigger mapping — never choose credential names at runtime, and do not use |scope=, secretMounts, server eval, vault placeholders, or credential.named() in stamped packages. Fix each item below, then publish again.'
 const credentialPatternFindingsHeading = `Credential placeholder references (${credentialPatternCheckLabel}):`
 const credentialPatternLabelsDoc =
 	'Labels are described under "Credential slots" in the packages docs.'
@@ -277,10 +280,11 @@ export function buildCredentialPatternCheck(
 			ok: false,
 			message: [
 				credentialStampGateHeading,
-				'Publish failed. Fix each item below, then publish again.',
+				credentialStampGateFixIntro,
 				...failureLines,
 				...addedNote,
 				...staleNote,
+				credentialStampConversionFixGuidance,
 				...credentialTypeHintLines(merged.files),
 			].join('\n'),
 			sourceFiles: merged.files,

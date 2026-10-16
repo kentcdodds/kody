@@ -395,12 +395,17 @@ export default async function digest(input: { account: string; key: string }) {
 }
 ```
 
-Publish error (credentials check `ok: false`): declare every credential this
-package can use as a `kody.credentials` slot with a real description, branch
-with literal `credential("KEY")` / `createAuthenticatedFetch("account")` only,
-and remove `|scope=` / computed names. Literal `kody.mcp.SERVER` names are
-stamped as `kind: "mcp"` slots (phase 2); dynamic `kody.mcp[variable]` fails the
-stamp gate. The `kody.mcp` 0010 label remains for migration tracking.
+Publish error (credentials check `ok: false`): the package must be
+**conversion-ready**. Declare every credential as a fixed `kody.credentials`
+slot with a real description, call only literal keys (`credential("SLOT")` /
+`createAuthenticatedFetch("SLOT")` / `{{secret:SLOT}}`), and remove `|scope=`,
+`secretMounts`, vault placeholders, server `eval` / `new Function` / non-literal
+`import()`, and computed names. Callers pick which saved credential fills each
+slot with the execute `credentials` call map (`{ "SLOT": "credential-name" }` or
+CLI `--credential SLOT=name`) or a stored/trigger mapping — never choose the
+credential name at runtime inside package code. Literal `kody.mcp.SERVER` names
+are stamped as `kind: "mcp"` slots (phase 2); dynamic `kody.mcp[variable]` fails
+the stamp gate. The `kody.mcp` 0010 label remains for migration tracking.
 `credential.named()` stays limited to ad hoc runs and unshared personal-org
 packages (not stamped).
 

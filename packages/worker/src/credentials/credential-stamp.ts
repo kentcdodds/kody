@@ -468,8 +468,17 @@ function scanUnparsedCredentialKeys(source: string, scan: KeyScan) {
 	}
 }
 
+/**
+ * Shared agent-facing fix for unstampable / non-literal credential use
+ * (issue #3836 publish gate). Kent's pattern: fixed declared slots plus a
+ * call map from each run to those slots — never a runtime-chosen name in
+ * package source.
+ */
+export const credentialStampConversionFixGuidance =
+	'Fix: declare every credential this package can use as a fixed kody.credentials slot with a real description, and call only literal keys (credential("SLOT"), createAuthenticatedFetch("SLOT"), secretJwtSign names, or {{secret:SLOT}} / {{integration-token:SLOT}}). Callers pick which saved credential fills each slot with the execute credentials call map ({ "SLOT": "credential-name" }, or CLI --credential SLOT=name) or a stored/trigger mapping — never choose the credential name at runtime inside package code. credential.named() is only for ad hoc runs and unshared personal-org packages, which are not stamped.'
+
 function nonLiteralFixMessage(kind: string) {
-	return `${kind} Publish cannot stamp a credential whose name is only known at run time. Declare every credential this package can use as a kody.credentials slot with a description, and branch among them with literal credential("KEY") (or literal createAuthenticatedFetch("account") / secretJwtSign names). credential.named() is only for ad hoc runs and unshared personal-org packages, which are not stamped.`
+	return `${kind} Publish cannot stamp a credential whose name is only known at run time. ${credentialStampConversionFixGuidance}`
 }
 
 /**
@@ -1208,14 +1217,14 @@ export function scanCredentialStamp(
 				failures.push({
 					code: 'credential_named',
 					path,
-					message: `${path}: credential.named() is only for ad hoc execute and unshared personal-org packages (not stamped). Declare each credential in kody.credentials with a description and call credential("KEY") with a string literal.`,
+					message: `${path}: credential.named() is only for ad hoc execute and unshared personal-org packages (not stamped). ${credentialStampConversionFixGuidance}`,
 				})
 			},
 			indirect: () => {
 				failures.push({
 					code: 'non_literal',
 					path,
-					message: `${path}: passes credential/credentials around instead of calling it with a literal key. Call credential("KEY") at each use site so publish can stamp the key.`,
+					message: `${path}: passes credential/credentials around instead of calling it with a literal key. ${credentialStampConversionFixGuidance}`,
 				})
 			},
 		}
@@ -1274,19 +1283,19 @@ function unstampablePatternFix(pattern: LegacyCredentialPattern): string {
 	switch (pattern) {
 		case 'computed secret':
 		case 'computed integration':
-			return 'Declare every credential it can pick in kody.credentials with a description, and branch with literal names only.'
+			return credentialStampConversionFixGuidance
 		case '|scope=':
-			return 'Remove |scope= and use an org credential assigned to the package, declared in kody.credentials.'
+			return `Remove |scope= (and any helper scope option). Use an org credential assigned to the package. ${credentialStampConversionFixGuidance}`
 		case 'secretMounts':
-			return 'Delete kody.secretMounts and declare each credential in kody.credentials with a description; use credential("KEY") or {{secret:KEY}}.'
+			return `Delete kody.secretMounts. ${credentialStampConversionFixGuidance}`
 		case 'packageSecrets.get':
-			return 'Replace packageSecrets.get with credential("KEY") after declaring the slot in kody.credentials.'
+			return `Replace packageSecrets.get with credential("SLOT") or {{secret:SLOT}}. ${credentialStampConversionFixGuidance}`
 		case 'plain http':
 			return 'Use https:// for any request that carries a credential placeholder.'
 		case 'kody.mcp':
 		case 'literal secret':
 		case 'webhook secretName':
-			return 'Declare the name in kody.credentials with a description.'
+			return `Declare the name as a fixed kody.credentials slot with a description, and keep the call site literal. Callers pick among credentials with the execute credentials call map or a stored/trigger mapping.`
 		default: {
 			const exhaustive: never = pattern
 			return `Unhandled pattern: ${String(exhaustive)}`

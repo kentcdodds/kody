@@ -1187,6 +1187,8 @@ test('runRepoChecks hard-fails unstampable credential patterns (issue #3836 phas
 	expect(check?.ok).toBe(false)
 	expect(check?.message).toMatch(/Credential stamp publish gate/)
 	expect(check?.message).toMatch(/secretMounts|computed integration/)
+	expect(check?.message).toMatch(/conversion-ready/)
+	expect(check?.message).toMatch(/credentials call map/)
 	expect(credentialPatternFindingsNotice(result.results)).toBe(check!.message)
 
 	const clean = await runChecks(packageFiles(manifest('clean-credentials')))

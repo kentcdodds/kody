@@ -38,6 +38,8 @@ test('buildCredentialPatternCheck hard-fails non-literal createAuthenticatedFetc
 	expect(result.ok).toBe(false)
 	expect(result.message).toMatch(/Credential stamp publish gate/)
 	expect(result.message).toMatch(/Publish failed/)
+	expect(result.message).toMatch(/conversion-ready/)
+	expect(result.message).toMatch(/credentials call map/)
 })
 
 test('buildCredentialPatternCheck auto-writes missing keys and fails without descriptions', () => {
