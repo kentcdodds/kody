@@ -102,7 +102,11 @@ export function createPackageMappingEditor(
 
 	async function save(input: MappingCellInput) {
 		if (!open || open.saving) return
-		const unchanged = triggerDraftProblem(input.trigger, open.draft)
+		const unchanged = triggerDraftProblem(
+			input.trigger,
+			open.draft,
+			input.target,
+		)
 		if (unchanged) {
 			update({ messages: [{ text: unchanged }] })
 			return

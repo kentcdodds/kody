@@ -136,10 +136,13 @@ export function triggerWillEnable(
 export function triggerDraftProblem(
 	trigger: PackageTriggerView | null,
 	draft: MappingDraft,
+	target?: CredentialMappingTarget,
 ) {
-	if (!trigger || trigger.enablement !== null || draft.mode !== 'inherit') {
-		return null
+	if (!trigger || draft.mode !== 'inherit') return null
+	if (target?.type === 'trigger' && target.createInstance) {
+		return 'Inheriting writes nothing, so it would not create another instance. Pick a credential (or none on purpose), or use Add another instance for defaults.'
 	}
+	if (trigger.enablement !== null) return null
 	return 'This trigger is off, and inheriting writes nothing, so it would stay off. Pick a credential (or none on purpose) to turn it on with this mapping.'
 }
 

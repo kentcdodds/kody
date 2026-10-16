@@ -184,7 +184,9 @@ export function describeIncompleteMapping(
 	const where =
 		item.where.type === 'default'
 			? 'Runs'
-			: `${describeTrigger(item.where.trigger)} runs`
+			: item.where.enablementId
+				? `${describeTrigger(item.where.trigger)} (one of your instances) runs`
+				: `${describeTrigger(item.where.trigger)} runs`
 	switch (item.status) {
 		case 'unbound':
 			return `${where} have no credential for “${item.needKey}”. Add one or map an existing one.`

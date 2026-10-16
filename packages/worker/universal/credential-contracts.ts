@@ -278,7 +278,12 @@ export type PackageCredentialsIncomplete = {
 	needKey: string
 	where:
 		| { type: 'default' }
-		| { type: 'trigger'; trigger: CredentialTriggerRef }
+		| {
+				type: 'trigger'
+				trigger: CredentialTriggerRef
+				/** Set when more than one of the viewer's instances is incomplete. */
+				enablementId?: string
+		  }
 	status: 'unbound' | 'ambiguous' | 'unusable'
 }
 

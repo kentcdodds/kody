@@ -460,7 +460,11 @@ export async function buildPackageCredentialsView(
 						) {
 							incomplete.push({
 								needKey: need.key,
-								where: { type: 'trigger', trigger: ref },
+								where: {
+									type: 'trigger',
+									trigger: ref,
+									enablementId: row.id,
+								},
 								status: effective.status,
 							})
 						}

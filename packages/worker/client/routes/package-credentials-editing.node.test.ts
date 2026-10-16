@@ -170,19 +170,23 @@ test('only the enabler edits a trigger, and an off trigger turns on when saved',
 	expect(triggerWillEnable(trigger(), pick)).toBe(true)
 	expect(triggerWillEnable(trigger(), { mode: 'none' })).toBe(true)
 	expect(triggerWillEnable(trigger(), inherit)).toBe(false)
+	const createTarget = {
+		type: 'trigger' as const,
+		trigger: { kind: 'cron' as const, name: 'daily' },
+		createInstance: true,
+	}
 	expect(
 		triggerWillEnable(
 			trigger({
 				enablement: { id: 'en', state: 'on', enabledByYou: true },
 			}),
 			pick,
-			{
-				type: 'trigger',
-				trigger: { kind: 'cron', name: 'daily' },
-				createInstance: true,
-			},
+			createTarget,
 		),
 	).toBe(true)
+	expect(triggerDraftProblem(trigger(), inherit, createTarget)).toContain(
+		'not create another instance',
+	)
 	expect(triggerDraftProblem(trigger(), inherit)).toContain('stay off')
 	expect(triggerDraftProblem(trigger(), pick)).toBeNull()
 	expect(triggerDraftProblem(null, inherit)).toBeNull()

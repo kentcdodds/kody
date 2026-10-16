@@ -269,7 +269,11 @@ function renderIncomplete(
 				{items.map((item) => {
 					const tab = incompleteMappingTab(item)
 					const createUrl = needs.get(item.needKey)?.createUrl
-					const key = `${item.needKey}:${item.where.type === 'trigger' ? `${item.where.trigger.kind}:${item.where.trigger.name}` : 'default'}`
+					const key = `${item.needKey}:${
+						item.where.type === 'trigger'
+							? `${item.where.trigger.kind}:${item.where.trigger.name}:${item.where.enablementId ?? ''}`
+							: 'default'
+					}`
 					return (
 						<li key={key} mix={css({ display: 'grid', gap: spacing.xs })}>
 							<span>{describeIncompleteMapping(item)}</span>
@@ -690,6 +694,7 @@ function renderInstanceCard(
 		instance.enablement.enabledByYou
 	return (
 		<div
+			key={instance.enablement.id}
 			data-testid={`package-trigger-instance-${instance.enablement.id}`}
 			mix={css({
 				display: 'grid',
@@ -853,12 +858,10 @@ export function renderTriggersTab(context: PackageTabContext): RemixNode {
 								<summary>Add another instance</summary>
 								<div mix={css({ display: 'grid', gap: spacing.sm })}>
 									<p mix={css(mutedCss)}>
-										Turn on another copy with its own credential mapping, or add
-										one that uses your defaults.
+										Adds another live copy that uses your default credentials.
+										Then change that instance’s credential mapping on its card
+										(saving one need at a time never mints a second copy).
 									</p>
-									{renderTriggerMappings(context, trigger, null, {
-										createInstance: true,
-									})}
 									<button
 										type="button"
 										disabled={Boolean(context.enablementBusyKey)}
@@ -873,7 +876,7 @@ export function renderTriggersTab(context: PackageTabContext): RemixNode {
 											}),
 										]}
 									>
-										Add with default credentials
+										Add another instance
 									</button>
 								</div>
 							</details>
