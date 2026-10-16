@@ -20,7 +20,6 @@ import {
 } from '#worker/webhooks/types.ts'
 import {
 	credentialHostsAllow,
-	CredentialNotFoundError,
 	CredentialRequestRefusedError,
 } from './credential-request.ts'
 import { type CredentialResolver } from './credential-resolver.ts'
@@ -82,18 +81,11 @@ export const signingCredentialResolver: CredentialResolver<'signing'> = {
 		const lookup = await findStoredCredential(call, credential.credentialId)
 		return {
 			async authorize() {
-				const storedKind = lookup?.found.kind
 				const expectedKind =
-					credential.operation.type === 'hmac' && storedKind === 'secret'
+					credential.operation.type === 'hmac' &&
+					lookup?.found.kind === 'secret'
 						? 'secret'
 						: 'signing'
-				if (
-					credential.operation.type === 'jwt' &&
-					storedKind != null &&
-					storedKind !== 'signing'
-				) {
-					throw new CredentialNotFoundError()
-				}
 				const found = await authorizeStoredCredential(
 					call,
 					credential.credentialId,

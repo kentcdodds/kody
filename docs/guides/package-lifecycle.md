@@ -320,8 +320,8 @@ After package checks and publishing succeed:
    references the wrapper will load. Never put plaintext credentials in params.
 4. Validate the structured results and the intended durable or external effects.
    Exercise an expected failure path when the operation is risky.
-5. Only then change the job to `"enabled": true`, publish again, and verify the
-   package/job detail reflects the enabled schedule.
+5. Only then call `jobUpdate` with `enabled: true`, and verify the package/job
+   detail reflects the enabled schedule.
 
    Republishing never flips an existing job's runtime `enabled` flag (manifest
    `enabled` is create-time only) and does not insert or reactivate owner cron

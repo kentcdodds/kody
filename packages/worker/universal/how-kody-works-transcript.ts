@@ -267,8 +267,8 @@ function gitRemoteCreateReturn() {
 		setup_commands: [
 			`git -c http.extraHeader='${redactedBearer}' clone '${artifactsRemote}' 'pkg_kody_bot_shipped'`,
 			`cd 'pkg_kody_bot_shipped'`,
-			`git config --local user.email -- '${gitAuthor.email}'`,
-			`git config --local user.name -- '${gitAuthor.name}'`,
+			`git config --local -- user.email '${gitAuthor.email}'`,
+			`git config --local -- user.name '${gitAuthor.name}'`,
 			`git remote add kody '${artifactsRemote}'`,
 			`git config remote.kody.fetch '+refs/heads/*:refs/remotes/kody/*'`,
 			`git config --add remote.kody.fetch '+refs/notes/*:refs/notes/*'`,
