@@ -38,8 +38,12 @@ const inFlightOwnerReconciles = new Map<OwnerId, Promise<unknown>>()
  * Lazy per-owner physical reconcile. Dedupes in-flight work for the same
  * owner and returns the shared promise so the reserve hot path can await one
  * SUM instead of zero-init. Callers that detach without awaiting should pass
- * `waitUntil` so the isolate stays alive. Failures are logged and swallowed —
- * the keyset sweep remains the backstop.
+ * `waitUntil` so the isolate stays alive.
+ *
+ * By default failures propagate (fail closed for awaited reserve/seed). Pass
+ * `soft: true` only for fire-and-forget backstop work that may log and drop
+ * the error — never use soft on the reserve path, or a failed scan would be
+ * followed by a zero-init that under-enforces until the keyset sweep.
  */
 export function enqueueOwnerD1StorageReconcile(input: {
 	db: D1Database
@@ -48,6 +52,11 @@ export function enqueueOwnerD1StorageReconcile(input: {
 	now?: Date
 	jobs?: JobsStore
 	waitUntil?: (promise: Promise<unknown>) => void
+	/**
+	 * When true, log and swallow reconcile failures. Default false so awaited
+	 * callers fail closed instead of zero-initing past existing payload.
+	 */
+	soft?: boolean
 }): Promise<unknown> {
 	const existing = inFlightOwnerReconciles.get(input.userId)
 	if (existing) {
@@ -55,6 +64,7 @@ export function enqueueOwnerD1StorageReconcile(input: {
 		return existing
 	}
 
+	const soft = input.soft === true
 	const task = reconcileUserD1StorageBytes({
 		db: input.db,
 		env: input.env,
@@ -63,7 +73,11 @@ export function enqueueOwnerD1StorageReconcile(input: {
 		jobs: input.jobs,
 	})
 		.catch((error: unknown) => {
-			console.warn('d1-storage-owner-reconcile-failed', input.userId, error)
+			if (soft) {
+				console.warn('d1-storage-owner-reconcile-failed', input.userId, error)
+				return
+			}
+			throw error
 		})
 		.finally(() => {
 			if (inFlightOwnerReconciles.get(input.userId) === task) {

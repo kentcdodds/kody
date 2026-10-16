@@ -1352,6 +1352,8 @@ export async function readEntitlementResourceUsage(input: {
  * Seed a cold UserMeter storage singleton from the physical D1 payload sum
  * (via {@link reconcileUserD1StorageBytes}). Usage reads use this so a cold
  * or purged meter reflects real bytes immediately instead of zero-init.
+ * Scan failures propagate (fail closed): we do not materialize an inaccurate
+ * zero that would understate usage and StorageRunner baselines.
  */
 function jobsStoreForOwnerStorageReconcile(
 	db: D1Database,
@@ -1476,10 +1478,10 @@ const storageBytesBootstrapMaxAttempts = 2
  * Atomically reserve storage bytes in the per-user UserMeter Durable Object.
  * On `needs_bootstrap`, lazily enqueues (and awaits) an immediate per-owner
  * physical reconcile so concurrent cold reserves share one D1 SUM and the
- * meter seeds from real payload bytes instead of zero. If that pass still
- * leaves the singleton missing, falls back to zero-init via
- * `initializeStorageBytes` (INSERT OR IGNORE — concurrent-safe), then retries.
- * The bounded reconcile lane remains the backstop for drift via CAS.
+ * meter seeds from real payload bytes instead of zero. Scan failures
+ * propagate (fail closed) — we do not zero-init after a failed scan, which
+ * would under-enforce until the keyset sweep. The bounded reconcile lane
+ * remains the backstop for drift via CAS.
  * Missing-user synthetic contexts (no account row) preserve current free-plan
  * allow/deny semantics without touching the DO.
  *
@@ -1575,8 +1577,8 @@ export async function assertWithinStorageBytesEntitlement(input: {
 			}
 			// Real owner with no DO row: lazy-enqueue a shared per-owner
 			// physical reconcile (one SUM for concurrent cold callers), then
-			// retry the reserve. Zero-init remains a fallback when reconcile
-			// cannot materialize the singleton.
+			// retry the reserve. Failures propagate — never zero-init after a
+			// failed scan (that would under-enforce existing payload).
 			await enqueueOwnerD1StorageReconcile({
 				db: input.db,
 				env: input.env,
@@ -1589,10 +1591,9 @@ export async function assertWithinStorageBytesEntitlement(input: {
 			})
 			const afterReconcile = await meter.readStorageBytes()
 			if (afterReconcile.outcome === 'needs_bootstrap') {
-				await meter.initializeStorageBytes({
-					bytes: 0,
-					updatedAt,
-				})
+				throw new Error(
+					'UserMeter storage bytes still need bootstrap after physical reconcile.',
+				)
 			}
 			continue
 		}

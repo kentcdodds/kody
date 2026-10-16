@@ -1249,6 +1249,67 @@ test('storage byte reserve cold-bootstraps existing payload before reserving', a
 	expect(withPayload.queries.some(({ sql }) => sql.includes('SUM('))).toBe(true)
 })
 
+test('storage byte reserve fails closed when the cold physical scan throws', async () => {
+	const userId = testStableUserIdFromEmail(plannedEmail)
+	const queries: Array<{ sql: string; params: Array<unknown> }> = []
+	const db = {
+		prepare(query: string) {
+			return {
+				bind(...params: Array<unknown>) {
+					queries.push({ sql: query, params })
+					return {
+						first: async () => {
+							if (query.includes('SELECT 1 AS present FROM users')) {
+								return { present: 1 }
+							}
+							if (query.includes('SUM(')) {
+								throw new Error('injected physical scan failure')
+							}
+							if (query.includes('FROM orgs') || query.includes('FROM users')) {
+								return {
+									org_id: userId,
+									plan: 'pro',
+									stripe_plan: null,
+									entitlement_ladder: 'public',
+									second_agent_standard_gift_expires_at: null,
+									referral_standard_credit_expires_at: null,
+								}
+							}
+							if (query.includes('FROM credit_wallets')) return null
+							if (query.includes('FROM org_user_budgets')) return null
+							if (isLiveSeatCountQuery(query)) return mockLiveSeatCountRow()
+							throw new Error(`Unsupported first query: ${query}`)
+						},
+						async all() {
+							return { results: [] }
+						},
+						async run() {
+							throw new Error(`Unsupported run query: ${query}`)
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+	const { env } = createInMemoryUserMeterEnv()
+	await expect(
+		assertWithinStorageBytesEntitlement({
+			db,
+			userId: ownerIdFromStored(userId),
+			email: plannedEmail,
+			requested: 50,
+			env,
+		}),
+	).rejects.toThrow('injected physical scan failure')
+	expect(
+		await userMeterRpc({
+			env,
+			userId: ownerIdFromStored(userId),
+		}).readStorageBytes(),
+	).toEqual({ outcome: 'needs_bootstrap' })
+	expect(queries.some(({ sql }) => sql.includes('SUM('))).toBe(true)
+})
+
 test('storage byte reserve handles missing user (synthetic context) with free-plan semantics', async () => {
 	// A userId with no D1 row must apply free-plan allow/deny without creating
 	// a UserMeter storage row for a non-existent account.
