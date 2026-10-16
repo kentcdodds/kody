@@ -164,26 +164,7 @@ test('shared-host logout prefers Referer leaf over a sibling ?app=', async () =>
 	).resolves.toMatchObject({ session })
 })
 
-test('shared-host logout without app identity clears legacy only (older kit)', async () => {
-	resetPackageAppSessionCookieForTests()
-	configureOrigins()
-	const response = await workerFetch(
-		`${ownerPackageAppOrigin}${packageAppOauthPaths.logout}?return_to=/`,
-	)
-	expect(response.status).toBe(302)
-	expect(response.headers.get('Location')).toBe('/')
-	const cleared = response.headers.getSetCookie()
-	expect(
-		cleared.some((header) => header.startsWith('__Host-kody_pkg_session=')),
-	).toBe(true)
-	expect(
-		cleared.some((header) =>
-			/^__Host-kody_pkg_session_[\w-]+=/.test(header.split(';')[0] ?? ''),
-		),
-	).toBe(false)
-})
-
-test('shared-host logout accepts app leaf from return_to as a fallback', async () => {
+test('shared-host logout without Referer clears legacy only (not ?app=)', async () => {
 	resetPackageAppSessionCookieForTests()
 	configureOrigins()
 	const expiresAt = Date.now() + 60 * 60 * 1000
@@ -195,18 +176,30 @@ test('shared-host logout accepts app leaf from return_to as a fallback', async (
 		expiresAt,
 	})
 	const pair = cookies[0]?.split(';')[0] ?? ''
-	const logout = await workerFetch(
-		`${ownerPackageAppOrigin}${packageAppOauthPaths.logout}?return_to=${encodeURIComponent('/packages/notes/home')}`,
+	const response = await workerFetch(
+		`${ownerPackageAppOrigin}${packageAppOauthPaths.logout}?app=notes&return_to=/`,
 		{ headers: { Cookie: pair } },
 	)
-	expect(logout.status).toBe(302)
-	const clearedNames = new Set(
-		logout.headers
-			.getSetCookie()
-			.map((header) => header.split('=')[0]?.trim())
-			.filter(Boolean),
-	)
-	expect(clearedNames.has(pair.split('=')[0] ?? '')).toBe(true)
+	expect(response.status).toBe(302)
+	expect(response.headers.get('Location')).toBe('/')
+	const cleared = response.headers.getSetCookie()
+	expect(
+		cleared.some((header) => header.startsWith('__Host-kody_pkg_session=')),
+	).toBe(true)
+	expect(
+		cleared.some((header) => header.startsWith(`${pair.split('=')[0]}=`)),
+	).toBe(false)
+	await expect(
+		readPackageAppSession({
+			request: new Request(`${ownerPackageAppOrigin}/packages/notes`, {
+				headers: { Cookie: pair },
+			}),
+			env,
+			slug: 'notes',
+		}),
+	).resolves.toMatchObject({
+		session: { stableUserId, username: ownerUsername },
+	})
 })
 
 test('older kit return_to=/ still clears the app when Referer has the leaf', async () => {

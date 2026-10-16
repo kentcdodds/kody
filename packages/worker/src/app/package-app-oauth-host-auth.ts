@@ -148,11 +148,13 @@ function readAppSlugFromSameOriginReferer(request: Request, requestUrl: URL) {
 /**
  * Which package leaf logout should clear on this host.
  *
- * Priority: verified app custom hostname mapping → same-origin Referer
- * `/packages/{leaf}` (sibling isolation) → `?app=` / `return_to` / host-app
- * resolution. When nothing resolves, callers clear only the legacy host-wide
- * cookie so older kit clients that omit `?app=` and use `return_to=/` still
- * sign out of pre-per-app sessions.
+ * On shared multi-app hosts (`{user}.kody.run` and org custom hostnames), only
+ * a same-origin Referer `/packages/{leaf}` may select a per-app cookie —
+ * `?app=` / `return_to` are attacker-chosen on a top-level GET. Verified
+ * single-app custom hostnames trust the hostname mapping. Shared-host logout
+ * never waits on `APP_DB` (custom-domain lookup) so a D1 outage cannot block
+ * cookie clearing. When nothing trusted resolves, callers clear only the
+ * legacy host-wide cookie.
  */
 async function resolveLogoutAppSlug(input: {
 	request: Request
@@ -161,8 +163,25 @@ async function resolveLogoutAppSlug(input: {
 	returnTo: string
 }): Promise<string | null> {
 	const fromReferer = readAppSlugFromSameOriginReferer(input.request, input.url)
-	const fromQuery = readAppSlugParam(input.url)
-	const fromReturnTo = readAppSlugFromReturnTo(input.returnTo)
+
+	const requestHost = parsePackageAppRequestHost({
+		env: input.env,
+		url: input.url,
+	})
+	if (requestHost?.kind === 'user-subdomain') {
+		return fromReferer ?? null
+	}
+
+	// Preview / path-based inline serving: no separate package-app zone, so
+	// query / return_to remain useful when Referer is absent.
+	if (!getPackageAppBaseUrl({ env: input.env })) {
+		return (
+			fromReferer ??
+			readAppSlugParam(input.url) ??
+			readAppSlugFromReturnTo(input.returnTo) ??
+			null
+		)
+	}
 
 	const hostname = normalizeCustomHostname(input.url.hostname)
 	if (hostname && (await isPackageAppCustomDomainsEnabled(input.env.APP_DB))) {
@@ -173,20 +192,13 @@ async function resolveLogoutAppSlug(input: {
 		if (mapping && isVerifiedAppCustomHostname(mapping)) {
 			return mapping.kodyId.toLowerCase()
 		}
+		if (mapping && isVerifiedOrgCustomHostname(mapping)) {
+			// Multi-app org custom host: same sibling rule as user subdomains.
+			return fromReferer ?? null
+		}
 	}
 
-	// Shared host: Referer wins over `?app=` so one package cannot clear
-	// another leaf's session with a top-level GET.
-	if (fromReferer) return fromReferer
-
-	if (fromQuery) return fromQuery
-	if (fromReturnTo) return fromReturnTo
-	const hostApp = await resolveHostApp({
-		request: input.request,
-		env: input.env,
-		url: input.url,
-	})
-	return hostApp?.kodyId ?? null
+	return fromReferer ?? null
 }
 
 async function resolveHostApp(input: {
