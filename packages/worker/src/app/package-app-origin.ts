@@ -149,14 +149,20 @@ function withoutHandoffToken(url: URL) {
 function redirectResponse(input: {
 	location: string
 	status: 302 | 307 | 308
-	setCookie?: string
+	setCookie?: string | Array<string>
 	cacheControl?: string
 }) {
 	const headers = new Headers({
 		Location: input.location,
 		'Cache-Control': input.cacheControl ?? 'no-store',
 	})
-	if (input.setCookie) headers.append('Set-Cookie', input.setCookie)
+	const cookies =
+		input.setCookie == null
+			? []
+			: Array.isArray(input.setCookie)
+				? input.setCookie
+				: [input.setCookie]
+	for (const cookie of cookies) headers.append('Set-Cookie', cookie)
 	return new Response(null, { status: input.status, headers })
 }
 
@@ -816,6 +822,7 @@ async function servePackageAppForSession(input: {
 						stableUserId: claims.stableUserId,
 						username: claims.username,
 					},
+					slug: packagePath.kodyId,
 					secure: isSecureRequest(request),
 					expiresAt: claims.sessionExpiresAt,
 					now,
@@ -831,7 +838,11 @@ async function servePackageAppForSession(input: {
 	const servedRequest = url.searchParams.has(packageAppHandoffQueryParam)
 		? new Request(withoutHandoffToken(url), request)
 		: request
-	const parsedSession = await readPackageAppSession({ request, env })
+	const parsedSession = await readPackageAppSession({
+		request,
+		env,
+		slug: packagePath.kodyId,
+	})
 	const serverTiming: Array<ServerTimingEntry> = []
 	const secure = isSecureRequest(request)
 	if (parsedSession) {

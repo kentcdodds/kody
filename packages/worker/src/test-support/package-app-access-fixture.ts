@@ -197,9 +197,12 @@ export async function packageAppAccessAuditRows(action: string) {
 	return results
 }
 
-/** A `kody_pkg_session` cookie pair for `person` on the fixture org host. */
-export async function packageAppSessionCookieFor(person: AccessFixturePerson) {
-	const setCookie = await createPackageAppSessionCookie({
+/** A per-app `kody_pkg_session_*` cookie pair for `person` on the fixture org host. */
+export async function packageAppSessionCookieFor(
+	person: AccessFixturePerson,
+	slug: string = accessFixture.privateApp.slug,
+) {
+	const setCookies = await createPackageAppSessionCookie({
 		env,
 		session: {
 			stableUserId: testStableUserIdFromEmail(
@@ -207,8 +210,9 @@ export async function packageAppSessionCookieFor(person: AccessFixturePerson) {
 			),
 			username: accessFixture.orgSlug,
 		},
+		slug,
 		secure: true,
 		expiresAt: Date.now() + 60 * 60 * 1000,
 	})
-	return setCookie.split(';')[0] ?? ''
+	return setCookies[0]?.split(';')[0] ?? ''
 }

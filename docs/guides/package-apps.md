@@ -102,10 +102,11 @@ the OAuth helper below for in-app Sign in / Sign out.
 
 Hosted packages need no client registration: the package identity (`owner/leaf`)
 is the client. Consent and sign-in stay on kody.codes; authorization codes +
-PKCE land a host-only `__Host-kody_pkg_session` on the app origin (`*.kody.run`
-or a verified custom domain). Redirect URIs are limited to
-`/_kody/auth/callback` on those origins. The legacy handoff remains for **Open
-Package App** until the OAuth path is fully proven.
+PKCE land a per-app host-only `__Host-kody_pkg_session_<hash>` cookie on the app
+origin (`*.kody.run` or a verified custom domain). Shared hosts keep one cookie
+per package leaf so logout of one app does not sign the visitor out of siblings.
+Redirect URIs are limited to `/_kody/auth/callback` on those origins. The legacy
+handoff remains for **Open Package App** until the OAuth path is fully proven.
 
 Near-zero-config helper:
 
@@ -135,9 +136,9 @@ Platform routes on every package-app host (host root, not under
 | Path                                           | Role                               |
 | ---------------------------------------------- | ---------------------------------- |
 | `GET /_kody/auth/login?app={leaf}&return_to=…` | Start PKCE; redirect to kody.codes |
-| `GET /_kody/auth/callback`                     | Exchange code; set session cookie  |
-| `GET\|POST /_kody/auth/logout`                 | Clear session                      |
-| `GET /_kody/auth/me`                           | Current user JSON                  |
+| `GET /_kody/auth/callback`                     | Exchange code; set per-app session |
+| `GET\|POST /_kody/auth/logout?app={leaf}`      | Clear that app's session only      |
+| `GET /_kody/auth/me?app={leaf}`                | Current user JSON                  |
 
 Default claims: user id, name, avatar, and access level for the app. Email only
 when requested and consented. Consent is skipped for apps the user (or their

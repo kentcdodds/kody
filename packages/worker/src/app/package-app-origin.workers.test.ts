@@ -242,9 +242,13 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 	// `Domain` attribute (cookie tossing from sibling subdomains).
 	const handoffResponse = await workerFetch(handoffLocation)
 	expect(handoffResponse.status).toBe(302)
-	const setCookie = handoffResponse.headers.get('Set-Cookie') ?? ''
+	const setCookies = handoffResponse.headers.getSetCookie()
+	const setCookie =
+		setCookies.find((cookie) =>
+			cookie.startsWith('__Host-kody_pkg_session_'),
+		) ?? ''
 	const cookieAttributes = [
-		'__Host-kody_pkg_session=',
+		'__Host-kody_pkg_session_',
 		'HttpOnly',
 		'SameSite=Lax',
 		'Secure',
@@ -254,6 +258,7 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 		[],
 	)
 	expect(setCookie).not.toContain('Domain=')
+	expect(setCookie).not.toMatch(/^__Host-kody_pkg_session=/)
 	const packageSessionMaxAge = Number(/Max-Age=(\d+)/.exec(setCookie)?.[1])
 	// Fresh non-remember-me `kody_session` is 7 days; the exchanged cookie
 	// inherits that remaining time rather than a fixed 12-hour cap.
@@ -558,8 +563,11 @@ test('team org private apps hand off and open for owners and execute-granted mem
 		const handoffResponse = await workerFetch(handoffLocation)
 		expect(handoffResponse.status).toBe(302)
 		const packageSessionCookie =
-			handoffResponse.headers.get('Set-Cookie')?.split(';')[0] ?? ''
-		expect(packageSessionCookie).toContain('kody_pkg_session=')
+			handoffResponse.headers
+				.getSetCookie()
+				.find((cookie) => cookie.includes('kody_pkg_session_'))
+				?.split(';')[0] ?? ''
+		expect(packageSessionCookie).toContain('kody_pkg_session_')
 		const cleanLocation = new URL(handoffResponse.headers.get('Location') ?? '')
 		const served = await workerFetch(cleanLocation, {
 			headers: { Cookie: packageSessionCookie },
@@ -753,14 +761,15 @@ test('internet-visible apps serve signed-out visitors anonymously; private apps 
 async function sessionCookieForFixtureOutsider() {
 	const email = 'cost-outsider@example.com'
 	await seedAccount({ db: env.APP_DB, email, username: 'cost-outsider' })
-	const setCookie = await createPackageAppSessionCookie({
+	const setCookies = await createPackageAppSessionCookie({
 		env,
 		session: {
 			stableUserId: testStableUserIdFromEmail(email),
 			username: accessFixture.orgSlug,
 		},
+		slug: accessFixture.privateApp.slug,
 		secure: true,
 		expiresAt: Date.now() + 60 * 60 * 1000,
 	})
-	return setCookie.split(';')[0] ?? ''
+	return setCookies[0]?.split(';')[0] ?? ''
 }

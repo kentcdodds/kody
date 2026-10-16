@@ -242,9 +242,14 @@ test('a verified app custom hostname serves at / behind the same host-only hando
 
 	const handoffResponse = await workerFetch(handoffLocation)
 	expect(handoffResponse.status).toBe(302)
-	const setCookie = handoffResponse.headers.get('Set-Cookie') ?? ''
-	expect(setCookie).toContain('__Host-kody_pkg_session=')
+	const setCookies = handoffResponse.headers.getSetCookie()
+	const setCookie =
+		setCookies.find((cookie) =>
+			cookie.startsWith('__Host-kody_pkg_session_'),
+		) ?? ''
+	expect(setCookie).toContain('__Host-kody_pkg_session_')
 	expect(setCookie).not.toContain('Domain=')
+	expect(setCookie).not.toMatch(/^__Host-kody_pkg_session=/)
 	const cleanLocation = new URL(handoffResponse.headers.get('Location') ?? '')
 	expect(cleanLocation.origin).toBe(customOrigin)
 	expect(cleanLocation.pathname).toBe('/')

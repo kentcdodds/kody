@@ -53,8 +53,9 @@ import { resolvePackageAppOauthInlineIdentity } from '#app/package-app-oauth-inl
  * Host-root `/_kody/auth/*` routes on package-app origins and verified custom
  * domains (and on the app origin when `PACKAGE_APP_BASE_URL` is unset for
  * preview / path-based inline serving). Starts PKCE, exchanges the
- * authorization code for the host-only package-app session cookie, clears that
- * session on logout, and exposes `/me`.
+ * authorization code for a per-app host-only package-app session cookie, clears
+ * only that app's session on logout (shared hosts keep sibling app sessions),
+ * and exposes `/me`.
  */
 
 function redirectResponse(location: string, setCookies: Array<string> = []) {
@@ -97,6 +98,13 @@ function readAppSlugParam(url: URL) {
 		url.searchParams.get('package') ??
 		url.searchParams.get('kody_id')
 	)?.trim()
+	return raw ? raw.toLowerCase() : undefined
+}
+
+/** Best-effort leaf from a host-root `return_to` like `/packages/{leaf}/…`. */
+function readAppSlugFromReturnTo(returnTo: string) {
+	const match = /^\/packages\/([^/?#]+)/i.exec(returnTo)
+	const raw = match?.[1]?.trim()
 	return raw ? raw.toLowerCase() : undefined
 }
 
@@ -281,18 +289,19 @@ async function handleCallback(input: { request: Request; env: Env; url: URL }) {
 		return badRequest('Authorization code was issued for a different app.', 403)
 	}
 
-	const sessionCookie = await createPackageAppSessionCookie({
+	const sessionCookies = await createPackageAppSessionCookie({
 		env: input.env,
 		session: {
 			stableUserId: record.personId,
 			username: record.orgUsername,
 		},
+		slug: record.kodyId,
 		secure,
 		expiresAt: record.sessionExpiresAt,
 	})
 	return redirectResponse(normalizeReturnTo(pkce.returnTo, input.url.origin), [
 		clearPkce,
-		sessionCookie,
+		...sessionCookies,
 	])
 }
 
@@ -302,20 +311,34 @@ async function handleLogout(input: { request: Request; env: Env; url: URL }) {
 		input.url.searchParams.get('return_to'),
 		input.url.origin,
 	)
-	const cookies = [
-		await destroyPackageAppSessionCookie({ env: input.env, secure }),
-		await destroyPackageAppOauthPkceCookie({ env: input.env, secure }),
-	]
-	const kodyId = readAppSlugParam(input.url)
-	if (kodyId) {
-		cookies.push(
-			await destroyPackageAppTicketCookie({
-				env: input.env,
-				slug: kodyId,
-				secure,
-			}),
+	// Resolve the app that requested logout so shared hosts
+	// (`{user}.kody.run/packages/{leaf}`) only clear that leaf's session.
+	// Custom domains resolve from the verified hostname mapping. Older kit
+	// clients omitted `?app=` on logout; fall back to `/packages/{leaf}` in
+	// `return_to` when present.
+	const app = await resolveHostApp(input)
+	const kodyId =
+		app?.kodyId ??
+		readAppSlugParam(input.url) ??
+		readAppSlugFromReturnTo(returnTo)
+	if (!kodyId) {
+		return badRequest(
+			'Missing app identity for sign-out. On *.kody.run pass ?app={leaf}.',
 		)
 	}
+	const cookies = [
+		...(await destroyPackageAppSessionCookie({
+			env: input.env,
+			slug: kodyId,
+			secure,
+		})),
+		await destroyPackageAppOauthPkceCookie({ env: input.env, secure }),
+		await destroyPackageAppTicketCookie({
+			env: input.env,
+			slug: kodyId,
+			secure,
+		}),
+	]
 	return redirectResponse(returnTo, cookies)
 }
 
@@ -332,9 +355,19 @@ async function readAvatarKeyForPerson(input: {
 }
 
 async function handleMe(input: { request: Request; env: Env; url: URL }) {
+	const app = await resolveHostApp(input)
+	const slug = app?.kodyId ?? readAppSlugParam(input.url)
+	if (!slug) {
+		return Response.json(
+			{ error: 'missing_app', message: 'Pass ?app={leaf} on this host.' },
+			{ status: 400, headers: { 'Cache-Control': 'no-store' } },
+		)
+	}
+
 	const parsedSession = await readPackageAppSession({
 		request: input.request,
 		env: input.env,
+		slug,
 	})
 	if (!parsedSession) {
 		return Response.json(
@@ -355,17 +388,9 @@ async function handleMe(input: { request: Request; env: Env; url: URL }) {
 		)
 	}
 
-	const app = await resolveHostApp(input)
-	const slug = app?.kodyId ?? readAppSlugParam(input.url)
 	const handle = (
 		app?.orgUsername ?? parsedSession.session.username
 	).toLowerCase()
-	if (!slug) {
-		return Response.json(
-			{ error: 'missing_app', message: 'Pass ?app={leaf} on this host.' },
-			{ status: 400, headers: { 'Cache-Control': 'no-store' } },
-		)
-	}
 
 	const grant = await findLivePackageAppOauthGrant({
 		db: input.env.APP_DB,
