@@ -822,54 +822,67 @@ export function displayTitleMentionsPr(
 }
 
 /**
- * preview.yml uses cancel-in-progress concurrency, so a cancelled (or skipped)
- * run is superseded by a newer one for the same PR. Do not latch onto those.
+ * preview.yml uses cancel-in-progress concurrency, so a cancelled run is
+ * superseded by a newer one for the same PR. That is a wait boundary.
+ *
+ * `skipped` is different: job-level `if:` no-ops (for example non-preview-flag
+ * label events) complete as skipped without starting a replacement deploy.
  */
 export function isCancelledOrSupersededPreviewRun(run: {
 	status: string
 	conclusion: string | null
 }) {
-	const conclusion = run.conclusion
-	return conclusion === 'cancelled' || conclusion === 'skipped'
+	return run.conclusion === 'cancelled'
+}
+
+function isSkippedNoopPreviewRun(run: { conclusion: string | null }) {
+	return run.conclusion === 'skipped'
 }
 
 function newestFirst(a: WorkflowRun, b: WorkflowRun) {
 	return b.databaseId - a.databaseId
 }
 
+type PreviewRunFollow =
+	| { kind: 'run'; run: WorkflowRun }
+	| { kind: 'wait' }
+	| { kind: 'none' }
+
 /**
- * Follow the newest matching run. If that run is cancelled/skipped, wait for a
- * successor instead of falling back to an older success (same-SHA redeploy).
+ * Walk newest-first. Cancelled is a boundary (wait for a successor). Skipped
+ * no-ops are transparent so an older successful deploy can still be followed.
  */
 function followNewestMatchingRun(
 	runs: ReadonlyArray<WorkflowRun>,
-): WorkflowRun | null {
-	const newest = runs.toSorted(newestFirst)[0]
-	if (!newest) return null
-	if (isCancelledOrSupersededPreviewRun(newest)) return null
-	return newest
+): PreviewRunFollow {
+	for (const run of runs.toSorted(newestFirst)) {
+		if (isCancelledOrSupersededPreviewRun(run)) return { kind: 'wait' }
+		if (isSkippedNoopPreviewRun(run)) continue
+		return { kind: 'run', run }
+	}
+	return { kind: 'none' }
 }
 
 /**
  * Pick the preview workflow run to follow: newest runnable run for the PR head
  * SHA, else newest runnable run whose display title mentions the PR. A newer
- * cancelled/skipped run is a boundary — do not adopt an older success behind it.
+ * cancelled run is a boundary — do not adopt an older success behind it.
+ * Skipped no-op runs are ignored.
  */
 export function selectPreviewWorkflowRun(
 	runs: ReadonlyArray<WorkflowRun>,
 	pr: Pick<PrView, 'number' | 'headRefOid'>,
 ): WorkflowRun | null {
 	const headMatches = runs.filter((run) => run.headSha === pr.headRefOid)
-	const headPick = followNewestMatchingRun(headMatches)
-	if (headPick) return headPick
-	if (headMatches.some((run) => isCancelledOrSupersededPreviewRun(run))) {
-		// Newest head-SHA run was cancelled/skipped; wait for its replacement.
-		return null
-	}
+	const headFollow = followNewestMatchingRun(headMatches)
+	if (headFollow.kind === 'run') return headFollow.run
+	if (headFollow.kind === 'wait') return null
 	const titleMatches = runs.filter((run) =>
 		displayTitleMentionsPr(run.displayTitle, pr.number),
 	)
-	return followNewestMatchingRun(titleMatches)
+	const titleFollow = followNewestMatchingRun(titleMatches)
+	if (titleFollow.kind === 'run') return titleFollow.run
+	return null
 }
 
 export function flattenGhJsonPages(parsed: unknown): Array<unknown> {

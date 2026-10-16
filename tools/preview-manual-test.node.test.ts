@@ -236,7 +236,7 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 			status: 'completed',
 			conclusion: 'skipped',
 		}),
-	).toBe(true)
+	).toBe(false)
 	expect(
 		isCancelledOrSupersededPreviewRun({
 			status: 'completed',
@@ -277,13 +277,22 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 		url: 'https://github.com/kentcdodds/kody/actions/runs/12',
 		displayTitle: 'Preview #42',
 	}
-	const olderOtherPr = {
+	const skippedNoop = {
 		databaseId: 13,
+		status: 'completed',
+		conclusion: 'skipped',
+		headSha: 'headsha',
+		event: 'pull_request',
+		url: 'https://github.com/kentcdodds/kody/actions/runs/13',
+		displayTitle: 'Preview #42',
+	}
+	const olderOtherPr = {
+		databaseId: 14,
 		status: 'completed',
 		conclusion: 'success',
 		headSha: 'other',
 		event: 'pull_request',
-		url: 'https://github.com/kentcdodds/kody/actions/runs/13',
+		url: 'https://github.com/kentcdodds/kody/actions/runs/14',
 		displayTitle: 'Preview #99',
 	}
 	// Cancelled first in the list (the latch bug): still follow the newest
@@ -307,6 +316,13 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 			headRefOid: 'headsha',
 		}),
 	).toBeNull()
+	// Skipped no-op (non-preview-flag label): look past it to older success.
+	expect(
+		selectPreviewWorkflowRun([olderSuccess, skippedNoop], {
+			number: 42,
+			headRefOid: 'headsha',
+		}),
+	).toEqual(olderSuccess)
 	expect(
 		selectPreviewWorkflowRun([cancelled, olderOtherPr], {
 			number: 42,
