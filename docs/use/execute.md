@@ -457,11 +457,33 @@ to be approved for both secrets, and only sends the derived Basic header in the
 outbound request.
 
 See [Secrets and host approval](./secrets-and-values.md) for placeholders, host
-approval, **`kody.secretList`** / **`secretSet`**, and the rules for mentioning
-placeholder syntax without resolving it (the inert `{{secret:<name>}}` form and
-the `x-kody-secret-resolution: off` and `headers-only` headers). Treat
-placeholder syntax as operational wiring, not prose — never place a resolvable
-**`{{secret:...}}`** token into content shown to users or sent to third parties.
+approval, and **`kody.secretList`** / **`secretSet`**.
+
+`fetch` fills `{{secret:name}}` in the body as well as in headers. A body that
+forwards text you did not write (a user message, an issue body) can then fail
+with `Secret "name" was not found`, or send a saved secret to a host that
+credential allows. Set `x-kody-secret-resolution: headers-only` on that fetch.
+Headers still resolve; the URL and body are sent as written. `off` skips
+resolution entirely, including headers.
+
+```ts
+await fetch('https://api.github.com/repos/acme/widgets/issues', {
+	method: 'POST',
+	headers: {
+		Authorization: 'Bearer {{secret:github}}',
+		'content-type': 'application/json',
+		'x-kody-secret-resolution': 'headers-only',
+	},
+	body: JSON.stringify({ title: 'Widget broke', body: userReport }),
+})
+```
+
+To mention the syntax in prose, write the inert form `{{secret:<name>}}`. Treat
+a resolvable `{{secret:name}}` as wiring, not as text you show to users or send
+onward. `kody dev check` and publish warn when a fetch sends a non-literal body
+without `x-kody-secret-resolution`. That warning does not fail the check or
+block publish. Details:
+[Credentials](../guides/credentials.md#keys-and-placeholders).
 
 ## Named state
 

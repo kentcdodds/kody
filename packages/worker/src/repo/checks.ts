@@ -75,6 +75,11 @@ import {
 } from './publish-phase-timing.ts'
 import { validateRequiredPackageDocs } from './required-package-docs.ts'
 import { validatePackageSkills } from '#worker/package-registry/package-skills.ts'
+import { listScannableModulePaths } from '#worker/credentials/module-placeholder-scan.ts'
+import {
+	findFetchBodiesMissingSecretResolution,
+	formatFetchBodySecretResolutionWarning,
+} from '#worker/credentials/fetch-body-secret-resolution.ts'
 import { buildCredentialPatternCheck } from './credential-pattern-check.ts'
 import { credentialNeedKeyNotes } from '#worker/credentials/credential-needs.ts'
 import { computeCredentialNeedsClosure } from '#worker/credentials/credential-needs-closure.ts'
@@ -1686,10 +1691,15 @@ export async function runRepoChecks(input: {
 						'Stamp findings below do not fail this check (community install / platform codemod lane). Authoring publish still enforces the gate.\n',
 					)
 			: credentialPatternCheck.message
+	const fetchBodyWarning = credentialCheckOk
+		? fetchBodySecretResolutionNotice(sourceFiles)
+		: null
 	results.push({
 		kind: credentialPatternCheck.kind,
 		ok: credentialCheckOk,
-		message: credentialCheckMessage,
+		message: fetchBodyWarning
+			? `${credentialCheckMessage}\n\n${fetchBodyWarning}`
+			: credentialCheckMessage,
 	})
 	if (enforceCredentialStamp && !credentialPatternCheck.ok) {
 		return toRepoCheckRunResult({ results, manifest, sourceFiles })
@@ -2122,4 +2132,22 @@ export async function runRepoSourceWalkChecks(input: {
 		message: `Validated ${fileCount} source file(s) within size limits.`,
 		sourceFiles: collected,
 	}
+}
+
+/**
+ * Advisory publish note. Omitted when the credential stamp gate already
+ * failed, so that failure stays the message authors fix first.
+ */
+function fetchBodySecretResolutionNotice(
+	sourceFiles: Record<string, string>,
+): string | null {
+	const hits: Array<{ path: string; line: number }> = []
+	for (const path of listScannableModulePaths(sourceFiles)) {
+		const source = sourceFiles[path]
+		if (typeof source !== 'string') continue
+		for (const hit of findFetchBodiesMissingSecretResolution(source)) {
+			hits.push({ path, line: hit.line })
+		}
+	}
+	return formatFetchBodySecretResolutionWarning(hits)
 }

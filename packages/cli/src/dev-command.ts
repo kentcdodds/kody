@@ -11,6 +11,8 @@ import {
 	mocksSuggestionDetail,
 	type CredentialedFetchSignal,
 } from './credentialed-fetch-scan.js'
+import { formatFetchBodySecretResolutionWarning } from './fetch-body-secret-resolution.js'
+import { findPackageFetchBodyWarnings } from './fetch-body-package-scan.js'
 import {
 	buildLocalPackageContext,
 	runLocalPackageModule,
@@ -624,11 +626,27 @@ export async function runDevCheck(input: {
 	io: DevIo
 }): Promise<number> {
 	const manifest = await loadPackageManifest(input.cwd)
-	const checks: Array<{ name: string; ok: boolean; detail?: string }> = []
+	const checks: Array<{
+		name: string
+		ok: boolean
+		detail?: string
+		level?: 'warning'
+	}> = []
 	const credentialSignals: Array<CredentialedFetchSignal> = []
+	const fetchBodyHits: Array<{ path: string; line: number }> = []
 
-	const push = (name: string, ok: boolean, detail?: string) => {
-		checks.push({ name, ok, detail })
+	const push = (
+		name: string,
+		ok: boolean,
+		detail?: string,
+		level?: 'warning',
+	) => {
+		checks.push({
+			name,
+			ok,
+			...(detail !== undefined ? { detail } : {}),
+			...(level !== undefined ? { level } : {}),
+		})
 	}
 
 	const bundleAndScan = async (
@@ -640,6 +658,12 @@ export async function runDevCheck(input: {
 			push(label, true, label.startsWith('app.entry') ? modulePath : undefined)
 			credentialSignals.push(
 				...(await detectCredentialedFetchInSource(bundled, label)),
+			)
+			fetchBodyHits.push(
+				...(await findPackageFetchBodyWarnings({
+					entryPath: modulePath,
+					packageRoot: manifest.root,
+				})),
 			)
 		} catch (error) {
 			push(label, false, error instanceof Error ? error.message : String(error))
@@ -705,6 +729,13 @@ export async function runDevCheck(input: {
 		// Soft tip — never fails the check; agents learn before unmocked_request.
 		push(packageMocksRelativePath, true, mocksDetail)
 	}
+	const fetchBodyWarning = formatFetchBodySecretResolutionWarning(
+		dedupeFetchBodyHits(fetchBodyHits),
+	)
+	if (fetchBodyWarning) {
+		// Advisory — a forwarded body can quote {{secret:name}}. Never fails.
+		push('secret-resolution', true, fetchBodyWarning, 'warning')
+	}
 
 	const failed = checks.filter((check) => !check.ok)
 	if (input.json) {
@@ -730,7 +761,11 @@ export async function runDevCheck(input: {
 		)
 	} else {
 		for (const check of checks) {
-			const mark = check.ok ? 'ok' : 'FAIL'
+			const mark = !check.ok
+				? 'FAIL'
+				: check.level === 'warning'
+					? 'WARN'
+					: 'ok'
 			input.io.stdout(
 				`${mark.padEnd(4)} ${check.name}${check.detail ? ` — ${check.detail}` : ''}\n`,
 			)
@@ -742,6 +777,20 @@ export async function runDevCheck(input: {
 		)
 	}
 	return failed.length === 0 ? 0 : 1
+}
+
+function dedupeFetchBodyHits(
+	hits: ReadonlyArray<{ path: string; line: number }>,
+): Array<{ path: string; line: number }> {
+	const seen = new Set<string>()
+	const unique: Array<{ path: string; line: number }> = []
+	for (const hit of hits) {
+		const key = `${hit.path}:${hit.line}`
+		if (seen.has(key)) continue
+		seen.add(key)
+		unique.push(hit)
+	}
+	return unique
 }
 
 async function runPackageModuleOnce(input: {

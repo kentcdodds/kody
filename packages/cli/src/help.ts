@@ -319,7 +319,9 @@ ${orgBlock}
              (\`kody dev emit <event> --body event.json\`). \`kody dev check\`
              bundles + light publish validations without running; when the
              package uses credentialed fetch and \`.kody/mocks.ts\` is
-             missing, check soft-suggests adding that file. On
+             missing, check soft-suggests adding that file. A fetch that
+             sends a non-literal body without \`x-kody-secret-resolution\`
+             prints a WARNING and still passes. On
              \`--target mock\`, \`kody:@\` deps resolve from this package's
              exports, \`.kody/deps.json\` / \`package.json#kody.localDeps\`
              path maps, then published package-graph when a login/API token

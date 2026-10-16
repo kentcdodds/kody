@@ -1196,6 +1196,9 @@ test('runRepoChecks hard-fails unstampable credential patterns (issue #3836 phas
 	expect(findCheck(clean.result, 'credentials')?.message).toMatch(
 		/Credential stamp is empty/,
 	)
+	expect(findCheck(clean.result, 'credentials')?.message).not.toMatch(
+		/x-kody-secret-resolution/,
+	)
 	expect(findCheck(clean.result, 'credentials')?.message).toMatch(
 		/Credential stamp publish gate/,
 	)
@@ -1249,6 +1252,66 @@ test('runRepoChecks hard-fails unstampable credential patterns (issue #3836 phas
 			].join('\n'),
 		},
 	])
+})
+
+test('runRepoChecks warns when a fetch body is not opted out of secret resolution', async () => {
+	const { result } = await runChecks(
+		packageFiles(
+			manifest('forwarded-body', {
+				credentials: {
+					github: { kind: 'secret', description: 'GitHub token.' },
+				},
+			}),
+			{
+				'src/index.ts': [
+					'export const ready = true',
+					'export async function post(userReport: string) {',
+					"  await fetch('https://api.example.com/issues', {",
+					"    method: 'POST',",
+					"    headers: { Authorization: 'Bearer {{secret:github}}' },",
+					'    body: JSON.stringify({ body: userReport }),',
+					'  })',
+					'}',
+				].join('\n'),
+			},
+		),
+	)
+	expect(result.ok).toBe(true)
+	const check = findCheck(result, 'credentials')
+	expect(check?.ok).toBe(true)
+	expect(check?.message).toContain('WARNING:')
+	expect(check?.message).toContain('x-kody-secret-resolution: headers-only')
+	expect(check?.message).toContain('src/index.ts:')
+	expect(check?.message).toContain('does not block publish')
+
+	const optedOut = await runChecks(
+		packageFiles(
+			manifest('forwarded-body-opt-out', {
+				credentials: {
+					github: { kind: 'secret', description: 'GitHub token.' },
+				},
+			}),
+			{
+				'src/index.ts': [
+					'export const ready = true',
+					'export async function post(userReport: string) {',
+					"  await fetch('https://api.example.com/issues', {",
+					"    method: 'POST',",
+					'    headers: {',
+					"      Authorization: 'Bearer {{secret:github}}',",
+					"      'x-kody-secret-resolution': 'headers-only',",
+					'    },',
+					'    body: JSON.stringify({ body: userReport }),',
+					'  })',
+					'}',
+				].join('\n'),
+			},
+		),
+	)
+	expect(optedOut.result.ok).toBe(true)
+	expect(findCheck(optedOut.result, 'credentials')?.message).not.toContain(
+		'WARNING:',
+	)
 })
 
 test('runRepoChecks fails plain http credential fetches', async () => {

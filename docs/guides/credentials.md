@@ -92,8 +92,32 @@ const response = await fetch('https://api.github.com/user/repos', {
 - `{{integration-token:name}}` works the same way for an OAuth connection, on
   the integration's own hosts.
 
-Full placeholder rules (encodings, multipart, the `x-kody-secret-resolution`
-header):
+The gateway fills those placeholders in the **body** too, not only in headers.
+Text this package did not write — a user message, an issue body, a comment — can
+quote `{{secret:name}}`. On a host that credential allows, the real value is
+sent. If that name is not saved, the fetch fails with
+`Secret "name" was not found`. When the body forwards someone else's text, set
+`x-kody-secret-resolution: headers-only` so only headers are filled:
+
+```ts
+await fetch('https://api.github.com/repos/acme/widgets/issues', {
+	method: 'POST',
+	headers: {
+		Authorization: 'Bearer {{secret:github}}',
+		'content-type': 'application/json',
+		'x-kody-secret-resolution': 'headers-only',
+	},
+	body: JSON.stringify({ title: 'Widget broke', body: userReport }),
+})
+```
+
+`off` sends every placeholder as written, including headers. Kody strips the
+header before the request leaves. `kody dev check` and a successful publish
+print a warning when a fetch sends a non-literal body without that header. The
+warning does not fail the check or block publish.
+
+Full placeholder rules (encodings, multipart, the inert `{{secret:<name>}}`
+mention form):
 [Secrets and host approval](../use/secrets-and-values.md#placeholders-in-fetch).
 
 ## Scoped clients: `credential(key)`

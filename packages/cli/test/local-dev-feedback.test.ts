@@ -184,10 +184,86 @@ export default async function main() {
 	}
 })
 
+test('kody dev check warns on a forwarded fetch body and still passes', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'kody-check-body-'))
+	try {
+		await writeFile(
+			join(root, 'package.json'),
+			JSON.stringify({
+				name: '@local/forward-body',
+				type: 'module',
+				exports: { './post': './src/post.ts' },
+				kody: { id: 'forward-body' },
+			}),
+		)
+		await writeFile(join(root, 'README.md'), '# forward\n')
+		await writeFile(join(root, 'AGENTS.md'), '# Agents\n')
+		await mkdir(join(root, 'src'), { recursive: true })
+		await writeFile(
+			join(root, 'src/post.ts'),
+			`export default async function post(userReport: string) {
+	await fetch('https://api.example.com/issues', {
+		method: 'POST',
+		headers: { Authorization: 'Bearer {{secret:github}}' },
+		body: JSON.stringify({ body: userReport }),
+	})
+}
+`,
+		)
+		let stdout = ''
+		const code = await runDevCheck({
+			target: 'mock',
+			cwd: root,
+			io: {
+				stdout: (text) => {
+					stdout += text
+				},
+				stderr: () => {},
+			},
+		})
+		assert.equal(code, 0)
+		assert.match(stdout, /^WARN\s+secret-resolution/m)
+		assert.match(stdout, /x-kody-secret-resolution: headers-only/)
+		assert.match(stdout, /src\/post\.ts:/)
+		assert.match(stdout, /kody dev check passed/)
+
+		await writeFile(
+			join(root, 'src/post.ts'),
+			`export default async function post(userReport: string) {
+	await fetch('https://api.example.com/issues', {
+		method: 'POST',
+		headers: {
+			Authorization: 'Bearer {{secret:github}}',
+			'x-kody-secret-resolution': 'headers-only',
+		},
+		body: JSON.stringify({ body: userReport }),
+	})
+}
+`,
+		)
+		let opted = ''
+		const optedCode = await runDevCheck({
+			target: 'mock',
+			cwd: root,
+			io: {
+				stdout: (text) => {
+					opted += text
+				},
+				stderr: () => {},
+			},
+		})
+		assert.equal(optedCode, 0)
+		assert.doesNotMatch(opted, /WARN\s+secret-resolution/)
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
+})
+
 test('help documents local --invoke kody:@ and fail-closed mocks (not native workerd fetch)', () => {
 	const text = buildUsage()
 	assert.match(text, /--invoke kody:@scope\/pkg\/export/)
 	assert.match(text, /soft-suggests/)
+	assert.match(text, /x-kody-secret-resolution/)
 	assert.match(text, /ready-to-paste MSW handler stub/)
 	assert.doesNotMatch(text, /keep native workerd fetch/)
 	assert.match(text, /fail closed|fail-closed/i)
