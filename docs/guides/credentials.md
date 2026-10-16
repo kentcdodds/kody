@@ -171,6 +171,31 @@ Declare `kind` only when the package needs a specific shape:
   `provider`.
 - Needs have no hosts or placement fields. Those belong to the credential.
 
+### Let app visitors use your credential
+
+People who open an internet-visible app run it as themselves, or as no one when
+they are signed out or outside your org, so they cannot use your org's
+credentials. To let the app use one for every visitor, add
+`"ownerCredentialForVisitors": true` to that need:
+
+```json
+"credentials": {
+	"rooms-db": {
+		"kind": "secret",
+		"description": "Database the room chart reads for every visitor",
+		"ownerCredentialForVisitors": true
+	}
+}
+```
+
+The approval page then says that visitors can use that credential through the
+app, signed out or signed in as someone else, without seeing its value. After
+you approve, the app's `credential('rooms-db')` resolves with the approving
+owner's access for each visitor, limited to the credentials approved for that
+need. Other needs and placeholders still act as the visitor. Visitor use is
+rate-limited and recorded in the org activity log with who used it. See
+[Packages](../use/packages.md#let-app-visitors-use-the-owners-credential).
+
 ## Each kind through `credential()`
 
 ### Key
@@ -390,6 +415,7 @@ Every credential error is structured: it has a `code`, a message, and
 | `credential_need_unknown`    | The map names a key no package in the invoked run declares                              |
 | `credential_need_undeclared` | A package someone else runs uses a credential it does not declare in `kody.credentials` |
 | `credential_denied`          | Authorization failed                                                                    |
+| `credential_rate_limited`    | An app's visitors used an owner's credential too often; try again shortly               |
 | `host_not_allowed`           | The request's host is not one of the credential's hosts                                 |
 | `insecure_transport`         | The request is not HTTPS                                                                |
 
