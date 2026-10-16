@@ -204,6 +204,7 @@ export class JobManagerBase extends DurableObject<JobsWorkerEnv> {
 			if (
 				await tryRearmAlarmForRetryableD1Failure({
 					setAlarm: (atMs) => this.ctx.storage.setAlarm(atMs),
+					getAlarm: () => this.ctx.storage.getAlarm(),
 					userId,
 					error,
 					phase: 'run_due_jobs',
@@ -228,6 +229,7 @@ export class JobManagerBase extends DurableObject<JobsWorkerEnv> {
 			if (
 				await tryRearmAlarmForRetryableD1Failure({
 					setAlarm: (atMs) => this.ctx.storage.setAlarm(atMs),
+					getAlarm: () => this.ctx.storage.getAlarm(),
 					userId,
 					error,
 					phase: 'sync_alarm',

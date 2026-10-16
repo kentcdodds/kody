@@ -9,6 +9,7 @@ type JobManagerAlarmHarness = {
 	ctx: {
 		storage: {
 			get: (key: string) => Promise<string | undefined>
+			getAlarm: () => Promise<number | null>
 			setAlarm: (atMs: number) => Promise<void>
 			deleteAlarm: () => Promise<void>
 		}
@@ -62,11 +63,28 @@ test('tryRearmAlarmForRetryableD1Failure rearms on long-running export and skips
 	expect(setAlarm).not.toHaveBeenCalled()
 })
 
+test('tryRearmAlarmForRetryableD1Failure keeps an earlier armed alarm', async () => {
+	const setAlarm = vi.fn(async (_atMs: number) => undefined)
+	const nowMs = Date.UTC(2026, 9, 16, 12, 0, 0)
+	const earlierAtMs = nowMs + 5_000
+	const deferred = await tryRearmAlarmForRetryableD1Failure({
+		setAlarm,
+		getAlarm: async () => earlierAtMs,
+		userId: 'user-1',
+		error: new Error('D1_ERROR: Currently processing a long-running export.'),
+		phase: 'run_due_jobs',
+		nowMs,
+	})
+	expect(deferred).toBe(true)
+	expect(setAlarm).toHaveBeenCalledWith(earlierAtMs)
+})
+
 test('JobManager alarm defers retryable D1 failures without rethrowing', async () => {
 	silenceExpectedConsoleErrors(['job-scheduler'])
 	const { JobManagerBase } = await import('./manager-do.ts')
 
 	const setAlarm = vi.fn(async (_atMs: number) => undefined)
+	const getAlarm = vi.fn(async () => null)
 	const deleteAlarm = vi.fn(async () => undefined)
 	const storageGet = vi.fn(async (key: string) =>
 		key === 'user-id' ? 'user-1' : undefined,
@@ -84,6 +102,7 @@ test('JobManager alarm defers retryable D1 failures without rethrowing', async (
 	manager.ctx = {
 		storage: {
 			get: storageGet,
+			getAlarm,
 			setAlarm,
 			deleteAlarm,
 		},
@@ -123,6 +142,7 @@ test('JobManager alarm still rethrows non-retryable runDueJobs failures', async 
 	manager.ctx = {
 		storage: {
 			get: storageGet,
+			getAlarm: vi.fn(async () => null),
 			setAlarm,
 			deleteAlarm: vi.fn(async () => undefined),
 		},
@@ -159,6 +179,7 @@ test('JobManager alarm defers retryable D1 failures from syncAlarm', async () =>
 	manager.ctx = {
 		storage: {
 			get: storageGet,
+			getAlarm: vi.fn(async () => null),
 			setAlarm,
 			deleteAlarm: vi.fn(async () => undefined),
 		},
