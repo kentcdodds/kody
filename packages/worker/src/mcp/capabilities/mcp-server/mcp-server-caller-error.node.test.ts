@@ -150,4 +150,17 @@ test('mcp-server tool and availability failures throw McpCallerError', async () 
 	)
 	expect(denied).toBeInstanceOf(McpCallerError)
 	expect(mocks.callTool).toHaveBeenCalledTimes(2)
+
+	mocks.callTool.mockResolvedValueOnce({
+		content: Array.from({ length: 33 }, () => ({ type: 'text', text: 'x' })),
+	})
+	const rejected = await capability!.handler({}, createContext()).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	expect(rejected).toBeInstanceOf(McpCallerError)
+	expect((rejected as Error).message).toMatch(/too many MCP content blocks/)
+	expect((rejected as Error).message).not.toContain(
+		'MCP server capability "supermemory:listMemories" failed:',
+	)
 })

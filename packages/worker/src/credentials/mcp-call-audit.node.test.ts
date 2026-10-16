@@ -11,6 +11,7 @@ import {
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 import { expect, test, vi } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { AuthorizationError } from '#worker/authorization/authorize.ts'
 import { createOrganization } from '#worker/orgs/create-organization.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
@@ -276,7 +277,7 @@ test('a tool result flagged isError is a failure, and a hostile error class is n
 	hub.impl = async () => ({ content, isError: true })
 	const connection = await t.connect(t.requestAs('bea', 'owner'))
 	const result = await connection.callTool({
-		toolName: 'search',
+		toolName: messageSentinel,
 		args: { note: argumentSentinel },
 	})
 
@@ -287,7 +288,10 @@ test('a tool result flagged isError is a failure, and a hostile error class is n
 		throw hostile
 	}
 	const thrown = await connection
-		.callTool({ toolName: 'search', args: { note: argumentSentinel } })
+		.callTool({
+			toolName: 'sk-live-tooltoken',
+			args: { note: argumentSentinel },
+		})
 		.then(
 			() => null,
 			(error: unknown) => error,
@@ -301,13 +305,53 @@ test('a tool result flagged isError is a failure, and a hostile error class is n
 		['mcp.call', 'failure'],
 		['mcp.call', 'failure'],
 	])
-	expect(withoutDuration(details(rows[1]!)).errorClass).toBe('McpToolResult')
-	expect(withoutDuration(details(rows[2]!)).errorClass).toBe('unknown')
+	expect(withoutDuration(details(rows[1]!))).toMatchObject({
+		toolName: 'redacted',
+		errorClass: 'McpToolResult',
+	})
+	expect(withoutDuration(details(rows[2]!))).toMatchObject({
+		toolName: 'redacted',
+		errorClass: 'unknown',
+	})
 	const serialized = JSON.stringify(rows)
 	expect(serialized).not.toContain(argumentSentinel)
 	expect(serialized).not.toContain(resultSentinel)
 	expect(serialized).not.toContain(messageSentinel)
 	expect(serialized).not.toContain(secretSentinel)
+	expect(serialized).not.toContain('sk-live-tooltoken')
+})
+
+test('a payload the caller rejects is a failure row and the rejection is rethrown', async () => {
+	const t = await setup()
+	const rejection = new McpCallerError(
+		`too many MCP content blocks for ${resultSentinel}`,
+	)
+	hub.impl = async () => ({
+		content: [{ type: 'text', text: resultSentinel }],
+	})
+	const connection = await t.connect(t.requestAs('bea', 'owner'))
+	const thrown = await connection
+		.callTool({
+			toolName: 'search',
+			args: { note: argumentSentinel },
+			accept() {
+				throw rejection
+			},
+		})
+		.then(
+			() => null,
+			(error: unknown) => error,
+		)
+	expect(thrown).toBe(rejection)
+	const rows = await t.audits()
+	expect(rows.map((row) => [row.action, row.result])).toEqual([
+		['credential.resolve', 'success'],
+		['mcp.call', 'failure'],
+	])
+	expect(withoutDuration(details(rows[1]!)).errorClass).toBe('McpCallerError')
+	const serialized = JSON.stringify(rows)
+	expect(serialized).not.toContain(argumentSentinel)
+	expect(serialized).not.toContain(resultSentinel)
 })
 
 test('a denied connection writes credential.resolve and does not call the server', async () => {

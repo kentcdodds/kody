@@ -65,6 +65,11 @@ export const mcpConnectionResolver: CredentialResolver<'mcp-connection'> = {
 								toolName: toolCall.toolName,
 								args: toolCall.args,
 							})
+							// A caller's accept() can still reject the payload
+							// (malformed or oversized content). That rejection
+							// is the outcome the caller sees, so it is the
+							// audit result. accept() must not keep the body.
+							toolCall.accept?.(result)
 							audit(mcpCallOutcomeFromResult(result))
 							return result
 						} catch (error) {

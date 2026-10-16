@@ -176,6 +176,12 @@ export type McpServerConnection = {
 	callTool(input: {
 		toolName: string
 		args: Record<string, unknown>
+		/**
+		 * Runs after the hub returns and before the success audit. A throw
+		 * is the call's failure: one `mcp.call` failure row, then rethrow.
+		 * Callers use it to reject a payload they will not return.
+		 */
+		accept?: (result: CallToolResult) => void
 	}): Promise<CallToolResult>
 }
 

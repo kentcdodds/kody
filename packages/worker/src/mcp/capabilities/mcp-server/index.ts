@@ -116,16 +116,22 @@ function createCapabilityFromTool(input: {
 					waitUntil: ctx.waitUntil,
 				},
 			})
-			let result: Awaited<ReturnType<typeof connection.callTool>>
+			let wrapped: Record<string, unknown> | undefined
 			try {
-				result = await connection.callTool({
+				await connection.callTool({
 					toolName: tool.name,
 					args: (args ?? {}) as Record<string, unknown>,
+					accept(raw) {
+						wrapped = wrapDownstreamMcpToolResult(raw, {
+							kind: 'mcp-server',
+							label: `${ref.name}:${tool.name}`,
+						})
+					},
 				})
 			} catch (error) {
-				// Downstream / user-connected MCP servers fail for many
-				// caller-clearable reasons (auth, schema drift, provider 5xx).
-				// Keep those on mcp-event; they are not Kody platform defects.
+				// Content rejection already speaks for itself. Hub failures
+				// (auth, schema drift, provider 5xx) stay on mcp-event.
+				if (error instanceof McpCallerError) throw error
 				const status = await getMcpServerStatus({
 					env: ctx.env,
 					userId: orgUserId,
@@ -143,10 +149,12 @@ function createCapabilityFromTool(input: {
 					{ cause: error },
 				)
 			}
-			return wrapDownstreamMcpToolResult(result, {
-				kind: 'mcp-server',
-				label: `${ref.name}:${tool.name}`,
-			})
+			if (!wrapped) {
+				throw new McpCallerError(
+					`MCP server capability "${ref.name}:${tool.name}" failed: the tool result was not accepted.`,
+				)
+			}
+			return wrapped
 		},
 	})
 

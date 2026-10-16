@@ -58,13 +58,30 @@ export function mcpCallOutcomeFromResult(result: {
 	return { result: 'success' }
 }
 
-/** Bound a server or tool name. Control characters are dropped, not stored. */
-function mcpCallAuditLabel(value: string): string {
+/**
+ * Tool names are caller-controlled. Only an identifier is stored. Anything
+ * else (an address, a URL, a credential-shaped token, free text) is
+ * `redacted` so the name column cannot become a place to leak data.
+ */
+const toolNameToken = /^[\p{L}\p{N}_.:/-]{1,128}$/u
+const sensitiveToolName = /^(?:sk[-_]|kody_(?:at|bc)_|ghp_|xox[abprs]-)|:\/\//i
+
+/** Bound a server name. Control characters are dropped, not stored. */
+function mcpCallAuditServerName(value: string): string {
 	const cleaned = value.replace(/[\p{Cc}\p{Cf}]/gu, '').trim()
 	if (cleaned.length === 0) return 'unknown'
 	return cleaned.length > maxAuditLabelLength
 		? cleaned.slice(0, maxAuditLabelLength)
 		: cleaned
+}
+
+function mcpCallAuditToolName(value: string): string {
+	const cleaned = mcpCallAuditServerName(value)
+	if (cleaned === 'unknown') return cleaned
+	if (!toolNameToken.test(cleaned) || sensitiveToolName.test(cleaned)) {
+		return 'redacted'
+	}
+	return cleaned
 }
 
 function storedErrorClass(errorClass: string) {
@@ -106,8 +123,8 @@ export function scheduleMcpCallAudit(input: {
 	}
 	const details = {
 		use: 'mcp-connection',
-		toolName: mcpCallAuditLabel(input.toolName),
-		serverName: mcpCallAuditLabel(input.serverName),
+		toolName: mcpCallAuditToolName(input.toolName),
+		serverName: mcpCallAuditServerName(input.serverName),
 		serverId: input.serverId,
 		durationMs,
 		actorKind: actorKind(request),
