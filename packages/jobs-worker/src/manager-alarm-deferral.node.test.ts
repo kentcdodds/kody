@@ -7,6 +7,7 @@ import {
 
 type JobManagerAlarmHarness = {
 	ctx: {
+		blockConcurrencyWhile: <T>(callback: () => Promise<T>) => Promise<T>
 		storage: {
 			get: (key: string) => Promise<string | undefined>
 			getAlarm: () => Promise<number | null>
@@ -96,10 +97,8 @@ test('JobManager alarm defers retryable D1 failures without rethrowing', async (
 		)
 	const syncAlarm = vi.fn()
 
-	const manager = Object.create(
-		JobManagerBase.prototype,
-	) as JobManagerAlarmHarness
-	manager.ctx = {
+	const state = {
+		blockConcurrencyWhile: async <T>(callback: () => Promise<T>) => callback(),
 		storage: {
 			get: storageGet,
 			getAlarm,
@@ -107,7 +106,12 @@ test('JobManager alarm defers retryable D1 failures without rethrowing', async (
 			deleteAlarm,
 		},
 	}
-	manager.env = { HOST: { runDueJobsForUser } }
+	const manager = new (JobManagerBase as unknown as new (
+		state: unknown,
+		env: unknown,
+	) => JobManagerAlarmHarness)(state, {
+		HOST: { runDueJobsForUser },
+	})
 	manager.syncAlarm = syncAlarm
 
 	await expect(
@@ -136,10 +140,8 @@ test('JobManager alarm still rethrows non-retryable runDueJobs failures', async 
 		.fn()
 		.mockRejectedValue(new Error('permanent job host failure'))
 
-	const manager = Object.create(
-		JobManagerBase.prototype,
-	) as JobManagerAlarmHarness
-	manager.ctx = {
+	const state = {
+		blockConcurrencyWhile: async <T>(callback: () => Promise<T>) => callback(),
 		storage: {
 			get: storageGet,
 			getAlarm: vi.fn(async () => null),
@@ -147,7 +149,12 @@ test('JobManager alarm still rethrows non-retryable runDueJobs failures', async 
 			deleteAlarm: vi.fn(async () => undefined),
 		},
 	}
-	manager.env = { HOST: { runDueJobsForUser } }
+	const manager = new (JobManagerBase as unknown as new (
+		state: unknown,
+		env: unknown,
+	) => JobManagerAlarmHarness)(state, {
+		HOST: { runDueJobsForUser },
+	})
 
 	await expect(manager.alarm()).rejects.toThrow('permanent job host failure')
 	expect(setAlarm).not.toHaveBeenCalled()
@@ -173,10 +180,8 @@ test('JobManager alarm defers retryable D1 failures from syncAlarm', async () =>
 			new Error('D1_ERROR: Currently processing a long-running export.'),
 		)
 
-	const manager = Object.create(
-		JobManagerBase.prototype,
-	) as JobManagerAlarmHarness
-	manager.ctx = {
+	const state = {
+		blockConcurrencyWhile: async <T>(callback: () => Promise<T>) => callback(),
 		storage: {
 			get: storageGet,
 			getAlarm: vi.fn(async () => null),
@@ -184,7 +189,12 @@ test('JobManager alarm defers retryable D1 failures from syncAlarm', async () =>
 			deleteAlarm: vi.fn(async () => undefined),
 		},
 	}
-	manager.env = { HOST: { runDueJobsForUser } }
+	const manager = new (JobManagerBase as unknown as new (
+		state: unknown,
+		env: unknown,
+	) => JobManagerAlarmHarness)(state, {
+		HOST: { runDueJobsForUser },
+	})
 	manager.syncAlarm = syncAlarm
 
 	await expect(manager.alarm()).resolves.toBeUndefined()

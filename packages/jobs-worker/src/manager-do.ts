@@ -18,6 +18,24 @@ import { getNextRunnableJob } from './store.ts'
 const userIdStorageKey = 'user-id'
 
 /**
+ * Atomically rearm while keeping any earlier wake already scheduled on this
+ * DO (for example a nearer job armed via syncAlarm). `setAlarm` replaces the
+ * single DO alarm; without a get-then-set under concurrency block we could
+ * push a nearer schedule out to the D1 backoff.
+ */
+async function rearmAlarmPreservingEarlier(
+	ctx: DurableObjectState,
+	atMs: number,
+): Promise<void> {
+	await ctx.blockConcurrencyWhile(async () => {
+		const currentAlarmAt = await ctx.storage.getAlarm()
+		if (currentAlarmAt == null || currentAlarmAt > atMs) {
+			await ctx.storage.setAlarm(atMs)
+		}
+	})
+}
+
+/**
  * When more due jobs remain after an alarm run (each run processes at most
  * `maxDueJobsPerAlarm` jobs), the resync arms a near-immediate follow-up
  * alarm instead of one at the (already past) next_run_at so backlogs drain
@@ -203,7 +221,7 @@ export class JobManagerBase extends DurableObject<JobsWorkerEnv> {
 			})
 			if (
 				await tryRearmAlarmForRetryableD1Failure({
-					setAlarm: (atMs) => this.ctx.storage.setAlarm(atMs),
+					setAlarm: (atMs) => rearmAlarmPreservingEarlier(this.ctx, atMs),
 					getAlarm: () => this.ctx.storage.getAlarm(),
 					userId,
 					error,
@@ -228,7 +246,7 @@ export class JobManagerBase extends DurableObject<JobsWorkerEnv> {
 			})
 			if (
 				await tryRearmAlarmForRetryableD1Failure({
-					setAlarm: (atMs) => this.ctx.storage.setAlarm(atMs),
+					setAlarm: (atMs) => rearmAlarmPreservingEarlier(this.ctx, atMs),
 					getAlarm: () => this.ctx.storage.getAlarm(),
 					userId,
 					error,
