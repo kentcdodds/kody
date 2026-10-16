@@ -239,6 +239,44 @@ test('a stuck production DLQ pages once, stays quiet on cooldown, and pages agai
 	)
 })
 
+test('an unknown oldest timestamp keeps the nonempty episode clock, and a valid timestamp still wins', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { kv } = memoryKv()
+	const env = productionEnv(kv)
+	installQueues({
+		[stuckQueue]: { backlogCount: 2, oldestMessageTimestampMs: null },
+	})
+	const first = await checkDlqDepthAndAlert({ env, now })
+	expect(first).toMatchObject({ status: 'checked', pending: 1, alerted: 0 })
+
+	installQueues({
+		[stuckQueue]: {
+			backlogCount: 2,
+			oldestMessageTimestampMs: now.getTime() + 60_000,
+		},
+	})
+	const youngTimestamp = await checkDlqDepthAndAlert({
+		env,
+		now: new Date(now.getTime() + 2 * 60_000),
+	})
+	expect(youngTimestamp).toMatchObject({
+		status: 'checked',
+		pending: 1,
+		alerted: 0,
+	})
+	expect(mocks.captureMessage).not.toHaveBeenCalled()
+
+	installQueues({
+		[stuckQueue]: { backlogCount: 2, oldestMessageTimestampMs: null },
+	})
+	const resumed = await checkDlqDepthAndAlert({
+		env,
+		now: new Date(now.getTime() + 16 * 60_000),
+	})
+	expect(resumed).toMatchObject({ status: 'checked', alerted: 1, sustained: 1 })
+	expect(mocks.captureMessage.mock.calls[0]?.[0]).toContain('after 16 minutes')
+})
+
 test('a missing oldest timestamp starts the 15 minute clock on the first non-zero sample', async () => {
 	consoleWarn.mockImplementation(() => {})
 	const { kv, values } = memoryKv()

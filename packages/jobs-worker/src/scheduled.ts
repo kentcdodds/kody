@@ -67,6 +67,19 @@ export async function dispatchScheduledLanes(input: {
 		? lanes.filter((lane) => !isInlineScheduledLane(lane))
 		: []
 	const inlineLanes = queue ? lanes.filter(isInlineScheduledLane) : lanes
+	// Page before queue sends. A failed send falls back to a lane that can
+	// run for a minute, and that wait must not postpone the dead-letter check
+	// during the outage the check exists to see.
+	for (const lane of inlineLanes) {
+		await runInlineScheduledLane({
+			env: input.env,
+			message: {
+				lane,
+				scheduledTime: input.controller.scheduledTime,
+				cron: input.controller.cron,
+			},
+		})
+	}
 	if (queue) {
 		const failedMessages = await Promise.all(
 			queuedLanes.map(async (lane) => {
@@ -100,16 +113,6 @@ export async function dispatchScheduledLanes(input: {
 				message,
 			})
 		}
-	}
-	for (const lane of inlineLanes) {
-		await runInlineScheduledLane({
-			env: input.env,
-			message: {
-				lane,
-				scheduledTime: input.controller.scheduledTime,
-				cron: input.controller.cron,
-			},
-		})
 	}
 }
 

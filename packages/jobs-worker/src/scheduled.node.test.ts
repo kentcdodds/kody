@@ -293,17 +293,18 @@ test('failed queue sends fall back inline for that lane only, keep scheduledTime
 	})
 	const fallbackTime = Date.UTC(2026, 0, 1, 12, 10)
 	await dispatch(env, fallbackTime)
-	expect(host).toHaveBeenCalledTimes(2)
-	expect(host).toHaveBeenCalledWith({
-		lane: 'oauth_purge_expired',
-		scheduledTime: fallbackTime,
-		cron: '*/5 * * * *',
-	})
-	expect(host).toHaveBeenCalledWith({
-		lane: 'dlq_depth_alert',
-		scheduledTime: fallbackTime,
-		cron: '*/5 * * * *',
-	})
+	expect(host.mock.calls.map((call) => call[0])).toEqual([
+		{
+			lane: 'dlq_depth_alert',
+			scheduledTime: fallbackTime,
+			cron: '*/5 * * * *',
+		},
+		{
+			lane: 'oauth_purge_expired',
+			scheduledTime: fallbackTime,
+			cron: '*/5 * * * *',
+		},
+	])
 	expect(consoleError).toHaveBeenCalledWith(
 		'scheduled_lane_inline_d1_lock_contention',
 		expect.objectContaining({

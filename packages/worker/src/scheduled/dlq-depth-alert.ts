@@ -171,10 +171,15 @@ export async function checkDlqDepthAndAlert(input: {
 				await writeStateIfChanged(kv, queueName, stored, {})
 				return
 			}
+			// Keep the start of this nonempty episode even when a later sample
+			// includes an oldest-message timestamp. A following sample that
+			// reports 0 (unknown) must not restart the 15 minute clock.
+			const episodeSinceMs =
+				stored.sinceMs == null
+					? verdict.sinceMs
+					: Math.min(stored.sinceMs, verdict.sinceMs)
 			const next: DlqDepthState = {
-				...(metrics.oldestMessageTimestampMs == null
-					? { sinceMs: verdict.sinceMs }
-					: {}),
+				sinceMs: episodeSinceMs,
 				...(stored.alertedMs != null ? { alertedMs: stored.alertedMs } : {}),
 			}
 			if (verdict.kind === 'pending') {
