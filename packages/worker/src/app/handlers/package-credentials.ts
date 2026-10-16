@@ -106,7 +106,8 @@ async function requirePackageTriggerEnablement(input: {
 	return enablement
 }
 
-async function applyEnablementActions(input: {
+/** Reject malformed enablement actions before any mapping write runs. */
+async function validateEnablementActions(input: {
 	env: Env
 	scope: NonNullable<
 		Awaited<ReturnType<typeof loadPackageMappingScopeForViewer>>
@@ -127,10 +128,39 @@ async function applyEnablementActions(input: {
 				enablementId: action.enablementId,
 				trigger: action.trigger,
 			})
+			continue
+		}
+		if (action.enablementId && !action.createInstance) {
+			const named = await requirePackageTriggerEnablement({
+				env: input.env,
+				scope: input.scope,
+				enablementId: action.enablementId,
+				trigger: action.trigger,
+			})
+			if (named.state === 'off') {
+				throw new TriggerEnablementError(
+					'trigger_unknown',
+					`Enablement "${action.enablementId}" is off. Turn the trigger on without an enablement id to create another instance.`,
+				)
+			}
+		}
+	}
+}
+
+async function applyEnablementActions(input: {
+	env: Env
+	scope: NonNullable<
+		Awaited<ReturnType<typeof loadPackageMappingScopeForViewer>>
+	>
+	actions: ReadonlyArray<PackageCredentialsEnablementAction>
+}) {
+	await validateEnablementActions(input)
+	for (const action of input.actions) {
+		if (action.state === 'off') {
 			await disableEnablementForCaller({
 				env: input.env,
 				request: input.scope.request,
-				enablementId: action.enablementId,
+				enablementId: action.enablementId!,
 			})
 			continue
 		}
@@ -152,21 +182,7 @@ async function applyEnablementActions(input: {
 			continue
 		}
 		if (action.enablementId) {
-			// Idempotent: the named live enablement must already be the viewer's
-			// for this package trigger. Off rows are not revived here — turn on
-			// without enablementId (or createInstance) to insert another.
-			const named = await requirePackageTriggerEnablement({
-				env: input.env,
-				scope: input.scope,
-				enablementId: action.enablementId,
-				trigger: action.trigger,
-			})
-			if (named.state === 'off') {
-				throw new TriggerEnablementError(
-					'trigger_unknown',
-					`Enablement "${action.enablementId}" is off. Turn the trigger on without an enablement id to create another instance.`,
-				)
-			}
+			// Validated above: named live enablement already exists for the viewer.
 			continue
 		}
 		await enableTriggerForCaller({
@@ -248,8 +264,17 @@ export function createPackageCredentialsApiHandler(env: Env) {
 					)
 				}
 				try {
-					// Mapping writes first so a failed mapping does not leave
-					// enablements half-applied. Enablements run only after.
+					// Validate enablements before any mapping write so a bad off
+					// action cannot leave a willEnable mapping half-applied.
+					if (enablements.length > 0) {
+						await validateEnablementActions({
+							env,
+							scope,
+							actions: enablements,
+						})
+					}
+					// Mapping writes before enablement mutations so a failed
+					// mapping does not leave enablements half-applied.
 					await writeMappingChanges(scope, resolved)
 					if (enablements.length > 0) {
 						await applyEnablementActions({ env, scope, actions: enablements })
