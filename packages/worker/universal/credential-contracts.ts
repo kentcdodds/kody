@@ -53,7 +53,15 @@ export const credentialTriggerKinds = [
 	'webhook',
 ] as const
 export type CredentialTriggerKind = (typeof credentialTriggerKinds)[number]
-export type CredentialTriggerRef = { kind: CredentialTriggerKind; name: string }
+export type CredentialTriggerRef = {
+	kind: CredentialTriggerKind
+	name: string
+	/**
+	 * Webhook only: the minted endpoint to Approve. Omit for legacy links
+	 * (oldest URL under the name) and for cron / subscription triggers.
+	 */
+	endpointId?: string
+}
 
 /**
  * Who an inbound-email subscription enablement runs for. The same vocabulary
@@ -268,8 +276,8 @@ export type PackageTriggerView = {
 	instances: Array<PackageTriggerInstanceView>
 	/**
 	 * The viewer may turn on another copy with its own credential mapping
-	 * (cron and non-email subscriptions). Webhooks stay one URL / one live
-	 * enablement; inbound email uses sender-scoped Approve instead.
+	 * (cron and non-email subscriptions), or mint another labeled webhook URL
+	 * in Settings. Inbound email uses sender-scoped Approve instead.
 	 */
 	canAddInstance: boolean
 }
@@ -666,7 +674,11 @@ function buildCredentialProposalSearch(input: {
 }): URLSearchParams {
 	const params = new URLSearchParams()
 	for (const trigger of input.enable ?? []) {
-		params.append('enable', `${trigger.kind}:${trigger.name}`)
+		const value =
+			trigger.kind === 'webhook' && trigger.endpointId
+				? `${trigger.kind}:${trigger.name}:${trigger.endpointId}`
+				: `${trigger.kind}:${trigger.name}`
+		params.append('enable', value)
 	}
 	if (input.sender) {
 		params.set('sender_kind', input.sender.kind)
@@ -729,18 +741,31 @@ export type ParsedCredentialProposal = {
 	errors: Array<string>
 }
 
-/** `webhook:incoming` (split at the first colon); null when it is not one. */
+/**
+ * `webhook:incoming` or `webhook:incoming:<endpointId>` (split at the first
+ * colon for kind; for webhooks a second colon names the endpoint). Null when
+ * it is not a trigger ref.
+ */
 function parseCredentialTriggerRef(value: string): CredentialTriggerRef | null {
 	const text = value.trim()
 	const colon = text.indexOf(':')
 	if (colon < 0) return null
 	const kind = text.slice(0, colon).trim()
-	const name = text.slice(colon + 1).trim()
-	if (!name) return null
+	const rest = text.slice(colon + 1).trim()
+	if (!rest) return null
 	if (!(credentialTriggerKinds as ReadonlyArray<string>).includes(kind)) {
 		return null
 	}
-	return { kind: kind as CredentialTriggerKind, name }
+	if (kind === 'webhook') {
+		const endpointColon = rest.indexOf(':')
+		if (endpointColon >= 0) {
+			const name = rest.slice(0, endpointColon).trim()
+			const endpointId = rest.slice(endpointColon + 1).trim()
+			if (!name || !endpointId) return null
+			return { kind: 'webhook', name, endpointId }
+		}
+	}
+	return { kind: kind as CredentialTriggerKind, name: rest }
 }
 
 const defaultParamPattern = /^(default|mine)\[([^\]]+)\]$/

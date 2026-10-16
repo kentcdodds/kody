@@ -493,29 +493,22 @@ export async function getWebhookEndpointByIdForUser(input: {
 export async function setWebhookEndpointEnabled(input: {
 	db: D1Database
 	userId: string
-	packageId: string
-	webhookName: string
+	endpointId: string
 	enabled: boolean
 }): Promise<WebhookEndpointRecord | null> {
 	const result = await input.db
 		.prepare(
 			`UPDATE webhook_endpoints
 			SET enabled = ?
-			WHERE user_id = ? AND package_id = ? AND webhook_name = ?${andLiveDeletedAtSql()}`,
+			WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 		)
-		.bind(
-			input.enabled ? 1 : 0,
-			input.userId,
-			input.packageId,
-			input.webhookName,
-		)
+		.bind(input.enabled ? 1 : 0, input.userId, input.endpointId)
 		.run()
 	if ((result.meta.changes ?? 0) === 0) return null
-	return getWebhookEndpointByKey({
+	return getWebhookEndpointByIdForUser({
 		db: input.db,
 		userId: input.userId,
-		packageId: input.packageId,
-		webhookName: input.webhookName,
+		endpointId: input.endpointId,
 	})
 }
 

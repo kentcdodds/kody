@@ -300,6 +300,33 @@ test('enable params turn triggers on with no mapping, deduped and capped with ma
 		errors: [],
 	})
 
+	const endpointHref = buildCredentialApprovalHref({
+		username: 'acme',
+		kodyId: 'pr-digest',
+		changes: [],
+		enable: [
+			{
+				kind: 'webhook',
+				name: 'incoming',
+				endpointId: '11111111-1111-1111-1111-111111111111',
+			},
+		],
+	})
+	expect(endpointHref).toContain(
+		'enable=webhook%3Aincoming%3A11111111-1111-1111-1111-111111111111',
+	)
+	expect(
+		parseCredentialApprovalQuery(
+			new URL(endpointHref, 'https://kody.codes').searchParams,
+		).enable,
+	).toEqual([
+		{
+			kind: 'webhook',
+			name: 'incoming',
+			endpointId: '11111111-1111-1111-1111-111111111111',
+		},
+	])
+
 	const messy = parseCredentialApprovalQuery(
 		new URLSearchParams(
 			'enable=webhook:incoming&enable= webhook : incoming &enable=hourly:x&enable=cron:&enable=daily',

@@ -69,7 +69,7 @@ import { stripUntrustedWebhookSyntheticFields } from './synthetic.ts'
 import {
 	clearWebhookEndpointPreviousHmacSecret,
 	clearWebhookEndpointPreviousUrlSecret,
-	getWebhookEndpointByKey,
+	listWebhookEndpointsByName,
 } from './repo.ts'
 import {
 	resolveWebhookHmacVerificationSecrets,
@@ -90,6 +90,45 @@ function decodePathComponent(value: string) {
 	} catch {
 		return value
 	}
+}
+
+/**
+ * Pick the minted endpoint under a declared name whose current (or still-live
+ * previous) URL secret matches the ingress path. Name alone is not identity
+ * when several URLs share that name.
+ */
+export async function resolveWebhookEndpointForIngress(input: {
+	db: D1Database
+	userId: string
+	packageId: string
+	webhookName: string
+	urlSecret: string
+	now?: string
+}): Promise<{
+	endpoint: Awaited<ReturnType<typeof listWebhookEndpointsByName>>[number]
+	secretMatch: 'current' | 'previous'
+} | null> {
+	const endpoints = await listWebhookEndpointsByName({
+		db: input.db,
+		userId: input.userId,
+		packageId: input.packageId,
+		webhookName: input.webhookName,
+	})
+	const now = input.now ?? new Date().toISOString()
+	for (const endpoint of endpoints) {
+		const secretMatch = await matchWebhookIngressUrlSecret({
+			candidate: input.urlSecret,
+			currentHash: endpoint.urlSecretHash,
+			previousHash: endpoint.previousUrlSecretHash,
+		})
+		if (secretMatch === 'current') {
+			return { endpoint, secretMatch }
+		}
+		if (secretMatch === 'previous' && isWebhookPreviousUrlLive(endpoint, now)) {
+			return { endpoint, secretMatch }
+		}
+	}
+	return null
 }
 
 export function parseWebhookIngressPath(pathname: string) {
@@ -434,30 +473,22 @@ export async function handleWebhookIngressRequest(
 	})
 	if (!savedPackage) return notFoundResponse()
 
-	const endpoint = await getWebhookEndpointByKey({
+	// Several URLs may share a declared name; match the path secret to the
+	// endpoint that owns it (current or still-live previous), not the oldest.
+	const matched = await resolveWebhookEndpointForIngress({
 		db: env.APP_DB,
 		userId: routeOwner.ownerId,
 		packageId: savedPackage.id,
 		webhookName: route.webhookName,
+		urlSecret: route.urlSecret,
+		now: receivedAt,
 	})
-	// Unminted, disabled, or unknown name → indistinguishable 404.
-	if (!endpoint || !endpoint.enabled) {
+	// Unminted, disabled, wrong secret, or unknown name → indistinguishable 404.
+	if (!matched || !matched.endpoint.enabled) {
 		return notFoundResponse()
 	}
-	const liveEndpoint = endpoint
-
-	const secretMatch = await matchWebhookIngressUrlSecret({
-		candidate: route.urlSecret,
-		currentHash: liveEndpoint.urlSecretHash,
-		previousHash: liveEndpoint.previousUrlSecretHash,
-	})
-	const previousLive = isWebhookPreviousUrlLive(liveEndpoint, receivedAt)
-	// Wrong secret: no delivery row (avoids log-flush DoS) and no rate-limit
-	// side channel that would distinguish minted names from unknown ones.
-	// An expired previous hash is treated as unknown.
-	if (secretMatch === null || (secretMatch === 'previous' && !previousLive)) {
-		return notFoundResponse()
-	}
+	const liveEndpoint = matched.endpoint
+	const secretMatch = matched.secretMatch
 
 	const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
 	let declared

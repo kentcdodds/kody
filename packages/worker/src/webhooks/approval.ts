@@ -14,6 +14,8 @@ export function buildWebhookApprovalUrl(input: {
 	orgSlug: string | null
 	packageKodyId: string
 	webhookName: string
+	/** Minted endpoint to approve; required when several URLs share the name. */
+	endpointId?: string | null
 }): string | null {
 	if (!input.orgSlug) return null
 	return new URL(
@@ -21,7 +23,13 @@ export function buildWebhookApprovalUrl(input: {
 			username: input.orgSlug,
 			kodyId: input.packageKodyId,
 			changes: [],
-			enable: [{ kind: 'webhook', name: input.webhookName }],
+			enable: [
+				{
+					kind: 'webhook',
+					name: input.webhookName,
+					...(input.endpointId ? { endpointId: input.endpointId } : {}),
+				},
+			],
 		}),
 		input.baseUrl,
 	).toString()
@@ -34,7 +42,7 @@ export function buildWebhookApprovalUrl(input: {
 export async function describeWebhookNotOn(input: {
 	env: Env
 	baseUrl: string
-	endpoint: Pick<WebhookEndpointRecord, 'userId' | 'webhookName'>
+	endpoint: Pick<WebhookEndpointRecord, 'id' | 'userId' | 'webhookName'>
 	packageKodyId: string
 	plan: EnablementRunPlan
 }): Promise<{ message: string; approvalUrl: string | null }> {
@@ -45,6 +53,7 @@ export async function describeWebhookNotOn(input: {
 		orgSlug: org?.slug ?? null,
 		packageKodyId: input.packageKodyId,
 		webhookName: name,
+		endpointId: input.endpoint.id,
 	})
 	const where = approvalUrl
 		? `: ${approvalUrl}`

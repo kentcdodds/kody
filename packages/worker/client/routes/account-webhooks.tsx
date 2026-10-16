@@ -109,6 +109,7 @@ export function AccountWebhooksRoute(handle: Handle) {
 								username,
 								kodyId: webhook.packageKodyId,
 								webhookName: webhook.name,
+								endpointId: webhook.endpointId,
 							}),
 							cells: {
 								name: <span mix={clampedCellCss}>{webhook.name}</span>,

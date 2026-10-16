@@ -368,6 +368,7 @@ export async function listWebhooksForUser(input: {
 								orgSlug: input.request.org.slug,
 								packageKodyId: savedPackage.kodyId,
 								webhookName: webhook.name,
+								endpointId: mint.id,
 							})
 						: null,
 					urlRecoverable: mint.urlSecretEncrypted != null,
@@ -408,6 +409,11 @@ export async function mintWebhookUrlForUser(input: {
 	 */
 	createInstance?: boolean
 	instanceLabel?: string | null
+	/**
+	 * Remint / rotate a specific minted endpoint. Ignored when
+	 * `createInstance` is true (always inserts a new row).
+	 */
+	endpointId?: string | null
 }): Promise<MintedWebhookHandle> {
 	const webhookName = input.webhookName.trim()
 	if (!webhookName) throw new McpCallerError('webhookName is required.')
@@ -452,12 +458,20 @@ export async function mintWebhookUrlForUser(input: {
 	const urlSecretHash = await hashWebhookUrlSecret(urlSecret)
 	const existing = createInstance
 		? null
-		: await getWebhookEndpointByKey({
-				db: input.env.APP_DB,
-				userId: input.userId,
-				packageId: savedPackage.id,
-				webhookName,
-			})
+		: input.endpointId
+			? await requireOwnedWebhookEndpoint({
+					db: input.env.APP_DB,
+					userId: input.userId,
+					packageId: savedPackage.id,
+					webhookName,
+					endpointId: input.endpointId,
+				})
+			: await getWebhookEndpointByKey({
+					db: input.env.APP_DB,
+					userId: input.userId,
+					packageId: savedPackage.id,
+					webhookName,
+				})
 	let endpointId = existing?.id ?? crypto.randomUUID()
 	let stored: WebhookEndpointRecord | null = null
 	for (let attempt = 0; attempt < 2; attempt++) {
@@ -567,6 +581,7 @@ export async function mintWebhookUrlForUser(input: {
 						orgSlug: input.request.org.slug,
 						packageKodyId: savedPackage.kodyId,
 						webhookName,
+						endpointId: stored.id,
 					}),
 		packageId: savedPackage.id,
 		packageKodyId: savedPackage.kodyId,
@@ -619,6 +634,8 @@ export async function rotateWebhookUrlForUser(input: {
 	kodyId?: string
 	webhookName: string
 	requestUrl?: string | null
+	/** Required when several URLs share the name; otherwise rotates the oldest. */
+	endpointId?: string | null
 }): Promise<MintedWebhookHandle> {
 	const webhookName = input.webhookName.trim()
 	if (!webhookName) throw new McpCallerError('webhookName is required.')
@@ -633,12 +650,20 @@ export async function rotateWebhookUrlForUser(input: {
 		request: input.request,
 		savedPackage,
 	})
-	const existing = await getWebhookEndpointByKey({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		packageId: savedPackage.id,
-		webhookName,
-	})
+	const existing = input.endpointId
+		? await requireOwnedWebhookEndpoint({
+				db: input.env.APP_DB,
+				userId: input.userId,
+				packageId: savedPackage.id,
+				webhookName,
+				endpointId: input.endpointId,
+			})
+		: await getWebhookEndpointByKey({
+				db: input.env.APP_DB,
+				userId: input.userId,
+				packageId: savedPackage.id,
+				webhookName,
+			})
 	if (!existing) {
 		throw new McpCallerError(
 			'Webhook URL has not been minted. Call webhookUrlMint first.',
@@ -646,6 +671,7 @@ export async function rotateWebhookUrlForUser(input: {
 	}
 	return mintWebhookUrlForUser({
 		...input,
+		endpointId: existing.id,
 		activate: false,
 	})
 }
@@ -658,6 +684,8 @@ export async function setWebhookEnabledForUser(input: {
 	kodyId?: string
 	webhookName: string
 	enabled: boolean
+	/** Required when several URLs share the name; otherwise targets the oldest. */
+	endpointId?: string | null
 }): Promise<WebhookEndpointRecord> {
 	const webhookName = input.webhookName.trim()
 	if (!webhookName) throw new McpCallerError('webhookName is required.')
@@ -672,11 +700,29 @@ export async function setWebhookEnabledForUser(input: {
 		request: input.request,
 		savedPackage,
 	})
+	const existing = input.endpointId
+		? await requireOwnedWebhookEndpoint({
+				db: input.env.APP_DB,
+				userId: input.userId,
+				packageId: savedPackage.id,
+				webhookName,
+				endpointId: input.endpointId,
+			})
+		: await getWebhookEndpointByKey({
+				db: input.env.APP_DB,
+				userId: input.userId,
+				packageId: savedPackage.id,
+				webhookName,
+			})
+	if (!existing) {
+		throw new McpCallerError(
+			'Webhook URL has not been minted. Call webhookUrlMint first.',
+		)
+	}
 	const updated = await setWebhookEndpointEnabled({
 		db: input.env.APP_DB,
 		userId: input.userId,
-		packageId: savedPackage.id,
-		webhookName,
+		endpointId: existing.id,
 		enabled: input.enabled,
 	})
 	if (!updated) {
@@ -798,7 +844,36 @@ export async function applyWebhookUrlForUser(input: {
 
 type WebhookUrlRevealTarget =
 	| { handle: string }
-	| { packageId?: string; kodyId?: string; webhookName: string }
+	| {
+			packageId?: string
+			kodyId?: string
+			webhookName: string
+			endpointId?: string | null
+	  }
+
+async function requireOwnedWebhookEndpoint(input: {
+	db: D1Database
+	userId: OwnerId
+	packageId: string
+	webhookName: string
+	endpointId: string
+}): Promise<WebhookEndpointRecord> {
+	const existing = await getWebhookEndpointByIdForUser({
+		db: input.db,
+		userId: input.userId,
+		endpointId: input.endpointId,
+	})
+	if (
+		!existing ||
+		existing.packageId !== input.packageId ||
+		existing.webhookName !== input.webhookName
+	) {
+		throw new McpCallerError(
+			'Webhook URL has not been minted. Call webhookUrlMint first.',
+		)
+	}
+	return existing
+}
 
 async function resolveRevealHandle(input: {
 	db: D1Database
@@ -814,12 +889,20 @@ async function resolveRevealHandle(input: {
 		packageId: input.target.packageId,
 		kodyId: input.target.kodyId,
 	})
-	const existing = await getWebhookEndpointByKey({
-		db: input.db,
-		userId: input.userId,
-		packageId: savedPackage.id,
-		webhookName,
-	})
+	const existing = input.target.endpointId
+		? await requireOwnedWebhookEndpoint({
+				db: input.db,
+				userId: input.userId,
+				packageId: savedPackage.id,
+				webhookName,
+				endpointId: input.target.endpointId,
+			})
+		: await getWebhookEndpointByKey({
+				db: input.db,
+				userId: input.userId,
+				packageId: savedPackage.id,
+				webhookName,
+			})
 	if (!existing) {
 		throw new McpCallerError('Webhook URL has not been minted yet.')
 	}
@@ -847,6 +930,7 @@ export async function revealWebhookUrlForWebsite(input: {
 	})
 	const resolved = await resolveMintedWebhookUrl({ ...input, handle })
 	return {
+		endpointId: resolved.endpoint.id,
 		handle: formatWebhookUrlHandle(resolved.endpoint.id),
 		urlHost: resolved.urlHost,
 		url: resolved.url,

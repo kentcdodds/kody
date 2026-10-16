@@ -24,6 +24,13 @@ export const webhookEnableCapability = defineDomainCapability(
 			.object({
 				...webhookPackageRefSchema,
 				webhookName: z.string().min(1),
+				endpointId: z
+					.string()
+					.min(1)
+					.optional()
+					.describe(
+						'Minted endpoint to enable. Required when several URLs share the webhook name.',
+					),
 			})
 			.superRefine((input, ctx) => {
 				try {
@@ -40,6 +47,7 @@ export const webhookEnableCapability = defineDomainCapability(
 		outputSchema: z.object({
 			package_id: z.string(),
 			webhook_name: z.string(),
+			endpoint_id: z.string(),
 			enabled: z.literal(true),
 		}),
 		async handler(args, ctx) {
@@ -51,11 +59,13 @@ export const webhookEnableCapability = defineDomainCapability(
 				packageId: args.packageId,
 				kodyId: args.kodyId,
 				webhookName: args.webhookName,
+				endpointId: args.endpointId,
 				enabled: true,
 			})
 			return {
 				package_id: updated.packageId,
 				webhook_name: updated.webhookName,
+				endpoint_id: updated.id,
 				enabled: true as const,
 			}
 		},

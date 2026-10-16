@@ -216,7 +216,7 @@ test('minting never turns a webhook on: it links to Approve until someone has, a
 
 	const minted = await mintWebhookUrlForUser(input)
 	expect(minted.approvalUrl).toBe(
-		'https://heykody.dev/@approver/sentry-bridge/approve-credentials?enable=webhook%3Asentry',
+		`https://heykody.dev/@approver/sentry-bridge/approve-credentials?enable=webhook%3Asentry%3A${minted.endpointId}`,
 	)
 	expect(await webhookEnablements()).toEqual([])
 	// The list carries the same Approve link and no approval yet, even though
@@ -674,7 +674,7 @@ test('listing webhooks loads package manifests concurrently', async () => {
 test('createInstance mints a second URL under the same declared webhook name', async () => {
 	const owner = await setupOwner('multi@example.com', 'multi')
 	const { env, userId } = owner
-	const request = sessionRequestContext(userId)
+	const request = sessionRequestContext(userId, 'multi')
 	const first = await mintWebhookUrlForUser({
 		env,
 		request,
@@ -696,7 +696,18 @@ test('createInstance mints a second URL under the same declared webhook name', a
 	expect(second.handle).not.toBe(first.handle)
 	expect(second.endpointId).not.toBe(first.endpointId)
 	expect(second.instanceLabel).toBe('staging')
-	const listed = await owner.list()
+	expect(second.approvalUrl).toContain(
+		`enable=webhook%3Asentry%3A${second.endpointId}`,
+	)
+	expect(second.approvalUrl).not.toContain(first.endpointId)
+	const listNow = () =>
+		listWebhooksForUser({
+			env,
+			request,
+			baseUrl: 'https://heykody.dev',
+			userId: ownerIdFromStored(userId),
+		})
+	const listed = await listNow()
 	const sentry = listed.filter((row) => row.name === 'sentry')
 	expect(sentry).toHaveLength(2)
 	expect(sentry.map((row) => row.instanceLabel).sort()).toEqual([
@@ -704,7 +715,27 @@ test('createInstance mints a second URL under the same declared webhook name', a
 		'staging',
 	])
 	expect(sentry.every((row) => row.minted)).toBe(true)
-	expect(sentry.find((row) => row.instanceLabel === 'staging')?.approved).toBe(
-		false,
+	const stagingRow = sentry.find((row) => row.instanceLabel === 'staging')
+	expect(stagingRow?.approved).toBe(false)
+	expect(stagingRow?.approvalUrl).toContain(
+		`enable=webhook%3Asentry%3A${second.endpointId}`,
 	)
+	expect(stagingRow?.approvalUrl).not.toContain(first.endpointId)
+	await setWebhookEnabledForUser({
+		env,
+		request,
+		userId: ownerIdFromStored(userId),
+		...sentryHook,
+		endpointId: second.endpointId,
+		enabled: false,
+	})
+	const afterDisable = await listNow()
+	const staging = afterDisable.find(
+		(row) => row.name === 'sentry' && row.instanceLabel === 'staging',
+	)
+	const primary = afterDisable.find(
+		(row) => row.name === 'sentry' && row.instanceLabel === null,
+	)
+	expect(staging?.enabled).toBe(false)
+	expect(primary?.enabled).toBe(true)
 })

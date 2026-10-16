@@ -29,6 +29,13 @@ export const webhookUrlRotateCapability = defineDomainCapability(
 			.object({
 				...webhookPackageRefSchema,
 				webhookName: z.string().min(1),
+				endpointId: z
+					.string()
+					.min(1)
+					.optional()
+					.describe(
+						'Minted endpoint to rotate. Required when several URLs share the webhook name.',
+					),
 			})
 			.superRefine((input, ctx) => {
 				try {
@@ -56,6 +63,7 @@ export const webhookUrlRotateCapability = defineDomainCapability(
 				packageId: args.packageId,
 				kodyId: args.kodyId,
 				webhookName: args.webhookName,
+				endpointId: args.endpointId,
 				requestUrl: ctx.callerContext.baseUrl,
 			})
 			return { webhook: toMintedWebhookCapability(rotated) }

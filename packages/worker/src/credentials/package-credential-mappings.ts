@@ -423,109 +423,127 @@ export async function buildPackageCredentialsView(
 			createUrl: createUrlFor(need.key),
 		}
 	})
-	const triggers = scope.triggers.map((trigger): PackageTriggerView => {
-		const { enablement, otherEnabler } = viewerEnablement(
-			trigger,
-			scope.actorId,
-		)
-		const ref = { kind: trigger.kind, name: trigger.name }
-		const emailTopic =
-			trigger.kind === 'subscription' &&
-			isInboundEmailApprovalTopic(trigger.name)
-		const ownRows = trigger.enablements.filter(
-			(row) => String(row.enablerUserId) === scope.actorId,
-		)
-		const liveOwnCount = ownRows.filter((row) => row.state !== 'off').length
-		const mappingRowsFor = (
-			row: EnablementRecord | null,
-			options: { recordIncomplete: boolean },
-		) =>
-			otherEnabler
-				? []
-				: scope.needs.map((need) => {
-						const override = row
-							? findStoredRow(scope, need.key, {
-									target: 'enablement',
-									enablementId: row.id,
-									personId: scope.actorId,
-								})
-							: null
-						const effective = effectiveMapping(scope, need, {
-							trigger: override,
-							createUrl: createUrlFor(need.key),
-						})
-						if (
-							options.recordIncomplete &&
-							row &&
-							isIncomplete(effective.status)
-						) {
-							incomplete.push({
-								needKey: need.key,
-								where: {
-									type: 'trigger',
-									trigger: ref,
-									// Disambiguate only when the viewer has several live instances.
-									...(liveOwnCount > 1 ? { enablementId: row.id } : {}),
-								},
-								status: effective.status,
+	// Webhooks list one DeclaredTrigger per minted URL; group by name so the
+	// Triggers tab shows one card with every sibling enablement as an instance.
+	const groupedTriggers = new Map<string, typeof scope.triggers>()
+	for (const trigger of scope.triggers) {
+		const key = `${trigger.kind}:${trigger.name}`
+		const members = groupedTriggers.get(key)
+		if (members) members.push(trigger)
+		else groupedTriggers.set(key, [trigger])
+	}
+	const triggers = [...groupedTriggers.values()].map(
+		(members): PackageTriggerView => {
+			const primary = members[0]!
+			const merged = {
+				...primary,
+				instanceId:
+					members.find((member) => member.instanceId)?.instanceId ?? null,
+				enablements: members.flatMap((member) => member.enablements),
+			}
+			const { enablement, otherEnabler } = viewerEnablement(
+				merged,
+				scope.actorId,
+			)
+			const ref = { kind: primary.kind, name: primary.name }
+			const emailTopic =
+				primary.kind === 'subscription' &&
+				isInboundEmailApprovalTopic(primary.name)
+			const ownRows = merged.enablements.filter(
+				(row) => String(row.enablerUserId) === scope.actorId,
+			)
+			const liveOwnCount = ownRows.filter((row) => row.state !== 'off').length
+			const mappingRowsFor = (
+				row: EnablementRecord | null,
+				options: { recordIncomplete: boolean },
+			) =>
+				otherEnabler
+					? []
+					: scope.needs.map((need) => {
+							const override = row
+								? findStoredRow(scope, need.key, {
+										target: 'enablement',
+										enablementId: row.id,
+										personId: scope.actorId,
+									})
+								: null
+							const effective = effectiveMapping(scope, need, {
+								trigger: override,
+								createUrl: createUrlFor(need.key),
 							})
-						}
-						return {
-							needKey: need.key,
-							override: storedView(scope, override),
-							effective,
-						}
-					})
-		const canEditPrimary =
-			trigger.kind === 'webhook'
-				? trigger.instanceId !== null && !otherEnabler
-				: true
-		const instances: Array<PackageTriggerInstanceView> = otherEnabler
-			? enablement
-				? [
-						{
-							enablement: {
-								id: enablement.id,
-								state: enablement.state,
-								enabledByYou: false,
+							if (
+								options.recordIncomplete &&
+								row &&
+								isIncomplete(effective.status)
+							) {
+								incomplete.push({
+									needKey: need.key,
+									where: {
+										type: 'trigger',
+										trigger: ref,
+										// Disambiguate only when the viewer has several live instances.
+										...(liveOwnCount > 1 ? { enablementId: row.id } : {}),
+									},
+									status: effective.status,
+								})
+							}
+							return {
+								needKey: need.key,
+								override: storedView(scope, override),
+								effective,
+							}
+						})
+			const canEditPrimary =
+				primary.kind === 'webhook'
+					? merged.instanceId !== null && !otherEnabler
+					: true
+			const instances: Array<PackageTriggerInstanceView> = otherEnabler
+				? enablement
+					? [
+							{
+								enablement: {
+									id: enablement.id,
+									state: enablement.state,
+									enabledByYou: false,
+								},
+								canEdit: false,
+								mappings: [],
 							},
-							canEdit: false,
-							mappings: [],
+						]
+					: []
+				: ownRows.map((row) => ({
+						enablement: {
+							id: row.id,
+							state: row.state,
+							enabledByYou: true,
 						},
-					]
-				: []
-			: ownRows.map((row) => ({
-					enablement: {
-						id: row.id,
-						state: row.state,
-						enabledByYou: true,
-					},
-					canEdit: canEditPrimary,
-					mappings: mappingRowsFor(row, { recordIncomplete: true }),
-				}))
-		// An off trigger still lists need rows (null overrides) so the editor
-		// can turn it on by saving a pick — same shape as before instances.
-		const mappings = otherEnabler
-			? []
-			: (instances[0]?.mappings ??
-				mappingRowsFor(null, { recordIncomplete: false }))
-		return {
-			trigger: ref,
-			instanceId: trigger.instanceId,
-			enablement: enablement
-				? {
-						id: enablement.id,
-						state: enablement.state,
-						enabledByYou: !otherEnabler,
-					}
-				: null,
-			canEdit: canEditPrimary,
-			mappings,
-			instances,
-			canAddInstance:
-				canEditPrimary && !emailTopic && trigger.instanceId !== null,
-		}
-	})
+						canEdit: canEditPrimary,
+						mappings: mappingRowsFor(row, { recordIncomplete: true }),
+					}))
+			// An off trigger still lists need rows (null overrides) so the editor
+			// can turn it on by saving a pick — same shape as before instances.
+			const mappings = otherEnabler
+				? []
+				: (instances[0]?.mappings ??
+					mappingRowsFor(null, { recordIncomplete: false }))
+			return {
+				trigger: ref,
+				instanceId: merged.instanceId,
+				enablement: enablement
+					? {
+							id: enablement.id,
+							state: enablement.state,
+							enabledByYou: !otherEnabler,
+						}
+					: null,
+				canEdit: canEditPrimary,
+				mappings,
+				instances,
+				canAddInstance:
+					canEditPrimary && !emailTopic && merged.instanceId !== null,
+			}
+		},
+	)
 	const listed = await listCredentialsForViewer({
 		env: scope.env,
 		request: scope.request,

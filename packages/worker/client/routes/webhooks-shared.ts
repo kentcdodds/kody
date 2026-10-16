@@ -25,26 +25,35 @@ export type WebhookIntent = 'mint' | 'rotate' | 'reveal' | 'enable' | 'disable'
 export const packageWebhooksSectionId = 'webhooks'
 
 /** Anchor of one webhook's card inside that section. */
-export function packageWebhookCardId(webhookName: string) {
-	return `webhook-${webhookName}`
+export function packageWebhookCardId(input: {
+	webhookName: string
+	endpointId?: string | null
+}) {
+	return input.endpointId
+		? `webhook-${input.webhookName}-${input.endpointId}`
+		: `webhook-${input.webhookName}`
 }
 
 /**
  * Package settings is where URLs get minted and copied; the account index
  * and any "manage this webhook" link land on the owning package's section
- * (or one webhook's card when the name is known).
+ * (or one webhook's card when the name / endpoint is known).
  */
 export function buildPackageWebhooksHref(input: {
 	username: string
 	kodyId: string
 	webhookName?: string | null
+	endpointId?: string | null
 }) {
 	const settingsHref = routes.communityPackageSettings.href({
 		username: input.username,
 		kodyId: input.kodyId,
 	})
 	const anchor = input.webhookName
-		? packageWebhookCardId(input.webhookName)
+		? packageWebhookCardId({
+				webhookName: input.webhookName,
+				endpointId: input.endpointId,
+			})
 		: packageWebhooksSectionId
 	return `${settingsHref}#${anchor}`
 }
@@ -190,6 +199,9 @@ export async function postPackageWebhookIntent(input: {
 	kodyId: string
 	webhookName: string
 	intent: WebhookIntent
+	endpointId?: string | null
+	createInstance?: boolean
+	instanceLabel?: string | null
 }): Promise<PackageWebhookIntentResult> {
 	try {
 		const response = await fetch(packageWebhooksApiHref(input), {
@@ -202,6 +214,9 @@ export async function postPackageWebhookIntent(input: {
 			body: JSON.stringify({
 				intent: input.intent,
 				webhookName: input.webhookName,
+				...(input.endpointId ? { endpointId: input.endpointId } : {}),
+				...(input.createInstance ? { createInstance: true } : {}),
+				...(input.instanceLabel ? { instanceLabel: input.instanceLabel } : {}),
 			}),
 		})
 		if (response.status === 401) return { kind: 'unauthorized' }
