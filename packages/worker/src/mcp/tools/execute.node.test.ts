@@ -1665,6 +1665,25 @@ test('execute omits an unconfirmed idempotency key from the follow response', as
 	expect(mockModule.abandonRunRecord).not.toHaveBeenCalled()
 })
 
+test('execute does not detach a caller cancel that lands before the follow response', async () => {
+	transportBudgetMock.remainingMs = 0
+	onTestFinished(() => {
+		transportBudgetMock.remainingMs = null
+	})
+	const handle = transportFollowHandle('run-cancelled', 'execute:cancel-key')
+	const handler = await getExecuteHandler(transportCaller)
+	mockModule.beginRunRecord.mockReturnValueOnce(handle)
+	mockModule.runModuleWithRegistry.mockReturnValueOnce(new Promise(() => {}))
+	const controller = new AbortController()
+	controller.abort(new DOMException('The operation was aborted', 'AbortError'))
+	const response = await runWithInboundRequestSignal(controller.signal, () =>
+		handler({ code: okCode, conversationId: 'conv-cancelled' }),
+	)
+	expect(response.isError).toBe(true)
+	expect(response.structuredContent.inProgress).toBeUndefined()
+	expect(response.structuredContent.error).toContain('aborted')
+})
+
 test('execute records fleet last-success when a detached run finishes', async () => {
 	transportBudgetMock.remainingMs = 0
 	onTestFinished(() => {

@@ -341,8 +341,28 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			let claimedRunHandle: RunRecordHandle | null = null
 			let runRowOwned = false
 			let transportDetached = false
+			let detachTransportAfterResponse = false
+			let transportSignal: ReturnType<
+				typeof createDetachableAbortSignal
+			> | null = null
 			let claimedExecuteUsage: ClaimedExecuteUsage | null = null
-			return await attachExecuteUsage(await runExecuteToolWithErrorBoundary())
+			const response = await attachExecuteUsage(
+				await runExecuteToolWithErrorBoundary(),
+			)
+			// Detach only after the follow response is built, including the
+			// usage read. A caller cancel before that still stops the sandbox.
+			// Nested-function assignments are invisible to TS control-flow
+			// analysis on the outer lets, so reassert the declared type.
+			const signalAfterResponse = transportSignal as ReturnType<
+				typeof createDetachableAbortSignal
+			> | null
+			if (detachTransportAfterResponse && signalAfterResponse) {
+				if (!signalAfterResponse.signal.aborted) {
+					signalAfterResponse.detach()
+				}
+				transportDetached = true
+			}
+			return response
 
 			async function attachExecuteUsage<
 				Response extends { structuredContent: Record<string, unknown> },
@@ -609,9 +629,8 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				let registeredCapabilityCount = 0
 				const rawFetchHosts = createRawFetchHostSink()
 				const credentialCallMapWarnings: Array<string> = []
-				const transportSignal = createDetachableAbortSignal(
-					getInboundRequestSignal(),
-				)
+				transportSignal = createDetachableAbortSignal(getInboundRequestSignal())
+				const activeTransportSignal = transportSignal
 				const recordDetachedExecuteFailure = async (cause: unknown) => {
 					if (!claimedRunHandle) return
 					try {
@@ -724,7 +743,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 												credentialCallMap,
 												waitUntil,
 												reportProgress: reportProgress ?? undefined,
-												signal: transportSignal.signal,
+												signal: activeTransportSignal.signal,
 												runRecord: {
 													surface: 'execute',
 													name: null,
@@ -831,9 +850,27 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						} else if (peeked && peeked.ok === false) {
 							throw peeked.error
 						} else {
-							transportSignal.detach()
-							transportDetached = true
-							spanned = await readTransportBudgetFollow(claimedRunHandle)
+							// Stay attached while the run row is confirmed. A caller
+							// cancel during that read must still stop the sandbox.
+							// Detach only once the follow response is about to return,
+							// so completing the HTTP response does not cancel the work.
+							const follow = await readTransportBudgetFollow(claimedRunHandle)
+							if (
+								follow.transportFollow === 'running' &&
+								activeTransportSignal.signal.aborted
+							) {
+								const reason: unknown = activeTransportSignal.signal.reason
+								throw reason instanceof Error
+									? reason
+									: new DOMException('The operation was aborted', 'AbortError')
+							}
+							if (follow.transportFollow === 'terminal') {
+								activeTransportSignal.detach()
+								transportDetached = true
+							} else {
+								detachTransportAfterResponse = true
+							}
+							spanned = follow
 						}
 					} else if (raced.kind === 'rejected') {
 						throw raced.error
