@@ -11,6 +11,7 @@ import {
 import { type JobRepoCheckPolicy } from '@kody-internal/shared/jobs/types.ts'
 import { DurableObject } from 'cloudflare:workers'
 import { type JobsWorkerEnv } from './env.ts'
+import { tryRearmAlarmForRetryableD1Failure } from './manager-alarm-deferral.ts'
 import { buildSentryOptions } from './sentry-options.ts'
 import { getNextRunnableJob } from './store.ts'
 
@@ -200,6 +201,18 @@ export class JobManagerBase extends DurableObject<JobsWorkerEnv> {
 				isRetry: alarmInfo?.isRetry,
 				...schedulerErrorFields(error),
 			})
+			if (
+				await tryRearmAlarmForRetryableD1Failure({
+					setAlarm: (atMs) => this.ctx.storage.setAlarm(atMs),
+					userId,
+					error,
+					phase: 'run_due_jobs',
+					retryCount: alarmInfo?.retryCount,
+					isRetry: alarmInfo?.isRetry,
+				})
+			) {
+				return
+			}
 			throw error
 		}
 		try {
@@ -212,6 +225,18 @@ export class JobManagerBase extends DurableObject<JobsWorkerEnv> {
 				isRetry: alarmInfo?.isRetry,
 				...schedulerErrorFields(error),
 			})
+			if (
+				await tryRearmAlarmForRetryableD1Failure({
+					setAlarm: (atMs) => this.ctx.storage.setAlarm(atMs),
+					userId,
+					error,
+					phase: 'sync_alarm',
+					retryCount: alarmInfo?.retryCount,
+					isRetry: alarmInfo?.isRetry,
+				})
+			) {
+				return
+			}
 			throw error
 		}
 	}

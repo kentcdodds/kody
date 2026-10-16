@@ -1,5 +1,17 @@
 import { type CloudflareOptions } from '@sentry/cloudflare'
+import { type ErrorEvent } from '@sentry/core'
+import { isRetryableD1LockSentryEvent } from './d1-retry.ts'
 import { type JobsWorkerEnv } from './env.ts'
+
+export function filterRetryableD1LockSentryEvent(event: ErrorEvent) {
+	if (!isRetryableD1LockSentryEvent(event)) return event
+	return null
+}
+
+export function filterJobsWorkerSentryEvent(event: ErrorEvent) {
+	if (filterRetryableD1LockSentryEvent(event) === null) return null
+	return event
+}
 
 export function buildSentryOptions(env: JobsWorkerEnv): CloudflareOptions {
 	const dsn = env.SENTRY_DSN?.trim()
@@ -15,5 +27,11 @@ export function buildSentryOptions(env: JobsWorkerEnv): CloudflareOptions {
 		...(release ? { release } : {}),
 		tracesSampleRate,
 		sendDefaultPii: false,
+		// Bare D1 platform blips (SQLITE_BUSY, long-running export, network
+		// lost, DB overloaded, internal error with reference) are dropped —
+		// same class as the main worker. JobManager DO alarms rethrow after
+		// HOST.runDueJobsForUser fails during a DR export; without this filter
+		// those open Sentry issues (KODY-9D).
+		beforeSend: filterJobsWorkerSentryEvent,
 	}
 }
