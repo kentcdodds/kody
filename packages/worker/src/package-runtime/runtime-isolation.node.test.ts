@@ -41,6 +41,12 @@ type RuntimeModule = {
 		| undefined
 	codemode?: unknown
 	capabilities?: unknown
+	credential?:
+		| (((key: string) => Promise<unknown>) & {
+				named: (name: string) => Promise<unknown>
+		  })
+		| undefined
+	credentials?: ((key: string) => Promise<unknown>) | undefined
 	email: { getMessage: (id: string) => Promise<unknown> } | null
 	packageContext: Record<string, unknown> | null
 	packageSecrets: { get: (alias: string) => Promise<string> }
@@ -197,6 +203,69 @@ test('optional runtime exports stay falsy when the wrapper omits them', async ()
 			expect(mod.capabilities).toBeUndefined()
 			// packageContext is late-bound; read it inside the store run.
 			expect(observedPackageContext).toEqual({ packageId: 'pkg-1' })
+		},
+	)
+})
+
+// Package-app once imported runtime.js at entry load (before ALS.run). That
+// froze credential as undefined forever — later createRuntime bindings never
+// healed the export. Entry must defer first runtime evaluation until inside
+// ALS (user import of kody:runtime), and read secret authority via Symbol.for.
+test('credential freezes undefined when runtime.js first evaluates outside ALS', async () => {
+	await withRuntimeIsolationCleanup(async ({ loadPreloadedRuntime }) => {
+		const { storage, mod } = await loadPreloadedRuntime()
+		expect(mod.credential).toBeUndefined()
+		expect(mod.credentials).toBeUndefined()
+		const credentialRuntime = {
+			credential: Object.assign(
+				async (key: string) => ({ key, sign: async () => 'sig' }),
+				{ named: async (name: string) => ({ name }) },
+			),
+			credentials: async (key: string) => [{ key }],
+		}
+		await storage.run(credentialRuntime, async () => {
+			expect(mod.credential).toBeUndefined()
+			expect(mod.credentials).toBeUndefined()
+		})
+	})
+})
+
+test('credential is callable when runtime.js first evaluates inside ALS with binding', async () => {
+	await withRuntimeIsolationCleanup(
+		async ({ writeRuntimeFile, installSharedStorage }) => {
+			const storage = installSharedStorage()
+			const credentialRuntime = {
+				credential: Object.assign(
+					async (key: string) => ({
+						key,
+						sign: async () => `signed:${key}`,
+					}),
+					{ named: async (name: string) => ({ name }) },
+				),
+				credentials: async (key: string) => [{ key }],
+			}
+			const result = await storage.run(credentialRuntime, async () => {
+				const mod = (await import(await writeRuntimeFile())) as RuntimeModule
+				expect(typeof mod.credential).toBe('function')
+				expect(typeof mod.credentials).toBe('function')
+				if (!mod.credential) throw new Error('credential missing')
+				const handle = (await mod.credential('powersync-jwt')) as {
+					key: string
+					sign: () => Promise<string>
+				}
+				return {
+					key: handle.key,
+					signature: await handle.sign(),
+					named: await mod.credential.named('powersync-jwt'),
+					list: await mod.credentials?.('powersync-jwt'),
+				}
+			})
+			expect(result).toEqual({
+				key: 'powersync-jwt',
+				signature: 'signed:powersync-jwt',
+				named: { name: 'powersync-jwt' },
+				list: [{ key: 'powersync-jwt' }],
+			})
 		},
 	)
 })

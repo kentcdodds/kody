@@ -135,7 +135,6 @@ function createPackageAppWorkerSource(input: {
 	return `
 import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { __kodyGetSecretAuthority } from ${JSON.stringify(`./${runtimeModulePath}`)};
 
 const __kodyRuntimeStorageSymbol = Symbol.for('kody.runtimeStorage');
 // Resolve the AsyncLocalStorage instance synchronously at module load,
@@ -152,18 +151,22 @@ const __kodyRuntimeStorage = (() => {
 	return created;
 })();
 
+// Do not statically import ${JSON.stringify(`./${runtimeModulePath}`)} here.
+// That virtual module freezes optional exports (credential, credentials, …)
+// from __kodyInitialRuntime at first evaluation. Importing it at entry load
+// runs before any __kodyRuntimeStorage.run, so credential stays undefined
+// forever even after createRuntime binds it. User code imports kody:runtime
+// inside ALS.run; secret-authority readers use Symbol.for instead.
+function __kodyReadSecretAuthority() {
+	const getter = globalThis[Symbol.for('kody.getSecretAuthority')];
+	return typeof getter === 'function' ? getter() : '';
+}
+
 const __kodyEvaluateFetchPatchedSymbol = Symbol.for('kody.evaluateFetchPatched');
 if (!globalThis[__kodyEvaluateFetchPatchedSymbol]) {
 	const __kodyNativeFetch = globalThis.fetch.bind(globalThis);
 	globalThis.fetch = (input, init) => {
-		const authority = String(
-			(typeof __kodyGetSecretAuthority === 'function'
-				? __kodyGetSecretAuthority()
-				: typeof globalThis[Symbol.for('kody.getSecretAuthority')] ===
-					  'function'
-					? globalThis[Symbol.for('kody.getSecretAuthority')]()
-					: '') ?? '',
-		).trim();
+		const authority = String(__kodyReadSecretAuthority() ?? '').trim();
 		const headers = new Headers(
 			init?.headers ??
 				(input && typeof input === 'object' && 'headers' in input
@@ -300,14 +303,7 @@ function createKodyProxy(runtimeBridge, mcpServerNamesOrLoader) {
 			},
 		});
 	function attachSecretAuthorityArgs(args) {
-		const authority = String(
-			(typeof __kodyGetSecretAuthority === 'function'
-				? __kodyGetSecretAuthority()
-				: typeof globalThis[Symbol.for('kody.getSecretAuthority')] ===
-					  'function'
-					? globalThis[Symbol.for('kody.getSecretAuthority')]()
-					: '') ?? '',
-		).trim();
+		const authority = String(__kodyReadSecretAuthority() ?? '').trim();
 		if (args == null || typeof args !== 'object' || Array.isArray(args)) {
 			return args;
 		}
@@ -392,14 +388,7 @@ function createRealtimeProxy(runtimeBridge) {
 
 function createPackageSecretsProxy(runtimeBridge) {
 	const secretArgs = (alias) => {
-		const authority = String(
-			(typeof __kodyGetSecretAuthority === 'function'
-				? __kodyGetSecretAuthority()
-				: typeof globalThis[Symbol.for('kody.getSecretAuthority')] ===
-					  'function'
-					? globalThis[Symbol.for('kody.getSecretAuthority')]()
-					: '') ?? '',
-		).trim();
+		const authority = String(__kodyReadSecretAuthority() ?? '').trim();
 		const args = { alias };
 		if (authority) {
 			args[${JSON.stringify(secretAuthorityArgName)}] = authority;

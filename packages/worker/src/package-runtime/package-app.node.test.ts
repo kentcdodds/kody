@@ -40,11 +40,23 @@ function createKodyProxyForTest(
 	runtimeBridge: unknown,
 	mcpServerNames: Array<string> | (() => Promise<Array<string>>) = [],
 ) {
+	// Host entry defines __kodyReadSecretAuthority at module scope; the extracted
+	// createKodyProxy body closes over it, so unit evals must supply a stub.
+	const readSecretAuthority = () => {
+		const getter = (
+			globalThis as unknown as Record<symbol, (() => string | null) | undefined>
+		)[Symbol.for('kody.getSecretAuthority')]
+		return typeof getter === 'function' ? getter() : ''
+	}
 	return new Function(
 		'runtimeBridge',
 		'mcpServerNamesOrLoader',
+		'__kodyReadSecretAuthority',
 		`${kodyProxySource}; return createKodyProxy(runtimeBridge, mcpServerNamesOrLoader);`,
-	)(runtimeBridge, mcpServerNames) as Record<string, unknown>
+	)(runtimeBridge, mcpServerNames, readSecretAuthority) as Record<
+		string,
+		unknown
+	>
 }
 
 /** Workerd-style: [[OwnPropertyKeys]] then GOPD.value (not plain Get). */
@@ -798,6 +810,18 @@ test('buildPackageAppWorker serves an artifactName-null artifact hit and reuses 
 	expect(packageAppHostSource).toContain('credentialClientCall')
 	expect(packageAppHostSource).toContain('x-kody-credential-client')
 	expect(packageAppHostSource).toContain('Leave x-kody-credential-client alone')
+	// Must not statically import runtime.js at entry load: optional exports
+	// (credential) freeze from empty ALS and stay undefined forever.
+	expect(packageAppHostSource).not.toMatch(
+		/import\s*\{[^}]*__kodyGetSecretAuthority[^}]*\}\s*from/,
+	)
+	expect(packageAppHostSource).not.toContain(
+		"from './.__kody_virtual__/runtime.js'",
+	)
+	expect(packageAppHostSource).toContain('__kodyReadSecretAuthority')
+	expect(packageAppHostSource).toContain(
+		"Symbol.for('kody.getSecretAuthority')",
+	)
 	const bridgeProps = packageAppRuntimeMock.packageAppRuntimeBridge.mock
 		.calls[0]?.[0] as { props?: { credentialClientBinding?: string } }
 	expect(bridgeProps?.props?.credentialClientBinding).toMatch(/^run:/)
