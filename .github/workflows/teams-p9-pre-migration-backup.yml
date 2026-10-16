@@ -65,7 +65,7 @@ jobs:
             exit 1
           fi
           # Keep in sync with resolveRehearsalWorkerName /
-          # preview-rehearsal.yml / teams-production-queries.yml.
+          # preview-rehearsal.yml.
           resolve_branch_preview_target() {
             local raw="$1"
             local name

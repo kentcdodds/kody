@@ -20,8 +20,6 @@ style, tests, MCP capabilities, and runtime architecture.
 - [Manual PR preview testing](./preview-manual-testing.md)
 - [Preview migration rehearsal](./preview-migration-rehearsal.md) (seed,
   snapshot, migrate, verify, restore on a branch preview; operator/CI only)
-- [Teams production queries](./teams-production-queries.md) (read-only, sealed
-  OAuth and Stripe counts plus credential exposure; Kent runs)
 - [Teams org.migrated audit backfill](./teams-org-migrated-audit-backfill.md)
   (operator dry-run and apply for `org.migrated` rows; not part of deploy)
 - [control-kody](./control-kody.md) (Feature Map + CLI; daily

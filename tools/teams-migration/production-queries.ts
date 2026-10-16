@@ -20,11 +20,10 @@ import {
 } from '../preview-rehearsal/seal.ts'
 
 /**
- * Read-only production queries that stay useful after the Teams P8 conversion
- * (docs/contributing/teams-production-queries.md): OAuth grant org binding and
- * live Stripe subscriptions. Counts only. Every request is a KV read or a
- * Stripe GET, and the report leaves only as an envelope sealed to the
- * operator's key. Credential exposure is a separate script.
+ * Read-only OAuth grant and Stripe subscription counts (KV reads and Stripe
+ * GETs only). Shared helpers (`assertReadOnlySql`, `resolveD1Uuid`, …) are
+ * also used by other teams-migration tools. The report leaves only as an
+ * envelope sealed to the operator's key when run as a CLI.
  */
 
 export type QueryTarget =
