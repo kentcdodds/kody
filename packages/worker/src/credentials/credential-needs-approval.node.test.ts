@@ -537,6 +537,7 @@ test('approving publishes the paused commit past the pause; a moved base superse
 		expect.objectContaining({
 			expectedFingerprint: 'fp-after-needs',
 			enqueueWentPublic: false,
+			recordPin: true,
 			actorUserId: 'person-bea',
 		}),
 	)

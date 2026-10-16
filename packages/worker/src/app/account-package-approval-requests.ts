@@ -151,6 +151,7 @@ async function pinInternetVisibleCapabilitiesAfterNeedsPublish(input: {
 			requestUrl: input.request.url,
 			expectedFingerprint: summary.capabilitySet.fingerprint,
 			enqueueWentPublic: false,
+			recordPin: true,
 		})
 		return null
 	} catch (error) {

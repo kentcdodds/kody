@@ -125,6 +125,13 @@ export async function approvePackageCapabilitySet(input: {
 	 * so a request turned off meanwhile is not enqueued again.
 	 */
 	enqueueWentPublic?: boolean
+	/**
+	 * Owner Approve UI (package page and approval bundles). Always insert a new
+	 * pin row for the live fingerprint + commit so a prior pin for the same
+	 * fingerprint cannot no-op and leave a stale capability_set_json. Republish
+	 * accept keeps the default false so identical pins stay quiet.
+	 */
+	recordPin?: boolean
 }): Promise<{
 	approval: PackageCapabilityApprovalRecord
 	capabilitySet: CapabilitySet
@@ -182,7 +189,7 @@ export async function approvePackageCapabilitySet(input: {
 		existing != null &&
 		!existingSnapshotEmpty &&
 		existing.dependencySnapshotJson !== dependencySnapshotJson
-	if (existing && existingSnapshotEmpty) {
+	if (existing && existingSnapshotEmpty && !input.recordPin) {
 		// PR1 rows stored "{}". Backfill the real pin on re-approve so
 		// internet-visible serving can read a lockfile.
 		approval =
@@ -193,10 +200,16 @@ export async function approvePackageCapabilitySet(input: {
 				approvedByUserId: input.actorUserId,
 				approvedAt: now,
 			})) ?? existing
-	} else if (!existing || existingSnapshotDrifted) {
+	} else if (
+		!existing ||
+		existingSnapshotDrifted ||
+		input.recordPin === true ||
+		(existing != null && existing.capabilitySetJson !== capabilitySetJson)
+	) {
 		// Same capability fingerprint can still pin a newer dependency tree
 		// (decision 4: fingerprint drives re-prompt; the lockfile still moves).
-		// Insert a new row so prior approver history stays intact.
+		// Owner Approve always inserts so a matching fingerprint cannot no-op
+		// past a stale capability_set_json (visitor-flag pin bug).
 		approval = await insertPackageCapabilityApproval(input.env.APP_DB, {
 			id: crypto.randomUUID(),
 			package_id: input.savedPackage.id,

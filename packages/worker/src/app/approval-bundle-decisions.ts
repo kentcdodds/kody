@@ -167,6 +167,7 @@ async function approveItem(input: {
 					savedPackage: writable.package.savedPackage,
 					requestUrl: input.request.url,
 					expectedFingerprint: input.fingerprint,
+					recordPin: true,
 				})
 				return { ok: true }
 			} catch (error) {

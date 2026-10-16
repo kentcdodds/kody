@@ -246,6 +246,65 @@ test('approving the capability set alone leaves went_public on the combined Appr
 	).toBe(false)
 })
 
+test('owner Re-approve records a new pin row even when the fingerprint already matches', async () => {
+	const t = await setup()
+	const page = await t.loadPage()
+	expect(
+		(
+			await t.approve({
+				action: 'approve-capabilities',
+				fingerprint: page.fingerprint,
+			})
+		)?.status,
+	).toBe(200)
+	const first = await t.db
+		.prepare(
+			`SELECT id, approved_at, capability_set_json
+			FROM package_capability_approvals WHERE package_id = ?
+			ORDER BY approved_at ASC`,
+		)
+		.bind(t.savedPackage.id)
+		.all<Record<string, string>>()
+	expect(first.results).toHaveLength(1)
+
+	const again = await t.loadPage()
+	expect(again.fingerprintMatchesApproval).toBe(true)
+	expect(again.latestApprovedAt).toBe(first.results[0]?.approved_at)
+	expect(
+		(
+			await t.approve({
+				action: 'approve-capabilities',
+				fingerprint: again.fingerprint,
+			})
+		)?.status,
+	).toBe(200)
+
+	const pins = await t.db
+		.prepare(
+			`SELECT id, approved_at FROM package_capability_approvals
+			WHERE package_id = ? ORDER BY approved_at ASC`,
+		)
+		.bind(t.savedPackage.id)
+		.all<Record<string, string>>()
+	expect(pins.results).toHaveLength(2)
+	const firstPin = pins.results[0]
+	const secondPin = pins.results[1]
+	const initialPin = first.results[0]
+	if (!firstPin || !secondPin || !initialPin) {
+		throw new Error('expected two capability approval pins')
+	}
+	const firstApprovedAt = initialPin.approved_at
+	const secondApprovedAt = secondPin.approved_at
+	if (!firstApprovedAt || !secondApprovedAt) {
+		throw new Error('expected approved_at on both capability approval pins')
+	}
+	expect(secondPin.id).not.toBe(initialPin.id)
+	expect(secondApprovedAt >= firstApprovedAt).toBe(true)
+	const after = await t.loadPage()
+	expect(after.fingerprintMatchesApproval).toBe(true)
+	expect(after.latestApprovedAt).toBe(secondApprovedAt)
+})
+
 test('asking to go public when the capability set is already approved turns serving on immediately', async () => {
 	const t = await setup()
 	const before = await t.loadPage()

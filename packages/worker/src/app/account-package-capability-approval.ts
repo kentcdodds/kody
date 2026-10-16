@@ -304,6 +304,7 @@ export async function handleAccountPackageInternetVisibleAction(input: {
 				savedPackage,
 				requestUrl: input.request.url,
 				expectedFingerprint,
+				recordPin: true,
 				...options,
 			})
 			await audit('package.capabilities.approve', 'success', {
