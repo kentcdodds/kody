@@ -353,6 +353,8 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 			'/integrations/claude',
 
 			'/support',
+			'/about',
+			'/contact',
 			'/privacy',
 			'/terms',
 			'/docs',

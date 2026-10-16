@@ -42,6 +42,8 @@ export function SiteFooter(handle: Handle<SiteFooterProps>) {
 					<a href="/use-cases">Use cases</a>
 					<a href="/pricing">Pricing</a>
 					<a href="/faq">FAQ</a>
+					<a href="/about">About</a>
+					<a href="/contact">Contact</a>
 					<a href="/support">Support</a>
 					<a href="/blog">Blog</a>
 					<a

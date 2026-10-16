@@ -422,6 +422,8 @@ registerPreloadPatterns(
 		routePattern(routes.automation),
 
 		routePattern(routes.support),
+		routePattern(routes.about),
+		routePattern(routes.contact),
 		routePattern(routes.privacy),
 		routePattern(routes.terms),
 		routePattern(routes.discord),

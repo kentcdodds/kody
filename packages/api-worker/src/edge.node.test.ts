@@ -159,6 +159,9 @@ test('rejects unknown paths, oversize bodies, and rate-limited callers', async (
 	)
 	expect(ipResponse.status).toBe(429)
 	expect(ipResponse.headers.get('Retry-After')).toBe('60')
+	expect(ipResponse.headers.get('RateLimit-Policy')).toBe(
+		'ip;q=600;w=60, token;q=300;w=60',
+	)
 	expect(await ipResponse.json()).toMatchObject({
 		error: { code: 'rate_limited' },
 	})

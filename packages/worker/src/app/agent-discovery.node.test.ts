@@ -137,6 +137,7 @@ test('agent discovery documents describe the MCP server and public pages', async
 	expect(openApiMd).toContain(kodyOpenApiSpecUrl)
 	expect(openApiMd).toContain(`${kodyApiDocsOrigin}/`)
 	expect(openApiMd).toContain(`${origin}/docs/open-api.md`)
+	expect(openApiMd).toContain(`${origin}/docs/api-versioning.md`)
 
 	const jsonLd = buildHomeSoftwareApplicationJsonLd()
 	expect(jsonLd).toMatchObject({

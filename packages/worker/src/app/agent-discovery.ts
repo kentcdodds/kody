@@ -294,6 +294,10 @@ export function buildApiCatalog(origin: string) {
 						href: `${origin}/docs/open-api.md`,
 						type: 'text/markdown',
 					},
+					{
+						href: `${origin}/docs/api-versioning.md`,
+						type: 'text/markdown',
+					},
 				],
 				status: [
 					{
@@ -485,6 +489,7 @@ export function buildOpenApiDiscoveryMarkdown(baseUrl: string): string {
 		`- [Interactive docs](${kodyApiDocsOrigin}/) — Scalar UI at api-docs.kody.codes`,
 		`- [OpenAPI description](${kodyOpenApiSpecUrl}) — machine-readable service description`,
 		`- [Kody Open API guide](${baseUrl}/docs/open-api.md) — how to mint tokens and call \`/v1\``,
+		`- [API versioning and deprecation](${baseUrl}/docs/api-versioning.md) — additive \`/v1\`, phased migrations`,
 		'',
 	].join('\n')
 }

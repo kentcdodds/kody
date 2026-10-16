@@ -418,6 +418,8 @@ export const routes = route({
 	automation: '/use-cases/ai-workflow-automation',
 
 	support: '/support',
+	about: '/about',
+	contact: '/contact',
 	privacy: '/privacy',
 	terms: '/terms',
 	discord: '/discord',

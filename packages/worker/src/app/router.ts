@@ -289,6 +289,8 @@ import { createWithAgentHandler } from '#app/handlers/with-agent.ts'
 import { createAcquisitionHandler } from '#app/handlers/acquisition.ts'
 import { createCaseStudiesHandler } from '#app/handlers/case-studies.ts'
 import { createBelieveHandler } from '#app/handlers/believe.ts'
+import { createAboutHandler } from '#app/handlers/about.ts'
+import { createContactHandler } from '#app/handlers/contact.ts'
 import { createPrivacyHandler } from '#app/handlers/privacy.ts'
 import { createSupportHandler } from '#app/handlers/support.ts'
 import { createTermsHandler } from '#app/handlers/terms.ts'
@@ -477,6 +479,8 @@ export function createAppRouter(env: Env) {
 			automation: createAcquisitionHandler(env),
 
 			support: createSupportHandler(env),
+			about: createAboutHandler(env),
+			contact: createContactHandler(env),
 			privacy: createPrivacyHandler(env),
 			terms: createTermsHandler(env),
 			discord: createDiscordHandler(env),

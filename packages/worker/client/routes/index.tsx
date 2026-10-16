@@ -551,6 +551,12 @@ export const clientRoutes = {
 	[routePattern(routes.support)]: (
 		<LazyMarketingRoute render={(m) => <m.SupportRoute />} />
 	),
+	[routePattern(routes.about)]: (
+		<LazyMarketingRoute render={(m) => <m.AboutRoute />} />
+	),
+	[routePattern(routes.contact)]: (
+		<LazyMarketingRoute render={(m) => <m.ContactRoute />} />
+	),
 	[routePattern(routes.privacy)]: (
 		<LazyMarketingRoute render={(m) => <m.PrivacyRoute />} />
 	),

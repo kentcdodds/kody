@@ -76,6 +76,27 @@ export type OpenApiDocument = {
 /** Public interactive docs host (separate Worker; JSON stays on api.kody.codes). */
 export const kodyApiDocsUrl = 'https://api-docs.kody.codes'
 
+const errorResponseRef = { $ref: '#/components/responses/Error' } as const
+const rateLimitedResponseRef = {
+	$ref: '#/components/responses/RateLimited',
+} as const
+
+/** Shared 4xx/5xx map so every operation documents the Error envelope. */
+function documentedErrorResponses() {
+	return {
+		'400': errorResponseRef,
+		'401': errorResponseRef,
+		'403': errorResponseRef,
+		'404': errorResponseRef,
+		'409': errorResponseRef,
+		'413': errorResponseRef,
+		'429': rateLimitedResponseRef,
+		'500': errorResponseRef,
+		'503': errorResponseRef,
+		default: errorResponseRef,
+	} as const
+}
+
 export type ResolvedApiOperation = {
 	operation: ApiOperation
 	description: string
@@ -301,7 +322,7 @@ function buildGatewayFetchStreamOperation(
 					},
 				},
 			},
-			default: { $ref: '#/components/responses/Error' },
+			...documentedErrorResponses(),
 		},
 		security: [{ apiToken: [] }],
 		'x-kody-permission': resolved.permission,
@@ -422,7 +443,7 @@ function buildOperation(
 				description: 'Success.',
 				content: { 'application/json': { schema: outputSchema } },
 			},
-			default: { $ref: '#/components/responses/Error' },
+			...documentedErrorResponses(),
 		},
 		security: [{ apiToken: [] }],
 		'x-kody-permission': resolved.permission,
@@ -474,12 +495,12 @@ function buildDocumentBody(registry: BuiltCapabilityRegistry) {
 			title: 'Kody API',
 			version: kodyApiVersion,
 			description: [
-				'HTTP API for a Kody account. Versioned under `/v1`; changes within v1 are additive.',
+				'HTTP API for a Kody account. Versioned under `/v1`; changes within v1 are additive. See https://kody.codes/docs/api-versioning.md for deprecation windows and migration policy (we do not break users; phased migration with codemods when needed).',
 				'',
 				'Authenticate with `Authorization: Bearer kody_at_…`. Tokens are minted by the MCP `api` tool (`tokenCreate`) or by another token, and each carries explicit org-permission scopes. There is no write-implies-read hierarchy.',
 				apiTokenIdleTtlDescription(),
 				'',
-				'Errors use `{ "error": { "code", "message", "details"? } }`. Requests are rate limited per IP and per token (HTTP 429 with `Retry-After`).',
+				'Errors use `{ "error": { "code", "message", "details"? } }` (see components.schemas.Error). Documented 4xx/5xx responses reference that schema. Requests are rate limited per IP (600/min) and per token (300/min); HTTP 429 includes `Retry-After` and a `RateLimit-Policy` advertisement.',
 				'',
 				'`operationId` values match Kody capability names, so the same ids work with the MCP `api` tool (`{ operationId, params }`, where params hold path, query, and body fields flat).',
 				'',
@@ -503,7 +524,28 @@ function buildDocumentBody(registry: BuiltCapabilityRegistry) {
 			schemas: componentSchemas,
 			responses: {
 				Error: {
-					description: 'Error.',
+					description:
+						'Error envelope `{ "error": { "code", "message", "details"? } }`.',
+					content: {
+						'application/json': {
+							schema: { $ref: '#/components/schemas/Error' },
+						},
+					},
+				},
+				RateLimited: {
+					description:
+						'Too many requests (edge IP/token limit) or an entitlement / plan-cap limit. Wait at least `Retry-After` seconds before retrying.',
+					headers: {
+						'Retry-After': {
+							description: 'Seconds to wait before retrying.',
+							schema: { type: 'integer', minimum: 1 },
+						},
+						'RateLimit-Policy': {
+							description:
+								'Advertised edge policies (`ip` 600/min, `token` 300/min). Remaining counts are not exposed.',
+							schema: { type: 'string' },
+						},
+					},
 					content: {
 						'application/json': {
 							schema: { $ref: '#/components/schemas/Error' },

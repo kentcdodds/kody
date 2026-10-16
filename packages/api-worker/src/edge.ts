@@ -54,9 +54,13 @@ const corsAllowHeaders = [
 	'x-kody-secret-resolution',
 ].join(', ')
 
+/** Static policy advertisement (CF RateLimit binding does not expose remaining). */
+export const apiEdgeRateLimitPolicy = 'ip;q=600;w=60, token;q=300;w=60'
+
 const corsHeaders = {
 	'Access-Control-Allow-Origin': '*',
-	'Access-Control-Expose-Headers': 'WWW-Authenticate, Retry-After, Allow, ETag',
+	'Access-Control-Expose-Headers':
+		'WWW-Authenticate, Retry-After, RateLimit-Policy, Allow, ETag',
 } as const
 
 const corsPreflightHeaders = {
@@ -245,7 +249,10 @@ export async function handleApiEdgeRequest(
 			429,
 			'rate_limited',
 			'Too many requests. Retry after a minute.',
-			{ 'Retry-After': '60' },
+			{
+				'Retry-After': '60',
+				'RateLimit-Policy': apiEdgeRateLimitPolicy,
+			},
 		)
 	}
 

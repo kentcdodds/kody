@@ -197,6 +197,9 @@ export function toApiError(error: unknown): ApiError {
 			code: 'entitlement_limit',
 			message: getErrorMessage(limitError),
 			details: limitError.details,
+			// Hint only — entitlement reset is not a fixed window. Clients should
+			// back off at least this long before retrying a capped operation.
+			headers: { 'Retry-After': '60' },
 			cause: error,
 		})
 	}

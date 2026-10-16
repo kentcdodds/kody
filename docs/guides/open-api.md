@@ -65,6 +65,8 @@ still meters as usual.
 ## Where to go next
 
 - [api-docs.kody.codes](https://api-docs.kody.codes) — interactive OpenAPI
+- [API versioning and deprecation](./api-versioning.md) — `/v1` policy, windows,
+  `Retry-After` on `429`
 - [Local CLI execute](./local-execute.md) — `@kodycodes/cli execute --local`
 - [Runtime and efficiency](./platform-efficiency.md) — how cloud execute meters
   worker days

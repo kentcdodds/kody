@@ -534,6 +534,8 @@ const routeDocumentHeads = {
 	[routePattern(routes.believe)]: publicPageHead('believe', 'What we believe'),
 	[routePattern(routes.withAgent)]: withAgentHead,
 	[routePattern(routes.support)]: publicPageHead('support', 'Support'),
+	[routePattern(routes.about)]: publicPageHead('about', 'About Kody'),
+	[routePattern(routes.contact)]: publicPageHead('contact', 'Contact Kody'),
 	[routePattern(routes.privacy)]: publicPageHead('privacy', 'Privacy'),
 	[routePattern(routes.terms)]: publicPageHead('terms', 'Terms'),
 	[routePattern(routes.discord)]: publicPageHead('discord', 'Discord'),

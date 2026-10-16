@@ -219,6 +219,21 @@ test('the OpenAPI document covers every operation with resolvable refs', async (
 	expect(String(document.info['description'])).toContain(
 		'https://api-docs.kody.codes',
 	)
+	expect(String(document.info['description'])).toContain(
+		'https://kody.codes/docs/api-versioning.md',
+	)
+	expect(document.components.responses.Error).toBeDefined()
+	expect(document.components.responses.RateLimited).toBeDefined()
+	const sampleOp = document.paths['/v1/packages/{package_id}']?.['get']
+	expect(sampleOp?.responses['400']).toEqual({
+		$ref: '#/components/responses/Error',
+	})
+	expect(sampleOp?.responses['429']).toEqual({
+		$ref: '#/components/responses/RateLimited',
+	})
+	expect(sampleOp?.responses.default).toEqual({
+		$ref: '#/components/responses/Error',
+	})
 
 	const operationIds = Object.values(document.paths).flatMap((pathItem) =>
 		Object.values(pathItem).map((operation) => operation.operationId),
