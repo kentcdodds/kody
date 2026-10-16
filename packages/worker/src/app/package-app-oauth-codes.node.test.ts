@@ -7,18 +7,40 @@ import { createS256CodeChallenge } from '#app/package-app-oauth-pkce-cookie.ts'
 import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
 
 function createTestEnv() {
-	const store = new Map<string, string>()
-	return {
-		BUNDLE_ARTIFACTS_KV: {
-			get: async (key: string) => store.get(key) ?? null,
-			put: async (key: string, value: string) => {
-				store.set(key, value)
-			},
-			delete: async (key: string) => {
-				store.delete(key)
-			},
+	const rows = new Map<string, { payload: string; expiresAt: string }>()
+	const db = {
+		prepare(sql: string) {
+			const binds: Array<unknown> = []
+			const stmt = {
+				bind(...args: Array<unknown>) {
+					binds.push(...args)
+					return stmt
+				},
+				async run() {
+					if (sql.includes('INSERT INTO package_app_oauth_codes')) {
+						rows.set(String(binds[0]), {
+							payload: String(binds[1]),
+							expiresAt: String(binds[2]),
+						})
+					}
+					return { success: true }
+				},
+				async first<T>() {
+					if (sql.includes('DELETE FROM package_app_oauth_codes')) {
+						const hash = String(binds[0])
+						const nowIso = String(binds[1])
+						const row = rows.get(hash)
+						if (!row || row.expiresAt <= nowIso) return null
+						rows.delete(hash)
+						return { payload: row.payload } as T
+					}
+					return null
+				},
+			}
+			return stmt
 		},
-	} as unknown as Env
+	}
+	return { APP_DB: db } as unknown as Env
 }
 
 test('package-app OAuth codes are single-use, PKCE-bound, and redirect-bound', async () => {

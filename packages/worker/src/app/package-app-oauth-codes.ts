@@ -6,8 +6,6 @@ import {
 } from '#app/package-app-oauth-scopes.ts'
 
 const codeTtlMs = 60_000
-const codeKvPrefix = 'package-app-oauth-code:'
-const codeKvTtlSeconds = 60
 
 export type PackageAppOauthCodeRecord = {
 	personId: string
@@ -32,20 +30,26 @@ export async function mintPackageAppOauthCode(input: {
 	record: Omit<PackageAppOauthCodeRecord, 'exp'>
 	now?: number
 }): Promise<{ code: string; expiresAt: number } | null> {
-	const store = input.env.BUNDLE_ARTIFACTS_KV
-	if (!store) return null
 	const now = input.now ?? Date.now()
 	const code = randomCodePlaintext()
 	const exp = now + codeTtlMs
 	const hash = await sha256Base64Url(code)
-	await store.put(
-		`${codeKvPrefix}${hash}`,
-		JSON.stringify({
-			...input.record,
-			exp,
-		} satisfies PackageAppOauthCodeRecord),
-		{ expirationTtl: codeKvTtlSeconds },
+	const payload = JSON.stringify({
+		...input.record,
+		exp,
+	} satisfies PackageAppOauthCodeRecord)
+	await input.env.APP_DB.prepare(
+		`INSERT INTO package_app_oauth_codes
+		 (code_hash, payload, expires_at, created_at)
+		 VALUES (?, ?, ?, ?)`,
 	)
+		.bind(
+			hash,
+			payload,
+			new Date(exp).toISOString(),
+			new Date(now).toISOString(),
+		)
+		.run()
 	return { code, expiresAt: exp }
 }
 
@@ -56,19 +60,21 @@ export async function consumePackageAppOauthCode(input: {
 	codeVerifier: string
 	now?: number
 }): Promise<PackageAppOauthCodeRecord | null> {
-	const store = input.env.BUNDLE_ARTIFACTS_KV
-	if (!store) return null
 	const now = input.now ?? Date.now()
 	const hash = await sha256Base64Url(input.code)
-	const key = `${codeKvPrefix}${hash}`
-	const raw = await store.get(key)
-	if (!raw) return null
-	// Burn before validating PKCE so a stolen code cannot be retried after a
-	// failed verifier guess on a race. KV delete is best-effort.
-	await store.delete(key)
+	// Atomic single-use: only one concurrent DELETE wins and receives the row.
+	const deleted = await input.env.APP_DB.prepare(
+		`DELETE FROM package_app_oauth_codes
+		 WHERE code_hash = ? AND expires_at > ?
+		 RETURNING payload`,
+	)
+		.bind(hash, new Date(now).toISOString())
+		.first<{ payload: string }>()
+	if (!deleted?.payload) return null
+
 	let record: PackageAppOauthCodeRecord
 	try {
-		record = JSON.parse(raw) as PackageAppOauthCodeRecord
+		record = JSON.parse(deleted.payload) as PackageAppOauthCodeRecord
 	} catch {
 		return null
 	}

@@ -26,6 +26,7 @@ import { resolveDisplayName } from '#worker/identity/username.ts'
 import { createHtmlResponse } from 'remix/response/html'
 import { html } from 'remix/html-template'
 import { redirectToLoginWhenUnauthenticated } from '#app/auth-redirect.ts'
+import { getAppBaseUrl } from '#worker/app-base-url.ts'
 
 /**
  * App-origin authorize + consent for hosted package apps.
@@ -426,17 +427,8 @@ async function parseAndValidateAuthorizeRequest(input: {
 			}),
 		}
 	}
-	if (input.query.responseType !== 'code') {
-		return {
-			ok: false as const,
-			response: redirectWithError({
-				redirectUri: input.query.redirectUri,
-				state: input.query.state,
-				error: 'unsupported_response_type',
-				description: 'response_type must be code.',
-			}),
-		}
-	}
+	// Allowlist redirect_uri before any error redirect that would use it —
+	// otherwise unsupported_response_type becomes an open redirect.
 	if (!input.query.redirectUri) {
 		return {
 			ok: false as const,
@@ -465,6 +457,18 @@ async function parseAndValidateAuthorizeRequest(input: {
 			}),
 		}
 	}
+	const safeRedirectUri = input.query.redirectUri
+	if (input.query.responseType !== 'code') {
+		return {
+			ok: false as const,
+			response: redirectWithError({
+				redirectUri: safeRedirectUri,
+				state: input.query.state,
+				error: 'unsupported_response_type',
+				description: 'response_type must be code.',
+			}),
+		}
+	}
 	const pkceError = getPkceValidationError({
 		codeChallenge: input.query.codeChallenge ?? undefined,
 		codeChallengeMethod: input.query.codeChallengeMethod ?? undefined,
@@ -473,7 +477,7 @@ async function parseAndValidateAuthorizeRequest(input: {
 		return {
 			ok: false as const,
 			response: redirectWithError({
-				redirectUri: input.query.redirectUri,
+				redirectUri: safeRedirectUri,
 				state: input.query.state,
 				error: 'invalid_request',
 				description: pkceError ?? 'PKCE code_challenge is required.',
@@ -487,7 +491,7 @@ async function parseAndValidateAuthorizeRequest(input: {
 		return {
 			ok: false as const,
 			response: redirectWithError({
-				redirectUri: input.query.redirectUri,
+				redirectUri: safeRedirectUri,
 				state: input.query.state,
 				error: 'invalid_scope',
 				description: scopeError,
@@ -497,10 +501,27 @@ async function parseAndValidateAuthorizeRequest(input: {
 	return {
 		ok: true as const,
 		client,
-		redirectUri: input.query.redirectUri,
+		redirectUri: safeRedirectUri,
 		state: input.query.state,
 		codeChallenge: input.query.codeChallenge,
 		scopes,
+	}
+}
+
+function isSameOriginAuthorizePost(request: Request, env: Env) {
+	const appOrigin = new URL(getAppBaseUrl({ env })).origin
+	const origin = request.headers.get('Origin')
+	if (origin) return origin === appOrigin
+	const site = request.headers.get('Sec-Fetch-Site')
+	if (site === 'same-origin' || site === 'none') return true
+	// Non-browser clients (tests) omit both; require an explicit same-origin
+	// Referer when Origin is absent and Sec-Fetch-Site is missing.
+	const referer = request.headers.get('Referer')
+	if (!referer) return false
+	try {
+		return new URL(referer).origin === appOrigin
+	} catch {
+		return false
 	}
 }
 
@@ -544,6 +565,12 @@ export async function handlePackageAppOauthAuthorizeRequest(
 	}
 
 	if (request.method === 'POST') {
+		if (!isSameOriginAuthorizePost(request, env)) {
+			return new Response('Cross-origin consent posts are not allowed.', {
+				status: 403,
+				headers: { 'Cache-Control': 'no-store' },
+			})
+		}
 		const decision = 'decision' in query ? query.decision : ''
 		if (decision === 'deny') {
 			return redirectWithError({

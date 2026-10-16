@@ -27,7 +27,13 @@ import {
 	destroyPackageAppTicketCookie,
 	readPackageAppTicket,
 } from '#app/package-app-ticket.ts'
-import { resolvePackageAppOwnerByStableUserId } from '#app/package-app-owner.ts'
+import {
+	resolvePackageAppOrgOwnerByHandle,
+	resolvePackageAppOwnerByStableUserId,
+} from '#app/package-app-owner.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import { viewerCanExecutePackageApp } from '#app/package-viewer-access.ts'
+import { resolveSavedPackageForPackageAppSlug } from '#worker/package-invocations/module-artifacts.ts'
 import { packageAppOauthPaths } from '#universal/package-app-oauth-paths.ts'
 import {
 	isVerifiedAppCustomHostname,
@@ -185,6 +191,14 @@ async function handleCallback(input: { request: Request; env: Env; url: URL }) {
 		request: input.request,
 		env: input.env,
 	})
+	if (!pkce) {
+		return badRequest('Missing sign-in state. Start again from the app.')
+	}
+	// Only clear the PKCE cookie when `state` matches — an unauthenticated
+	// `?error=` navigation must not cancel a different pending sign-in.
+	if (!state || state !== pkce.state) {
+		return badRequest('Sign-in state mismatch. Start again from the app.')
+	}
 	const clearPkce = await destroyPackageAppOauthPkceCookie({
 		env: input.env,
 		secure,
@@ -192,15 +206,12 @@ async function handleCallback(input: { request: Request; env: Env; url: URL }) {
 
 	if (oauthError) {
 		return redirectResponse(
-			normalizeReturnTo(pkce?.returnTo ?? '/', input.url.origin),
+			normalizeReturnTo(pkce.returnTo, input.url.origin),
 			[clearPkce],
 		)
 	}
-	if (!code || !state || !pkce) {
-		return badRequest('Missing authorization code or sign-in state.')
-	}
-	if (state !== pkce.state) {
-		return badRequest('Sign-in state mismatch. Start again from the app.')
+	if (!code) {
+		return badRequest('Missing authorization code.', 400)
 	}
 
 	const redirectUri = `${input.url.origin}${packageAppOauthPaths.callback}`
@@ -297,21 +308,58 @@ async function handleMe(input: { request: Request; env: Env; url: URL }) {
 	const app = await resolveHostApp(input)
 	const slug = app?.kodyId ?? readAppSlugParam(input.url)
 	const handle = app?.orgUsername ?? parsedSession.session.username
-	let role: string | null = null
+	if (!slug) {
+		return Response.json(
+			{ error: 'missing_app', message: 'Pass ?app={leaf} on this host.' },
+			{ status: 400, headers: { 'Cache-Control': 'no-store' } },
+		)
+	}
 
-	if (slug) {
-		const ticket = await readPackageAppTicket({
-			request: input.request,
+	let role: string | null = null
+	const ticket = await readPackageAppTicket({
+		request: input.request,
+		env: input.env,
+		host: input.url.host,
+		slug,
+		session: {
+			stableUserId: parsedSession.session.stableUserId,
+			issuedAt: parsedSession.issuedAt,
+		},
+		secure: isSecureRequest(input.request),
+	})
+	if (ticket) {
+		role = ticket.visitor.role
+	} else {
+		const org = await resolvePackageAppOrgOwnerByHandle({
 			env: input.env,
-			host: input.url.host,
-			slug,
-			session: {
-				stableUserId: parsedSession.session.stableUserId,
-				issuedAt: parsedSession.issuedAt,
-			},
-			secure: isSecureRequest(input.request),
+			handle,
 		})
-		if (ticket) role = ticket.visitor.role
+		if (!org) {
+			return Response.json(
+				{ error: 'forbidden' },
+				{ status: 403, headers: { 'Cache-Control': 'no-store' } },
+			)
+		}
+		const lookup = await resolveSavedPackageForPackageAppSlug({
+			db: input.env.APP_DB,
+			userId: org.userId,
+			slug,
+		})
+		const canExecute = await viewerCanExecutePackageApp({
+			env: input.env,
+			viewer: {
+				userId: personIdFromStored(parsedSession.session.stableUserId),
+				username: person.username,
+			},
+			ownerId: org.userId,
+			appId: lookup?.savedPackage.id ?? null,
+		})
+		if (!canExecute) {
+			return Response.json(
+				{ error: 'forbidden' },
+				{ status: 403, headers: { 'Cache-Control': 'no-store' } },
+			)
+		}
 	}
 
 	const avatarKey = await readAvatarKeyForPerson({
@@ -327,16 +375,14 @@ async function handleMe(input: { request: Request; env: Env; url: URL }) {
 		: undefined
 
 	let emailClaim: string | undefined
-	if (slug) {
-		const grant = await findLivePackageAppOauthGrant({
-			db: input.env.APP_DB,
-			personId: parsedSession.session.stableUserId,
-			orgUsername: handle,
-			kodyId: slug,
-		})
-		if (grant && scopesIncludeEmail(grant.scopes)) {
-			emailClaim = person.email
-		}
+	const grant = await findLivePackageAppOauthGrant({
+		db: input.env.APP_DB,
+		personId: parsedSession.session.stableUserId,
+		orgUsername: handle,
+		kodyId: slug,
+	})
+	if (grant && scopesIncludeEmail(grant.scopes)) {
+		emailClaim = person.email
 	}
 
 	return Response.json(

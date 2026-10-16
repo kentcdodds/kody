@@ -21,7 +21,16 @@ export function parsePackageAppOauthClientId(
 	raw: string | null | undefined,
 ): PackageAppOauthClientId | null {
 	if (typeof raw !== 'string') return null
-	const trimmed = decodeURIComponent(raw.trim())
+	let trimmed = raw.trim()
+	if (!trimmed) return null
+	// Query/form parsers usually decode once already; a second decode must not
+	// throw (e.g. `%ZZ`) or authorize returns 500 instead of invalid_client.
+	try {
+		trimmed = decodeURIComponent(trimmed)
+	} catch {
+		return null
+	}
+	trimmed = trimmed.trim()
 	if (!trimmed) return null
 	const withoutAt = trimmed.startsWith('@') ? trimmed.slice(1) : trimmed
 	const slash = withoutAt.indexOf('/')
