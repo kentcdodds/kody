@@ -1,4 +1,3 @@
-import { waitUntil } from 'cloudflare:workers'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type JobsStore } from '@kody-internal/shared/jobs/store.ts'
 import { type UserMeterEnv } from './user-meter-client.ts'
@@ -37,9 +36,10 @@ const inFlightOwnerReconciles = new Map<OwnerId, Promise<unknown>>()
 
 /**
  * Lazy per-owner physical reconcile. Dedupes in-flight work for the same
- * owner, keeps the isolate alive via `waitUntil`, and returns the shared
- * promise so the reserve hot path can await one SUM instead of zero-init.
- * Failures are logged and swallowed — the keyset sweep remains the backstop.
+ * owner and returns the shared promise so the reserve hot path can await one
+ * SUM instead of zero-init. Callers that detach without awaiting should pass
+ * `waitUntil` so the isolate stays alive. Failures are logged and swallowed —
+ * the keyset sweep remains the backstop.
  */
 export function enqueueOwnerD1StorageReconcile(input: {
 	db: D1Database
@@ -47,10 +47,11 @@ export function enqueueOwnerD1StorageReconcile(input: {
 	userId: OwnerId
 	now?: Date
 	jobs?: JobsStore
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<unknown> {
 	const existing = inFlightOwnerReconciles.get(input.userId)
 	if (existing) {
-		waitUntil(existing)
+		input.waitUntil?.(existing)
 		return existing
 	}
 
@@ -70,7 +71,7 @@ export function enqueueOwnerD1StorageReconcile(input: {
 			}
 		})
 	inFlightOwnerReconciles.set(input.userId, task)
-	waitUntil(task)
+	input.waitUntil?.(task)
 	return task
 }
 
