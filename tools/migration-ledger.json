@@ -581,7 +581,7 @@
 			"sha256": "48d2174068a5dd678f65ddf2b5fd43b6202cee0d617f5672163837f21bad0233"
 		},
 		{
-			"file": "0156-webhook-endpoints-multi-per-name.sql",
+			"filename": "0156-webhook-endpoints-multi-per-name.sql",
 			"sha256": "40ba8141a3fb45a48639a5cef8720e8b31d1faa31a77956200728fef73b2edac"
 		}
 	]
