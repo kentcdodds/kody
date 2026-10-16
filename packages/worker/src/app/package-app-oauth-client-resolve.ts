@@ -8,7 +8,6 @@ import {
 	type PackageAppOrgOwner,
 } from '#app/package-app-owner.ts'
 import { resolveSavedPackageForPackageAppSlug } from '#worker/package-invocations/module-artifacts.ts'
-import { getPackageNameLeaf } from '#worker/package-registry/package-name.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 
 /**
@@ -46,14 +45,13 @@ export async function resolvePackageAppOauthClient(input: {
 		userId: org.userId,
 		slug: parsed.kodyId,
 	})
-	if (!lookup?.savedPackage.hasApp) return null
+	// Require the live leaf: retired slug redirects must not rewrite OAuth
+	// client_id to a different leaf (custom host / grant identity stays bound
+	// to the requested owner/leaf only when that leaf is current).
+	if (!lookup?.savedPackage.hasApp || lookup.retired) return null
 
-	// Prefer the live leaf when the URL slug is retired (slug redirect).
-	const kodyId = getPackageNameLeaf(lookup.savedPackage.name)
-		.trim()
-		.toLowerCase()
-	if (!kodyId) return null
 	const username = org.username.trim().toLowerCase()
+	const kodyId = parsed.kodyId
 	return {
 		client: {
 			username,

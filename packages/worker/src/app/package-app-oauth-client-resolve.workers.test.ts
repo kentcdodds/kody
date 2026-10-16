@@ -106,3 +106,35 @@ test('resolvePackageAppOauthClient rejects packages without has_app', async () =
 		}),
 	).resolves.toBeNull()
 })
+
+test('resolvePackageAppOauthClient rejects a retired slug instead of rewriting client_id', async () => {
+	const liveSlug = await seedOwnerWithApp({
+		slug: 'live-leaf',
+		packageId: 'pkg-oauth-resolve-live-leaf',
+	})
+	const ownerId = testStableUserIdFromEmail(ownerEmail)
+	const now = '2026-10-16T00:00:00.000Z'
+	await env.APP_DB.prepare(
+		`INSERT OR REPLACE INTO package_slug_redirects (
+			user_id, old_slug, package_id, created_at
+		) VALUES (?, ?, ?, ?)`,
+	)
+		.bind(ownerId, 'retired-leaf', 'pkg-oauth-resolve-live-leaf', now)
+		.run()
+	await expect(
+		resolvePackageAppOauthClient({
+			env,
+			username: ownerUsername,
+			kodyId: 'retired-leaf',
+		}),
+	).resolves.toBeNull()
+	await expect(
+		resolvePackageAppOauthClient({
+			env,
+			username: ownerUsername,
+			kodyId: liveSlug,
+		}),
+	).resolves.toMatchObject({
+		client: { clientId: `${ownerUsername}/${liveSlug}` },
+	})
+})
