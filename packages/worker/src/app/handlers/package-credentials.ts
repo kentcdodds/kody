@@ -12,6 +12,7 @@ import {
 	buildPackageCredentialsView,
 	loadPackageMappingScope,
 } from '#worker/credentials/package-credential-mappings.ts'
+import { getEnablementById } from '#worker/enablements/repo.ts'
 import {
 	disableEnablementForCaller,
 	enableTriggerForCaller,
@@ -73,6 +74,38 @@ const bodySchema = z
 		{ message: 'expected { changes } and/or { enablements }' },
 	)
 
+async function requirePackageTriggerEnablement(input: {
+	env: Env
+	scope: NonNullable<
+		Awaited<ReturnType<typeof loadPackageMappingScopeForViewer>>
+	>
+	enablementId: string
+	trigger: PackageCredentialsEnablementAction['trigger']
+}) {
+	const actorId = input.scope.request.actor?.userId
+	if (!actorId) {
+		throw new TriggerEnablementError(
+			'trigger_unknown',
+			'Only a signed-in person can change trigger enablements.',
+		)
+	}
+	const enablement = await getEnablementById({
+		db: input.env.APP_DB,
+		orgId: input.scope.savedPackage.userId,
+		id: input.enablementId,
+	})
+	const notFound = new TriggerEnablementError(
+		'trigger_unknown',
+		`Enablement "${input.enablementId}" was not found for this package trigger.`,
+	)
+	if (!enablement) throw notFound
+	if (enablement.packageId !== input.scope.savedPackage.id) throw notFound
+	if (enablement.triggerKind !== input.trigger.kind) throw notFound
+	if (enablement.triggerName !== input.trigger.name) throw notFound
+	if (String(enablement.enablerUserId) !== String(actorId)) throw notFound
+	return enablement
+}
+
 async function applyEnablementActions(input: {
 	env: Env
 	scope: NonNullable<
@@ -88,6 +121,12 @@ async function applyEnablementActions(input: {
 					'Turning a trigger off needs its enablement id.',
 				)
 			}
+			await requirePackageTriggerEnablement({
+				env: input.env,
+				scope: input.scope,
+				enablementId: action.enablementId,
+				trigger: action.trigger,
+			})
 			await disableEnablementForCaller({
 				env: input.env,
 				request: input.scope.request,
@@ -110,6 +149,24 @@ async function applyEnablementActions(input: {
 				db: input.env.APP_DB,
 				plans: [plan],
 			})
+			continue
+		}
+		if (action.enablementId) {
+			// Idempotent: the named live enablement must already be the viewer's
+			// for this package trigger. Off rows are not revived here — turn on
+			// without enablementId (or createInstance) to insert another.
+			const named = await requirePackageTriggerEnablement({
+				env: input.env,
+				scope: input.scope,
+				enablementId: action.enablementId,
+				trigger: action.trigger,
+			})
+			if (named.state === 'off') {
+				throw new TriggerEnablementError(
+					'trigger_unknown',
+					`Enablement "${action.enablementId}" is off. Turn the trigger on without an enablement id to create another instance.`,
+				)
+			}
 			continue
 		}
 		await enableTriggerForCaller({
@@ -191,10 +248,12 @@ export function createPackageCredentialsApiHandler(env: Env) {
 					)
 				}
 				try {
+					// Mapping writes first so a failed mapping does not leave
+					// enablements half-applied. Enablements run only after.
+					await writeMappingChanges(scope, resolved)
 					if (enablements.length > 0) {
 						await applyEnablementActions({ env, scope, actions: enablements })
 					}
-					await writeMappingChanges(scope, resolved)
 				} catch (error) {
 					if (
 						error instanceof MappingWriteRefused &&

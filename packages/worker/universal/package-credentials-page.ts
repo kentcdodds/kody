@@ -10,6 +10,7 @@ import {
 	type CredentialTriggerKind,
 	type CredentialTriggerRef,
 	type EffectiveCredentialMappingStatus,
+	isInboundEmailApprovalTopic,
 	type PackageCredentialNeedView,
 	type PackageCredentialsIncomplete,
 	type PackageCredentialsView,
@@ -279,6 +280,13 @@ export function triggerStateLabel(trigger: PackageTriggerView) {
 /** Whether the Triggers tab may offer an on/off switch for this declared trigger. */
 export function canToggleTriggerEnablement(trigger: PackageTriggerView) {
 	if (!trigger.canEdit) return false
+	if (
+		trigger.trigger.kind === 'subscription' &&
+		isInboundEmailApprovalTopic(trigger.trigger.name)
+	) {
+		// Inbound email runs per sender via Approve; enablementEnable refuses it.
+		return false
+	}
 	if (trigger.trigger.kind === 'webhook' && trigger.instanceId === null) {
 		return false
 	}

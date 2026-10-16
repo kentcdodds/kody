@@ -547,8 +547,16 @@ function renderTriggerMappings(
 	}
 	const editable =
 		Boolean(context.renderMappingCell) &&
-		(instance ? instance.canEdit : canEditTrigger(trigger))
-	const mappingSource = instance?.mappings ?? trigger.mappings
+		(options.createInstance
+			? canEditTrigger(trigger)
+			: instance
+				? instance.canEdit
+				: canEditTrigger(trigger))
+	// A brand-new instance has no overrides yet — do not show the primary
+	// instance's stored picks as if they already applied.
+	const mappingSource = options.createInstance
+		? []
+		: (instance?.mappings ?? trigger.mappings)
 	const rows = editable
 		? triggerMappingRows(context.view, {
 				...trigger,

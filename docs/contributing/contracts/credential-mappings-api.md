@@ -344,8 +344,16 @@ endpoint is session-only; MCP and API tokens cannot reach it.
 
 - `:username` is the org slug. The viewer must belong to the org (or hold a
   grant in it) and have `package:execute` on the package; otherwise `404`.
-- A malformed body (not 1–64 changes of the shape above) is
-  `400 { ok: false, error }`.
+- A malformed body (missing both `changes` and `enablements`, empty arrays for
+  both, or more than 64 mapping changes / 16 enablement actions, or a value of
+  the wrong shape) is `400 { ok: false, error }`. At least one of `changes` or
+  `enablements` must be non-empty. When both are present, mapping writes run
+  first; enablement actions run only after those succeed.
+- An `off` enablement action must name an `enablementId` that belongs to the
+  viewer on this package and matches `trigger`. Owners cannot use this endpoint
+  to disable someone else's enablement on another package.
+- An `on` action with `enablementId` is idempotent only when that enablement is
+  already live for the viewer on this trigger; it does not revive an `off` row.
 - Changes that cannot apply are `400 PackageCredentialsWriteFailure`:
   `{ ok: false, errors: Array<{ needKey, target, code, message, createUrl? }> }`
   with the approval error codes. Nothing is written. A trigger that disappears

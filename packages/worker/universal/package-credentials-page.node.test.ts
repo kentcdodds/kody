@@ -189,6 +189,14 @@ test('the Triggers tab toggle is for the viewer’s own cron or live enablement'
 	expect(
 		canToggleTriggerEnablement(
 			trigger({
+				trigger: { kind: 'subscription', name: 'email.message.received' },
+				canEdit: true,
+			}),
+		),
+	).toBe(false)
+	expect(
+		canToggleTriggerEnablement(
+			trigger({
 				trigger: { kind: 'webhook', name: 'hook' },
 				instanceId: null,
 				canEdit: true,
