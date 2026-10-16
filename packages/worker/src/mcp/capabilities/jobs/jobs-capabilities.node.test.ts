@@ -650,9 +650,9 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 	}
 })
 
-test('jobGet, jobList, and jobUpdate surface the ask-the-user enablementEnable hint', async () => {
+test('jobGet, jobList, and jobUpdate surface the owner enablementEnable hint', async () => {
 	const hint =
-		'Ask the user whether to enable cron "inbox-refresh" for them: enablementEnable({ packageId: "pkg-1", triggerKind: "cron", triggerName: "inbox-refresh" }). Publishing and jobs.enabled never turn a trigger on.'
+		'Call enablementEnable({ packageId: "pkg-1", triggerKind: "cron", triggerName: "inbox-refresh" }) to turn on cron "inbox-refresh" for the owner. Creating a job enables it for the owner automatically; other package triggers still need an explicit enable.'
 	mockModule.resolveCronJobEnablementHint.mockResolvedValue(hint)
 	mockModule.inspectJobsForUser.mockResolvedValue({
 		jobs: [

@@ -13,6 +13,7 @@ import {
 	type RequestSource,
 } from '#worker/request-context/request-context.ts'
 import { buildNoEnablementSkipError } from '#worker/enablements/enablement-agent-hints.ts'
+import { ensureOwnerCronEnablementForJob } from '#worker/enablements/owner-cron-enablement.ts'
 import {
 	planEnablementRuns,
 	type EnablementSkip,
@@ -787,6 +788,17 @@ export async function syncPackageJobsForPackage(input: {
 					userId: input.userId,
 					job: created,
 					callerContextJson,
+				})
+				// New jobs auto-enable for the creator/owner so the schedule runs
+				// without a separate ask-the-user enablementEnable step. Other
+				// package triggers still never auto-enable on publish.
+				await ensureOwnerCronEnablementForJob({
+					db: input.env.APP_DB,
+					orgId: input.userId,
+					jobId: created.id,
+					jobName: jobName,
+					packageId: input.packageId,
+					now,
 				})
 				await stampFirstJob(
 					input.env.APP_DB,

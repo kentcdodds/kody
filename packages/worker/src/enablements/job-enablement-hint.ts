@@ -5,7 +5,9 @@ import { listEnablementsForInstance } from './repo.ts'
 
 /**
  * When a scheduled job is armed (`enabled`) but has no on enablement (or only
- * paused ones), return the agent-directed ask-the-user enablementEnable hint.
+ * paused ones), return the agent-directed enablementEnable hint. Owner-created
+ * jobs auto-enable on create, so a missing hint is anomalous repair guidance
+ * (not an ask-the-user prompt).
  */
 export async function resolveCronJobEnablementHint(input: {
 	env: Env

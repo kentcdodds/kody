@@ -43,7 +43,7 @@ test('resolveCronJobEnablementHint is null when the job is off or already on', a
 	).toBeNull()
 })
 
-test('resolveCronJobEnablementHint asks the user with the exact enablementEnable call', async () => {
+test('resolveCronJobEnablementHint returns the owner enablementEnable call without asking', async () => {
 	mockModule.listEnablementsForInstance.mockResolvedValueOnce([])
 	expect(
 		await resolveCronJobEnablementHint({
@@ -54,7 +54,7 @@ test('resolveCronJobEnablementHint asks the user with the exact enablementEnable
 			enabled: true,
 		}),
 	).toBe(
-		'Ask the user whether to enable cron "inbox-refresh" for them: enablementEnable({ packageId: "pkg-1", triggerKind: "cron", triggerName: "inbox-refresh" }). Publishing and jobs.enabled never turn a trigger on.',
+		'Call enablementEnable({ packageId: "pkg-1", triggerKind: "cron", triggerName: "inbox-refresh" }) to turn on cron "inbox-refresh" for the owner. Creating a job enables it for the owner automatically; other package triggers still need an explicit enable.',
 	)
 
 	mockModule.listEnablementsForInstance.mockResolvedValueOnce([

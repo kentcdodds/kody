@@ -1,7 +1,8 @@
 /**
- * Agent-directed wording when a trigger/job is armed but not turned on for a
- * person. Publishing and `jobs.enabled` never create enablements — agents must
- * ask the user, then call enablementEnable (or Approve for webhooks/email).
+ * Agent-directed wording when a trigger is armed but not turned on for a
+ * person. Creating a scheduled job auto-enables it for the owner; other
+ * package triggers never auto-enable on publish — agents must ask the user,
+ * then call enablementEnable (or Approve for webhooks/email).
  */
 
 import { type EnablementTriggerKind } from './types.ts'
@@ -46,6 +47,9 @@ function triggerLabel(kind: EnablementTriggerKind, name: string) {
 
 /**
  * One-trigger agent hint used on jobGet / jobList / jobUpdate and skip errors.
+ * Cron jobs the owner created are auto-enabled on create — do not ask the user
+ * about those. Other triggers still need an explicit ask + enablementEnable /
+ * Approve.
  */
 export function buildSingleTriggerEnablementHint(
 	input: EnablementHintPackageRef & {
@@ -69,10 +73,16 @@ export function buildSingleTriggerEnablementHint(
 		...input,
 		triggerKind: input.triggerKind,
 	})
+	if (input.triggerKind === 'cron') {
+		if (input.reason === 'paused') {
+			return `Ask the user to fix the paused enablement for ${label}, or re-enable with ${call}.`
+		}
+		return `Call ${call} to turn on ${label} for the owner. Creating a job enables it for the owner automatically; other package triggers still need an explicit enable.`
+	}
 	if (input.reason === 'paused') {
 		return `Ask the user to fix the paused enablement for ${label}, or re-enable with ${call}.`
 	}
-	return `Ask the user whether to enable ${label} for them: ${call}. Publishing and jobs.enabled never turn a trigger on.`
+	return `Ask the user whether to enable ${label} for them: ${call}. Publishing never turns a trigger on.`
 }
 
 /**

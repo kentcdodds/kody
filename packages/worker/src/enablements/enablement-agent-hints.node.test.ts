@@ -28,7 +28,7 @@ test('formatEnablementEnableCall prefers packageId and quotes names', () => {
 	)
 })
 
-test('single-trigger missing and paused hints tell the agent to ask the user', () => {
+test('single-trigger cron hints do not ask about owner-created jobs; other triggers still ask', () => {
 	expect(
 		buildSingleTriggerEnablementHint({
 			packageId: 'pkg-1',
@@ -37,7 +37,7 @@ test('single-trigger missing and paused hints tell the agent to ask the user', (
 			reason: 'missing',
 		}),
 	).toBe(
-		'Ask the user whether to enable cron "inbox-refresh" for them: enablementEnable({ packageId: "pkg-1", triggerKind: "cron", triggerName: "inbox-refresh" }). Publishing and jobs.enabled never turn a trigger on.',
+		'Call enablementEnable({ packageId: "pkg-1", triggerKind: "cron", triggerName: "inbox-refresh" }) to turn on cron "inbox-refresh" for the owner. Creating a job enables it for the owner automatically; other package triggers still need an explicit enable.',
 	)
 	expect(
 		buildSingleTriggerEnablementHint({
@@ -65,6 +65,16 @@ test('single-trigger missing and paused hints tell the agent to ask the user', (
 			reason: 'missing',
 		}),
 	).toContain('Approve from the inbox')
+	expect(
+		buildSingleTriggerEnablementHint({
+			packageId: 'pkg-1',
+			triggerKind: 'subscription',
+			triggerName: 'desk.tick',
+			reason: 'missing',
+		}),
+	).toBe(
+		'Ask the user whether to enable subscription "desk.tick" for them: enablementEnable({ packageId: "pkg-1", triggerKind: "subscription", triggerName: "desk.tick" }). Publishing never turns a trigger on.',
+	)
 })
 
 test('multi-trigger publish hint lists each enablementEnable call', () => {
@@ -92,7 +102,7 @@ test('multi-trigger publish hint lists each enablementEnable call', () => {
 	)
 })
 
-test('skip errors reuse the same ask-the-user enablementEnable guidance', () => {
+test('skip errors reuse the cron owner enablementEnable guidance', () => {
 	expect(
 		buildNoEnablementSkipError({
 			packageId: 'pkg-1',
@@ -100,7 +110,7 @@ test('skip errors reuse the same ask-the-user enablementEnable guidance', () => 
 			reason: 'missing',
 		}),
 	).toBe(
-		'Scheduled tick skipped: no on enablement for cron "inbox-refresh". Ask the user whether to enable cron "inbox-refresh" for them: enablementEnable({ packageId: "pkg-1", triggerKind: "cron", triggerName: "inbox-refresh" }). Publishing and jobs.enabled never turn a trigger on.',
+		'Scheduled tick skipped: no on enablement for cron "inbox-refresh". Call enablementEnable({ packageId: "pkg-1", triggerKind: "cron", triggerName: "inbox-refresh" }) to turn on cron "inbox-refresh" for the owner. Creating a job enables it for the owner automatically; other package triggers still need an explicit enable.',
 	)
 	expect(
 		buildNoEnablementSkipError({

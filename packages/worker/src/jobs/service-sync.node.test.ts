@@ -73,6 +73,11 @@ vi.mock('#worker/worker-bundler-modules.ts', async () =>
 		await import('#worker/test-support/jobs-service-mocks.ts')
 	).workerBundlerModulesMock(),
 )
+vi.mock('#worker/enablements/owner-cron-enablement.ts', () => ({
+	ensureOwnerCronEnablementForJob: vi.fn(async () => 'inserted'),
+	backfillOwnerCronEnablements: vi.fn(),
+	resolveOwnerPersonIdForCronEnablement: vi.fn(),
+}))
 
 // eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite restores global spies across many integration-style tests.
 afterEach(() => {
@@ -210,11 +215,22 @@ test('package job sync reports scheduler changes for add, update, and remove onl
 		timezone: 'America/Denver',
 		enabled: true,
 	}
+	const { ensureOwnerCronEnablementForJob } =
+		await import('#worker/enablements/owner-cron-enablement.ts')
+	vi.mocked(ensureOwnerCronEnablementForJob).mockClear()
 	expect(await sync({ 'event-runner': eventRunner })).toBe(true)
 	const [added] = await listRows()
 	if (!added) throw new Error('Expected an added job row.')
 	expect(await listRows()).toHaveLength(1)
 	expect(added.record.publishedCommit).toBe('package-published-commit')
+	expect(ensureOwnerCronEnablementForJob).toHaveBeenCalledWith(
+		expect.objectContaining({
+			orgId: input.userId,
+			jobId: added.record.id,
+			jobName: 'event-runner',
+			packageId: input.packageId,
+		}),
+	)
 	// Drift the stored identity so the no-op sync must repair it in place.
 	await refreshPackageJobRowIdentity({
 		db: env.APP_DB,

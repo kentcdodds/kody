@@ -68,6 +68,7 @@ import { adminPublishedSourceSnapshotBackfillCapability } from './admin-publishe
 import { adminCredentialInventoryScanCapability } from './admin-credential-inventory-scan.ts'
 import { adminCredentialBackfillCapability } from './admin-credential-backfill.ts'
 import { adminCredentialStampBackfillCapability } from './admin-credential-stamp-backfill.ts'
+import { adminJobOwnerEnablementBackfillCapability } from './admin-job-owner-enablement-backfill.ts'
 import { adminMemoryPersonalizeCopyCapability } from './admin-memory-personalize-copy.ts'
 import { adminMemoryPersonalizePurgeCapability } from './admin-memory-personalize-purge.ts'
 
@@ -125,6 +126,8 @@ export const adminDomain = defineDomain({
 		'move org resources',
 		'credential inventory',
 		'credential backfill',
+		'job owner enablement backfill',
+		'cron enablement backfill',
 		'memory personalize',
 		'memory copy',
 		'personal memory migration',
@@ -169,6 +172,7 @@ export const adminDomain = defineDomain({
 		adminCredentialInventoryScanCapability,
 		adminCredentialBackfillCapability,
 		adminCredentialStampBackfillCapability,
+		adminJobOwnerEnablementBackfillCapability,
 		adminMemoryPersonalizeCopyCapability,
 		adminMemoryPersonalizePurgeCapability,
 		adminAuditLogQueryCapability,

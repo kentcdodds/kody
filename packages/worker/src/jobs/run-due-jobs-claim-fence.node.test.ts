@@ -387,7 +387,7 @@ test('a scheduled slot with no enablement on surfaces the skip and does not use 
 	renewClaimedJobRow.mockResolvedValue(true)
 	upsertJobRunObservability.mockResolvedValue(null)
 	const skipError =
-		'Scheduled tick skipped: no on enablement for cron "Fenced job". Ask the user whether to enable cron "Fenced job" for them: enablementEnable({ packageId: "pkg-fenced", triggerKind: "cron", triggerName: "Fenced job" }). Publishing and jobs.enabled never turn a trigger on.'
+		'Scheduled tick skipped: no on enablement for cron "Fenced job". Call enablementEnable({ packageId: "pkg-fenced", triggerKind: "cron", triggerName: "Fenced job" }) to turn on cron "Fenced job" for the owner. Creating a job enables it for the owner automatically; other package triggers still need an explicit enable.'
 	const slotAt = '2026-07-30T19:00:00.000Z'
 
 	const recurring = createJobRecord({
@@ -595,7 +595,7 @@ test('a no-enablement skip does not write observability after the claim is lost'
 test('a no-enablement skip does not double-count the same scheduled slot', async () => {
 	planEnablementRuns.mockResolvedValueOnce({ runs: [], skipped: [] })
 	const skipError =
-		'Scheduled tick skipped: no on enablement for cron "Fenced job". Ask the user whether to enable cron "Fenced job" for them: enablementEnable({ packageId: "pkg-fenced", triggerKind: "cron", triggerName: "Fenced job" }). Publishing and jobs.enabled never turn a trigger on.'
+		'Scheduled tick skipped: no on enablement for cron "Fenced job". Call enablementEnable({ packageId: "pkg-fenced", triggerKind: "cron", triggerName: "Fenced job" }) to turn on cron "Fenced job" for the owner. Creating a job enables it for the owner automatically; other package triggers still need an explicit enable.'
 	const slotAt = '2026-07-30T19:00:00.000Z'
 	upsertJobRunObservability.mockClear()
 	getJobRunObservability.mockReset()
