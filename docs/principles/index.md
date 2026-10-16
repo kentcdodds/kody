@@ -9,6 +9,7 @@ only the page the task needs.
 | [Normalized source of truth](./normalized-source-of-truth.md)               | Adding a cache, index, or second store for a fact that already has a record                               |
 | [Delete what is off the common path](./delete-off-the-common-path.md)       | Keeping a shim, flag, field, or doc for a path the product does not take                                  |
 | [Cleanup](./cleanup.md)                                                     | A migration left the old lane beside the new one, or leftovers still name the old way                     |
+| [No breaking changes](./no-breaking-changes.md)                             | Changing a public package API, published contract, or stored shape users already depend on                |
 | [Fail loudly at the right layer](./fail-loudly.md)                          | An error could be swallowed so a partial result continues                                                 |
 | [Error prompt for agents](./error-prompt-for-agents.md)                     | A website/email error the agent cannot already see needs “Copy prompt for your agent”                     |
 | [Fix the root bottleneck](./fix-the-root-bottleneck.md)                     | Masking slowness with timeouts, fallbacks, or a quieter path                                              |
