@@ -157,6 +157,104 @@ test('apply revokes lacking grants and a second pass finds zero', async () => {
 	})
 })
 
+test('vanished grants between list and get are skipped', async () => {
+	revokeGrant.mockClear()
+	const { kv, store } = createMemoryKvNamespace({
+		'grant:user-a:grant-1': grantJson({
+			id: 'grant-1',
+			userId: 'user-a',
+			clientId: 'client-a',
+		}),
+		'grant:user-a:grant-2': grantJson({
+			id: 'grant-2',
+			userId: 'user-a',
+			clientId: 'client-b',
+			orgId: 'org-stamped',
+		}),
+	})
+	const originalGet = kv.get.bind(kv)
+	kv.get = (async (key: string, options?: string | { type?: string }) => {
+		if (key === 'grant:user-a:grant-1') {
+			store.delete(key)
+			return null
+		}
+		return originalGet(key, options as never)
+	}) as typeof kv.get
+
+	const result = await runOauthGrantsLackingOrgIdRevoke({
+		env: { OAUTH_KV: kv } as Env,
+		dryRun: false,
+	})
+	expect(result).toMatchObject({
+		scanned: 2,
+		withOrgId: 1,
+		lackingOrgId: 0,
+		revoked: 0,
+		failures: [],
+	})
+	expect(revokeGrant).not.toHaveBeenCalled()
+})
+
+test('paged apply resumes with nextCursor across grant pages', async () => {
+	revokeGrant.mockClear()
+	const seed: Record<string, string> = {}
+	for (let index = 0; index < 5; index += 1) {
+		const id = `grant-${index}`
+		const userId = `user-${index}`
+		seed[`grant:${userId}:${id}`] = grantJson({
+			id,
+			userId,
+			clientId: index % 2 === 0 ? 'client-even' : 'client-odd',
+			...(index === 2 ? { orgId: 'org-stamped' } : {}),
+		})
+	}
+	const { kv } = createMemoryKvNamespace(seed)
+	revokeGrant.mockImplementation(async (grantId: string, userId: string) => {
+		await kv.delete(`grant:${userId}:${grantId}`)
+	})
+
+	const page1 = await runOauthGrantsLackingOrgIdRevoke({
+		env: { OAUTH_KV: kv } as Env,
+		dryRun: false,
+		limit: 2,
+	})
+	expect(page1.complete).toBe(false)
+	expect(page1.nextCursor).toEqual(expect.any(String))
+	expect(page1.scanned).toBe(2)
+	expect(page1.lackingOrgId).toBe(2)
+	expect(page1.revoked).toBe(2)
+
+	const page2 = await runOauthGrantsLackingOrgIdRevoke({
+		env: { OAUTH_KV: kv } as Env,
+		dryRun: false,
+		limit: 2,
+		cursor: page1.nextCursor,
+	})
+	expect(page2.scanned).toBe(2)
+	// One stamped + one lacking among the next two listed keys.
+	expect(page2.withOrgId + page2.lackingOrgId).toBe(2)
+	expect(page2.revoked).toBe(page2.lackingOrgId)
+
+	const page3 = await runOauthGrantsLackingOrgIdRevoke({
+		env: { OAUTH_KV: kv } as Env,
+		dryRun: false,
+		limit: 2,
+		cursor: page2.nextCursor,
+	})
+	expect(page3.complete).toBe(true)
+	expect(page3.nextCursor).toBeNull()
+
+	const verify = await runOauthGrantsLackingOrgIdRevoke({
+		env: { OAUTH_KV: kv } as Env,
+		dryRun: true,
+	})
+	expect(verify).toMatchObject({
+		lackingOrgId: 0,
+		complete: true,
+	})
+	expect(verify.withOrgId).toBeGreaterThanOrEqual(1)
+})
+
 test('apply records per-grant failures without aborting the page', async () => {
 	revokeGrant.mockClear()
 	revokeGrant.mockImplementation(async (grantId: string) => {

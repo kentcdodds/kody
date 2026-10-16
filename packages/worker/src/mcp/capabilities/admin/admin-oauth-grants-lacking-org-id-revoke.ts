@@ -124,6 +124,8 @@ export const adminOauthGrantsLackingOrgIdRevokeCapability =
 						limit: args.limit,
 					}),
 				{
+					resultOf: (result) =>
+						result.failures.length > 0 ? 'failure' : 'success',
 					successReason: (result) =>
 						`dry_run=${result.dryRun ? 1 : 0};scanned=${result.scanned};with=${result.withOrgId};lacking=${result.lackingOrgId};revoked=${result.revoked};users=${result.usersLackingOrgId};failed=${result.failures.length};complete=${result.complete ? 1 : 0}`,
 				},

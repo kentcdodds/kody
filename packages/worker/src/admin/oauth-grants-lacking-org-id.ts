@@ -137,6 +137,8 @@ export async function runOauthGrantsLackingOrgIdRevoke(input: {
 		const parts = parseOauthGrantKvKey(key.name)
 		if (!parts) continue
 		const value = await kv.get(key.name, { type: 'json' })
+		// Race: listed then deleted before get. Do not count as lacking/revoked.
+		if (value === null) continue
 		if (grantHasMetadataOrgId(value)) {
 			withOrgId += 1
 			continue

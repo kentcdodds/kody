@@ -125,4 +125,44 @@ test('admin oauth grants lacking orgId revoke enforces admin, dry-runs by defaul
 		'adminOauthGrantsLackingOrgIdRevoke:success',
 		'adminOauthGrantsLackingOrgIdRevoke:success',
 	])
+
+	mocks.runOauthGrantsLackingOrgIdRevoke.mockResolvedValue({
+		dryRun: false,
+		scanned: 2,
+		withOrgId: 0,
+		lackingOrgId: 2,
+		revoked: 0,
+		usersLackingOrgId: 1,
+		byClient: [{ clientId: 'client-a', count: 2 }],
+		failures: [
+			{
+				grantId: 'grant-1',
+				userId: 'user-a',
+				clientId: 'client-a',
+				error: 'kv_unavailable',
+			},
+			{
+				grantId: 'grant-2',
+				userId: 'user-a',
+				clientId: 'client-a',
+				error: 'kv_unavailable',
+			},
+		],
+		nextCursor: null,
+		complete: true,
+	})
+	const failed = await adminOauthGrantsLackingOrgIdRevokeCapability.handler(
+		{
+			dryRun: false,
+			confirm: oauthGrantsLackingOrgIdRevokeConfirm,
+		},
+		createContext(['admin']),
+	)
+	expect(failed.failures).toHaveLength(2)
+	expect(auditEventSummaries()).toEqual([
+		'mcp_capability_denied:failure',
+		'adminOauthGrantsLackingOrgIdRevoke:success',
+		'adminOauthGrantsLackingOrgIdRevoke:success',
+		'adminOauthGrantsLackingOrgIdRevoke:failure',
+	])
 })
