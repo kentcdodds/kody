@@ -655,9 +655,13 @@ export function scanLiteralMcpServerKeys(files: Record<string, string>): {
 	const keys = new Set<string>()
 	const failures: Array<CredentialStampGateFailure> = []
 	const modulePaths = listScannableModulePaths(files)
+	const parsedModules = new Map(
+		modulePaths.map((path) => [path, parseModule(files[path]!)]),
+	)
+	const moduleConstants = createModuleConstantsReader(parsedModules)
 	for (const path of modulePaths) {
 		const source = files[path]!
-		const parsed = parseModule(source)
+		const parsed = parsedModules.get(path)
 		if (!parsed) {
 			if (
 				/\bkody\s*(?:\?\.|\.)\s*mcp\b|\bkody\s*\[\s*['"`]mcp['"`]/.test(source)
@@ -670,6 +674,7 @@ export function scanLiteralMcpServerKeys(files: Record<string, string>): {
 			}
 			continue
 		}
+		const constants = moduleConstants(path)
 		const body = parsed.program?.body ?? []
 		const kodyAliases = new Set<string>(['kody'])
 		const mcpAliases = new Set<string>()
@@ -762,7 +767,12 @@ export function scanLiteralMcpServerKeys(files: Record<string, string>): {
 				node.type === 'MemberExpression' ||
 				node.type === 'OptionalMemberExpression'
 			) {
-				const server = mcpServerFromMember(node, kodyAliases, mcpAliases)
+				const server = mcpServerFromMember(
+					node,
+					kodyAliases,
+					mcpAliases,
+					constantsWithoutShadows(constants, ancestors),
+				)
 				if (server === null) {
 					failures.push({
 						code: 'non_literal',
@@ -884,13 +894,15 @@ function collectLiteralMcpServersFromObjectPattern(input: {
 }
 
 /**
- * Literal server name from `kody.mcp.SERVER` / `mcp.SERVER`, or null when the
- * access is dynamic, or undefined when the node is not an mcp server access.
+ * Literal server name from `kody.mcp.SERVER` / `mcp.SERVER` / `kody.mcp[NAME]`
+ * when NAME is a module const string, or null when the access is dynamic, or
+ * undefined when the node is not an mcp server access.
  */
 function mcpServerFromMember(
 	node: AstNode,
 	kodyAliases: Set<string>,
 	mcpAliases: Set<string>,
+	constants: ReadonlyMap<string, string> = new Map(),
 ): string | null | undefined {
 	if (
 		node.type !== 'MemberExpression' &&
@@ -909,6 +921,11 @@ function mcpServerFromMember(
 		const property = node.property
 		if (property?.type === 'StringLiteral' || property?.type === 'Literal') {
 			return getNodeName(property)
+		}
+		// `kody.mcp?.[CANVA_MCP_NAME]` when CANVA_MCP_NAME = 'canva' at module
+		// scope — same as credential("KEY") const folding.
+		if (property) {
+			return resolveStringExpression(property, constants)
 		}
 		return null
 	}
