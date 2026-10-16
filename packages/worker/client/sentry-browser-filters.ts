@@ -1117,6 +1117,51 @@ function filterBrowserBlobImportScriptsNetworkSentryEvent<
 }
 
 /**
+ * Stale Start release after a deploy: a browser tab still holding a previous
+ * client build calls `/__start/<old-hash>/_serverFn/...`, gets HTTP 404 with
+ * body exactly `Unknown Start release.`, and the createServerFn client throws
+ * that into Sentry (KODY-9E / issue 7795797021 on `/account`). Expected
+ * post-deploy stale-tab noise — not an app defect. Match only this exact
+ * wording (optional `Error:` preface). Never blanket-drop other "Unknown …"
+ * errors. Client recovery is a one-shot hard reload (see
+ * `reload-on-unknown-start-release.ts`).
+ */
+const unknownStartReleaseMessage = /^(?:Error:\s*)?Unknown Start release\.?$/
+
+function isUnknownStartReleaseMessage(message: string) {
+	return unknownStartReleaseMessage.test(message.trim())
+}
+
+export function isUnknownStartReleaseError(error: unknown) {
+	if (typeof error === 'string') {
+		return isUnknownStartReleaseMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isUnknownStartReleaseMessage(error.message)
+}
+
+function isUnknownStartReleaseSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	if (isUnknownStartReleaseError(originalException)) return true
+	return sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' && isUnknownStartReleaseMessage(message),
+	)
+}
+
+export function filterUnknownStartReleaseSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (isUnknownStartReleaseSentryEvent(event, originalException)) {
+		return null
+	}
+	return event
+}
+
+/**
  * Optional Shiki chunk failed to load (`import('./syntax-highlight-core')`).
  * Observed as an unhandledrejection on `/` when the homepage landing loop
  * fire-and-forgot the preload without a catch (KODY-CLOUDFLARE-5W, Mobile
@@ -2000,6 +2045,9 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 			originalException,
 		) === null
 	) {
+		return null
+	}
+	if (filterUnknownStartReleaseSentryEvent(event, originalException) === null) {
 		return null
 	}
 	if (

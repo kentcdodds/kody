@@ -1,3 +1,4 @@
+import { reloadOnUnknownStartRelease } from '#client/reload-on-unknown-start-release.ts'
 import {
 	isBrowserAbortError,
 	isBrowserInjectedGlobalNoiseError,
@@ -10,6 +11,7 @@ import {
 	isRemixReconcileInsertBeforeNotFoundError,
 	isRemixReconcileRemovedComponentCommittedError,
 	isSyntaxHighlightCoreDynamicImportFailureError,
+	isUnknownStartReleaseError,
 } from '#client/sentry-browser-filters.ts'
 import {
 	parseSentryClientConfig,
@@ -60,6 +62,7 @@ function shouldIgnoreBufferedError(error: unknown) {
 		isBrowserInjectedGlobalNoiseError(error) ||
 		isMetaMaskWalletNoAccountError(error) ||
 		isChromeExtensionMessageChannelDisconnectedError(error) ||
+		isUnknownStartReleaseError(error) ||
 		isSyntaxHighlightCoreDynamicImportFailureError(error) ||
 		isResolveFrameFetchNetworkError(error) ||
 		isLocalViteDevError(error) ||
@@ -71,6 +74,7 @@ function shouldIgnoreBufferedError(error: unknown) {
 
 function enqueueBufferedError(error: unknown) {
 	if (!buffering || captureImpl) return
+	reloadOnUnknownStartRelease(error)
 	if (shouldIgnoreBufferedError(error)) return
 	// Keep the earliest errors when full — the first failure is usually the
 	// most diagnostic one.
@@ -184,6 +188,9 @@ export function initSentryClient(doc: Document): boolean {
 
 /** Report a caught client error without letting reporting itself throw. */
 export function captureClientException(error: unknown) {
+	// Stale Start release after deploy (KODY-9E): recover with one hard reload
+	// before dropping the event from Sentry (handled createServerFn path).
+	reloadOnUnknownStartRelease(error)
 	if (shouldIgnoreBufferedError(error)) return
 	try {
 		if (captureImpl) {

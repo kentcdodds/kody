@@ -68,6 +68,7 @@ const highlightChunkMessage =
 	'Failed to fetch dynamically imported module: https://kody.codes/assets/syntax-highlight-core-VCFYP6MU.js'
 const blogChunkMessage =
 	'Failed to fetch dynamically imported module: https://kody.codes/assets/blog-area-ABC123.js'
+const unknownStartReleaseMessage = 'Unknown Start release.'
 const frameResolveFrame = fr(
 	'createFrameResolveInit',
 	'../client/frame-resolve.ts',
@@ -302,6 +303,15 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 						'blob:https://kody.codes/da30da39-78fc-444b-abb1-01ebd8bfc126',
 				},
 			],
+		],
+		// Stale Start release after deploy (KODY-9E / issue 7795797021).
+		['Error', unknownStartReleaseMessage],
+		['Error', `Error: ${unknownStartReleaseMessage}`],
+		[
+			'Error',
+			'something else',
+			undefined,
+			new Error(unknownStartReleaseMessage),
 		],
 		// syntax-highlight-core dynamic import misses (KODY-CLOUDFLARE-5W).
 		['TypeError', highlightChunkMessage],
@@ -570,6 +580,10 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 			[fr('applyDocumentHead', 'https://heykody.app/assets/document-head.js')],
 		],
 		['NetworkError', 'Failed to fetch'],
+		// Near-miss "Unknown …" wording stays visible (not Start release).
+		['Error', 'Unknown Start build.'],
+		['Error', 'Unknown Start release hash.'],
+		['Error', 'Unknown release.'],
 		// Other hashed asset chunk misses stay visible (boot reload path), even
 		// with a frame-resolve frame.
 		['TypeError', blogChunkMessage],
