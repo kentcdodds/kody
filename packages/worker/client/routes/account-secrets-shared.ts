@@ -287,6 +287,29 @@ export function buildSecretHref(
 	)
 }
 
+/** Retarget editor + href when a rename stuck and the API returns the new id. */
+export function applyStuckRenameRecovery(input: {
+	editor: EditorState
+	stuck: { id: string; name: string }
+	search: string
+	currentHref: string
+}): { editor: EditorState; href: string } {
+	const packageId =
+		input.editor.scope === 'package' ? input.editor.packageId : null
+	return {
+		editor: {
+			...input.editor,
+			currentId: input.stuck.id,
+			name: input.stuck.name,
+		},
+		href: buildSecretHref(
+			{ name: input.stuck.name, scope: input.editor.scope, packageId },
+			input.search,
+			input.currentHref,
+		),
+	}
+}
+
 export function buildNewSecretHref(search = '', currentHref = '') {
 	return secretsRoute.buildNewHref(search, currentHref)
 }

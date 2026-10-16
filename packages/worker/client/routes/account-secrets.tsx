@@ -50,6 +50,7 @@ import {
 	type PackageOption,
 	type SecretFilterScope,
 	accountSecretsRouteLoader,
+	applyStuckRenameRecovery,
 	buildBaseSecretsHref,
 	buildNewSecretHref,
 	buildSecretHref,
@@ -353,15 +354,16 @@ export function AccountSecretsRoute(handle: Handle) {
 				AccountSecretsLoaderData & { error?: string; ok?: boolean }
 			>(response)
 			if (!response.ok || !payload?.ok) {
-				// Stuck rename: API returns the new id so retries do not 404.
 				const stuck = payload?.selectedSecret
 				if (stuck) {
-					editorState = {
-						...submittedEditorState,
-						currentId: stuck.id,
-						name: stuck.name,
-					}
-					navigate(buildSecretHref(stuck, getCurrentSearch(), getCurrentHref()))
+					const recovered = applyStuckRenameRecovery({
+						editor: submittedEditorState,
+						stuck,
+						search: getCurrentSearch(),
+						currentHref: getCurrentHref(),
+					})
+					editorState = recovered.editor
+					navigate(recovered.href)
 				}
 				throw new Error(payload?.error || 'Unable to save secret.')
 			}
