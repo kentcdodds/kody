@@ -68,7 +68,6 @@ import {
 import { isPackageSecretAccessUnavailableError } from '#mcp/secrets/package-access.ts'
 import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
-import { credentialClientHeaderName } from '#worker/credentials/credential-client-header.ts'
 import { newRunCredentialClientBinding } from '#worker/credentials/credential-client-handle.ts'
 import { loadRunCredentialNeeds } from '#worker/credentials/credential-client.ts'
 import { type CredentialNeed } from '#worker/credentials/credential-needs.ts'
@@ -172,19 +171,13 @@ if (!globalThis[__kodyEvaluateFetchPatchedSymbol]) {
 					: undefined),
 		);
 		headers.delete(${JSON.stringify(secretAuthorityHeaderName)});
-		// credential() .fetch carries an opaque handle for the fetch gateway.
-		// Package-app does not yet pass a matching credentialClientBinding on
-		// globalOutbound, so refuse the call instead of stripping the handle
-		// and sending an unauthenticated upstream request. .sign / .callTool
-		// go through runtimeBridge.credentialClientCall and do not use this path.
-		if (headers.has(${JSON.stringify(credentialClientHeaderName)})) {
-			throw new Error(
-				'credential().fetch is not available in hosted package apps yet. Use credential().sign or credential().callTool, or run through execute.',
-			);
-		}
 		if (authority) {
 			headers.set(${JSON.stringify(secretAuthorityHeaderName)}, authority);
 		}
+		// Leave x-kody-credential-client alone: globalOutbound KodyFetchGateway
+		// matches it against the run binding on its props and places the
+		// credential. Stripping it would send an unauthenticated upstream
+		// request; throwing would block legitimate credential().fetch.
 		return __kodyNativeFetch(input, { ...init, headers });
 	};
 	globalThis[__kodyEvaluateFetchPatchedSymbol] = true;
@@ -1068,6 +1061,12 @@ type PackageAppRuntimeBridgeProps = {
 	sourceId: string
 	publishedCommit: string | null
 	packageStorageGrantIds: Array<string>
+	/**
+	 * Run-scoped credential-client binding shared with KodyFetchGateway.
+	 * Lives on props (not the entrypoint instance) so open → sign survives
+	 * across WorkerEntrypoint RPC invocations.
+	 */
+	credentialClientBinding: string
 }
 
 function redactRunRecordLogs(
@@ -1099,7 +1098,6 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	PackageAppRuntimeBridgeProps
 > {
 	private packageEventTools: Promise<PackageEventTools> | null = null
-	private credentialClientBinding: string | null = null
 	private credentialClientTools: Promise<AdditionalKodyTools> | null = null
 	private readonly secretRedactor: ExecutionSecretRedactor =
 		createExecutionSecretRedactor()
@@ -1668,8 +1666,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 
 	private async getCredentialClientTools() {
 		if (this.credentialClientTools) return await this.credentialClientTools
-		this.credentialClientBinding ??= newRunCredentialClientBinding()
-		const binding = this.credentialClientBinding
+		const binding = this.ctx.props.credentialClientBinding
 		this.credentialClientTools = (async () => {
 			const callerContext = await this.createCallerContext(null)
 			const grantedPackageIds = new Set(this.ctx.props.packageStorageGrantIds)
@@ -2180,6 +2177,11 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 			preloadMcpServerNames: modulesReferenceKodyMcp(bundled.modules),
 		}),
 	}
+	// One binding for this worker-options build (visitor-scoped via the cache
+	// key). Props — not WorkerEntrypoint instance fields — carry it so open
+	// and sign share the same run binding across RPC invocations, and the
+	// fetch gateway can place credential().fetch handles.
+	const credentialClientBinding = newRunCredentialClientBinding()
 	return {
 		...createDynamicWorkerCompatibilityOptions(),
 		mainModule,
@@ -2202,6 +2204,7 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 					sourceId: input.savedPackage.sourceId,
 					publishedCommit: input.savedPackage.publishedCommit,
 					packageStorageGrantIds,
+					credentialClientBinding,
 				},
 			}),
 			__kodyPackageContext: {
@@ -2227,6 +2230,7 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 							storageId: null,
 						},
 						grantedSecretAuthorityPackageIds: packageStorageGrantIds,
+						credentialClientBinding,
 					},
 				})
 			: null,

@@ -425,6 +425,37 @@ const packageAppRuntimeMock = vi.hoisted(() => ({
 			dispatch: vi.fn(async () => ({})),
 		}),
 	),
+	credentialClientBindingsSeen: [] as Array<string>,
+	createCredentialClientKodyTools: vi.fn(
+		(input: { options: { binding: string } }) => {
+			packageAppRuntimeMock.credentialClientBindingsSeen.push(
+				input.options.binding,
+			)
+			return {
+				credentialClientOpen: async () => ({
+					ok: true,
+					value: {
+						handle: 'h-from-props',
+						name: 'powersync-jwt',
+						scope: 'org',
+						kind: 'signing',
+						hosts: ['powersync.example'],
+					},
+				}),
+				credentialClientSign: async () => ({
+					ok: true,
+					value: { signature: 'sig-from-props' },
+				}),
+			}
+		},
+	),
+}))
+
+vi.mock('#worker/mcp/credential-client-tools.ts', () => ({
+	createCredentialClientKodyTools: (...args: Array<unknown>) =>
+		packageAppRuntimeMock.createCredentialClientKodyTools(
+			...(args as [{ options: { binding: string } }]),
+		),
 }))
 
 vi.mock('cloudflare:workers', async (importOriginal) => {
@@ -682,6 +713,7 @@ function makeBuildInput(
 
 function createPackageAppRuntimeBridgeForTest(input?: {
 	packageStorageGrantIds?: Array<string>
+	credentialClientBinding?: string
 }) {
 	const waitUntilTasks: Array<Promise<unknown>> = []
 	const bridge = new PackageAppRuntimeBridge(
@@ -698,6 +730,8 @@ function createPackageAppRuntimeBridgeForTest(input?: {
 				sourceId: 'source-1',
 				publishedCommit: 'commit-1',
 				packageStorageGrantIds: input?.packageStorageGrantIds ?? ['package-1'],
+				credentialClientBinding:
+					input?.credentialClientBinding ?? 'run:test-package-app-binding',
 			},
 			waitUntil: (promise: Promise<unknown>) => {
 				waitUntilTasks.push(promise)
@@ -763,9 +797,10 @@ test('buildPackageAppWorker serves an artifactName-null artifact hit and reuses 
 	expect(packageAppHostSource).toContain('__kodyCredentialRuntimeFor')
 	expect(packageAppHostSource).toContain('credentialClientCall')
 	expect(packageAppHostSource).toContain('x-kody-credential-client')
-	expect(packageAppHostSource).toContain(
-		'credential().fetch is not available in hosted package apps yet',
-	)
+	expect(packageAppHostSource).toContain('Leave x-kody-credential-client alone')
+	const bridgeProps = packageAppRuntimeMock.packageAppRuntimeBridge.mock
+		.calls[0]?.[0] as { props?: { credentialClientBinding?: string } }
+	expect(bridgeProps?.props?.credentialClientBinding).toMatch(/^run:/)
 })
 
 test('package app createCredentialRuntime exposes callable credential().sign via the bridge', async () => {
@@ -902,6 +937,39 @@ test('package app runtime bridge credentialClientCall dispatches known tools and
 	await expect(
 		bridge.credentialClientCall({ name: 'credentialClientNope', args: {} }),
 	).rejects.toThrow('Unknown credential client tool "credentialClientNope".')
+})
+
+test('package app credential client binding comes from bridge props so open and sign share it across RPC instances', async () => {
+	const sharedBinding = 'run:shared-across-rpc-instances'
+	packageAppRuntimeMock.credentialClientBindingsSeen.length = 0
+	packageAppRuntimeMock.createCredentialClientKodyTools.mockClear()
+
+	const opener = createPackageAppRuntimeBridgeForTest({
+		credentialClientBinding: sharedBinding,
+	}).bridge
+	const signer = createPackageAppRuntimeBridgeForTest({
+		credentialClientBinding: sharedBinding,
+	}).bridge
+
+	const { credentialClientToolNames } =
+		await import('#worker/mcp/execute-modules/credential-client-source.ts')
+	await opener.credentialClientCall({
+		name: credentialClientToolNames.open,
+		args: { key: 'powersync-jwt' },
+	})
+	await signer.credentialClientCall({
+		name: credentialClientToolNames.sign,
+		args: {
+			handle: 'h-from-props',
+			host: 'powersync.example',
+			operation: {},
+		},
+	})
+
+	expect(packageAppRuntimeMock.credentialClientBindingsSeen).toEqual([
+		sharedBinding,
+		sharedBinding,
+	])
 })
 
 test('buildPackageAppWorker claims the unique Dynamic Worker day with its surface off the stub path, only after acquiring the stub', async () => {
