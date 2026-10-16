@@ -545,13 +545,12 @@ StorageRunner RPC wall-clock proxy) and is not charged. See
 **D1 payload storage bytes** (`storage_bytes`) are **authoritative in
 UserMeter**. `assertWithinStorageBytesEntitlement` uses atomic DO
 `reserveStorageBytes` for all callers. Cold bootstrap lazily enqueues (and
-awaits) an immediate per-owner physical reconcile so concurrent cold reserves
-share one D1 SUM and seed from real payload bytes. Scan failures fail closed (no
-zero-init after a failed scan — that would under-enforce). Usage reads seed from
-the same physical reconcile and also fail closed on scan errors. The bounded
-`d1_storage_reconciliation` lane continues to correct drift via revision-guarded
-CAS, sweeping live owners by keyset from the platform-owned
-`d1_storage_reconcile_cursor` row.
+awaits) an immediate per-owner physical seed via cold `initializeStorageBytes`
+only (never CAS a live meter — that could wipe a reservation for bytes not yet
+written). Scan failures fail closed. Usage reads share the same lazy enqueue and
+also fail closed on scan errors. The bounded `d1_storage_reconciliation` lane
+continues to correct drift via revision-guarded CAS, sweeping live owners by
+keyset from the platform-owned `d1_storage_reconcile_cursor` row.
 
 **Account-deletion write fencing:** D1 `users.deleting_at` remains the permanent
 point gate. All callers (including email paths) supply `env`; UserMeter is
