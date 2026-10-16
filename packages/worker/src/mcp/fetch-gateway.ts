@@ -70,7 +70,14 @@ import {
 	claimedPackageStamp,
 	type PackageStamp,
 } from '#worker/credentials/package-stamp.ts'
-import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
+import {
+	credentialFetchPlacementKey,
+	type CredentialFetchPlacement,
+} from '#worker/credentials/credential-resolver.ts'
+import {
+	auditResolvedFetchPlacements,
+	resolveCredential,
+} from '#worker/credentials/resolve-credential.ts'
 import { assertCredentialUsesDeclared } from '#worker/credentials/credential-need-enforcement.ts'
 import { credentialClientHeaderName } from '#worker/credentials/credential-client-header.ts'
 import {
@@ -376,6 +383,11 @@ function readResponseContentLengthBytes(
 	return { bytes }
 }
 
+type PlacedPlaceholderSource = {
+	text: string
+	placement: CredentialFetchPlacement
+}
+
 /**
  * The outbound request with placeholders filled in its headers, URL path and
  * query, and body (streamed chunk-by-chunk, including multipart parts), plus
@@ -452,8 +464,20 @@ export async function expandSecretPlaceholders(input: {
 	// written, for a body that quotes the placeholder syntax.
 	const fillsUrlAndBody = resolutionMode === 'on'
 	const urlTexts = fillsUrlAndBody ? urlPlaceholderTexts(requestUrl) : []
-	const placeholderSources = [...Array.from(headers.values()), ...urlTexts]
-	assertSecretPlacement({ url: requestUrl, values: placeholderSources })
+	const placeholderSources: Array<PlacedPlaceholderSource> = [
+		...Array.from(headers.entries(), ([name, text]) => ({
+			text,
+			placement: { kind: 'header' as const, name },
+		})),
+		...urlTexts.map((text) => ({
+			text,
+			placement: { kind: 'url' as const },
+		})),
+	]
+	assertSecretPlacement({
+		url: requestUrl,
+		values: placeholderSources.map((source) => source.text),
+	})
 
 	const replacements = new Map<string, string>()
 	const resolvedValues = new Map<string, string>()
@@ -462,6 +486,54 @@ export async function expandSecretPlaceholders(input: {
 	let referencedAnyCredential = false
 
 	const requestHost = normalizeHost(requestUrl.hostname)
+	const auditedPlacementKeys = new Set<string>()
+
+	const placementAuditKey = (
+		placeholder: string,
+		placement: CredentialFetchPlacement,
+	) => `${placeholder}\0${credentialFetchPlacementKey(placement)}`
+
+	const takePendingPlacements = (
+		placeholder: string,
+		found: ReadonlyArray<CredentialFetchPlacement> | undefined,
+	) => {
+		if (!found || found.length === 0) return []
+		const pending: Array<CredentialFetchPlacement> = []
+		const seen = new Set<string>()
+		for (const placement of found) {
+			const key = placementAuditKey(placeholder, placement)
+			if (auditedPlacementKeys.has(key) || seen.has(key)) continue
+			seen.add(key)
+			switch (placement.kind) {
+				case 'header':
+					pending.push({
+						kind: 'header',
+						name: credentialFetchPlacementKey(placement),
+					})
+					break
+				case 'url':
+				case 'body':
+					pending.push(placement)
+					break
+				default: {
+					const exhaustive: never = placement
+					throw new Error(
+						`Unhandled credential placement: ${String(exhaustive)}`,
+					)
+				}
+			}
+		}
+		return pending
+	}
+
+	const markPlacementsAudited = (
+		placeholder: string,
+		placements: ReadonlyArray<CredentialFetchPlacement>,
+	) => {
+		for (const placement of placements) {
+			auditedPlacementKeys.add(placementAuditKey(placeholder, placement))
+		}
+	}
 
 	const applyBasicAuthPlaceholders = (
 		placeholders: ReadonlyArray<ReferencedBasicAuthSecretPlaceholder>,
@@ -489,29 +561,117 @@ export async function expandSecretPlaceholders(input: {
 	}
 
 	const resolvePlaceholderBatch = async (
-		sources: ReadonlyArray<string>,
+		sources: ReadonlyArray<PlacedPlaceholderSource>,
 	): Promise<void> => {
+		const texts = sources.map((source) => source.text)
+		const placementsByPlaceholder = new Map<
+			string,
+			Array<CredentialFetchPlacement>
+		>()
+		const notePlacement = (
+			placeholder: string,
+			placement: CredentialFetchPlacement,
+		) => {
+			const found = placementsByPlaceholder.get(placeholder)
+			if (found) found.push(placement)
+			else placementsByPlaceholder.set(placeholder, [placement])
+		}
+		for (const source of sources) {
+			for (const secret of parseSecretPlaceholders(source.text)) {
+				notePlacement(buildSecretPlaceholder(secret), source.placement)
+			}
+			for (const basic of parseBasicAuthSecretPlaceholders(source.text)) {
+				notePlacement(buildSecretPlaceholder(basic.username), source.placement)
+				notePlacement(buildSecretPlaceholder(basic.password), source.placement)
+			}
+			for (const name of parseIntegrationTokenPlaceholders(source.text)) {
+				notePlacement(buildIntegrationTokenPlaceholder(name), source.placement)
+			}
+			for (const referenced of parseProviderSecretPlaceholders(source.text)) {
+				notePlacement(
+					buildProviderSecretPlaceholder(referenced),
+					source.placement,
+				)
+			}
+		}
 		const basicAuthPlaceholders = dedupeBasicAuthSecretPlaceholders(
-			sources.flatMap((value) => parseBasicAuthSecretPlaceholders(value)),
+			texts.flatMap((value) => parseBasicAuthSecretPlaceholders(value)),
 		)
 		const referencedSecrets = dedupeReferencedSecrets([
-			...sources.flatMap((value) => parseSecretPlaceholders(value)),
+			...texts.flatMap((value) => parseSecretPlaceholders(value)),
 			...basicAuthPlaceholders.flatMap((placeholder) => [
 				placeholder.username,
 				placeholder.password,
 			]),
-		]).filter((secret) => !replacements.has(buildSecretPlaceholder(secret)))
+		]).flatMap((referenced) => {
+			const placeholder = buildSecretPlaceholder(referenced)
+			const placements = takePendingPlacements(
+				placeholder,
+				placementsByPlaceholder.get(placeholder),
+			)
+			if (placements.length === 0) return []
+			return [
+				{
+					referenced,
+					placeholder,
+					credential: {
+						use: 'secret' as const,
+						name: referenced.name,
+						scope: referenced.scope,
+						storageContext,
+						orgSlug: secretPageOrgSlugFromCaller(input.props),
+						requestHost,
+						placements,
+					},
+				},
+			]
+		})
 		const referencedIntegrationTokens = dedupeIntegrationTokenNames(
-			sources.flatMap((value) => parseIntegrationTokenPlaceholders(value)),
-		).filter(
-			(name) => !replacements.has(buildIntegrationTokenPlaceholder(name)),
-		)
+			texts.flatMap((value) => parseIntegrationTokenPlaceholders(value)),
+		).flatMap((name) => {
+			const placeholder = buildIntegrationTokenPlaceholder(name)
+			const placements = takePendingPlacements(
+				placeholder,
+				placementsByPlaceholder.get(placeholder),
+			)
+			if (placements.length === 0) return []
+			return [
+				{
+					name,
+					placeholder,
+					credential: {
+						use: 'integration-token' as const,
+						name,
+						requestHost,
+						placements,
+					},
+				},
+			]
+		})
 		const referencedProviderSecrets = dedupeReferencedProviderSecrets(
-			sources.flatMap((value) => parseProviderSecretPlaceholders(value)),
-		).filter(
-			(referenced) =>
-				!replacements.has(buildProviderSecretPlaceholder(referenced)),
-		)
+			texts.flatMap((value) => parseProviderSecretPlaceholders(value)),
+		).flatMap((referenced) => {
+			const placeholder = buildProviderSecretPlaceholder(referenced)
+			const placements = takePendingPlacements(
+				placeholder,
+				placementsByPlaceholder.get(placeholder),
+			)
+			if (placements.length === 0) return []
+			return [
+				{
+					referenced,
+					placeholder,
+					credential: {
+						use: 'provider-secret' as const,
+						provider: referenced.provider,
+						ref: referenced.ref,
+						storageContext,
+						requestHost,
+						placements,
+					},
+				},
+			]
+		})
 		const pendingBasicAuth = basicAuthPlaceholders.filter((placeholder) => {
 			const rendered = buildBasicAuthSecretPlaceholderFromReference(placeholder)
 			return !replacements.has(rendered)
@@ -525,45 +685,71 @@ export async function expandSecretPlaceholders(input: {
 			return
 		}
 		referencedAnyCredential = true
-		assertSecretPlacement({ url: requestUrl, values: sources })
+		assertSecretPlacement({ url: requestUrl, values: texts })
 		const callerUserId = requireFetchUserId(input.props)
+		const resolveInput = {
+			env: input.env as Env,
+			orgId: callerUserId,
+			actor: input.props.request,
+			packageStamp,
+			baseUrl: input.props.baseUrl,
+		}
+		const entriesToResolve = <
+			T extends {
+				placeholder: string
+				credential: Parameters<typeof resolveCredential>[0]['credential']
+			},
+		>(
+			entries: ReadonlyArray<T>,
+		) =>
+			entries.flatMap((entry) => {
+				const placements =
+					'placements' in entry.credential
+						? entry.credential.placements
+						: undefined
+				markPlacementsAudited(entry.placeholder, placements ?? [])
+				if (
+					!replacements.has(entry.placeholder) ||
+					!auditResolvedFetchPlacements({
+						...resolveInput,
+						credential: entry.credential,
+					})
+				) {
+					return [entry]
+				}
+				return []
+			})
+		const secretsToResolve = entriesToResolve(referencedSecrets)
+		const integrationTokensToResolve = entriesToResolve(
+			referencedIntegrationTokens,
+		)
+		const providerSecretsToResolve = entriesToResolve(referencedProviderSecrets)
 		await assertCredentialUsesDeclared({
 			env: input.env as Env,
 			request: input.props.request,
 			orgId: callerUserId,
 			packageId: packageStamp?.packageId ?? null,
 			references: [
-				...referencedSecrets.map((referenced) => ({
+				...referencedSecrets.map((entry) => ({
 					use: 'secret' as const,
-					name: referenced.name,
-					scope: referenced.scope,
+					name: entry.referenced.name,
+					scope: entry.referenced.scope,
 				})),
-				...referencedIntegrationTokens.map((name) => ({
+				...referencedIntegrationTokens.map((entry) => ({
 					use: 'integration' as const,
-					name,
+					name: entry.name,
 				})),
-				...referencedProviderSecrets.map((referenced) => ({
+				...referencedProviderSecrets.map((entry) => ({
 					use: 'provider' as const,
-					provider: referenced.provider,
+					provider: entry.referenced.provider,
 				})),
 			],
 		})
 		const settledSecretResults = await Promise.allSettled(
-			referencedSecrets.map(async (referenced) => {
+			secretsToResolve.map(async ({ referenced, credential }) => {
 				const resolved = await resolveCredential({
-					env: input.env as Env,
-					orgId: callerUserId,
-					actor: input.props.request,
-					packageStamp,
-					baseUrl: input.props.baseUrl,
-					credential: {
-						use: 'secret',
-						name: referenced.name,
-						scope: referenced.scope,
-						storageContext,
-						orgSlug: secretPageOrgSlugFromCaller(input.props),
-						requestHost,
-					},
+					...resolveInput,
+					credential,
 				})
 				if (!resolved.found || typeof resolved.value !== 'string') {
 					throw new McpCallerError(
@@ -587,14 +773,10 @@ export async function expandSecretPlaceholders(input: {
 			requestedHost: requestUrl.hostname,
 		})
 		const resolvedIntegrationTokens = await Promise.all(
-			referencedIntegrationTokens.map(async (name) => {
+			integrationTokensToResolve.map(async ({ name, credential }) => {
 				const value = await resolveCredential({
-					env: input.env as Env,
-					orgId: callerUserId,
-					actor: input.props.request,
-					packageStamp,
-					baseUrl: input.props.baseUrl,
-					credential: { use: 'integration-token', name, requestHost },
+					...resolveInput,
+					credential,
 				}).catch((error: unknown) => {
 					throw error instanceof IntegrationHostNotAllowedError
 						? new SecretPlacementError(error.message, name)
@@ -607,24 +789,15 @@ export async function expandSecretPlaceholders(input: {
 			}),
 		)
 		const resolvedProviderSecrets = await Promise.all(
-			referencedProviderSecrets.map(async (referenced) => {
+			providerSecretsToResolve.map(async ({ referenced, credential }) => {
 				const request = input.props.request
 				if (!request) {
 					throw new Error(fetchSecretAuthRequiredMessage)
 				}
 				const resolved = await resolveCredential({
-					env: input.env as Env,
-					orgId: callerUserId,
+					...resolveInput,
 					actor: request,
-					packageStamp,
-					baseUrl: input.props.baseUrl,
-					credential: {
-						use: 'provider-secret',
-						provider: referenced.provider,
-						ref: referenced.ref,
-						storageContext,
-						requestHost,
-					},
+					credential,
 				}).catch((error: unknown) => {
 					throw error instanceof SecretProviderHostDeniedError
 						? new SecretPlacementError(error.message, null)
@@ -686,17 +859,24 @@ export async function expandSecretPlaceholders(input: {
 			allowPercentEncoded: format === 'form',
 			resolve: async (batch: PlaceholderReferenceBatch) => {
 				if (!batchHasPlaceholders(batch)) return []
+				const placement = { kind: 'body' as const }
 				const sources = [
-					...batch.secrets.map((secret) => buildSecretPlaceholder(secret)),
-					...batch.basicAuth.map((placeholder) =>
-						buildBasicAuthSecretPlaceholderFromReference(placeholder),
-					),
-					...batch.integrationTokens.map((name) =>
-						buildIntegrationTokenPlaceholder(name),
-					),
-					...batch.providerSecrets.map((referenced) =>
-						buildProviderSecretPlaceholder(referenced),
-					),
+					...batch.secrets.map((secret) => ({
+						text: buildSecretPlaceholder(secret),
+						placement,
+					})),
+					...batch.basicAuth.map((placeholder) => ({
+						text: buildBasicAuthSecretPlaceholderFromReference(placeholder),
+						placement,
+					})),
+					...batch.integrationTokens.map((name) => ({
+						text: buildIntegrationTokenPlaceholder(name),
+						placement,
+					})),
+					...batch.providerSecrets.map((referenced) => ({
+						text: buildProviderSecretPlaceholder(referenced),
+						placement,
+					})),
 				]
 				const before = substitutedValues.length
 				await resolvePlaceholderBatch(sources)

@@ -20,9 +20,13 @@
  *    enabler, so it needs the enabler's own Use, and a denial pauses that
  *    enablement;
  * 4. only then applies the credential, the one step that reads storage;
- * 5. schedules exactly one `credential.resolve` org audit row for every
- *    outcome (success, not found, denied, failed), for every kind of actor.
- *    The row never holds the credential value.
+ * 5. schedules a `credential.resolve` org audit row for every outcome
+ *    (success, not found, denied, failed), for every kind of actor. A
+ *    fetch-gateway fill passes the placements it filled or refused; each
+ *    placement is its own row (lowercase header name, or `url` / `body`) and
+ *    the credential is still read once. A later placement of a credential
+ *    this request already resolved records another row without reading it
+ *    again. The row never holds the credential value.
  *
  * A request with no acting person holds no permissions. The only path with
  * no request at all is webhook ingress verifying a signature, which passes an
@@ -36,6 +40,7 @@ import { enablementIdOf } from '#worker/request-context/request-context.ts'
 import {
 	credentialResolutionOutcomeForError,
 	scheduleCredentialResolutionAudit,
+	type CredentialAuditSubject,
 	type CredentialResolutionOutcome,
 } from './credential-resolution-audit.ts'
 import {
@@ -44,7 +49,9 @@ import {
 	clientOauthResolver,
 } from './client-resolver.ts'
 import {
+	credentialFetchPlacementKey,
 	permissionForUse,
+	type CredentialFetchPlacement,
 	type CredentialResolver,
 	type CredentialTarget,
 	type CredentialTargetFor,
@@ -100,16 +107,35 @@ async function resolveWith<U extends CredentialUse>(
 	input: ResolveCredentialInput<CredentialTarget>,
 ) {
 	const credential = input.credential as CredentialTargetFor<U>
+	// A bad placement is a caller bug. Fail before any credential read, and
+	// before the audit copy, so a thrown label cannot hide a finished read.
+	for (const placement of fetchPlacementsOf(credential) ?? []) {
+		credentialFetchPlacementKey(placement)
+	}
 	const subject = resolver.auditSubject(credential)
-	const audit = (outcome: CredentialResolutionOutcome) =>
-		scheduleCredentialResolutionAudit({
-			env: input.env,
-			orgId: input.orgId,
-			actor: input.actor,
-			packageStamp: input.packageStamp,
-			subject,
-			outcome,
-		})
+	const audit = (outcome: CredentialResolutionOutcome) => {
+		const subjects = auditSubjectFor(subject, credential)
+		for (const row of subjects) {
+			scheduleCredentialResolutionAudit({
+				env: input.env,
+				orgId: input.orgId,
+				actor: input.actor,
+				packageStamp: input.packageStamp,
+				subject: row,
+				outcome,
+			})
+		}
+		if (outcome.result === 'success') {
+			rememberResolvedFetchAudit({
+				actor: input.actor,
+				credential,
+				subject,
+				labels: subjects.flatMap((row) =>
+					row.details?.placement ? [row.details.placement] : [],
+				),
+			})
+		}
+	}
 	let result
 	try {
 		await assertActorHasOrgAccess(input)
@@ -142,6 +168,148 @@ async function resolveWith<U extends CredentialUse>(
 			: { result: 'failure', reason: 'not_found' },
 	)
 	return result
+}
+
+type ResolvedFetchAudit = {
+	subject: CredentialAuditSubject
+	written: Set<string>
+}
+
+const resolvedFetchAudits = new WeakMap<
+	RequestContext,
+	Map<string, ResolvedFetchAudit>
+>()
+
+function fetchPlacementsOf(
+	credential: CredentialTarget,
+): ReadonlyArray<CredentialFetchPlacement> | null {
+	switch (credential.use) {
+		case 'secret':
+		case 'provider-secret':
+		case 'integration-token':
+			return credential.placements ?? null
+		case 'package-secret-mount':
+		case 'webhook-secret':
+		case 'integration-refresh':
+		case 'mcp-connection':
+		case 'url':
+		case 'login':
+		case 'signing':
+		case 'client-key':
+		case 'client-oauth':
+		case 'client-oauth-refresh':
+			return null
+		default: {
+			const exhaustive: never = credential
+			throw new Error(`Unhandled credential use: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/**
+ * One audit subject per fetch placement. The resolver's subject stays the
+ * object `authorize` mutates (credential id); placement is copied on at
+ * write time so every row names the credential that was actually resolved.
+ */
+function auditSubjectFor(
+	subject: CredentialAuditSubject,
+	credential: CredentialTarget,
+): Array<CredentialAuditSubject> {
+	const placements = fetchPlacementsOf(credential)
+	if (!placements || placements.length === 0) return [subject]
+	const labels: Array<string> = []
+	const seen = new Set<string>()
+	for (const placement of placements) {
+		const label = credentialFetchPlacementKey(placement)
+		if (seen.has(label)) continue
+		seen.add(label)
+		labels.push(label)
+	}
+	if (labels.length === 0) return [subject]
+	return labels.map((placement) => ({
+		...subject,
+		details: { ...subject.details, placement },
+	}))
+}
+
+function fetchAuditCacheKey(credential: CredentialTarget): string | null {
+	switch (credential.use) {
+		case 'secret':
+			return `secret\0${credential.requestHost ?? ''}\0${credential.scope ?? ''}\0${credential.name}`
+		case 'integration-token':
+			return `integration-token\0${credential.requestHost ?? ''}\0${credential.name}`
+		case 'provider-secret':
+			return `provider-secret\0${credential.requestHost ?? ''}\0${credential.provider}\0${credential.ref}`
+		case 'package-secret-mount':
+		case 'webhook-secret':
+		case 'integration-refresh':
+		case 'mcp-connection':
+		case 'url':
+		case 'login':
+		case 'signing':
+		case 'client-key':
+		case 'client-oauth':
+		case 'client-oauth-refresh':
+			return null
+		default: {
+			const exhaustive: never = credential
+			throw new Error(`Unhandled credential use: ${String(exhaustive)}`)
+		}
+	}
+}
+
+function rememberResolvedFetchAudit(input: {
+	actor: RequestContext | null
+	credential: CredentialTarget
+	subject: CredentialAuditSubject
+	labels: ReadonlyArray<string>
+}) {
+	const key = fetchAuditCacheKey(input.credential)
+	if (!input.actor || !key) return
+	let byCredential = resolvedFetchAudits.get(input.actor)
+	if (!byCredential) {
+		byCredential = new Map()
+		resolvedFetchAudits.set(input.actor, byCredential)
+	}
+	const existing = byCredential.get(key)
+	if (existing) {
+		existing.subject = input.subject
+		for (const label of input.labels) existing.written.add(label)
+		return
+	}
+	byCredential.set(key, {
+		subject: input.subject,
+		written: new Set(input.labels),
+	})
+}
+
+/**
+ * Record fetch placements for a credential this request already resolved
+ * successfully. Returns true when that resolution exists, so the caller can
+ * skip another read. A miss returns false and the caller resolves as usual.
+ */
+export function auditResolvedFetchPlacements(
+	input: ResolveCredentialInput<CredentialTarget>,
+): boolean {
+	const key = fetchAuditCacheKey(input.credential)
+	const actor = input.actor
+	if (!key || !actor) return false
+	const cached = resolvedFetchAudits.get(actor)?.get(key)
+	if (!cached) return false
+	for (const subject of auditSubjectFor(cached.subject, input.credential)) {
+		const placement = subject.details?.placement
+		if (!placement || cached.written.has(placement)) continue
+		cached.written.add(placement)
+		scheduleCredentialResolutionAudit({
+			env: input.env,
+			orgId: input.orgId,
+			actor,
+			packageStamp: input.packageStamp,
+			subject,
+			outcome: { result: 'success' },
+		})
+	}
+	return true
 }
 
 const orgAccessByRequest = new WeakMap<RequestContext, Promise<void>>()
