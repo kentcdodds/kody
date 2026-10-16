@@ -20,6 +20,7 @@ export const scheduledLaneNames = [
 	'usage_aggregation',
 	'durable_object_duration_attribution',
 	'auth_denial_alert',
+	'dlq_depth_alert',
 	'email_delivery_alert',
 	'email_verification_stall_alert',
 	'usage_entitlement_alert',
@@ -104,6 +105,21 @@ export function resolveScheduledLaneQueueAction(input: {
 export const jobsWorkerLocalLanes = ['job_schedule_watchdog'] as const
 
 export type JobsWorkerLocalLane = (typeof jobsWorkerLocalLanes)[number]
+
+/**
+ * Lanes the cron runs directly on JobsHost instead of
+ * `kody-scheduled-dispatch`. The DLQ depth alert watches that queue's
+ * dead-letter queue, so the check cannot depend on the queue to be delivered.
+ */
+export const inlineScheduledLanes = [
+	'dlq_depth_alert',
+] as const satisfies ReadonlyArray<ScheduledLaneName>
+
+export function isInlineScheduledLane(
+	lane: ScheduledLaneName,
+): lane is (typeof inlineScheduledLanes)[number] {
+	return (inlineScheduledLanes as ReadonlyArray<string>).includes(lane)
+}
 
 export function isJobsWorkerLocalLane(
 	lane: ScheduledLaneName,
@@ -256,6 +272,7 @@ export function getScheduledLaneCadence(
 		'org_audit_outbox',
 		'package_app_custom_hostnames_reconcile',
 		'follow_maintenance',
+		'dlq_depth_alert',
 	]
 	if (shouldRunRetentionCron(scheduledAt)) {
 		lanes.push('retention', 'unverified_account_purge', 'soft_delete_purge')

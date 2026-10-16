@@ -133,6 +133,9 @@ This project uses the following resources:
   - Producer binding: `SCHEDULED_DISPATCH_QUEUE`
   - Queue: `kody-scheduled-dispatch`
   - Dead-letter queue: `kody-scheduled-dispatch-dlq`
+  - `dlq_depth_alert` does not use this queue. The cron runs it directly and
+    opens a Sentry issue when any production dead-letter queue has had
+    unacknowledged messages for more than 15 minutes.
   - The production consumer receives one lane message per invocation, permits up
     to 16 concurrent lane invocations, and retries only replay-safe
     `d1_lock_contention` outcomes three times (10s / 30s / 90s backoff) before

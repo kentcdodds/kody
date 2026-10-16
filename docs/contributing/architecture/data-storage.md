@@ -1382,6 +1382,17 @@ and logs a non-completed outcome; it does not invent extra retries. Consumer
 transport failures retain the configured retry/DLQ behavior. No failure can
 abort or mask a sibling invocation.
 
+`dlq_depth_alert` does not ride that queue: the cron calls it directly so a
+stuck consumer cannot hide dead-letter backlog. Every five minutes it reads
+Cloudflare queue metrics for each production dead-letter queue. A backlog that
+has stayed non-empty for more than 15 minutes opens a Sentry issue (oldest
+unacknowledged message, or the first non-zero sample when that timestamp is
+missing). Operator Discord gets the issue from the existing Sentry alert
+destination, the same path as the webhook auth regression alert. Non-production
+runtimes skip the read. A failed metrics read fails the lane instead of
+reporting the queue as empty. Inbound email subscription dead-letters are
+terminal handler failures and are not part of this page.
+
 Production note:
 
 - Production deploys warn that the documented Artifacts Worker binding config is
