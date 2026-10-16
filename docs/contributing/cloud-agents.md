@@ -340,6 +340,36 @@ npx @kodycodes/cli auth bootstrap --code 'kody_bc_…' --lifetime short
 `control-kody execute --origin <preview>` is different: it calls the preview's
 `/mcp` (OAuth through the seed login) and never touches the API host.
 
+### Changing the CLI
+
+`@kodycodes/cli` lives in [kody-bot/cli](https://github.com/kody-bot/cli), not
+this repository. A Cloud Agent on `kentcdodds/kody` cannot push there
+(`Permission to kody-bot/cli.git denied to cursor[bot]`). This environment does
+not grant that App access; do not treat a 403 as a missing local credential.
+
+Supported path:
+
+1. Implement and test in a local clone
+   (`git clone https://github.com/kody-bot/cli.git`).
+2. `git format-patch` the commits.
+3. Upload the patch with `kody:@kentcdodds/agent-files/create-upload`
+   (`confirm: true`, PUT with the returned `upload.headers`, then use
+   `downloadUrl`).
+4. Launch a Cloud Agent on that repo with `kody:@kentcdodds/cursor/agents`
+   `createAgent` (`repository: 'https://github.com/kody-bot/cli'`,
+   `ref: 'main'`). Put the patch `downloadUrl` in the prompt text (not
+   `prompt.images`). Tell it to apply the patch, push, and open the PR itself
+   via ManagePullRequest as the Kent C. Dodds Cursor/GitHub account. The
+   delegated agent may add its own branch suffix.
+5. Follow-up review fixes: `kody:@kentcdodds/cursor/runs` `createRun` with
+   another patch upload and that upload's `downloadUrl` in the prompt.
+
+Squash titles must be conventional (`fix:` / `feat:`). Merges to `main` publish
+`@kodycodes/cli` through semantic-release. Origin-side contracts to apply in
+that repo:
+[CLI local credential runtime](./contracts/cli-local-credential-runtime.md) and
+[CLI streaming gateway-fetch](./contracts/cli-streaming-gateway-fetch.md).
+
 ## Seeding a test account
 
 After `npm run migrate:local`, seed the local fixture logins per

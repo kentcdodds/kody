@@ -20,8 +20,11 @@ export type WebhooksUser = Pick<
 export function packageWebhookItemId(input: {
 	packageKodyId: string
 	name: string
+	endpointId?: string | null
 }) {
-	return `${input.packageKodyId}/${input.name}`
+	return input.endpointId
+		? `${input.packageKodyId}/${input.name}/${input.endpointId}`
+		: `${input.packageKodyId}/${input.name}`
 }
 
 function toPackageWebhookListItem(
@@ -42,6 +45,8 @@ function toPackageWebhookListItem(
 		replay: webhook.replay,
 		challenge: webhook.challenge,
 		minted: webhook.minted,
+		endpointId: webhook.endpointId,
+		instanceLabel: webhook.instanceLabel,
 		handle: webhook.handle,
 		urlHost: webhook.urlHost,
 		enabled: webhook.enabled,

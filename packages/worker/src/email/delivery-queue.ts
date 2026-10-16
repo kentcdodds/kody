@@ -5,8 +5,9 @@ import { type EmailReportingEnv } from './reporting-events.ts'
 import { notifyAdminsOfVerificationDeliveryFailure } from './verification-delivery-notify.ts'
 import { transactionalEmailVerificationKind } from './verification-delivery.ts'
 
+export { emailDeliveryQueueName } from './delivery-queue-names.ts'
+
 const unmatchedRetryDelaySeconds = 30
-export const emailDeliveryQueueName = 'kody-email-delivery'
 
 export async function handleEmailDeliveryQueue(
 	batch: MessageBatch<unknown>,

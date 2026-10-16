@@ -80,6 +80,7 @@ import {
 } from '#worker/credentials/resolve-credential.ts'
 import { assertCredentialUsesDeclared } from '#worker/credentials/credential-need-enforcement.ts'
 import { credentialClientHeaderName } from '#worker/credentials/credential-client-header.ts'
+import { type OwnerCredentialScope } from '#worker/credentials/owner-credential-for-visitors.ts'
 import {
 	applyCredentialClientPlacement,
 	resolveCredentialClientPlacement,
@@ -137,6 +138,11 @@ type FetchGatewayProps = {
 	 * must be bound to. Without it, a client fetch is refused.
 	 */
 	credentialClientBinding?: string | null
+	/**
+	 * Package-app runs only: the app whose `ownerCredentialForVisitors`
+	 * handles resolve with its credential authority, not `request`.
+	 */
+	ownerCredentialScope?: OwnerCredentialScope | null
 }
 export type { FetchGatewayProps }
 

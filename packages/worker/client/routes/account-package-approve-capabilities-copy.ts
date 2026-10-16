@@ -46,6 +46,24 @@ export function credentialSummary(entry: CapabilityEntry) {
 	return `${credentialKindText(entry.credentialKind)} · ${credentialReachText(entry)}`
 }
 
+/**
+ * Set for a credential the package lets visitors use
+ * (`ownerCredentialForVisitors`), null otherwise. Approving is what turns
+ * that on, so it reads as its own line, not part of the summary.
+ */
+export function credentialVisitorsNote(entry: CapabilityEntry) {
+	if (!entry.ownerCredentialForVisitors) return null
+	return 'Visitors can use this credential through the app, whether they are signed out or signed in as someone else. They never see its value.'
+}
+
+/** Stable list key: one credential can appear once per visitor-shared need. */
+export function credentialEntryKey(entry: CapabilityEntry) {
+	const id = entry.credentialId ?? entry.name ?? ''
+	return entry.ownerCredentialForVisitors
+		? `${id}:visitors:${entry.needKey ?? ''}`
+		: id
+}
+
 export const noCapabilitiesMessage =
 	'This package uses no credentials or other capabilities.'
 

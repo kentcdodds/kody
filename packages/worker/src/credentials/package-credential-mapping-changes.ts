@@ -161,9 +161,12 @@ function resolveViewerTrigger(
 	ref: CredentialTriggerRef,
 	sender?: CredentialProposalSender | null,
 ) {
-	const trigger = scope.triggers.find(
+	const candidates = scope.triggers.filter(
 		(candidate) => candidate.kind === ref.kind && candidate.name === ref.name,
 	)
+	const trigger = ref.endpointId
+		? candidates.find((candidate) => candidate.instanceId === ref.endpointId)
+		: candidates[0]
 	if (!trigger) {
 		refuse(
 			'trigger_unknown',
@@ -417,7 +420,11 @@ export function resolveTriggerEnables(
 	sender?: CredentialProposalSender | null,
 ): Array<ResolvedTriggerEnable> {
 	return refs.map((ref) => {
-		const trigger = { kind: ref.kind, name: ref.name }
+		const trigger: CredentialTriggerRef = {
+			kind: ref.kind,
+			name: ref.name,
+			...(ref.endpointId ? { endpointId: ref.endpointId } : {}),
+		}
 		try {
 			const { trigger: declared, enablement } = resolveViewerTrigger(
 				scope,
@@ -606,6 +613,9 @@ export async function writeMappingChanges(
 				name: trigger.name,
 				now,
 				createInstance,
+				...(trigger.kind === 'webhook' && trigger.instanceId
+					? { endpointId: trigger.instanceId }
+					: {}),
 				...(email ? { sender: options.sender ?? null } : {}),
 			}).catch((error: unknown) => {
 				if (isMappingWriteRefusal(error)) {

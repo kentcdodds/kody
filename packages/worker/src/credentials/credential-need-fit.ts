@@ -3,7 +3,6 @@
  * needs. Shared by `credential()` and the run gate's mapping pause; kept out
  * of `credential-client.ts` so the run gate does not load secret resolvers.
  */
-import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
 	isFetchCapableCredentialKind,
@@ -28,11 +27,12 @@ export type NeedTarget = {
 /** The credential needs `packageId`'s published source declares. */
 export async function loadPackageNeeds(input: {
 	env: Env
-	request: RequestContext
+	/** The org that owns the package. */
+	orgId: string
 	packageId: string
 }) {
 	const saved = await getSavedPackageById(input.env.APP_DB, {
-		userId: input.request.org.id,
+		userId: input.orgId,
 		packageId: input.packageId,
 	})
 	if (!saved) return []

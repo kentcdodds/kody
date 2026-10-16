@@ -30,19 +30,24 @@ export function buildAccountProfilePayload(
 ): AccountProfileLoaderData {
 	const rawDisplayName = profileFields?.displayName
 	const username = profileFields?.username?.trim() || user.username
+	const hasLoadedProfileFields = profileFields !== undefined
 	return {
 		ok: true,
 		email: user.email,
 		emailVerified: user.emailVerified,
 		emailVerificationDelivery: user.emailVerificationDelivery ?? null,
 		username,
-		// Prefer an explicit community display name; otherwise fall back to the
-		// auth display name (username) so existing username-only clients keep a
-		// sensible value.
+		// Prefer an explicit community display name. When profile fields were
+		// loaded from the DB and display_name is empty/null (including right
+		// after the user cleared it), use the username — not the request's
+		// cached auth displayName, which still reflects the pre-update value.
+		// When no profile row was loaded, keep the auth display name fallback.
 		displayName:
 			rawDisplayName != null && rawDisplayName.trim().length > 0
 				? rawDisplayName.trim()
-				: user.displayName || username,
+				: hasLoadedProfileFields
+					? username
+					: user.displayName || username,
 		bio: profileFields?.bio ?? null,
 		avatarUrl: buildUserAvatarUrl({
 			username,

@@ -1,8 +1,13 @@
 /**
- * The `signing` credential kind (ADR 0068): the value is key material that
- * never leaves the host. A caller asks for a signature (a JWT over its claims,
- * or an HMAC over its message) for a request to one of the credential's hosts
- * and gets back only the signature.
+ * Signing through `resolveCredential` (`use: 'signing'`): the value is key
+ * material that never leaves the host. A caller asks for a signature (a JWT
+ * over its claims, or an HMAC over its message) for a request to one of the
+ * credential's hosts and gets back only the signature.
+ *
+ * JWT requires a stored credential with kind `signing`. HMAC also accepts a
+ * Key (`secret`) so webhook CRC / signature helpers can use the same Key the
+ * webhook `secretName` path already resolves — without forcing owners to
+ * re-kind the credential as `signing`.
  */
 import {
 	signJwtWithSecret,
@@ -76,16 +81,21 @@ export const signingCredentialResolver: CredentialResolver<'signing'> = {
 		const lookup = await findStoredCredential(call, credential.credentialId)
 		return {
 			async authorize() {
+				const expectedKind =
+					credential.operation.type === 'hmac' &&
+					lookup?.found.kind === 'secret'
+						? 'secret'
+						: 'signing'
 				const found = await authorizeStoredCredential(
 					call,
 					credential.credentialId,
 					lookup,
-					'signing',
+					expectedKind,
 				)
 				if (!credentialHostsAllow(found.allowedHosts, credential.requestHost)) {
 					throw new CredentialRequestRefusedError(
 						'host_not_allowed',
-						'This signing credential does not sign requests to that host.',
+						'This credential does not sign requests to that host.',
 					)
 				}
 			},

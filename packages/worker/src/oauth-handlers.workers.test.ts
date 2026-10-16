@@ -176,6 +176,8 @@ async function createDatabase(
 	options: {
 		emailVerifiedAt?: string | null
 		ownedClientIds?: ReadonlyArray<string>
+		/** When true, inline OAuth password login challenges through /verify. */
+		twoFactorEnabled?: boolean
 		writes?: Array<{ query: string; bound: Array<unknown> }>
 	} = {},
 ) {
@@ -194,6 +196,15 @@ async function createDatabase(
 		email_verified_at: emailVerifiedAt,
 		stable_user_id: stableUserId,
 	}
+	const twoFactorRow = options.twoFactorEnabled
+		? {
+				secret: 'TESTSECRET',
+				algorithm: 'SHA-1',
+				digits: 6,
+				period: 30,
+				char_set: '0123456789',
+			}
+		: null
 	const personalOrg = {
 		id: stableUserId,
 		org_id: stableUserId,
@@ -205,8 +216,7 @@ async function createDatabase(
 	}
 	return {
 		prepare(query: string) {
-			// The 2FA gate queries verifications during inline OAuth login; the
-			// mocked user has no verification rows, so those queries are empty.
+			// The 2FA gate queries verifications during inline OAuth login.
 			const isVerificationsQuery = query.includes('FROM verifications')
 			const isOwnedClientQuery = query.includes('FROM user_mcp_oauth_clients')
 			const isEmailVerifiedQuery =
@@ -228,7 +238,10 @@ async function createDatabase(
 				},
 				async all() {
 					if (isVerificationsQuery) {
-						return { results: [], meta: { changes: 0, last_row_id: 0 } }
+						return {
+							results: twoFactorRow ? [twoFactorRow] : [],
+							meta: { changes: 0, last_row_id: 0 },
+						}
 					}
 					if (isOrgQuery) {
 						return {
@@ -242,7 +255,7 @@ async function createDatabase(
 					}
 				},
 				async first() {
-					if (isVerificationsQuery) return null
+					if (isVerificationsQuery) return twoFactorRow
 					if (isOwnedClientQuery) {
 						const clientId = bound.find((value) => typeof value === 'string')
 						if (
@@ -738,6 +751,51 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 	const defaultScopeOptions = defaultScopeCompletion.mock.lastCall?.[0]
 	expect(defaultScopeOptions?.scope).toEqual(oauthScopes)
 	expect(defaultScopeOptions?.request.issuer).toBe('https://example.com')
+})
+
+test('inline OAuth password login with 2FA challenges through /verify and strips id_token_hint', async () => {
+	const authorizeUrl = exampleOAuthUrl('authorize', {
+		...baseAuthorizeParams,
+		id_token_hint: 'stale.hint.value',
+		prompt: 'login',
+	})
+	const response = await handleAuthorizeRequest(
+		formRequest(approveWithPassword, jsonAccept, authorizeUrl),
+		createEnv(
+			createHelpers(),
+			await createDatabase('password123', { twoFactorEnabled: true }),
+		),
+	)
+	expect(response.status).toBe(200)
+	const payload = (await response.json()) as {
+		ok: boolean
+		redirectTo: string
+		requiresTwoFactor: boolean
+	}
+	expect(payload).toEqual({
+		ok: true,
+		requiresTwoFactor: true,
+		redirectTo: expect.stringMatching(/^\/verify\?redirectTo=/),
+	})
+	const resume = new URL(
+		payload.redirectTo,
+		'https://example.com',
+	).searchParams.get('redirectTo')
+	expect(resume).toBe(
+		'/oauth/authorize?response_type=code&client_id=client-123&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&scope=profile&state=demo',
+	)
+	expect(resume).not.toContain('id_token_hint')
+	expect(resume).not.toContain('prompt=login')
+	const setCookies = response.headers.getSetCookie()
+	expect(setCookies.some((cookie) => cookie.startsWith('kody_verify='))).toBe(
+		true,
+	)
+	expect(
+		setCookies.some(
+			(cookie) =>
+				cookie.startsWith('kody_session=') && cookie.includes('Max-Age=0'),
+		),
+	).toBe(true)
 })
 
 test('Gemini-shaped authorize requests default resource to /mcp when omitted', async () => {

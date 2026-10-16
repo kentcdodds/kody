@@ -17,6 +17,10 @@ import {
 import { estimateEntitlementStorageSqlWriteBytes } from '#worker/entitlements/service.ts'
 import { isUserStorageSqlCallerMessage } from '#worker/storage-sql-caller-error.ts'
 import {
+	storageSqlRowsReadCeiling,
+	storageSqlRowsReadWarnAt,
+} from '#worker/storage-sql-read-policy.ts'
+import {
 	authorizeCapabilityStorageId,
 	authorizePackageBucketAccess,
 } from '#mcp/capabilities/storage-access.ts'
@@ -34,6 +38,12 @@ const outputSchema = z.object({
 	rows_read: z.number(),
 	rows_written: z.number(),
 	truncated: z.boolean(),
+	warning: z
+		.string()
+		.nullable()
+		.describe(
+			`Set when this statement examined at least ${storageSqlRowsReadWarnAt} rows. The read is allowed and metered on the monthly Rows read include. Null under that line. A read stops after ${storageSqlRowsReadCeiling} rows.`,
+		),
 	writable: z.boolean(),
 })
 
@@ -43,7 +53,7 @@ export const storageQueryCapability = defineDomainCapability(
 		name: 'storageQuery',
 		orgPermission: 'package:write',
 		description:
-			'Run SQL against one durable storage bucket. Requires package:write (connection-profile write) whenever storage_id resolves to a package bucket — including writable:false SELECT/EXPLAIN/PRAGMA inspection. Defaults to read-only SQL and only allows SELECT, EXPLAIN, and schema PRAGMA queries unless writable is explicitly true.',
+			'Run SQL against one durable storage bucket. Requires package:write (connection-profile write) whenever storage_id resolves to a package bucket — including writable:false SELECT/EXPLAIN/PRAGMA inspection. Defaults to read-only SQL and only allows SELECT, EXPLAIN, and schema PRAGMA queries unless writable is explicitly true. A large read is allowed and metered; warning is set once the scan crosses the oversized-read line, and the call stops only after the documented row ceiling.',
 		keywords: ['storage', 'sql', 'query', 'inspect', 'database'],
 		readOnly: false,
 		idempotent: false,
@@ -109,6 +119,7 @@ export const storageQueryCapability = defineDomainCapability(
 					rows_read: result.rowsRead,
 					rows_written: result.rowsWritten,
 					truncated: result.truncated,
+					warning: result.warning ?? null,
 					writable,
 				}
 			} catch (error) {

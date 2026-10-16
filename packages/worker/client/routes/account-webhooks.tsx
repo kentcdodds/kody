@@ -10,6 +10,7 @@ import {
 import { RecordTable, recordCellClamp } from '#client/routes/record-table.tsx'
 import {
 	buildPackageWebhooksHref,
+	webhookDeclaredCount,
 	fetchAccountWebhooks,
 	webhookModeLabel,
 	webhookStatusColor,
@@ -69,6 +70,7 @@ export function AccountWebhooksRoute(handle: Handle) {
 				: pending && appliedPayload === null
 					? 'loading'
 					: 'ready'
+		const declaredCount = webhookDeclaredCount(webhooks)
 		const mintedCount = webhooks.filter((webhook) => webhook.minted).length
 
 		return (
@@ -94,7 +96,7 @@ export function AccountWebhooksRoute(handle: Handle) {
 					<RecordTable
 						mode="none"
 						ariaLabel="Webhooks"
-						countLabel={`${webhooks.length} declared · ${mintedCount} minted`}
+						countLabel={`${declaredCount} declared · ${mintedCount} minted`}
 						emptyLabel="No package on this account declares a webhook yet. Add a kody.webhooks entry to a package manifest and publish it."
 						columns={[
 							{ key: 'name', label: 'Webhook', primary: true },
@@ -109,6 +111,7 @@ export function AccountWebhooksRoute(handle: Handle) {
 								username,
 								kodyId: webhook.packageKodyId,
 								webhookName: webhook.name,
+								endpointId: webhook.endpointId,
 							}),
 							cells: {
 								name: <span mix={clampedCellCss}>{webhook.name}</span>,

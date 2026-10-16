@@ -81,11 +81,11 @@ export function getUnsupportedOidcResponseTypeError(responseType: string) {
 	return null
 }
 
-function isJwtExpired(payload: Record<string, unknown>, nowSeconds: number) {
-	const exp = payload.exp
-	return typeof exp === 'number' && Number.isFinite(exp) && nowSeconds >= exp
-}
-
+/**
+ * OIDC Core §3.1.2.1: when an ID Token is used as `id_token_hint`, its `exp`
+ * need not be checked. Accept any signature-valid hint from this issuer so
+ * ChatGPT-style reconnects with a stale token still recognize the session.
+ */
 async function readIdTokenHintSubject(input: {
 	env: Env
 	request: Request
@@ -97,8 +97,6 @@ async function readIdTokenHintSubject(input: {
 	})
 	const payload = await verifyOidcJwtSignature(input.env, input.idTokenHint)
 	if (!payload || payload.iss !== issuer) return null
-	const nowSeconds = Math.floor(Date.now() / 1000)
-	if (isJwtExpired(payload, nowSeconds)) return null
 	return typeof payload.sub === 'string' ? payload.sub : null
 }
 
@@ -166,10 +164,17 @@ export async function evaluateOidcAuthorizeGate(input: {
 			request: input.request,
 			idTokenHint: input.params.idTokenHint,
 		})
+		// Invalid hint (bad signature / wrong issuer / missing sub): ignore and
+		// keep the browser session. Subject mismatch: force re-auth per OIDC
+		// (prompt=none → login_required below; interactive → signed-out UI).
+		// Post-auth resume strips id_token_hint so a mismatch cannot loop.
 		if (
-			!hintSubject ||
-			!input.session.sessionStableUserId ||
-			!oidcSubjectBelongsToUser(hintSubject, input.session.sessionStableUserId)
+			hintSubject &&
+			(!input.session.sessionStableUserId ||
+				!oidcSubjectBelongsToUser(
+					hintSubject,
+					input.session.sessionStableUserId,
+				))
 		) {
 			signedIn = false
 		}

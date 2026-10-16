@@ -1313,7 +1313,7 @@ export async function runBundledModuleWithRegistry(
 							if (!request) return Promise.resolve(new Map())
 							runNeeds ??= loadRunCredentialNeeds({
 								env,
-								request,
+								orgId: request.org.id,
 								packageIds: credentialEntryPackageIds,
 							})
 							return runNeeds

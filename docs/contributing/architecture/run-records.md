@@ -64,18 +64,18 @@ change persistence. It claims the row so a client timeout can poll `runGet` or
 retry the same key. Success counts for every surface, including ad-hoc execute,
 also land in Analytics Engine via [usage metering](./usage-metering.md).
 
-When an external MCP client times out (for example MCP error `-32001`), Kody
-aborts that request's sandbox and finishes the run as
-`errorName=client_disconnected` instead of leaving a `running` row until
-reconciliation. A keyed execute call still has a recoverable record: the caller
-can poll `runGet` with the returned `runId`, or retry `execute` with the same
-`idempotencyKey` to receive a `replayed: true` result (the disconnect error
-after a caller abort, or the retained result after a normal finish). Retrying
-while the first attempt is still running returns `inProgress: true` without
-starting a duplicate sandbox. Keyed package invocations write
-`package invocation started: …` in the claim RPC, before sandbox work, so an
-isolate killed before finish still leaves a diagnostic line when reconciliation
-later marks `platform_interrupted`.
+Hosted MCP clients time out at about 60 seconds (JSON-RPC `-32001`) while the
+sandbox can still be running. Hosted `execute` returns before that deadline with
+`inProgress: true`, `runId`, and `idempotencyKey` (server-assigned when the
+caller omitted one) and leaves the sandbox running. The caller polls `runGet` or
+retries `execute` with that key. A caller abort before that follow response
+still stops the sandbox and finishes the run as `errorName=client_disconnected`.
+Retrying that same key replays the disconnect error (or the retained result
+after a normal finish). Retrying while the first attempt is still running
+returns `inProgress: true` without starting a duplicate sandbox. Keyed package
+invocations write `package invocation started: …` in the claim RPC, before
+sandbox work, so an isolate killed before finish still leaves a diagnostic line
+when reconciliation later marks `platform_interrupted`.
 
 ## Begin / finish contract
 

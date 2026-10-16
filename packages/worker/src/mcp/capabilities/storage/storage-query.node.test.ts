@@ -5,6 +5,7 @@ import {
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { storageSqlReadCeilingMessage } from '#worker/storage-sql-read-policy.ts'
 import { buildPackageStorageId } from '#worker/storage-ids.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -121,6 +122,25 @@ test('storageQuery wraps Durable Object SQL caller mistakes and rethrows platfor
 			error instanceof McpCallerError &&
 			error.message ===
 				'FOREIGN KEY constraint failed: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_FOREIGNKEY)',
+	)
+
+	const ceilingMessage = storageSqlReadCeilingMessage(1_000_000_001)
+	mockModule.sqlQuery.mockRejectedValueOnce(new Error(ceilingMessage))
+
+	await expect(
+		storageQueryCapability.handler(
+			{
+				storage_id: 'storage-1',
+				query: 'SELECT * FROM huge',
+			},
+			{
+				env: {} as Env,
+				callerContext: createCallerContext(),
+			} as never,
+		),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError && error.message === ceilingMessage,
 	)
 
 	const platformError = new Error(

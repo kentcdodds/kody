@@ -345,3 +345,33 @@ test('account profile API round trips and validates displayName, bio, and visibi
 		error: 'Display name must be at most 50 characters.',
 	})
 })
+
+test('clearing displayName returns the username, not the stale auth display name', async () => {
+	// Auth resolves once per request with the stored display name. Clearing
+	// must not fall back to that cached value in the POST response (Devin on
+	// #3879).
+	const { testDb, post } = createProfileClient(['ada'])
+	const user = testDb.users.get(1)
+	expect(user).toBeDefined()
+	user!.display_name = 'Ada Lovelace'
+
+	const trimmedOrNull = (value: string) => value.trim() || null
+	mocks.updateCommunityProfile.mockImplementation(
+		async (input: { displayName?: string }) => {
+			const row = testDb.users.get(1)
+			if (!row) return
+			if (input.displayName !== undefined) {
+				row.display_name = trimmedOrNull(input.displayName)
+			}
+		},
+	)
+
+	const response = await post({ displayName: '' })
+
+	expect(response.status).toBe(200)
+	expect(await response.json()).toMatchObject({
+		username: 'ada',
+		displayName: 'ada',
+	})
+	expect(testDb.users.get(1)?.display_name).toBeNull()
+})

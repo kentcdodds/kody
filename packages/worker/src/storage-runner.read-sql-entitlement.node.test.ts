@@ -76,6 +76,7 @@ const {
 	createStorageKodyTools,
 	isReadOnlyStorageSqlQuery,
 	isStorageSqlReturningMutation,
+	isStorageSqlWrite,
 	readOnlyStorageSqlDeniedMessage,
 	storageEstimateReadRetryDelaysMs,
 } = await import('#worker/storage-runner.ts')
@@ -196,11 +197,26 @@ test('writable storageSql skips read-only fan-out and enforces mutating entitlem
 			false,
 		],
 		['SELECT 1', false],
+		["WITH c AS (SELECT 'insert' AS label) SELECT label FROM c", false],
+		['WITH c AS (SELECT 1) /* insert */ SELECT 1', false],
+		['CREATE TABLE snapshot AS SELECT * FROM source', false],
+	]
+	const writeCases: Array<[string, boolean]> = [
+		['CREATE TABLE snapshot AS SELECT * FROM source', true],
+		['DROP TABLE snapshot', true],
+		["WITH c AS (SELECT 'insert' AS label) SELECT label FROM c", false],
+		['WITH s AS (SELECT 1 AS i) INSERT INTO t SELECT i FROM s', true],
+		['SELECT created FROM t', false],
+		['WITH create AS (SELECT 1) SELECT * FROM create', false],
+		['WITH drop AS (SELECT 1 AS alter) SELECT alter FROM drop', false],
 	]
 	expect(
 		returningMutationCases.filter(
 			([query, want]) => isStorageSqlReturningMutation(query) !== want,
 		),
+	).toEqual([])
+	expect(
+		writeCases.filter(([query, want]) => isStorageSqlWrite(query) !== want),
 	).toEqual([])
 
 	clearCalls()

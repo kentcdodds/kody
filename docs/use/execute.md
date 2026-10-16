@@ -193,28 +193,31 @@ holds the workflow's return value (capped at 4 KiB). See
 
 ### Recovering from MCP client timeouts
 
-A timeout means the MCP client stopped waiting. Kody aborts that inbound
-request's sandbox, including a keyed package invocation nested under it, and
-finishes the run as `errorName=client_disconnected` with a log line. The attempt
-does not stay `running` until platform reconciliation. Already-started remote
-side effects may still complete. Do not blindly retry a timed-out side-effecting
-call. Check **Recent runs** or `runList` before starting another sandbox.
+Hosted MCP clients stop waiting after about 60 seconds and surface JSON-RPC
+`-32001` ("Request timed out") even when the sandbox is still running. Progress
+notifications do not reset that clock. Before that client deadline, hosted
+**execute** returns `inProgress: true` with **`runId`** and **`idempotencyKey`**
+instead of letting the timeout look like a failed mutation with nothing to
+follow. The sandbox keeps running. Poll **`runGet`** with `runId`. Retry
+**execute** with the same `idempotencyKey` to read the in-progress or retained
+result. Do not start a second mutation.
 
-Pass an optional **`idempotencyKey`** (string, max 256 characters) when the call
-must be recoverable:
+You can omit **`idempotencyKey`**. When Kody can record the run, it assigns one
+(`execute:…`) and returns it on that follow response. Pass your own key (string,
+max 256 characters) when you want to choose the retry token on the first call.
 
 - Kody persists that execute run **eagerly** (a `running` row at start, terminal
   row at finish) and stores a **bounded result snapshot** on the run record.
-- The tool response includes **`runId`** whenever a record exists — poll
-  **`runGet`** with it if the client timed out.
+- The tool response includes **`runId`** whenever a record exists.
 - Retrying with the **same** `idempotencyKey` after completion returns the
   retained result with **`replayed: true`** and the same **`runId`** (no second
   sandbox).
 - Retrying while the first attempt is still running returns
   **`inProgress: true`** with the **`runId`** (no duplicate start).
-- A caller disconnect finishes the run as **`errorName=client_disconnected`**.
-  Retrying the same key replays that error. Use a new idempotency key to run the
-  work again.
+- A caller that aborts the HTTP request before the follow response stops the
+  sandbox. The run finishes as **`errorName=client_disconnected`**. Retrying
+  that same key replays the disconnect error. Use a new idempotency key to run
+  the work again.
 - If a keyed run is stranded as `running` (for example the Worker isolate reset
   before the terminal write), Kody reconciles it to an error with
   **`errorName=platform_interrupted`** after a few minutes (platform weather;
@@ -224,9 +227,9 @@ must be recoverable:
   or retrying the same key then returns that terminal outcome instead of
   `inProgress` forever.
 
-Omit the key for ordinary short calls. Those runs are still listed in Activity
-when they finish. Pass a key when a retry must return the retained result
-instead of running again.
+Ordinary short calls can omit the key. Those runs are still listed in Activity
+when they finish. A call that is still running at the transport budget returns
+the server-assigned key so you can poll or retry without having passed one.
 
 To read field shapes while coding, use **search** with
 **`entity: "capability:{name}"`** for builtin capability type definitions, or
@@ -324,6 +327,12 @@ when more matched — page with `LIMIT`/`OFFSET` (or a keyset) for larger result
 Mutating statements that yield rows (`INSERT`/`UPDATE`/`DELETE … RETURNING`)
 still finish the write when truncated; only the returned row list is capped.
 
+A read that examines a lot of rows is allowed and metered on the monthly Rows
+read include. `warning` is a string once the statement examines at least
+1,000,000 rows (usage past the include is billed from credits). One read stops
+after 1,000,000,000 rows examined, with `storage.sql read stopped…`. Narrow with
+`LIMIT` or `WHERE`. The 1,000-row cap limits the response, not the scan.
+
 For dedicated inspection, use:
 
 - **`storageExport`** — export one storage bucket as JSON (`page_size` max 1000)
@@ -331,7 +340,8 @@ For dedicated inspection, use:
   opt into writes explicitly). Package-bucket ids still require `package:write`
   (connection-profile write), including for SELECT inspection. Returns at most
   1000 rows and sets `truncated: true` when more matched — same cap as
-  `sql(...)`.
+  `sql(...)`. `warning` is set when the scan examines at least 1,000,000 rows.
+  The read is allowed and metered until 1,000,000,000 rows, then it stops.
 
 Both are scoped to the caller. Code running as a saved package (invocations,
 jobs, package apps, retrievers) may name only buckets that package owns — its

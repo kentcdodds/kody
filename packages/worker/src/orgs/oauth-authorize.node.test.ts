@@ -232,7 +232,7 @@ test('selectConsentOrgsForLoader auto-selects a sole org and keeps multi unspeci
 	})
 })
 
-test('stripLoginFromAuthorizePrompt drops login and keeps other prompts', () => {
+test('stripLoginFromAuthorizePrompt drops login and id_token_hint, keeps other prompts', () => {
 	expect(
 		stripLoginFromAuthorizePrompt(
 			'https://kody.codes/oauth/authorize?client_id=c&prompt=login',
@@ -248,4 +248,9 @@ test('stripLoginFromAuthorizePrompt drops login and keeps other prompts', () => 
 			'https://kody.codes/oauth/authorize?prompt=consent',
 		),
 	).toBe('https://kody.codes/oauth/authorize?prompt=consent')
+	expect(
+		stripLoginFromAuthorizePrompt(
+			'https://kody.codes/oauth/authorize?client_id=c&id_token_hint=stale',
+		),
+	).toBe('https://kody.codes/oauth/authorize?client_id=c')
 })

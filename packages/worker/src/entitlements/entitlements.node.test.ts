@@ -1169,7 +1169,7 @@ test('storage bytes enforce for planned users and enforce finite max storage cap
 	expect(queries.some(({ sql }) => sql.includes('SUM('))).toBe(false)
 })
 
-test('storage byte reserve zero-initializes a cold UserMeter, converges concurrent bootstraps, and denies over-limit', async () => {
+test('storage byte reserve cold-bootstraps from physical bytes, converges concurrent bootstraps, and denies over-limit', async () => {
 	const proLimit = planLimits.pro.maxStorageBytes
 	const { db, userId } = await createPlannedUserDb('pro')
 	const reserve = (env: MeterEnv | undefined, requested: number) =>
@@ -1181,7 +1181,8 @@ test('storage byte reserve zero-initializes a cold UserMeter, converges concurre
 			env,
 		})
 
-	// Cold bootstrap zero-initializes; the reserve lands on top: 0 + 5.
+	// Cold bootstrap seeds from physical (0 in this fixture); reserve lands
+	// on top: 0 + 5.
 	const cold = createInMemoryUserMeterEnv().env
 	await reserve(cold, 5)
 	expect(
@@ -1191,8 +1192,8 @@ test('storage byte reserve zero-initializes a cold UserMeter, converges concurre
 		}).readStorageBytes(),
 	).toMatchObject({ outcome: 'ready', bytes: 5 })
 
-	// Both callers see needs_bootstrap; initializeStorageBytes is INSERT OR
-	// IGNORE, so the second retries and both reserves land: 0 + 5 + 5.
+	// Concurrent cold callers share one lazy reconcile enqueue, then both
+	// reserves land: 0 + 5 + 5.
 	const concurrent = createInMemoryUserMeterEnv().env
 	await Promise.all([reserve(concurrent, 5), reserve(concurrent, 5)])
 	expect(
@@ -1215,6 +1216,98 @@ test('storage byte reserve zero-initializes a cold UserMeter, converges concurre
 	await expect(reserve(undefined, 1)).rejects.toThrow(
 		'assertWithinStorageBytesEntitlement requires env.USER_METER',
 	)
+})
+
+test('storage byte reserve cold-bootstraps existing payload before reserving', async () => {
+	const existingBytes = 1_200
+	const userId = testStableUserIdFromEmail(plannedEmail)
+	// Force the mock SUM path to report existing D1 payload for mcp_memories.
+	const withPayload = createEntitlementsTestDb({
+		users: [
+			{
+				email: plannedEmail,
+				plan: 'pro',
+				stable_user_id: userId,
+			},
+		],
+		counts: { mcp_memories: existingBytes },
+	})
+	const { env } = createInMemoryUserMeterEnv()
+	await assertWithinStorageBytesEntitlement({
+		db: withPayload.db,
+		userId: ownerIdFromStored(userId),
+		email: plannedEmail,
+		requested: 50,
+		env,
+	})
+	expect(
+		await userMeterRpc({
+			env,
+			userId: ownerIdFromStored(userId),
+		}).readStorageBytes(),
+	).toMatchObject({ outcome: 'ready', bytes: existingBytes + 50 })
+	expect(withPayload.queries.some(({ sql }) => sql.includes('SUM('))).toBe(true)
+})
+
+test('storage byte reserve fails closed when the cold physical scan throws', async () => {
+	const userId = testStableUserIdFromEmail(plannedEmail)
+	const queries: Array<{ sql: string; params: Array<unknown> }> = []
+	const db = {
+		prepare(query: string) {
+			return {
+				bind(...params: Array<unknown>) {
+					queries.push({ sql: query, params })
+					return {
+						first: async () => {
+							if (query.includes('SELECT 1 AS present FROM users')) {
+								return { present: 1 }
+							}
+							if (query.includes('SUM(')) {
+								throw new Error('injected physical scan failure')
+							}
+							if (query.includes('FROM orgs') || query.includes('FROM users')) {
+								return {
+									org_id: userId,
+									plan: 'pro',
+									stripe_plan: null,
+									entitlement_ladder: 'public',
+									second_agent_standard_gift_expires_at: null,
+									referral_standard_credit_expires_at: null,
+								}
+							}
+							if (query.includes('FROM credit_wallets')) return null
+							if (query.includes('FROM org_user_budgets')) return null
+							if (isLiveSeatCountQuery(query)) return mockLiveSeatCountRow()
+							throw new Error(`Unsupported first query: ${query}`)
+						},
+						async all() {
+							return { results: [] }
+						},
+						async run() {
+							throw new Error(`Unsupported run query: ${query}`)
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+	const { env } = createInMemoryUserMeterEnv()
+	await expect(
+		assertWithinStorageBytesEntitlement({
+			db,
+			userId: ownerIdFromStored(userId),
+			email: plannedEmail,
+			requested: 50,
+			env,
+		}),
+	).rejects.toThrow('injected physical scan failure')
+	expect(
+		await userMeterRpc({
+			env,
+			userId: ownerIdFromStored(userId),
+		}).readStorageBytes(),
+	).toEqual({ outcome: 'needs_bootstrap' })
+	expect(queries.some(({ sql }) => sql.includes('SUM('))).toBe(true)
 })
 
 test('storage byte reserve handles missing user (synthetic context) with free-plan semantics', async () => {
@@ -1266,12 +1359,36 @@ test('readCurrentEntitlementResourceUsage for storage_bytes reads UserMeter with
 			now,
 		})
 
+	// Cold owner with no fixture payload seeds to physical 0.
 	expect(await read(db, userId)).toBe(0)
 	await userMeterStub(env, userId).setStorageBytes({
 		bytes: 750,
 		updatedAt: now.toISOString(),
 	})
 	expect(await read(db, userId)).toBe(750)
+
+	const payloadUserId = testStableUserIdFromEmail('payload-read@example.com')
+	const payloadDb = createEntitlementsTestDb({
+		users: [
+			{
+				email: 'payload-read@example.com',
+				plan: 'pro',
+				stable_user_id: payloadUserId,
+			},
+		],
+		counts: { mcp_memories: 2_500 },
+	}).db
+	const payloadUsageEnv = createInMemoryUserMeterEnv()
+		.env as unknown as EntitlementUsageEnv
+	expect(
+		await readCurrentEntitlementResourceUsage({
+			db: payloadDb,
+			env: payloadUsageEnv,
+			userId: ownerIdFromStored(payloadUserId),
+			resource: 'storage_bytes',
+			now,
+		}),
+	).toBe(2_500)
 
 	const missingUserId = testStableUserIdFromEmail('missing@example.com')
 	expect(

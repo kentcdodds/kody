@@ -22,6 +22,7 @@ import { AuthorizationError } from '#worker/authorization/authorize.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
 	isFetchCapableCredentialKind,
+	packageCredentialKindValues,
 	type PackageCredentialKind,
 } from '#worker/package-registry/types.ts'
 import { enablementIdOf } from '#worker/request-context/request-context.ts'
@@ -40,6 +41,7 @@ import {
 	CredentialClientHandleError,
 	signCredentialClientHandle,
 	verifyCredentialClientHandle,
+	type CredentialClientHandle,
 } from './credential-client-handle.ts'
 import {
 	findCredentialById,
@@ -64,6 +66,12 @@ import {
 } from './credential-need-fit.ts'
 import { type CredentialNeed } from './credential-needs.ts'
 import {
+	checkOwnerCredentialForVisitorsRateLimit,
+	loadOwnerCredentialAuthority,
+	ownerCredentialAuditDetails,
+	type OwnerCredentialScope,
+} from './owner-credential-for-visitors.ts'
+import {
 	CredentialLoginFailedError,
 	CredentialNotFoundError,
 	CredentialRequestRefusedError,
@@ -81,6 +89,7 @@ export type CredentialClientErrorCode =
 	| 'credential_ambiguous'
 	| 'credential_not_found'
 	| 'credential_denied'
+	| 'credential_rate_limited'
 	| 'credential_need_unknown'
 	| typeof credentialNeedUndeclaredCode
 	| 'host_not_allowed'
@@ -199,6 +208,13 @@ export type CredentialClientContext = {
 	 * never adds needs the run's entry closures did not pin.
 	 */
 	runNeeds?: () => Promise<ReadonlyMap<string, CredentialNeed>>
+	/**
+	 * Set only for package-app runs: a need that opts in with
+	 * `ownerCredentialForVisitors` resolves with the app's credential
+	 * authority while the app is internet-visible and approved. The viewer
+	 * (`callerContext.request`) is unchanged for everything else.
+	 */
+	ownerCredentialScope?: OwnerCredentialScope | null
 	waitUntil?: (promise: Promise<unknown>) => void
 }
 
@@ -274,10 +290,72 @@ async function loadNeed(ctx: CredentialClientContext, key: string) {
 	if (!ctx.packageId) return null
 	const needs = await loadPackageNeeds({
 		env: ctx.env,
-		request: requireActorRequest(ctx),
+		orgId: requireActorRequest(ctx).org.id,
 		packageId: ctx.packageId,
 	})
 	return needs.find((need) => need.key === key) ?? null
+}
+
+type OwnerCredentialOpen = {
+	ctx: CredentialClientContext
+	/** Credential ids the approval lets visitors use for this key. */
+	approved: ReadonlySet<string>
+}
+
+/**
+ * The authority's context for opening `key`, when the key's need opts in
+ * with `ownerCredentialForVisitors` and the run's app shares it with
+ * visitors; null to open as the viewer. The viewer's call map never picks
+ * an owner credential.
+ */
+async function ownerCredentialOpen(
+	ctx: CredentialClientContext,
+	key: string,
+): Promise<OwnerCredentialOpen | null> {
+	const scope = ctx.ownerCredentialScope
+	if (!scope) return null
+	const need = await loadNeed(ctx, key)
+	if (!need?.ownerCredentialForVisitors) return null
+	const authority = await loadOwnerCredentialAuthority({
+		env: ctx.env,
+		scope,
+	})
+	switch (authority.status) {
+		case 'not-shared':
+			return null
+		case 'unavailable':
+			throw refusal('credential_denied', authority.message)
+		case 'ready':
+			return {
+				ctx: {
+					...ctx,
+					callMap: null,
+					callerContext: { ...ctx.callerContext, request: authority.request },
+				},
+				approved: authority.approvedCredentialIds.get(key) ?? new Set(),
+			}
+		default: {
+			const exhaustive: never = authority
+			throw new Error(
+				`Unhandled owner credential authority: ${JSON.stringify(exhaustive)}`,
+			)
+		}
+	}
+}
+
+/** Visitors use only what the owner approved for this need. */
+function assertApprovedForVisitors(
+	key: string,
+	owner: OwnerCredentialOpen,
+	picked: ReadonlyArray<Picked>,
+) {
+	for (const { credential } of picked) {
+		if (owner.approved.has(credential.id)) continue
+		throw refusal(
+			'credential_denied',
+			`Need "${key}" resolves to "${credential.name}", which the owner has not approved for this app’s visitors. An owner must review and approve the app’s capabilities again.`,
+		)
+	}
 }
 
 /** The creation link for an unbound need, naming its package when known. */
@@ -636,6 +714,7 @@ async function issueClient(
 	ctx: CredentialClientContext,
 	key: string | null,
 	{ credential: picked, hint }: Picked,
+	options: { ownerCredentialForVisitors?: boolean } = {},
 ): Promise<OpenedCredentialClient> {
 	const request = requireActorRequest(ctx)
 	if (picked.kind === 'mcp' && picked.scope === 'personal') {
@@ -654,6 +733,12 @@ async function issueClient(
 			org: request.org.id,
 			actor: request.actor!.userId,
 			binding: ctx.binding,
+			...(options.ownerCredentialForVisitors && key
+				? {
+						ownerCredentialForVisitors: true as const,
+						needKey: key,
+					}
+				: {}),
 		},
 	})
 	return {
@@ -671,9 +756,9 @@ export async function openCredentialClient(
 	ctx: CredentialClientContext,
 	input: { key?: unknown; name?: unknown; scope?: unknown },
 ): Promise<OpenedCredentialClient> {
-	const request = requireActorRequest(ctx)
-	const usable = await listUsableCredentials({ env: ctx.env, request })
 	if (input.name != null) {
+		const request = requireActorRequest(ctx)
+		const usable = await listUsableCredentials({ env: ctx.env, request })
 		await assertNamedAllowed(ctx)
 		const pick = {
 			name: readText(input.name, 'A credential name'),
@@ -688,8 +773,17 @@ export async function openCredentialClient(
 		})
 	}
 	const key = readText(input.key, 'A credential key')
-	const [picked] = await resolveKey(ctx, key, usable, 'one')
-	return await issueClient(ctx, key, picked!)
+	const owner = await ownerCredentialOpen(ctx, key)
+	const opener = owner?.ctx ?? ctx
+	const usable = await listUsableCredentials({
+		env: ctx.env,
+		request: requireActorRequest(opener),
+	})
+	const picked = await resolveKey(opener, key, usable, 'one')
+	if (owner) assertApprovedForVisitors(key, owner, picked)
+	return await issueClient(opener, key, picked[0]!, {
+		ownerCredentialForVisitors: owner !== null,
+	})
 }
 
 /**
@@ -700,11 +794,22 @@ export async function openCredentialClients(
 	ctx: CredentialClientContext,
 	input: { key?: unknown },
 ): Promise<Array<OpenedCredentialClient>> {
-	const request = requireActorRequest(ctx)
 	const key = readText(input.key, 'A credential key')
-	const usable = await listUsableCredentials({ env: ctx.env, request })
-	const picked = await resolveKey(ctx, key, usable, 'many')
-	return await Promise.all(picked.map((one) => issueClient(ctx, key, one)))
+	const owner = await ownerCredentialOpen(ctx, key)
+	const opener = owner?.ctx ?? ctx
+	const usable = await listUsableCredentials({
+		env: ctx.env,
+		request: requireActorRequest(opener),
+	})
+	const picked = await resolveKey(opener, key, usable, 'many')
+	if (owner) assertApprovedForVisitors(key, owner, picked)
+	return await Promise.all(
+		picked.map((one) =>
+			issueClient(opener, key, one, {
+				ownerCredentialForVisitors: owner !== null,
+			}),
+		),
+	)
 }
 
 /**
@@ -715,12 +820,13 @@ export async function openCredentialClients(
  */
 export async function loadRunCredentialNeeds(input: {
 	env: Env
-	request: RequestContext
+	/** The run's org; needs load without an acting person. */
+	orgId: string
 	packageIds: ReadonlyArray<string>
 }): Promise<ReadonlyMap<string, CredentialNeed>> {
 	const needLists = await Promise.all(
 		input.packageIds.map((packageId) =>
-			loadPackageNeeds({ env: input.env, request: input.request, packageId }),
+			loadPackageNeeds({ env: input.env, orgId: input.orgId, packageId }),
 		),
 	)
 	const needs = new Map<string, CredentialNeed>()
@@ -756,7 +862,7 @@ export async function validateCredentialCallMap(input: {
 			listUsableCredentials({ env: input.env, request }),
 			loadRunCredentialNeeds({
 				env: input.env,
-				request,
+				orgId: request.org.id,
 				packageIds: input.packageIds,
 			}),
 		])
@@ -793,17 +899,51 @@ export async function validateCredentialCallMap(input: {
 	})
 }
 
+type HandleContext = Pick<
+	CredentialClientContext,
+	'env' | 'callerContext' | 'binding' | 'ownerCredentialScope'
+>
+
+/** A verified handle and who the door resolves it as. */
+type HandleUse = {
+	handle: CredentialClientHandle
+	/** The viewer, or the app's credential authority for a visitor handle. */
+	request: RequestContext
+	auditDetails?: Record<string, string | null>
+}
+
+/**
+ * A visitor handle resolves as the authority. When the viewer is someone
+ * else (or no one), the use is rate-limited and its audit row names them.
+ * Each use re-checks that the approval still lists this credential for the
+ * handle's need, so a remapped or revoked visitor credential fails closed.
+ */
 async function readHandle(
-	ctx: Pick<CredentialClientContext, 'env' | 'callerContext' | 'binding'>,
+	ctx: HandleContext,
 	token: unknown,
 	kinds: ReadonlyArray<PackageCredentialKind>,
 	operation: string,
-) {
+): Promise<HandleUse> {
+	const authority: {
+		request: RequestContext | null
+		approvedCredentialIds: ReadonlyMap<string, ReadonlySet<string>> | null
+	} = { request: null, approvedCredentialIds: null }
 	const handle = await verifyCredentialClientHandle({
 		env: ctx.env,
 		token: typeof token === 'string' ? token : '',
 		request: ctx.callerContext.request,
 		binding: ctx.binding,
+		ownerCredentialRequest: async () => {
+			if (!ctx.ownerCredentialScope) return null
+			const loaded = await loadOwnerCredentialAuthority({
+				env: ctx.env,
+				scope: ctx.ownerCredentialScope,
+			})
+			if (loaded.status !== 'ready') return null
+			authority.request = loaded.request
+			authority.approvedCredentialIds = loaded.approvedCredentialIds
+			return loaded.request
+		},
 	})
 	if (!kinds.includes(handle.kind)) {
 		throw refusal(
@@ -811,21 +951,55 @@ async function readHandle(
 			`A ${handle.kind} credential has no ${operation}.`,
 		)
 	}
-	return handle
+	const viewer = ctx.callerContext.request ?? null
+	const scope = ctx.ownerCredentialScope
+	if (!handle.ownerCredentialForVisitors || !authority.request || !scope) {
+		return { handle, request: viewer! }
+	}
+	if (
+		!handle.needKey ||
+		!authority.approvedCredentialIds?.get(handle.needKey)?.has(handle.id)
+	) {
+		throw new CredentialClientHandleError()
+	}
+	const auditDetails = ownerCredentialAuditDetails({
+		scope,
+		authority: authority.request,
+		viewer,
+	})
+	if (auditDetails) {
+		const limited = await checkOwnerCredentialForVisitorsRateLimit({
+			db: ctx.env.APP_DB,
+			scope,
+			credentialId: handle.id,
+		})
+		if (!limited.allowed) {
+			throw refusal(
+				'credential_rate_limited',
+				`This app’s visitors are using "${handle.name}" too often right now. Try again in ${limited.retryAfterSeconds ?? 60} seconds.`,
+			)
+		}
+	}
+	return {
+		handle,
+		request: authority.request,
+		...(auditDetails ? { auditDetails } : {}),
+	}
 }
 
 function doorInput<T extends CredentialTarget>(
 	ctx: Pick<CredentialClientContext, 'env' | 'callerContext' | 'packageId'>,
+	use: HandleUse,
 	credential: T,
 ): ResolveCredentialInput<T> {
-	const request = ctx.callerContext.request!
 	return {
 		env: ctx.env,
-		orgId: request.org.id,
-		actor: request,
+		orgId: use.request.org.id,
+		actor: use.request,
 		packageStamp: null,
 		runPackageId: ctx.packageId,
 		baseUrl: ctx.callerContext.baseUrl,
+		...(use.auditDetails ? { auditDetails: use.auditDetails } : {}),
 		credential,
 	}
 }
@@ -854,7 +1028,6 @@ export async function signWithCredentialClient(
 	input: { handle?: unknown; host?: unknown; operation?: unknown },
 ) {
 	return await withClientErrors(ctx.callerContext, async () => {
-		const handle = await readHandle(ctx, input.handle, ['signing'], 'sign()')
 		const host = readText(input.host, 'sign() host')
 		const operation = input.operation as SigningOperation | undefined
 		if (
@@ -867,10 +1040,17 @@ export async function signWithCredentialClient(
 				'sign() takes { type: "jwt", ... } or { type: "hmac", ... }.',
 			)
 		}
+		// HMAC may use a Key (`secret`) or a signing credential. JWT signing
+		// still requires kind "signing" (key material that never leaves).
+		const allowedKinds =
+			operation.type === 'hmac'
+				? (['signing', 'secret'] as const)
+				: (['signing'] as const)
+		const use = await readHandle(ctx, input.handle, allowedKinds, 'sign()')
 		return await resolveCredential(
-			doorInput(ctx, {
+			doorInput(ctx, use, {
 				use: 'signing',
-				credentialId: handle.id,
+				credentialId: use.handle.id,
 				requestHost: host,
 				operation,
 			}),
@@ -883,21 +1063,21 @@ export async function callToolWithCredentialClient(
 	input: { handle?: unknown; tool?: unknown; args?: unknown },
 ): Promise<CallToolResult> {
 	return await withClientErrors(ctx.callerContext, async () => {
-		const handle = await readHandle(ctx, input.handle, ['mcp'], 'callTool()')
+		const use = await readHandle(ctx, input.handle, ['mcp'], 'callTool()')
+		const { handle } = use
 		const toolName = readText(input.tool, 'callTool() tool name')
 		const args =
 			input.args && typeof input.args === 'object' && !Array.isArray(input.args)
 				? (input.args as Record<string, unknown>)
 				: {}
-		const request = ctx.callerContext.request!
 		const server = await findCredentialById({
 			db: ctx.env.APP_DB,
-			ownerId: request.org.id,
+			ownerId: use.request.org.id,
 			id: handle.id,
 			scope: 'org',
 		})
 		const connection = await resolveCredential(
-			doorInput(ctx, {
+			doorInput(ctx, use, {
 				use: 'mcp-connection',
 				serverId: handle.id,
 				serverName: server?.name ?? handle.name,
@@ -913,11 +1093,11 @@ export async function refreshCredentialClient(
 	input: { handle?: unknown },
 ) {
 	return await withClientErrors(ctx.callerContext, async () => {
-		const handle = await readHandle(ctx, input.handle, ['oauth'], 'refresh')
+		const use = await readHandle(ctx, input.handle, ['oauth'], 'refresh')
 		return await resolveCredential(
-			doorInput(ctx, {
+			doorInput(ctx, use, {
 				use: 'client-oauth-refresh',
-				credentialId: handle.id,
+				credentialId: use.handle.id,
 				userEmail: ctx.callerContext.user?.email,
 				waitUntil: ctx.waitUntil,
 			}),
@@ -961,30 +1141,35 @@ export async function applyCredentialClient(input: {
 	/** The run's package; only the self-publish guard reads it here. */
 	packageId: string | null
 	binding: string | null | undefined
+	/** See `CredentialClientContext.ownerCredentialScope`. */
+	ownerCredentialScope?: OwnerCredentialScope | null
 	token: string
 	requestUrl: URL
 }): Promise<AppliedCredentialClient> {
 	return await withClientErrors(input, async () => {
-		const handle = await verifyCredentialClientHandle({
-			env: input.env,
-			token: input.token,
-			request: input.request,
-			binding: input.binding,
-		})
 		const ctx = {
 			env: input.env,
 			packageId: input.packageId,
+			binding: input.binding ?? '',
+			ownerCredentialScope: input.ownerCredentialScope ?? null,
 			callerContext: {
 				baseUrl: input.baseUrl,
 				request: input.request,
 			} as McpCallerContext,
 		}
+		const use = await readHandle(
+			ctx,
+			input.token,
+			packageCredentialKindValues,
+			'fetch',
+		)
+		const { handle } = use
 		const { requestUrl } = input
 		switch (handle.kind) {
 			case 'secret':
 				return fromResolved(
 					await resolveCredential(
-						doorInput(ctx, {
+						doorInput(ctx, use, {
 							use: 'client-key',
 							credentialId: handle.id,
 							requestUrl,
@@ -994,7 +1179,7 @@ export async function applyCredentialClient(input: {
 			case 'oauth':
 				return fromResolved(
 					await resolveCredential(
-						doorInput(ctx, {
+						doorInput(ctx, use, {
 							use: 'client-oauth',
 							credentialId: handle.id,
 							requestUrl,
@@ -1003,7 +1188,7 @@ export async function applyCredentialClient(input: {
 				)
 			case 'url': {
 				const resolved = await resolveCredential(
-					doorInput(ctx, {
+					doorInput(ctx, use, {
 						use: 'url',
 						credentialId: handle.id,
 						path: `${requestUrl.pathname}${requestUrl.search}`,
@@ -1017,7 +1202,7 @@ export async function applyCredentialClient(input: {
 			}
 			case 'login': {
 				const session = await resolveCredential(
-					doorInput(ctx, {
+					doorInput(ctx, use, {
 						use: 'login',
 						credentialId: handle.id,
 						requestUrl,

@@ -232,8 +232,9 @@ await resend.fetch('/emails', { method: 'POST', body: JSON.stringify(email) })
   and provider (an undeclared key is read as a provider in ad hoc code and your
   own packages). It rejects with an Error carrying `code` (`credential_unbound`,
   `credential_ambiguous`, `credential_not_found`, `credential_need_undeclared`,
-  `credential_denied`, `invalid_request`, `host_not_allowed`,
-  `insecure_transport`) and `retryWith`, a list of picks to retry with.
+  `credential_denied`, `credential_rate_limited`, `invalid_request`,
+  `host_not_allowed`, `insecure_transport`) and `retryWith`, a list of picks to
+  retry with.
 - The client has `name`, `scope`, `kind`, and `hosts`, plus `fetch` (secret,
   oauth, url, and login credentials), `sign` (signing), or `callTool` (an org
   MCP server). A relative URL resolves against the first host. A header the
@@ -266,6 +267,52 @@ await resend.fetch('/emails', { method: 'POST', body: JSON.stringify(email) })
   never enter local workerd). CLI releases before the
   [local credential runtime contract](../contributing/contracts/cli-local-credential-runtime.md)
   lack the host export and fail at import time — upgrade `@kodycodes/cli`.
+
+#### Let app visitors use the owner's credential
+
+An internet-visible app runs as its visitor: the signed-in person, or no one for
+a signed-out visitor or someone outside the org. A signed-in member with Use can
+still open org credentials they hold; a signed-out visitor and anyone without
+Use cannot. A need the app fills for every visitor (a shared database, an email
+sender) opts in per slot with `ownerCredentialForVisitors: true`:
+
+```json
+{
+	"kody": {
+		"credentials": {
+			"rooms-db": {
+				"kind": "secret",
+				"provider": "rooms-db",
+				"description": "Database the room chart reads for every visitor.",
+				"ownerCredentialForVisitors": true
+			}
+		}
+	}
+}
+```
+
+- The flag takes only `true`; omit it to keep today's behavior. There is no
+  package-wide switch, and needs a package imports keep the flag their declaring
+  package gave them.
+- It changes the capability fingerprint, so adding it to an internet-visible
+  package pauses the publish and asks the owner to approve again. The approval
+  page says on that credential that visitors can use it through the app, signed
+  out or signed in as someone else, without seeing its value.
+- In the app's own run, `credential(key)` / `credentials(key)` for that need
+  resolve as the person who approved the capability set, with the role they hold
+  in the org now, like a trigger acts as its enabler. That applies only while
+  the app is internet-visible and serves the approved commit, and only to the
+  credentials the approval listed for that need. A private app, or a commit that
+  is not the approved one, opens the need as the visitor like any other. When
+  the need now resolves to a credential the approval did not list (say, after
+  remapping it), or the approver left the org or their account is suspended or
+  deleted, it fails with `credential_denied` until an owner approves again.
+- Everything else in the run still acts as the visitor: other needs,
+  placeholders (`{{secret:NAME}}`), and the app's own sign-in checks.
+- Each use by someone other than the approver is rate-limited per app credential
+  (every non-owner viewer shares one budget), and fails with
+  `credential_rate_limited` past it. Its `credential.resolve` row in the org
+  activity log names the app, the approver, and the visitor (or `anonymous`).
 
 To list credential references that match the detect-only scan, run
 `repoRunChecks`. Its `credentials` result lists each file with the codemod 0010
@@ -466,7 +513,9 @@ export default async function listItems() {
 `sql(...)` returns at most 1000 rows and sets `truncated: true` when more
 matched. Page large reads with `LIMIT`/`OFFSET` (or a keyset). Mutating
 statements that yield rows (`INSERT`/`UPDATE`/`DELETE … RETURNING`) still finish
-the write when truncated — only the returned row list is capped. See
+the write when truncated — only the returned row list is capped. A scan of at
+least 1,000,000 rows is allowed, metered, and reported on `warning`; a single
+read stops after 1,000,000,000 rows examined. See
 [Execute → Storage](./execute.md#storage) for the full result shape.
 
 `packageStorage()` identity comes from the bundler, not from source code: the

@@ -120,11 +120,11 @@ async function setup(sessionUsername = 'owner') {
 			previous_url_secret_expires_at TEXT,
 			enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
 			deleted_at TEXT,
-
+			instance_label TEXT,
 			created_at TEXT NOT NULL,
 			rotated_at TEXT NOT NULL
 		);
-		CREATE UNIQUE INDEX idx_webhook_endpoints_user_package_name
+		CREATE INDEX idx_webhook_endpoints_user_package_name
 		ON webhook_endpoints(user_id, package_id, webhook_name);
 		CREATE TABLE enablements (
 			id TEXT PRIMARY KEY NOT NULL,
@@ -222,8 +222,11 @@ test('package webhooks API mints, reveals, rotates, and toggles a declared webho
 
 	const minted = await act('mint')
 	expect(minted.status).toBe(200)
-	expect(minted.body.revealed?.id).toBe('sentry-bridge/launcher')
 	expect(minted.body.revealed?.handle.startsWith('whh_')).toBe(true)
+	const mintedEndpointId = minted.body.revealed!.handle.replace(/^whh_/, '')
+	expect(minted.body.revealed?.id).toBe(
+		`sentry-bridge/launcher/${mintedEndpointId}`,
+	)
 	// The URL comes from the request origin so previews show their own host,
 	// and the response reveals it exactly once alongside the refreshed list.
 	expect(minted.body.revealed?.url).toMatch(
@@ -233,8 +236,7 @@ test('package webhooks API mints, reveals, rotates, and toggles a declared webho
 	const mintedHandle = minted.body.revealed!.handle
 	// Minting never turns the webhook on: the answer and the list both point
 	// at Approve, and the card must not read Active.
-	const approvalUrl =
-		'https://kody.example/@owner/sentry-bridge/approve-credentials?enable=webhook%3Alauncher'
+	const approvalUrl = `https://kody.example/@owner/sentry-bridge/approve-credentials?enable=webhook%3Alauncher%3A${mintedEndpointId}`
 	expect(minted.body.approvalUrl).toBe(approvalUrl)
 	expect(launcherOf(minted.body)).toMatchObject({
 		minted: true,

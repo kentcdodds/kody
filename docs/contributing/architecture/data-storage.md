@@ -805,11 +805,13 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
 - `storage_bytes_state` — **authoritative** D1 payload byte counter (`id = 1`
   CHECK constraint, `bytes`, monotonic `revision`, `updated_at`). Written by
   `reserveStorageBytes` (atomic increment with limit check),
-  `initializeStorageBytes` (INSERT OR IGNORE cold zero-init bootstrap), and
-  `setStorageBytes` (absolute set from reconcile). Authoritative for enforcement
-  and usage reads via `readStorageBytes`; the reconcile lane sweeps personal and
-  team org owner ids by keyset from `d1_storage_reconcile_cursor`. StorageRunner
-  and RepoSession bucket estimates stay outside this row (see
+  `initializeStorageBytes` (INSERT OR IGNORE cold bootstrap / zero-init
+  fallback), and `setStorageBytes` / `reconcileStorageBytes` (absolute set from
+  reconcile). Authoritative for enforcement and usage reads via
+  `readStorageBytes`; cold bootstrap seeds from the physical D1 sum via an
+  immediate per-owner reconcile enqueue, and the reconcile lane sweeps personal
+  and team org owner ids by keyset from `d1_storage_reconcile_cursor`.
+  StorageRunner and RepoSession bucket estimates stay outside this row (see
   [Entitlements](./entitlements.md#usermeter)).
 - `deletion_state` / `account_write_leases` — deletion tombstone plus write
   leases (singleton `deleting_at`; lease rows `token` / `holder` / `acquired_at`
@@ -1381,6 +1383,17 @@ fall back sequentially to avoid D1 lock contention. Inline fallback is one-shot
 and logs a non-completed outcome; it does not invent extra retries. Consumer
 transport failures retain the configured retry/DLQ behavior. No failure can
 abort or mask a sibling invocation.
+
+`dlq_depth_alert` does not ride that queue: the cron calls it directly so a
+stuck consumer cannot hide dead-letter backlog. Every five minutes it reads
+Cloudflare queue metrics for each production dead-letter queue. A backlog that
+has stayed non-empty for more than 15 minutes opens a Sentry issue (oldest
+unacknowledged message, or the first non-zero sample when that timestamp is
+missing). Operator Discord gets the issue from the existing Sentry alert
+destination, the same path as the webhook auth regression alert. Non-production
+runtimes skip the read. A failed metrics read fails the lane instead of
+reporting the queue as empty. Inbound email subscription dead-letters are
+terminal handler failures and are not part of this page.
 
 Production note:
 

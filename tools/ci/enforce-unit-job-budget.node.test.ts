@@ -6,6 +6,7 @@ import {
 	getUnitJobMaxSeconds,
 	isRetryableUnitJobAttemptExit,
 	main,
+	unitJobAttemptKillAfterExitCode,
 	unitJobAttemptTimeoutExitCode,
 } from './enforce-unit-job-budget.ts'
 
@@ -21,6 +22,22 @@ test('unit job budgets fail any overrun of the cold-run caps', () => {
 	expect(isRetryableUnitJobAttemptExit(unitJobAttemptTimeoutExitCode)).toBe(
 		true,
 	)
+	// 137 without timing is not assumed retryable (could be an early SIGKILL).
+	expect(isRetryableUnitJobAttemptExit(unitJobAttemptKillAfterExitCode)).toBe(
+		false,
+	)
+	expect(
+		isRetryableUnitJobAttemptExit(unitJobAttemptKillAfterExitCode, {
+			elapsedSeconds: 720,
+			budgetSeconds: 720,
+		}),
+	).toBe(true)
+	expect(
+		isRetryableUnitJobAttemptExit(unitJobAttemptKillAfterExitCode, {
+			elapsedSeconds: 100,
+			budgetSeconds: 720,
+		}),
+	).toBe(false)
 	expect(isRetryableUnitJobAttemptExit(1)).toBe(false)
 	expect(isRetryableUnitJobAttemptExit(0)).toBe(false)
 
@@ -60,12 +77,23 @@ test('unit job budgets fail any overrun of the cold-run caps', () => {
 		'node tools/ci/enforce-unit-job-budget.ts --leg workers --start-epoch',
 	)
 	expect(workflow).toContain('UNIT_JOB_START_EPOCH')
-	// Workers retries once on soft-budget timeout (exit 124), not on
-	// assertion failures (#3763). Keep ADR 0011 isolation intact.
+	// Workers retries once on soft-budget timeout (exit 124) or kill-after
+	// 137 only after the soft deadline; early SIGKILL is not retryable
+	// (#3763). Retry status is captured under bash -e via if/else.
 	expect(workflow).toContain('attempt_budget_seconds=720')
-	expect(workflow).toContain('[ "$status" -ne 124 ]')
+	expect(workflow).toContain('kill_after_seconds=60')
+	expect(workflow).toContain('attempt_started=$(date +%s)')
+	expect(workflow).toContain(
+		'[ "$status" -eq 137 ] && [ "$attempt_elapsed" -ge "$remaining" ]',
+	)
+	expect(workflow).toContain(
+		'[ "$status" -eq 137 ] && [ "$attempt_elapsed" -ge "$attempt_budget_seconds" ]',
+	)
 	expect(workflow).toContain('retrying once (#3763)')
 	expect(workflow).toContain('npm run test:workers')
+	expect(workflow).toContain(
+		'if timeout --signal=TERM --kill-after="${kill_after_seconds}s" "${attempt_budget_seconds}s"',
+	)
 	// ADR 0011: retry must not disable per-file isolation or skip verify.
 	const workersUnitStep = workflow.match(
 		/- name: ☁️ Workers unit tests\n([\s\S]*?)\n\n\s+- name: ⏱️ Unit job budget/,

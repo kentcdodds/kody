@@ -118,6 +118,8 @@ function mintedUrl(overrides: Record<string, unknown> = {}) {
 		packageId: 'pkg-1',
 		packageKodyId: 'sentry-bridge',
 		name: 'sentry',
+		endpointId: 'ep-1',
+		instanceLabel: null,
 		handle: 'whh_ep-1',
 		urlHost: 'heykody.dev',
 		enabled: true,
@@ -125,7 +127,7 @@ function mintedUrl(overrides: Record<string, unknown> = {}) {
 		rotatedAt: '2026-07-24T00:00:00.000Z',
 		previousUrlActiveUntil: null,
 		approvalUrl:
-			'https://heykody.dev/@owner/sentry-bridge/approve-credentials?enable=webhook%3Asentry',
+			'https://heykody.dev/@owner/sentry-bridge/approve-credentials?enable=webhook%3Asentry%3Aep-1',
 		...overrides,
 	}
 }
@@ -209,6 +211,8 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 			verification: null,
 			challenge: null,
 			minted: false,
+			endpointId: null,
+			instanceLabel: null,
 			handle: null,
 			urlHost: null,
 			enabled: null,
@@ -280,7 +284,7 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 	expect(minted.webhook).not.toHaveProperty('url')
 	expect(minted.webhook).not.toHaveProperty('url_secret')
 	expect(minted.webhook.approval_url).toBe(
-		'https://heykody.dev/@owner/sentry-bridge/approve-credentials?enable=webhook%3Asentry',
+		'https://heykody.dev/@owner/sentry-bridge/approve-credentials?enable=webhook%3Asentry%3Aep-1',
 	)
 
 	const rotated = await webhookUrlRotateCapability.handler(sentry, ctx)
@@ -381,11 +385,13 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 	await expect(webhookDisableCapability.handler(sentry, ctx)).resolves.toEqual({
 		package_id: 'pkg-1',
 		webhook_name: 'sentry',
+		endpoint_id: 'ep-1',
 		enabled: false,
 	})
 	await expect(webhookEnableCapability.handler(sentry, ctx)).resolves.toEqual({
 		package_id: 'pkg-1',
 		webhook_name: 'sentry',
+		endpoint_id: 'ep-1',
 		enabled: true,
 	})
 

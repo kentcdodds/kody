@@ -544,10 +544,12 @@ StorageRunner RPC wall-clock proxy) and is not charged. See
 
 **D1 payload storage bytes** (`storage_bytes`) are **authoritative in
 UserMeter**. `assertWithinStorageBytesEntitlement` uses atomic DO
-`reserveStorageBytes` for all callers. Cold bootstrap zero-initializes the DO
-singleton (matching the daily counter cold path); the bounded
-`d1_storage_reconciliation` lane recomputes physical D1 payload bytes and
-corrects drift via revision-guarded CAS, sweeping users by `stable_user_id`
+`reserveStorageBytes` for all callers. Cold bootstrap lazily enqueues (and
+awaits) an immediate per-owner physical seed via cold `initializeStorageBytes`
+only (never CAS a live meter — that could wipe a reservation for bytes not yet
+written). Scan failures fail closed. Usage reads share the same lazy enqueue and
+also fail closed on scan errors. The bounded `d1_storage_reconciliation` lane
+continues to correct drift via revision-guarded CAS, sweeping live owners by
 keyset from the platform-owned `d1_storage_reconcile_cursor` row.
 
 **Account-deletion write fencing:** D1 `users.deleting_at` remains the permanent
@@ -671,30 +673,33 @@ Cross-UTC-day retries use the original claim's resource/day.
 enforcement and usage counter. The reconcile lane walks every live owner —
 personal orgs (`users.stable_user_id`) and team orgs (`orgs.id`, no `users` row)
 — by one keyset from the platform-owned `d1_storage_reconcile_cursor` singleton
-(advanced once per processed page, wrapping at the tail). Cold bootstrap
-zero-inits any live owner; the lane then corrects it to physical bytes.
+(advanced once per processed page, wrapping at the tail). Cold bootstrap seeds
+from physical D1 bytes via an immediate per-owner reconcile
+(`enqueueOwnerD1StorageReconcile`); the lane remains the backstop for drift.
 
 **Reserve path (`assertWithinStorageBytesEntitlement`):**
 
 1. Resolve plan limit from `getCachedUserPlan` (60s TTL OK — only limit
    resolution is cached; DO counter is always fresh).
 2. Call `UserMeter.reserveStorageBytes({ requested, limit })`.
-3. If `needs_bootstrap`: probe for a `users` row. If the row is missing
-   (synthetic context / non-account id), apply free-plan allow/deny without
-   touching the DO — missing users never create a DO singleton. If the row
-   exists, zero-initialize via `initializeStorageBytes` (INSERT OR IGNORE,
-   concurrent-safe, matching the daily counter cold path) and retry (max 2
-   attempts). The reconcile lane corrects the counter from physical payload
-   bytes.
+3. If `needs_bootstrap`: probe for a live owning org (`users` or `orgs` row). If
+   missing (synthetic context / non-account id), apply free-plan allow/deny
+   without touching the DO — missing owners never create a DO singleton. If the
+   owner exists, lazily enqueue and await `enqueueOwnerD1StorageReconcile`
+   (deduped per owner so concurrent cold reserves share one physical SUM;
+   failures propagate), then retry (max 2 attempts). Do not zero-init after a
+   failed scan.
 4. On `!reserved`: throw `EntitlementLimitError`.
 5. `env.USER_METER` is required on the DO-reserve path; throws immediately if
    absent (fail closed). The StorageRunner check-only path (bucket totals via
    `getCurrent`) omits `env` safely.
 
 **Usage reads (`readCurrentEntitlementResourceUsage(storage_bytes)`):** Reads
-from UserMeter with the same zero-init cold bootstrap path. The generic D1
-`readEntitlementResourceUsage` for `storage_bytes` throws with guidance —
-callers must use `readCurrentEntitlementResourceUsage` or
+from UserMeter; cold bootstrap seeds from the physical D1 sum via
+`reconcileUserD1StorageBytes` so usage pages are not stuck at 0 until the keyset
+sweep wraps. Scan failures fail closed (no inaccurate zero materialized). The
+generic D1 `readEntitlementResourceUsage` for `storage_bytes` throws with
+guidance — callers must use `readCurrentEntitlementResourceUsage` or
 `assertWithinStorageBytesEntitlement`. StorageRunner's composed baseline also
 reads UserMeter via `readStorageBytesFromUserMeter`.
 
@@ -1171,12 +1176,12 @@ Rules:
      observability history, not user content. Write chokepoints atomically
      reserve positive byte deltas via `assertWithinStorageBytesEntitlement`
      against the UserMeter DO (every caller, including email). Cold DO
-     singletons zero-initialize (INSERT OR IGNORE, concurrent-safe) before
-     retrying the reserve. The bounded `d1_storage_reconciliation` lane
-     recomputes the physical cross-surface sum via `calculateUserD1StorageBytes`
-     and applies it to UserMeter via a revision-guarded CAS (never clobbers a
-     live reservation); no byte values are written back to D1 — see
-     [UserMeter](#usermeter).
+     singletons seed from the physical D1 sum via a lazy per-owner reconcile
+     enqueue (scan failures fail closed) before retrying the reserve. The
+     bounded `d1_storage_reconciliation` lane recomputes the physical
+     cross-surface sum via `calculateUserD1StorageBytes` and applies it to
+     UserMeter via a revision-guarded CAS (never clobbers a live reservation);
+     no byte values are written back to D1 — see [UserMeter](#usermeter).
 
   2. **Durable Object bucket estimates (separate):** StorageRunner buckets and
      RepoSession workspaces expose `estimatedBytes`. RepoSession sums SQLite
@@ -1316,7 +1321,7 @@ workflows via RunLog, and similar).
 | `outbound_fetches_per_day`       | `executeGatewayFetch` (`consumeDailyEntitlement` before secret expansion)                                                                                                                                                                                                                                                                                                           |
 | `job_runs_per_day`               | `executeJobOnce` (`consumeDailyEntitlement` before sandbox work; cron, interval, and run-now)                                                                                                                                                                                                                                                                                       |
 | `automation_invocations_per_day` | `runSavedPackageModuleOnce` (`consumeDailyEntitlement` before sandbox for top-level webhook / package-export / subscription / workflow invokes; not nested execute or package-runtime invokes)                                                                                                                                                                                      |
-| `storage_bytes`                  | UserMeter DO reserve via `assertWithinStorageBytesEntitlement` (atomic `reserveStorageBytes`; cold zero-init bootstrap; required `env.USER_METER`); StorageRunner write tools/app RPCs (`getCurrent` check-only for bucket component)                                                                                                                                               |
+| `storage_bytes`                  | UserMeter DO reserve via `assertWithinStorageBytesEntitlement` (atomic `reserveStorageBytes`; cold bootstrap via lazy per-owner physical reconcile, fail closed on scan errors; required `env.USER_METER`); StorageRunner write tools/app RPCs (`getCurrent` check-only for bucket component)                                                                                       |
 
 ## Billing
 

@@ -10,6 +10,15 @@ test('hourly cadence dispatches unverified account purge with retention', () => 
 	expect(offHour.includes('unverified_account_purge')).toBe(false)
 })
 
+test('DLQ depth alert is dispatched on every cron tick', () => {
+	expect(
+		getScheduledLaneCadence(new Date('2026-09-02T12:05:00.000Z')),
+	).toContain('dlq_depth_alert')
+	expect(
+		getScheduledLaneCadence(new Date('2026-09-02T12:00:00.000Z')),
+	).toContain('dlq_depth_alert')
+})
+
 test('Durable Object duration attribution runs once an hour at minute 20', () => {
 	expect(
 		getScheduledLaneCadence(new Date('2026-09-02T12:20:00.000Z')),

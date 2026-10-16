@@ -298,7 +298,8 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 			'http://localhost',
 		)
 		// Preserve the full authorize query for the auth round-trip; strip
-		// prompt=login only after credentials succeed (post-auth landing).
+		// prompt=login and id_token_hint only after credentials succeed
+		// (post-auth landing) so a stale reconnect hint cannot loop.
 		return normalizeRedirectTo(`${currentUrl.pathname}${currentUrl.search}`)
 	}
 

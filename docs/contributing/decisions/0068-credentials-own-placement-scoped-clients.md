@@ -22,7 +22,10 @@
   [Amendment 2026-10-12](#amendment-2026-10-12)); 2026-10-15 (Kent, approved
   2026-10-14: a package run by anyone but its author uses only declared
   credentials, behind a flag — see
-  [Amendment 2026-10-15](#amendment-2026-10-15-credential-need-enforcement))
+  [Amendment 2026-10-15](#amendment-2026-10-15-credential-need-enforcement));
+  2026-10-16 (Kent: multiple minted URLs per declared webhook name with instance
+  labels and separate Approve each — see
+  [Amendment 2026-10-16](#amendment-2026-10-16-webhook-multi-instance))
 - **Supersedes in part:** [0021](./0021-publish-gated-package-composition.md)
   (credential authority for the opt-in types used through scoped clients), and
   credentials plan v4 section 3.3 (assignments) and section 3.4 (placeholder
@@ -307,6 +310,7 @@ Every error is structured and includes `retryWith`.
 | `credential_need_unknown`               | The map names a key the package does not declare.                                                                           |
 | `credential_need_undeclared`            | A package run by anyone but its author uses a credential it does not declare (see the 2026-10-15 amendment).                |
 | `credential_denied`                     | Authorization failed.                                                                                                       |
+| `credential_rate_limited`               | Visitors of an app used an owner's credential too often (see the 2026-10-16 owner credentials amendment).                   |
 | `host_not_allowed`                      | The host is not in the credential's `hosts`.                                                                                |
 | `insecure_transport`                    | The request is not HTTPS.                                                                                                   |
 
@@ -544,8 +548,23 @@ Kent: manifest credential need `kind` becomes **optional**.
   error that includes the link. Existing enablements, including migrated ones
   and any an earlier mint created, stay untouched; remint and rotate never
   change them. **Webhook URLs are identities;** the declared webhook name is
-  display metadata only. One name does not map to multiple URLs; each URL is its
-  own instance with its own credential mappings.
+  display metadata only. (Amended 2026-10-16: several URLs may share one name —
+  see [Amendment 2026-10-16](#amendment-2026-10-16-webhook-multi-instance).)
+
+## Amendment 2026-10-16: webhook multi-instance per declared name
+
+Kent decided (2026-10-16): webhooks support multiple instances under the same
+declared webhook name.
+
+- Each additional instance **mints its own new URL** under that name.
+- A short **user-set instance label** tells URLs apart in Settings and Triggers.
+- Each new URL needs its **own separate Approve** after minting (same Approve
+  path as a first mint; enablement still binds to the endpoint id).
+- Existing webhooks and their URLs stay untouched; the migration is **additive
+  only** (relax the unique `(user, package, name)` index so several endpoints
+  may share a name; do not delete rows).
+- The **URL (endpoint id) is the identity**; the declared name remains display
+  metadata. Raw URLs and IDs stay behind the Details disclosure.
 
 ## Amendment 2026-10-13: call maps and pinned needs
 
@@ -690,3 +709,48 @@ author runs.
   audit event. The credential door then refuses every credential to that
   package, by any helper, until the owner approves going public again. See
   [internet-visible packages](../internet-visible-packages.md#self-publish).
+
+## Amendment 2026-10-16: owner credentials for app visitors
+
+Kent approved this on 2026-10-16
+([#3912](https://github.com/kentcdodds/kody/issues/3912)). An internet-visible
+package app runs as its viewer: a signed-in org member, or no one (signed out,
+or signed in outside the org). Neither can use the org's credentials, so an app
+that reads a shared database or sends email for every visitor had no way to.
+
+- **Opt-in.** A `kody.credentials` slot takes `ownerCredentialForVisitors: true`
+  (only `true`; there is no package-wide switch). It rides the needs closure
+  with the declaring package's value, like `description`. Turning it on counts
+  as a changed need, so an internet-visible package's publish pauses for
+  approval; turning it off does not.
+- **Approval.** Each opted-in need's candidates are their own capability-set
+  entries, carrying `needKey` and the flag, and they enter the fingerprint
+  (entries without the flag hash as before, so existing pins do not move). The
+  approval page says on each such credential that visitors may use it through
+  the app, signed out or signed in as someone else. Who may approve is
+  unchanged: a person with `package:publish`, never an agent.
+- **Authority.** In a package-app run only, `credential(key)` /
+  `credentials(key)` for an opted-in need resolve as the person who approved the
+  app's latest capability set, with the role they hold in the owning org now
+  (live user and org binding, like a trigger's enabler). It applies only while
+  the app is internet-visible, the run serves that approval's commit, and the
+  picked credentials are among those the approval listed for the key; the
+  viewer's `credentials` call map never picks for it. A republish that
+  `resolveInternetVisibleApprovedCommit` accepts keeps the same approver. If the
+  app is private or the commit is not the approved one, the need opens as the
+  viewer. If the approver can no longer use the org's credentials, or the need
+  resolves to an unlisted credential, it fails with `credential_denied` until an
+  owner approves again.
+- **Viewer stays separate.** The run's viewer is unchanged for everything else:
+  other needs, placeholders, by-name helpers, and the app's own authorization.
+  The authority never becomes the run's user. The client handle is signed with
+  the flag and checked against the authority on each use.
+- **Abuse.** Each use whose viewer is not the authority is rate-limited per org,
+  app, and credential (300 per minute; every non-owner viewer shares one budget
+  so one-time visitors cannot grow the limiter table) and fails with
+  `credential_rate_limited`. Its `credential.resolve` audit row is attributed to
+  the authority and adds `ownerCredentialForVisitors`, `appPackageId`,
+  `credentialAuthorityUserId`, `viewerUserId`, and `viewerKind` (`person` or
+  `anonymous`).
+- **Unchanged.** Credential-need enforcement and the self-published package
+  guard still apply; a self-published app gets no credentials either way.

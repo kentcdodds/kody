@@ -36,6 +36,7 @@ export async function resolveCredentialClientPlacement(input: {
 			input.props.storageContext?.packageId ??
 			null,
 		binding: input.props.credentialClientBinding,
+		ownerCredentialScope: input.props.ownerCredentialScope ?? null,
 		token: input.token,
 		requestUrl: new URL(input.request.url),
 	})

@@ -25,6 +25,13 @@ const handlePayloadSchema = z.object({
 	org: z.string().min(1),
 	actor: z.string().min(1),
 	binding: z.string().min(1),
+	/**
+	 * Opened for an `ownerCredentialForVisitors` need: `actor` is the app's
+	 * credential authority, not the run's viewer. `needKey` is the declared
+	 * need this handle fills so later uses can re-check the approval list.
+	 */
+	ownerCredentialForVisitors: z.literal(true).optional(),
+	needKey: z.string().min(1).max(100).optional(),
 	exp: z.number(),
 })
 
@@ -106,19 +113,23 @@ export class CredentialClientHandleError extends Error {
 
 /**
  * The handle's pick when its signature holds, it has not expired, and it was
- * opened by this actor in this org for this run. Otherwise it throws, without
- * saying which check failed.
+ * opened by this actor in this org for this run. A handle opened for an
+ * `ownerCredentialForVisitors` need must match `ownerCredentialRequest`
+ * instead of `request`. Otherwise it throws, without saying which check
+ * failed.
  */
 export async function verifyCredentialClientHandle(input: {
 	env: Pick<Env, 'SECRET_STORE_KEY'>
 	token: string
 	request: RequestContext | null
 	binding: string | null | undefined
+	/** The run's credential authority, when it has one. */
+	ownerCredentialRequest?: () => Promise<RequestContext | null>
 	now?: number
 }): Promise<CredentialClientHandle> {
 	const fail = () => new CredentialClientHandleError()
-	const { token, request, binding } = input
-	if (!binding || !request?.actor || !token.startsWith(handlePrefix)) {
+	const { token, binding } = input
+	if (!binding || !token.startsWith(handlePrefix)) {
 		throw fail()
 	}
 	const [body, signature, extra] = token.slice(handlePrefix.length).split('.')
@@ -145,7 +156,15 @@ export async function verifyCredentialClientHandle(input: {
 	if (
 		!handle.success ||
 		handle.data.exp <= (input.now ?? Date.now()) ||
-		handle.data.binding !== binding ||
+		handle.data.binding !== binding
+	) {
+		throw fail()
+	}
+	const request = handle.data.ownerCredentialForVisitors
+		? ((await input.ownerCredentialRequest?.()) ?? null)
+		: input.request
+	if (
+		!request?.actor ||
 		handle.data.org !== request.org.id ||
 		handle.data.actor !== request.actor.userId
 	) {

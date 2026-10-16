@@ -34,6 +34,8 @@ const listCommands: PackageWebhookListItem = {
 	replay: null,
 	challenge: null,
 	minted: false,
+	endpointId: null,
+	instanceLabel: null,
 	handle: null,
 	urlHost: null,
 	enabled: null,
@@ -53,6 +55,8 @@ const run: PackageWebhookListItem = {
 	description: null,
 	replay: { deliveryIdHeader: 'X-Delivery-Id' },
 	minted: true,
+	endpointId: '11111111-1111-1111-1111-111111111111',
+	instanceLabel: null,
 	handle: 'whh_11111111-1111-1111-1111-111111111111',
 	urlHost: 'kody.example',
 	enabled: true,
@@ -122,7 +126,7 @@ const renderCard = (webhook: PackageWebhookListItem) =>
 			isMutating: false,
 			rotateCheck: createDoubleCheck(stubHandle),
 			disableCheck: createDoubleCheck(stubHandle),
-			onIntent: () => {},
+			onIntent: (_payload) => {},
 			onHideUrl: () => {},
 			deliveriesHref: '/@ada/-/activity?view=recent&status=all&surface=webhook',
 		}),
@@ -156,6 +160,8 @@ test('the settings section loads one package’s webhooks, then mints, reveals, 
 			listCommandsState = {
 				...listCommands,
 				minted: true,
+				endpointId: '22222222-2222-2222-2222-222222222222',
+				instanceLabel: null,
 				enabled: true,
 				approved: false,
 				approvalUrl: approveUrl,
@@ -198,7 +204,9 @@ test('the settings section loads one package’s webhooks, then mints, reveals, 
 	const readyHtml = await render()
 	expect(readyHtml).toContain('2 declared · 1 minted')
 	expect(readyHtml).toContain('id="webhook-list-commands"')
-	expect(readyHtml).toContain('id="webhook-run"')
+	expect(readyHtml).toContain(
+		'id="webhook-run-11111111-1111-1111-1111-111111111111"',
+	)
 	expect(readyHtml).toContain('data-testid="package-webhook-mint"')
 	expect(readyHtml).toContain('aria-label="Mint URL for raycast/list-commands"')
 	expect(readyHtml).toContain('data-testid="package-webhook-reveal"')
@@ -212,7 +220,7 @@ test('the settings section loads one package’s webhooks, then mints, reveals, 
 	// Mint the way a card click does: the controller posts the intent with
 	// only the webhook name (the package is in the URL) and keeps the
 	// revealed URL in memory for the copy card.
-	await controller.runIntent(ref, listCommands, 'mint')
+	await controller.runIntent(ref, listCommands, { intent: 'mint' })
 	expect(calls[1]).toEqual({
 		url: apiPath,
 		method: 'POST',
@@ -250,7 +258,7 @@ test('the settings section loads one package’s webhooks, then mints, reveals, 
 
 	// Reveal fetches the URL again (never from the list payload), and
 	// switching packages drops it with the rows.
-	await controller.runIntent(ref, listCommands, 'reveal')
+	await controller.runIntent(ref, listCommands, { intent: 'reveal' })
 	expect(calls[2]?.body).toEqual({
 		intent: 'reveal',
 		webhookName: 'list-commands',
@@ -279,11 +287,13 @@ test('the settings section reports a failed intent and keeps the rows', async ()
 	)
 	const { controller, render } = harness
 	await controller.ensureLoaded(ref)
-	await controller.runIntent(ref, run, 'mint')
+	await controller.runIntent(ref, run, { intent: 'mint' })
 	const html = await render()
 	expect(html).toContain('role="alert"')
 	expect(html).toContain('Rotate it to issue a new one.')
-	expect(html).toContain('id="webhook-run"')
+	expect(html).toContain(
+		'id="webhook-run-11111111-1111-1111-1111-111111111111"',
+	)
 })
 
 test('a failed load reports the error once and does not refetch on the re-render it triggers', async () => {
@@ -391,7 +401,7 @@ test('rotate keeps the Approve link on a list that lacks the approval URL', asyn
 	const { controller, render } = harness
 	await controller.ensureLoaded(ref)
 	expect(await render()).not.toContain('package-webhook-approve')
-	await controller.runIntent(ref, unapproved, 'rotate')
+	await controller.runIntent(ref, unapproved, { intent: 'rotate' })
 	const html = await render()
 	expect(html).toContain('Webhook URL rotated.')
 	expect(html).toContain('you Approve it')

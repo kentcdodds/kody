@@ -73,7 +73,7 @@ export async function checkEnablementMappedCredentials(input: {
 		(
 			await loadPackageNeeds({
 				env: input.env,
-				request: input.request,
+				orgId: input.request.org.id,
 				packageId,
 			})
 		).map((need) => [need.key, need]),

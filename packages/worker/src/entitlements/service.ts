@@ -26,7 +26,7 @@ import {
 import { laterIsoTimestamp } from '#universal/referral-program.ts'
 import { resolvePlanOverlay } from '#universal/second-agent-standard-gift.ts'
 import { countInternalUserEmailMessages } from '#worker/email/mailbox-internal-read.ts'
-import { jobsData } from '#worker/jobs/jobs-data.ts'
+import { jobsData, type JobsDataEnv } from '#worker/jobs/jobs-data.ts'
 import { type RepoSessionIndexEnv } from '#worker/repo/repo-session-index-client.ts'
 import { countActiveRepoSessions } from '#worker/repo/repo-sessions.ts'
 import { countActiveWorkflowProjections } from '#worker/run-records/service.ts'
@@ -56,6 +56,7 @@ import {
 	userMeterRpc,
 	type UserMeterEnv,
 } from './user-meter-client.ts'
+import { enqueueOwnerD1StorageReconcile } from './d1-storage-reconciliation.ts'
 
 /** Env surface for authoritative entitlement usage readers. */
 import {
@@ -804,7 +805,12 @@ export async function readUserMeterEntitlementUsageSnapshot(input: {
 				}),
 			),
 			shouldInitializeStorage
-				? meter.initializeStorageBytes({ bytes: 0, updatedAt })
+				? seedStorageBytesFromPhysical({
+						db: input.db,
+						env: input.env,
+						userId: input.userId,
+						now: input.now,
+					}).then(() => undefined)
 				: Promise.resolve(),
 		])
 		if (missingDaily.length > 0 || shouldInitializeStorage) {
@@ -980,7 +986,14 @@ export async function calculateUserD1StorageBytes(input: {
 	const { db, userId } = input
 	const sums = await Promise.all([
 		input.jobs
-			? input.jobs.sumJobsStorageBytesForUser({ userId })
+			? input.jobs
+					.sumJobsStorageBytesForUser({ userId })
+					.catch((error: unknown) => {
+						// Local/test APP_DB often has no jobs table when the JOBS
+						// binding is absent (ADR 0016). Match the other surfaces.
+						if (isMissingStorageByteSurfaceError(error)) return 0
+						throw error
+					})
 			: Promise.resolve(0),
 		sumStorageBytes(
 			db,
@@ -1105,6 +1118,45 @@ async function userAccountRowExists(input: {
 }
 
 /**
+ * Cold-only physical seed for a missing UserMeter storage singleton.
+ * Computes the D1 payload sum and `initializeStorageBytes` (INSERT OR IGNORE).
+ * Never CAS/absolute-sets a live meter — that would wipe reservations for
+ * bytes reserved but not yet written. The keyset reconcile lane owns CAS.
+ * On an init race, re-reads the winner's value.
+ */
+export async function bootstrapOwnerD1StorageBytes(input: {
+	db: D1Database
+	userId: OwnerId
+	now?: Date
+	/** Required because UserMeter is the storage-usage authority. */
+	env: UserMeterEnv
+	/** Jobs-worker byte contribution (see calculateUserD1StorageBytes). */
+	jobs?: JobsStore
+}): Promise<{ bytes: number; created: boolean }> {
+	const nowIso = (input.now ?? new Date()).toISOString()
+	const meter = userMeterRpc({ env: input.env, userId: input.userId })
+	const current = await meter.readStorageBytes()
+	if (current.outcome === 'ready') {
+		return { bytes: current.bytes, created: false }
+	}
+	const bytes = await calculateUserD1StorageBytes(input)
+	const initResult = await meter.initializeStorageBytes({
+		bytes,
+		updatedAt: nowIso,
+	})
+	if (initResult.created) {
+		return { bytes, created: true }
+	}
+	const after = await meter.readStorageBytes()
+	if (after.outcome === 'needs_bootstrap') {
+		throw new Error(
+			'UserMeter storage bytes still need bootstrap after cold init race.',
+		)
+	}
+	return { bytes: after.bytes, created: false }
+}
+
+/**
  * Recompute one user's authoritative storage bytes from D1 payload tables
  * (physical source of truth) and set UserMeter via a revision-guarded CAS.
  *
@@ -1120,6 +1172,10 @@ async function userAccountRowExists(input: {
  * Returns `{ bytes, updated, deferred }`. `deferred` is true when a CAS miss
  * or init race prevented the write; the row should be rotated for retry.
  * `deferred` is never a failure and is not counted as `updated`.
+ *
+ * Hot cold-bootstrap callers must use {@link bootstrapOwnerD1StorageBytes}
+ * (or {@link enqueueOwnerD1StorageReconcile}) instead — those never CAS a
+ * live meter.
  */
 export async function reconcileUserD1StorageBytes(input: {
 	db: D1Database
@@ -1336,11 +1392,50 @@ export async function readEntitlementResourceUsage(input: {
 }
 
 /**
+ * Seed a cold UserMeter storage singleton from the physical D1 payload sum
+ * via the shared lazy enqueue (cold init only — never CAS). Usage reads use
+ * this so a cold or purged meter reflects real bytes immediately instead of
+ * zero-init. Scan failures propagate (fail closed): we do not materialize an
+ * inaccurate zero that would understate usage and StorageRunner baselines.
+ */
+function jobsStoreForOwnerStorageReconcile(
+	db: D1Database,
+	env?: Partial<Pick<Env, 'JOBS'>>,
+) {
+	// JOBS is optional at runtime (falls back to APP_DB); JobsDataEnv types it
+	// as required because generated Env lists the binding.
+	return jobsData({ APP_DB: db, JOBS: env?.JOBS } as JobsDataEnv)
+}
+
+async function seedStorageBytesFromPhysical(input: {
+	db: D1Database
+	env: UserMeterEnv & Partial<Pick<Env, 'JOBS'>>
+	userId: OwnerId
+	now: Date
+}): Promise<number> {
+	await enqueueOwnerD1StorageReconcile({
+		db: input.db,
+		env: input.env,
+		userId: input.userId,
+		now: input.now,
+		jobs: jobsStoreForOwnerStorageReconcile(input.db, input.env),
+	})
+	const meter = userMeterRpc({ env: input.env, userId: input.userId })
+	const result = await meter.readStorageBytes()
+	if (result.outcome === 'needs_bootstrap') {
+		throw new Error(
+			'UserMeter storage bytes still need bootstrap after physical seed.',
+		)
+	}
+	return result.bytes
+}
+
+/**
  * Read current storage bytes from UserMeter with cold bootstrap. On
- * `needs_bootstrap`, zero-initializes the singleton (matching the daily
- * counter cold path) and retries. The bounded reconcile lane recomputes
- * physical D1 payload bytes and corrects any drift via CAS. Always returns
- * the authoritative DO byte count.
+ * `needs_bootstrap`, seeds the singleton from the physical D1 payload sum
+ * and retries. The bounded reconcile lane (and reserve-path lazy enqueue)
+ * continue to correct drift via CAS. Always returns the authoritative DO
+ * byte count.
  */
 export async function readStorageBytesFromUserMeter(input: {
 	db: D1Database
@@ -1349,21 +1444,12 @@ export async function readStorageBytesFromUserMeter(input: {
 	now: Date
 }): Promise<number> {
 	const meter = userMeterRpc({ env: input.env, userId: input.userId })
-	let result = await meter.readStorageBytes()
+	const result = await meter.readStorageBytes()
 	if (result.outcome === 'needs_bootstrap') {
 		// Synthetic/unknown contexts have no account row. Preserve their zero
 		// usage semantics without materializing durable state for a non-user.
 		if (!(await userAccountRowExists(input))) return 0
-		await meter.initializeStorageBytes({
-			bytes: 0,
-			updatedAt: input.now.toISOString(),
-		})
-		result = await meter.readStorageBytes()
-		if (result.outcome === 'needs_bootstrap') {
-			throw new Error(
-				'UserMeter storage bytes read still needs bootstrap after initialize.',
-			)
-		}
+		return await seedStorageBytesFromPhysical(input)
 	}
 	return result.bytes
 }
@@ -1432,11 +1518,13 @@ const storageBytesBootstrapMaxAttempts = 2
 
 /**
  * Atomically reserve storage bytes in the per-user UserMeter Durable Object.
- * On `needs_bootstrap`, zero-initializes the DO singleton via
- * `initializeStorageBytes` (INSERT OR IGNORE — concurrent-safe, matching the
- * daily counter cold path), then retries once. The bounded reconcile lane
- * recomputes physical D1 payload bytes and corrects drift via CAS.
- * Missing-user synthetic contexts (no `users` row) preserve current free-plan
+ * On `needs_bootstrap`, lazily enqueues (and awaits) an immediate per-owner
+ * physical reconcile so concurrent cold reserves share one D1 SUM and the
+ * meter seeds from real payload bytes instead of zero. Scan failures
+ * propagate (fail closed) — we do not zero-init after a failed scan, which
+ * would under-enforce until the keyset sweep. The bounded reconcile lane
+ * remains the backstop for drift via CAS.
+ * Missing-user synthetic contexts (no account row) preserve current free-plan
  * allow/deny semantics without touching the DO.
  *
  * `getCurrent` is a check-only path for StorageRunner bucket totals and does
@@ -1529,12 +1617,26 @@ export async function assertWithinStorageBytesEntitlement(input: {
 					}),
 				})
 			}
-			// Real user with no DO row: zero-initialize, then retry. The
-			// reconcile lane corrects the counter from physical payload bytes.
-			await meter.initializeStorageBytes({
-				bytes: 0,
-				updatedAt,
+			// Real owner with no DO row: lazy-enqueue a shared per-owner
+			// physical reconcile (one SUM for concurrent cold callers), then
+			// retry the reserve. Failures propagate — never zero-init after a
+			// failed scan (that would under-enforce existing payload).
+			await enqueueOwnerD1StorageReconcile({
+				db: input.db,
+				env: input.env,
+				userId: input.userId,
+				now: new Date(updatedAt),
+				jobs: jobsStoreForOwnerStorageReconcile(
+					input.db,
+					input.env as Partial<Pick<Env, 'JOBS'>>,
+				),
 			})
+			const afterReconcile = await meter.readStorageBytes()
+			if (afterReconcile.outcome === 'needs_bootstrap') {
+				throw new Error(
+					'UserMeter storage bytes still need bootstrap after physical reconcile.',
+				)
+			}
 			continue
 		}
 

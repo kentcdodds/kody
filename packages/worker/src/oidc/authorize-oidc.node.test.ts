@@ -5,12 +5,28 @@ import {
 	isOidcAuthorizeParamsParseError,
 	parseOidcAuthorizeParams,
 } from '#worker/oidc/authorize-oidc.ts'
+import { signOidcJwt } from '#worker/oidc/keys.ts'
 import {
 	TEST_OIDC_SIGNING_KEY_ID,
 	TEST_OIDC_SIGNING_PRIVATE_KEY_PEM,
 } from '#worker/oidc/test-signing-key.ts'
 
 const authorizeUrl = 'https://heykody.dev/oauth/authorize'
+
+const oidcTestEnv = {
+	OIDC_SIGNING_KEY_ID: TEST_OIDC_SIGNING_KEY_ID,
+	OIDC_SIGNING_PRIVATE_KEY_PEM: TEST_OIDC_SIGNING_PRIVATE_KEY_PEM,
+} as unknown as Env
+
+async function mintHint(claims: Record<string, unknown>) {
+	const now = Math.floor(Date.now() / 1000)
+	return signOidcJwt(oidcTestEnv, {
+		iss: 'https://heykody.dev',
+		aud: 'chatgpt-client',
+		iat: now - 7200,
+		...claims,
+	})
+}
 
 test('authorize-oidc rejects implicit and hybrid response types', () => {
 	expect(getUnsupportedOidcResponseTypeError('code')).toBeNull()
@@ -116,4 +132,92 @@ test('authorize-oidc gate handles prompt and max_age combinations', async () => 
 		})
 		expect(result).toEqual(expected)
 	}
+})
+
+test('authorize-oidc accepts expired id_token_hint when sub matches the session', async () => {
+	const now = Math.floor(Date.now() / 1000)
+	const expiredHint = await mintHint({
+		sub: 'user-1',
+		exp: now - 60,
+	})
+	const result = await evaluateOidcAuthorizeGate({
+		params: { responseType: 'code', idTokenHint: expiredHint },
+		session: {
+			sessionEmail: 'user@example.com',
+			sessionStableUserId: 'user-1',
+			sessionIssuedAt: Date.now(),
+		},
+		request: new Request(authorizeUrl),
+		env: oidcTestEnv,
+	})
+	expect(result).toEqual({
+		ok: true,
+		treatAsSignedOut: false,
+		forbidInlineLogin: false,
+		requireConsent: false,
+	})
+})
+
+test('authorize-oidc forces re-auth when id_token_hint sub mismatches the session', async () => {
+	const now = Math.floor(Date.now() / 1000)
+	const mismatchedHint = await mintHint({
+		sub: 'other-user',
+		exp: now + 3600,
+	})
+	const interactive = await evaluateOidcAuthorizeGate({
+		params: { responseType: 'code', idTokenHint: mismatchedHint },
+		session: {
+			sessionEmail: 'user@example.com',
+			sessionStableUserId: 'user-1',
+			sessionIssuedAt: Date.now(),
+		},
+		request: new Request(authorizeUrl),
+		env: oidcTestEnv,
+	})
+	expect(interactive).toEqual({
+		ok: true,
+		treatAsSignedOut: true,
+		forbidInlineLogin: false,
+		requireConsent: false,
+	})
+
+	const silent = await evaluateOidcAuthorizeGate({
+		params: {
+			responseType: 'code',
+			prompt: 'none',
+			idTokenHint: mismatchedHint,
+		},
+		session: {
+			sessionEmail: 'user@example.com',
+			sessionStableUserId: 'user-1',
+			sessionIssuedAt: Date.now(),
+		},
+		request: new Request(authorizeUrl),
+		env: oidcTestEnv,
+	})
+	expect(silent).toEqual({
+		ok: false,
+		error: 'Login required.',
+		errorCode: 'login_required',
+		status: 401,
+	})
+})
+
+test('authorize-oidc ignores invalid id_token_hint and keeps a matching session', async () => {
+	const result = await evaluateOidcAuthorizeGate({
+		params: { responseType: 'code', idTokenHint: 'not.a.valid.jwt' },
+		session: {
+			sessionEmail: 'user@example.com',
+			sessionStableUserId: 'user-1',
+			sessionIssuedAt: Date.now(),
+		},
+		request: new Request(authorizeUrl),
+		env: oidcTestEnv,
+	})
+	expect(result).toEqual({
+		ok: true,
+		treatAsSignedOut: false,
+		forbidInlineLogin: false,
+		requireConsent: false,
+	})
 })

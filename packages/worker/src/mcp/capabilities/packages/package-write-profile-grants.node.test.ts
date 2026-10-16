@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 	syncArtifactSourceSnapshot: vi.fn(),
 	resolveSavedPackage: vi.fn(),
 	setWebhookEndpointEnabled: vi.fn(),
+	getWebhookEndpointByKey: vi.fn(),
 	getRepoSessionById: vi.fn(),
 	sqlQuery: vi.fn(),
 	deleteSavedPackageProjection: vi.fn(),
@@ -92,6 +93,8 @@ vi.mock('#worker/webhooks/repo.ts', async (importOriginal) => {
 		...(actual as object),
 		setWebhookEndpointEnabled: (...args: Array<unknown>) =>
 			mocks.setWebhookEndpointEnabled(...args),
+		getWebhookEndpointByKey: (...args: Array<unknown>) =>
+			mocks.getWebhookEndpointByKey(...args),
 	}
 })
 
@@ -371,7 +374,14 @@ test('webhookEnable denies a read-only profile and allows write', async () => {
 
 	reset()
 	grants(['write'])
+	mocks.getWebhookEndpointByKey.mockResolvedValue({
+		id: 'ep-hook',
+		packageId: 'pkg-1',
+		webhookName: 'hook',
+		enabled: true,
+	})
 	mocks.setWebhookEndpointEnabled.mockResolvedValue({
+		id: 'ep-hook',
 		packageId: 'pkg-1',
 		webhookName: 'hook',
 		enabled: true,
@@ -386,6 +396,12 @@ test('webhookEnable denies a read-only profile and allows write', async () => {
 			enabled: true,
 		}),
 	).resolves.toMatchObject({ enabled: true })
+	expect(mocks.setWebhookEndpointEnabled).toHaveBeenCalledWith(
+		expect.objectContaining({
+			endpointId: 'ep-hook',
+			enabled: true,
+		}),
+	)
 })
 
 test('repo session package writes deny a read-only profile and allow write', async () => {

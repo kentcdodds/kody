@@ -124,6 +124,34 @@ test('needs may omit provider and use the opt-in kinds', () => {
 	).toEqual(credentials)
 })
 
+test('a need opts in to owner credentials for visitors only with true', () => {
+	const credentials = {
+		database: {
+			description: 'Rooms database.',
+			ownerCredentialForVisitors: true,
+		},
+		github: { description: 'Repos.' },
+	}
+	expect(
+		parseAuthoredPackageJson({ content: manifestWithCredentials(credentials) })
+			.kody.credentials,
+	).toEqual(credentials)
+	for (const value of [false, 'true', 1]) {
+		expect(
+			publishError({
+				database: { description: 'x', ownerCredentialForVisitors: value },
+			}),
+		).toMatch(
+			/ownerCredentialForVisitors takes only true[\s\S]*kody\.credentials\.database\.ownerCredentialForVisitors/,
+		)
+	}
+	expect(
+		publishError({
+			database: { description: 'x', ownerCredentialsForVisitors: true },
+		}),
+	).toMatch(/Unrecognized key: "ownerCredentialsForVisitors"/)
+})
+
 test('published snapshots load when an old kody.credentials key predates the schema', () => {
 	const content = manifestWithCredentials({ GOOGLE: 'my google account' })
 	expect(

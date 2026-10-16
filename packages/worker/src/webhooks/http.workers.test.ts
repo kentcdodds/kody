@@ -204,6 +204,7 @@ async function ensureSchema(db: D1Database) {
 				previous_hmac_secret_expires_at TEXT,
 				enabled INTEGER NOT NULL DEFAULT 1,
 				deleted_at TEXT,
+				instance_label TEXT,
 				created_at TEXT NOT NULL,
 				rotated_at TEXT NOT NULL
 			)`,
@@ -1299,7 +1300,7 @@ test('a webhook with no enablement on answers 409 instead of running', async () 
 	}
 	expect(offBody.error.code).toBe('enablement_not_on')
 	expect(offBody.error.details.approvalUrl).toMatch(
-		/^https?:\/\/[^/]+\/@alice\/sentry-bridge\/approve-credentials\?enable=webhook%3Aplain$/,
+		/^https?:\/\/[^/]+\/@alice\/sentry-bridge\/approve-credentials\?enable=webhook%3Aplain%3Amint-plain$/,
 	)
 	expect(offBody.error.message).toBe(
 		`Webhook "plain" is not approved, so nothing ran. Minting a URL does not turn a webhook on. Approve it: ${offBody.error.details.approvalUrl}`,

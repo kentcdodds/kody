@@ -9,6 +9,7 @@ import {
 } from '#worker/test-support/console-spies.ts'
 import {
 	getScheduledLaneCadence,
+	isInlineScheduledLane,
 	scheduledDispatchMaxRetries,
 	type ScheduledLaneMessage,
 } from '@kody-internal/shared/jobs/scheduled-lanes.ts'
@@ -128,9 +129,9 @@ test('cron dispatch enqueues cadence lanes, or runs them directly when the queue
 	const queuedEnv = createEnv({ SCHEDULED_DISPATCH_QUEUE: { send } })
 	const scheduledTime = Date.UTC(2026, 0, 1, 12, 0)
 	await dispatch(queuedEnv, scheduledTime)
-	expect(send).toHaveBeenCalledTimes(
-		getScheduledLaneCadence(new Date(scheduledTime)).length,
-	)
+	const cadence = getScheduledLaneCadence(new Date(scheduledTime))
+	const queuedLanes = cadence.filter((lane) => !isInlineScheduledLane(lane))
+	expect(send).toHaveBeenCalledTimes(queuedLanes.length)
 	for (const lane of ['retention', 'unverified_account_purge']) {
 		expect(send).toHaveBeenCalledWith({
 			lane,
@@ -138,7 +139,15 @@ test('cron dispatch enqueues cadence lanes, or runs them directly when the queue
 			cron: '*/5 * * * *',
 		})
 	}
-	expect(queuedEnv.HOST.runScheduledLane).not.toHaveBeenCalled()
+	expect(send).not.toHaveBeenCalledWith(
+		expect.objectContaining({ lane: 'dlq_depth_alert' }),
+	)
+	expect(queuedEnv.HOST.runScheduledLane).toHaveBeenCalledTimes(1)
+	expect(queuedEnv.HOST.runScheduledLane).toHaveBeenCalledWith({
+		lane: 'dlq_depth_alert',
+		scheduledTime,
+		cron: '*/5 * * * *',
+	})
 
 	const directEnv = createEnv()
 	const directTime = Date.UTC(2026, 0, 1, 12, 10)
@@ -270,7 +279,9 @@ test('failed queue sends fall back inline for that lane only, keep scheduledTime
 		'scheduled_lane_dispatch_failed lane=oauth_purge_expired',
 		'scheduled_lane_inline_d1_lock_contention',
 	])
-	const host = vi.fn().mockResolvedValue('d1_lock_contention')
+	const host = vi.fn(async (message: ScheduledLaneMessage) =>
+		message.lane === 'dlq_depth_alert' ? 'completed' : 'd1_lock_contention',
+	)
 	const failingSend = vi.fn(async (body: ScheduledLaneMessage) => {
 		if (body.lane === 'oauth_purge_expired') {
 			throw new Error('queue unavailable')
@@ -282,12 +293,18 @@ test('failed queue sends fall back inline for that lane only, keep scheduledTime
 	})
 	const fallbackTime = Date.UTC(2026, 0, 1, 12, 10)
 	await dispatch(env, fallbackTime)
-	expect(host).toHaveBeenCalledTimes(1)
-	expect(host).toHaveBeenCalledWith({
-		lane: 'oauth_purge_expired',
-		scheduledTime: fallbackTime,
-		cron: '*/5 * * * *',
-	})
+	expect(host.mock.calls.map((call) => call[0])).toEqual([
+		{
+			lane: 'dlq_depth_alert',
+			scheduledTime: fallbackTime,
+			cron: '*/5 * * * *',
+		},
+		{
+			lane: 'oauth_purge_expired',
+			scheduledTime: fallbackTime,
+			cron: '*/5 * * * *',
+		},
+	])
 	expect(consoleError).toHaveBeenCalledWith(
 		'scheduled_lane_inline_d1_lock_contention',
 		expect.objectContaining({

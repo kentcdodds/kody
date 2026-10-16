@@ -10,8 +10,8 @@ export type CapabilityCredentialSource = 'need' | 'mount' | 'grant' | 'package'
 
 /**
  * One reachable surface in a package's resolved capability set.
- * Fingerprints ignore `via` and display-only fields (`name`, `source`,
- * `needKey`).
+ * Fingerprints ignore `via` and display-only fields (`name`, `source`, and
+ * `needKey` unless the need shares the credential with visitors).
  */
 export type CapabilitySetEntry = {
 	kind: 'credential' | 'storage'
@@ -21,8 +21,17 @@ export type CapabilitySetEntry = {
 	name?: string
 	/** Display only: how the package reaches this credential. */
 	source?: CapabilityCredentialSource
-	/** Display only: the declared `kody.credentials` key a `need` fills. */
+	/**
+	 * The declared `kody.credentials` key a `need` fills. Display only, except
+	 * on an entry visitors may use, where it is part of the fingerprint.
+	 */
 	needKey?: string
+	/**
+	 * The need opts in with `ownerCredentialForVisitors`: visitors of the
+	 * internet-visible app may use this credential. Part of the fingerprint,
+	 * so turning it on or off asks the owner to approve again.
+	 */
+	ownerCredentialForVisitors?: true
 	credentialKind?: string
 	hosts: Array<string>
 	placement?: string | null
@@ -43,6 +52,8 @@ type CanonicalFingerprintEntry = {
 	credentialKind?: string
 	hosts: Array<string>
 	placement?: string | null
+	needKey?: string
+	ownerCredentialForVisitors?: true
 	storageId?: string
 }
 
@@ -60,6 +71,14 @@ function toCanonicalEntry(
 			credentialKind: entry.credentialKind ?? 'secret',
 			hosts: sortHosts(entry.hosts),
 			placement: entry.placement ?? null,
+			// Only opted-in entries carry these, so fingerprints of sets
+			// without visitor sharing stay what they were.
+			...(entry.ownerCredentialForVisitors
+				? {
+						needKey: entry.needKey ?? '',
+						ownerCredentialForVisitors: true as const,
+					}
+				: {}),
 		}
 	}
 	return {
@@ -120,4 +139,35 @@ export function capabilitySetsEqual(
 	rightFingerprint: string,
 ) {
 	return leftFingerprint === rightFingerprint
+}
+
+/**
+ * Credential ids an approved set lets visitors use, by need key. Reads the
+ * stored `capability_set_json`; anything unreadable approves nothing.
+ */
+export function visitorCredentialIdsByNeedKey(
+	capabilitySetJson: string,
+): Map<string, Set<string>> {
+	const byKey = new Map<string, Set<string>>()
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(capabilitySetJson)
+	} catch {
+		return byKey
+	}
+	if (!Array.isArray(parsed)) return byKey
+	for (const entry of parsed as Array<Partial<CapabilitySetEntry> | null>) {
+		if (
+			entry?.kind !== 'credential' ||
+			entry.ownerCredentialForVisitors !== true ||
+			typeof entry.needKey !== 'string' ||
+			typeof entry.credentialId !== 'string'
+		) {
+			continue
+		}
+		const ids = byKey.get(entry.needKey) ?? new Set<string>()
+		ids.add(entry.credentialId)
+		byKey.set(entry.needKey, ids)
+	}
+	return byKey
 }

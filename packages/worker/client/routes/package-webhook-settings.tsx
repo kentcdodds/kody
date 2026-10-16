@@ -1,12 +1,15 @@
 import { type Handle, type RemixNode, css } from 'remix/component'
 import { createDoubleCheck } from '#client/double-check.ts'
 import { AccountManagementMessage } from '#client/routes/account-management-components.tsx'
-import { renderPackageWebhookCard } from '#client/routes/package-webhook-card.tsx'
+import {
+	renderPackageWebhookCard,
+	type PackageWebhookCardIntent,
+} from '#client/routes/package-webhook-card.tsx'
 import {
 	fetchPackageWebhooks,
 	packageWebhooksSectionId,
 	postPackageWebhookIntent,
-	type WebhookIntent,
+	webhookDeclaredCount,
 	webhookFailureMessage,
 	webhookSuccessMessage,
 	webhooksDocHref,
@@ -131,7 +134,7 @@ export function createPackageWebhooksController(handle: Handle) {
 	async function runIntent(
 		ref: PackageRef,
 		webhook: PackageWebhookListItem,
-		intent: WebhookIntent,
+		payload: PackageWebhookCardIntent,
 	) {
 		if (mutating) return
 		const key = keyFor(ref)
@@ -141,7 +144,10 @@ export function createPackageWebhooksController(handle: Handle) {
 		const result = await postPackageWebhookIntent({
 			...ref,
 			webhookName: webhook.name,
-			intent,
+			intent: payload.intent,
+			endpointId: webhook.endpointId,
+			createInstance: payload.createInstance,
+			instanceLabel: payload.instanceLabel,
 		})
 		mutating = false
 		if (loadedFor !== key) {
@@ -153,24 +159,31 @@ export function createPackageWebhooksController(handle: Handle) {
 				window.location.assign('/login')
 				return
 			case 'error':
-				setMessage(result.message || webhookFailureMessage(intent), 'error')
+				setMessage(
+					result.message || webhookFailureMessage(payload.intent),
+					'error',
+				)
 				break
 			case 'ok': {
 				const { approvalUrl } = result.payload
+				const targetId =
+					payload.createInstance && result.payload.revealed
+						? result.payload.revealed.id
+						: webhook.id
 				applyWebhooks(
 					approvalUrl
 						? result.payload.webhooks.map((entry) =>
-								entry.id === webhook.id && !entry.approvalUrl
+								entry.id === targetId && !entry.approvalUrl
 									? { ...entry, approvalUrl }
 									: entry,
 							)
 						: result.payload.webhooks,
 				)
-				if (intent === 'rotate') revealedUrls.delete(webhook.id)
+				if (payload.intent === 'rotate') revealedUrls.delete(webhook.id)
 				if (result.payload.revealed) {
 					revealedUrls.set(result.payload.revealed.id, result.payload.revealed)
 				}
-				setMessage(webhookSuccessMessage(intent, approvalUrl))
+				setMessage(webhookSuccessMessage(payload.intent, approvalUrl))
 				break
 			}
 			default: {
@@ -185,6 +198,7 @@ export function createPackageWebhooksController(handle: Handle) {
 		const isCurrent = loadedFor === keyFor(ref)
 		const showReady = isCurrent && status === 'ready'
 		const showLoading = !isCurrent || status === 'idle' || status === 'loading'
+		const declaredCount = webhookDeclaredCount(webhooks)
 		const mintedCount = webhooks.filter((webhook) => webhook.minted).length
 		return (
 			<section
@@ -234,23 +248,29 @@ export function createPackageWebhooksController(handle: Handle) {
 				{showReady && webhooks.length > 0 ? (
 					<>
 						<p mix={css(mutedCss)} data-testid="package-webhook-settings-count">
-							{webhooks.length} declared · {mintedCount} minted
+							{declaredCount} declared · {mintedCount} minted
 						</p>
 						<div mix={css(cardListCss)}>
-							{webhooks.map((webhook) =>
-								renderPackageWebhookCard({
+							{webhooks.map((webhook, index) => {
+								const firstMintedSibling =
+									webhook.minted &&
+									webhooks.findIndex(
+										(entry) => entry.minted && entry.name === webhook.name,
+									) === index
+								return renderPackageWebhookCard({
 									webhook,
 									revealedUrl: revealedUrls.get(webhook.id)?.url ?? null,
 									isMutating: mutating,
 									rotateCheck: checkFor(rotateChecks, webhook.id),
 									disableCheck: checkFor(disableChecks, webhook.id),
-									onIntent: (intent) => {
-										void runIntent(ref, webhook, intent)
+									onIntent: (payload) => {
+										void runIntent(ref, webhook, payload)
 									},
 									onHideUrl: () => hideUrl(webhook),
 									deliveriesHref: `${orgResourcePath(ref.username, 'activity')}?view=recent&status=all&surface=webhook`,
-								}),
-							)}
+									showMintAnother: firstMintedSibling,
+								})
+							})}
 						</div>
 					</>
 				) : null}

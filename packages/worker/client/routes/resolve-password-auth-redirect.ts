@@ -9,7 +9,8 @@ import { buildPendingVerificationPath } from '#client/routes/pending-verificatio
  * response. Signup that still needs email verification goes to the dedicated
  * pending page so users are not dropped into MCP connect flow. A safe
  * redirectTo (such as an OAuth authorize URL) is preserved for continue-after-verify.
- * Authorize resumes drop `prompt=login` so the new session can consent.
+ * Authorize resumes drop `prompt=login` and `id_token_hint` so the new
+ * session can consent without looping on a stale reconnect hint.
  */
 export function resolvePasswordAuthRedirect(input: {
 	mode: 'login' | 'signup'

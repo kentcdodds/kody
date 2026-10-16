@@ -1,0 +1,394 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { expect, test, vi } from 'vitest'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import {
+	checkDlqDepthAndAlert,
+	classifyDlqDepth,
+	dlqDepthAlertKvKeyPrefix,
+	dlqDepthSustainedMs,
+	productionDeadLetterQueueNames,
+} from './dlq-depth-alert.ts'
+
+const mocks = vi.hoisted(() => ({
+	rawRequest: vi.fn(),
+	captureMessage: vi.fn(),
+	setFingerprint: vi.fn(),
+}))
+
+vi.mock('@sentry/cloudflare', () => ({
+	captureMessage: mocks.captureMessage,
+	withScope: (callback: (scope: unknown) => void) =>
+		callback({
+			setLevel() {},
+			setTag() {},
+			setContext() {},
+			setFingerprint: mocks.setFingerprint,
+		}),
+}))
+
+vi.mock('#mcp/cloudflare/cloudflare-rest-client.ts', () => {
+	class CloudflareApiError extends Error {
+		readonly status: number
+		constructor(message: string, options: { status: number }) {
+			super(message)
+			this.name = 'CloudflareApiError'
+			this.status = options.status
+		}
+	}
+	return {
+		CloudflareApiError,
+		createCloudflareRestClient: () => ({ rawRequest: mocks.rawRequest }),
+	}
+})
+
+const now = new Date('2026-10-16T12:00:00.000Z')
+const stuckQueue = 'kody-webhook-dispatch-dlq'
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../../..')
+
+type Sample = {
+	backlogCount: number
+	oldestMessageTimestampMs: number | null
+	status?: number
+}
+
+function memoryKv() {
+	const values = new Map<string, string>()
+	return {
+		values,
+		kv: {
+			get: async (key: string) => values.get(key) ?? null,
+			put: async (key: string, value: string) => {
+				values.set(key, value)
+			},
+			delete: async (key: string) => {
+				values.delete(key)
+			},
+		} as unknown as KVNamespace,
+	}
+}
+
+function productionEnv(kv: KVNamespace) {
+	return {
+		SENTRY_ENVIRONMENT: 'production',
+		CLOUDFLARE_ACCOUNT_ID: 'account-1',
+		CLOUDFLARE_API_TOKEN: 'token',
+		BUNDLE_ARTIFACTS_KV: kv,
+	}
+}
+
+function installQueues(samples: Record<string, Sample> = {}) {
+	mocks.rawRequest.mockImplementation(async (input: { path: string }) => {
+		if (!input.path.endsWith('/metrics')) {
+			return {
+				status: 200,
+				body: {
+					success: true,
+					result: productionDeadLetterQueueNames.map((name) => ({
+						queue_id: `id-${name}`,
+						queue_name: name,
+					})),
+					result_info: { total_pages: 1 },
+				},
+			}
+		}
+		const queueId = input.path.split('/').at(-2) ?? ''
+		const queueName = queueId.slice('id-'.length)
+		const sample = samples[queueName] ?? {
+			backlogCount: 0,
+			oldestMessageTimestampMs: null,
+		}
+		if (sample.status != null && sample.status >= 400) {
+			return {
+				status: sample.status,
+				body: {
+					success: false,
+					errors: [{ message: 'metrics unavailable' }],
+				},
+			}
+		}
+		return {
+			status: 200,
+			body: {
+				success: true,
+				result: {
+					backlog_count: sample.backlogCount,
+					backlog_bytes: 128,
+					oldest_message_timestamp_ms: sample.oldestMessageTimestampMs ?? 0,
+				},
+			},
+		}
+	})
+}
+
+test('depth is sustained only after the backlog has aged past 15 minutes', () => {
+	const oldest = now.getTime() - dlqDepthSustainedMs
+	expect(
+		classifyDlqDepth({
+			backlogCount: 0,
+			oldestMessageTimestampMs: oldest - 60_000,
+			now,
+			sinceMs: null,
+		}).kind,
+	).toBe('healthy')
+	expect(
+		classifyDlqDepth({
+			backlogCount: 2,
+			oldestMessageTimestampMs: oldest,
+			now,
+			sinceMs: null,
+		}).kind,
+	).toBe('pending')
+	expect(
+		classifyDlqDepth({
+			backlogCount: 2,
+			oldestMessageTimestampMs: oldest - 1,
+			now,
+			sinceMs: null,
+		}).kind,
+	).toBe('sustained')
+	expect(
+		classifyDlqDepth({
+			backlogCount: 1,
+			oldestMessageTimestampMs: null,
+			now,
+			sinceMs: now.getTime() - dlqDepthSustainedMs,
+		}).kind,
+	).toBe('pending')
+	expect(
+		classifyDlqDepth({
+			backlogCount: 1,
+			oldestMessageTimestampMs: null,
+			now,
+			sinceMs: now.getTime() - dlqDepthSustainedMs - 1,
+		}).kind,
+	).toBe('sustained')
+})
+
+test('a stuck production DLQ pages once, stays quiet on cooldown, and pages again after it drains', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { kv, values } = memoryKv()
+	const env = productionEnv(kv)
+	installQueues({
+		[stuckQueue]: {
+			backlogCount: 3,
+			oldestMessageTimestampMs: now.getTime() - 16 * 60_000,
+		},
+	})
+
+	const first = await checkDlqDepthAndAlert({ env, now })
+	expect(first).toMatchObject({ status: 'checked', alerted: 1, sustained: 1 })
+	expect(mocks.captureMessage).toHaveBeenCalledTimes(1)
+	expect(mocks.captureMessage.mock.calls[0]?.[0]).toContain(
+		'Dead-letter queue kody-webhook-dispatch-dlq still has 3 unacknowledged messages after 16 minutes.',
+	)
+	expect(mocks.setFingerprint).toHaveBeenCalledWith(['dlq-depth', stuckQueue])
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'dlq-depth-alerted',
+		expect.objectContaining({ queueName: stuckQueue, backlogCount: 3 }),
+	)
+
+	mocks.captureMessage.mockClear()
+	const cooled = await checkDlqDepthAndAlert({
+		env,
+		now: new Date(now.getTime() + 5 * 60_000),
+	})
+	expect(cooled).toMatchObject({ status: 'checked', alerted: 0, cooldown: 1 })
+	expect(mocks.captureMessage).not.toHaveBeenCalled()
+
+	installQueues()
+	const drained = await checkDlqDepthAndAlert({
+		env,
+		now: new Date(now.getTime() + 10 * 60_000),
+	})
+	expect(drained).toMatchObject({
+		status: 'checked',
+		healthy: productionDeadLetterQueueNames.length,
+		alerted: 0,
+	})
+	expect(values.size).toBe(0)
+
+	installQueues({
+		[stuckQueue]: {
+			backlogCount: 1,
+			oldestMessageTimestampMs: now.getTime() + 10 * 60_000 - 60_000,
+		},
+	})
+	const young = await checkDlqDepthAndAlert({
+		env,
+		now: new Date(now.getTime() + 10 * 60_000),
+	})
+	expect(young).toMatchObject({ status: 'checked', pending: 1, alerted: 0 })
+	expect(mocks.captureMessage).not.toHaveBeenCalled()
+
+	installQueues({
+		[stuckQueue]: {
+			backlogCount: 1,
+			oldestMessageTimestampMs: now.getTime() + 30 * 60_000 - 16 * 60_000,
+		},
+	})
+	const again = await checkDlqDepthAndAlert({
+		env,
+		now: new Date(now.getTime() + 30 * 60_000),
+	})
+	expect(again).toMatchObject({ status: 'checked', alerted: 1 })
+	expect(mocks.captureMessage).toHaveBeenCalledTimes(1)
+	expect(mocks.captureMessage.mock.calls[0]?.[0]).toContain(
+		'1 unacknowledged message',
+	)
+})
+
+test('an unknown oldest timestamp keeps the nonempty episode clock, and a valid timestamp still wins', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { kv } = memoryKv()
+	const env = productionEnv(kv)
+	installQueues({
+		[stuckQueue]: { backlogCount: 2, oldestMessageTimestampMs: null },
+	})
+	const first = await checkDlqDepthAndAlert({ env, now })
+	expect(first).toMatchObject({ status: 'checked', pending: 1, alerted: 0 })
+
+	installQueues({
+		[stuckQueue]: {
+			backlogCount: 2,
+			oldestMessageTimestampMs: now.getTime() + 60_000,
+		},
+	})
+	const youngTimestamp = await checkDlqDepthAndAlert({
+		env,
+		now: new Date(now.getTime() + 2 * 60_000),
+	})
+	expect(youngTimestamp).toMatchObject({
+		status: 'checked',
+		pending: 1,
+		alerted: 0,
+	})
+	expect(mocks.captureMessage).not.toHaveBeenCalled()
+
+	installQueues({
+		[stuckQueue]: { backlogCount: 2, oldestMessageTimestampMs: null },
+	})
+	const resumed = await checkDlqDepthAndAlert({
+		env,
+		now: new Date(now.getTime() + 16 * 60_000),
+	})
+	expect(resumed).toMatchObject({ status: 'checked', alerted: 1, sustained: 1 })
+	expect(mocks.captureMessage.mock.calls[0]?.[0]).toContain('after 16 minutes')
+})
+
+test('a missing oldest timestamp starts the 15 minute clock on the first non-zero sample', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { kv, values } = memoryKv()
+	const env = productionEnv(kv)
+	installQueues({
+		[stuckQueue]: { backlogCount: 1, oldestMessageTimestampMs: null },
+	})
+
+	const first = await checkDlqDepthAndAlert({ env, now })
+	expect(first).toMatchObject({ status: 'checked', pending: 1, alerted: 0 })
+	expect(mocks.captureMessage).not.toHaveBeenCalled()
+	const stored = values.get(`${dlqDepthAlertKvKeyPrefix}${stuckQueue}`)
+	expect(stored).toContain(String(now.getTime()))
+
+	const later = await checkDlqDepthAndAlert({
+		env,
+		now: new Date(now.getTime() + dlqDepthSustainedMs + 1),
+	})
+	expect(later).toMatchObject({ status: 'checked', alerted: 1, sustained: 1 })
+	expect(mocks.captureMessage.mock.calls[0]?.[0]).toContain(stuckQueue)
+})
+
+test('a cooldown write failure does not page that queue', async () => {
+	const { kv } = memoryKv()
+	const failingKv = {
+		get: kv.get.bind(kv),
+		put: async () => {
+			throw new Error('kv down')
+		},
+		delete: kv.delete.bind(kv),
+	} as unknown as KVNamespace
+	installQueues({
+		[stuckQueue]: {
+			backlogCount: 3,
+			oldestMessageTimestampMs: now.getTime() - 16 * 60_000,
+		},
+	})
+	await expect(
+		checkDlqDepthAndAlert({ env: productionEnv(failingKv), now }),
+	).rejects.toThrow(/kody-webhook-dispatch-dlq \(state write failed\)/)
+	expect(mocks.captureMessage).not.toHaveBeenCalled()
+})
+
+test('one unread queue fails the lane after a sibling stuck queue has already paged', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { kv } = memoryKv()
+	installQueues({
+		[stuckQueue]: {
+			backlogCount: 2,
+			oldestMessageTimestampMs: now.getTime() - 20 * 60_000,
+		},
+		'kody-email-delivery-dlq': {
+			backlogCount: 0,
+			oldestMessageTimestampMs: null,
+			status: 500,
+		},
+	})
+	await expect(
+		checkDlqDepthAndAlert({ env: productionEnv(kv), now }),
+	).rejects.toThrow(/kody-email-delivery-dlq/)
+	expect(mocks.captureMessage).toHaveBeenCalledTimes(1)
+	expect(mocks.captureMessage.mock.calls[0]?.[0]).toContain(stuckQueue)
+})
+
+test('non-production and missing Cloudflare credentials do not report an empty DLQ', async () => {
+	const { kv } = memoryKv()
+	installQueues({
+		[stuckQueue]: {
+			backlogCount: 4,
+			oldestMessageTimestampMs: now.getTime() - 60 * 60_000,
+		},
+	})
+	await expect(
+		checkDlqDepthAndAlert({
+			env: {
+				...productionEnv(kv),
+				SENTRY_ENVIRONMENT: 'preview',
+			},
+			now,
+		}),
+	).resolves.toEqual({ status: 'skipped', reason: 'non_production' })
+	await expect(
+		checkDlqDepthAndAlert({
+			env: {
+				...productionEnv(kv),
+				WRANGLER_IS_LOCAL_DEV: 'true',
+			},
+			now,
+		}),
+	).resolves.toEqual({ status: 'skipped', reason: 'non_production' })
+	await expect(
+		checkDlqDepthAndAlert({
+			env: { ...productionEnv(kv), CLOUDFLARE_API_TOKEN: '  ' },
+			now,
+		}),
+	).rejects.toThrow(/CLOUDFLARE_API_TOKEN/)
+	expect(mocks.rawRequest).not.toHaveBeenCalled()
+	expect(mocks.captureMessage).not.toHaveBeenCalled()
+})
+
+test('the watched queues are the production dead-letter queues configured on the workers', () => {
+	const names = new Set<string>()
+	for (const relativePath of [
+		'packages/worker/wrangler.jsonc',
+		'packages/jobs-worker/wrangler.jsonc',
+	]) {
+		const source = readFileSync(join(repoRoot, relativePath), 'utf8')
+		for (const match of source.matchAll(/"dead_letter_queue":\s*"([^"]+)"/g)) {
+			const name = match[1] ?? ''
+			if (name.includes('-preview-') || name.includes('-test-')) continue
+			names.add(name)
+		}
+	}
+	expect([...names].sort()).toEqual([...productionDeadLetterQueueNames].sort())
+})

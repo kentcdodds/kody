@@ -28,7 +28,9 @@ import {
 import { buildWebhookApprovalUrl } from '#worker/webhooks/approval.ts'
 import {
 	buildSetWebhookEndpointHmacSecretStatement,
+	getWebhookEndpointByIdForUser,
 	getWebhookEndpointByKey,
+	listWebhookEndpointsByName,
 } from '#worker/webhooks/repo.ts'
 import { mintPackageOwnedWebhookHmacCiphertext } from '#worker/webhooks/signing-secret.ts'
 import {
@@ -115,6 +117,8 @@ async function resolveDeclaredTrigger(input: {
 	savedPackage: SavedPackageRecord
 	kind: EnablementTriggerKind
 	name: string
+	/** Webhook only: mint to approve. Omit → oldest URL under the name. */
+	endpointId?: string | null
 }): Promise<ResolvedTrigger> {
 	const { savedPackage } = input
 	const name = input.name.trim()
@@ -152,13 +156,23 @@ async function resolveDeclaredTrigger(input: {
 				(webhook) => webhook.name === name,
 			)
 			if (!declared) throw notDeclared('webhooks')
-			const endpoint = await getWebhookEndpointByKey({
-				db: input.env.APP_DB,
-				userId: savedPackage.userId,
-				packageId: savedPackage.id,
-				webhookName: name,
-			})
-			if (!endpoint) {
+			const endpoint = input.endpointId
+				? await getWebhookEndpointByIdForUser({
+						db: input.env.APP_DB,
+						userId: savedPackage.userId,
+						endpointId: input.endpointId,
+					})
+				: await getWebhookEndpointByKey({
+						db: input.env.APP_DB,
+						userId: savedPackage.userId,
+						packageId: savedPackage.id,
+						webhookName: name,
+					})
+			if (
+				!endpoint ||
+				endpoint.packageId !== savedPackage.id ||
+				endpoint.webhookName !== name
+			) {
 				throw new TriggerEnablementError(
 					'webhook_not_minted',
 					`Webhook "${name}" has no URL yet. Mint one with webhookUrlMint, then approve it at the approval URL the mint returns.`,
@@ -191,6 +205,8 @@ export type DeclaredTrigger = {
 	name: string
 	/** Job id, package id, or webhook endpoint id; null for an unminted webhook. */
 	instanceId: string | null
+	/** Webhook only: short label for this minted URL; null when unlabeled. */
+	instanceLabel?: string | null
 	/** Enablements of this instance that are not off, oldest first. */
 	enablements: Array<EnablementRecord>
 }
@@ -221,21 +237,36 @@ export async function listDeclaredTriggers(input: {
 			name: subscription.topic,
 			instanceId: savedPackage.id,
 		})),
-		...(await Promise.all(
-			listPackageWebhooks(manifest).map(async (webhook) => ({
-				kind: 'webhook' as const,
-				name: webhook.name,
-				instanceId:
-					(
-						await getWebhookEndpointByKey({
-							db,
-							userId: orgId,
-							packageId: savedPackage.id,
-							webhookName: webhook.name,
-						})
-					)?.id ?? null,
-			})),
-		)),
+		...(
+			await Promise.all(
+				listPackageWebhooks(manifest).map(async (webhook) => {
+					// One DeclaredTrigger per minted URL so Approve and credential
+					// mapping can target a specific endpoint. Unminted → one row.
+					const endpoints = await listWebhookEndpointsByName({
+						db,
+						userId: orgId,
+						packageId: savedPackage.id,
+						webhookName: webhook.name,
+					})
+					if (endpoints.length === 0) {
+						return [
+							{
+								kind: 'webhook' as const,
+								name: webhook.name,
+								instanceId: null as string | null,
+								instanceLabel: null as string | null,
+							},
+						]
+					}
+					return endpoints.map((endpoint) => ({
+						kind: 'webhook' as const,
+						name: webhook.name,
+						instanceId: endpoint.id as string | null,
+						instanceLabel: endpoint.instanceLabel,
+					}))
+				}),
+			)
+		).flat(),
 	]
 	return await Promise.all(
 		declared.map(async (trigger) => ({
@@ -478,6 +509,8 @@ export async function planTriggerEnablementForCaller(input: {
 	 * URL, and inbound email keeps its sender-scoped Approve path.
 	 */
 	createInstance?: boolean
+	/** Webhook only: mint to approve. Omit → oldest URL under the name. */
+	endpointId?: string | null
 }): Promise<TriggerEnablementPlan> {
 	const actor = requireActor(input.request)
 	const { savedPackage } = input
@@ -487,6 +520,7 @@ export async function planTriggerEnablementForCaller(input: {
 		savedPackage,
 		kind: input.kind,
 		name: input.name,
+		endpointId: input.endpointId,
 	})
 	const db = input.env.APP_DB
 	const orgId = savedPackage.userId

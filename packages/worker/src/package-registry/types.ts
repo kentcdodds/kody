@@ -124,6 +124,9 @@ export type PackageCredentialKind = (typeof packageCredentialKindValues)[number]
  */
 export const packageCredentialSlotNamePattern = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/
 
+export const ownerCredentialForVisitorsValueMessage =
+	'kody.credentials ownerCredentialForVisitors takes only true. Omit it to keep app visitors from using the owner’s credential.'
+
 export const retiredCredentialPlacementMessage =
 	'kody.credentials slots take no placement: the fetch gateway fills a credential anywhere in a request (a header, the URL path or query, or the body) to a host the credential allows, over HTTPS. Remove placement.'
 
@@ -163,6 +166,15 @@ export const packageCredentialSlotSchema = z.strictObject({
 	multiple: z.boolean().optional(),
 	/** Shown to callers choosing a credential for this need. */
 	description: z.string().trim().min(1).max(500),
+	/**
+	 * Opt-in, per credential: on an internet-visible app, this need resolves
+	 * with the credentials of the owner who approved the app for visitors,
+	 * so signed-out visitors and people signed in as someone else can use it.
+	 * The owner approves it on the capability approval page.
+	 */
+	ownerCredentialForVisitors: z
+		.literal(true, { error: ownerCredentialForVisitorsValueMessage })
+		.optional(),
 	placement: z.never({ error: retiredCredentialPlacementMessage }).optional(),
 })
 

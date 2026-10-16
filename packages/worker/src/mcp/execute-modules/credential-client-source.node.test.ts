@@ -65,6 +65,44 @@ afterEach(() => {
 	vi.unstubAllGlobals()
 })
 
+test('a Key client keeps fetch and exposes HMAC sign()', async () => {
+	const calls: Array<[string, unknown]> = []
+	const runtime = createRuntime(async (name, args) => {
+		calls.push([name, args])
+		if (name === credentialClientToolNames.sign) {
+			return { ok: true, value: { signature: 'sha256=sig' } }
+		}
+		expect(name).toBe(credentialClientToolNames.open)
+		return { ok: true, value: openedAs('secret', ['api.example.com']) }
+	})
+	const client = await runtime.credential('xClientSecret')
+	expect(client.fetch).toEqual(expect.any(Function))
+	expect(client.sign).toEqual(expect.any(Function))
+	await expect(
+		client.sign!({
+			type: 'hmac',
+			algorithm: 'hmac-sha256',
+			message: 'crc',
+			encoding: 'base64',
+			prefix: 'sha256=',
+		}),
+	).resolves.toBe('sha256=sig')
+	expect(calls).toContainEqual([
+		credentialClientToolNames.sign,
+		{
+			handle: 'kch1.handle.sig',
+			host: 'api.example.com',
+			operation: {
+				type: 'hmac',
+				algorithm: 'hmac-sha256',
+				message: 'crc',
+				encoding: 'base64',
+				prefix: 'sha256=',
+			},
+		},
+	])
+})
+
 test('a client carries the handle on its hosts, follows redirects itself, and drops it off-host', async () => {
 	const runtime = createRuntime(async (name, args) => {
 		expect(name).toBe(credentialClientToolNames.open)
@@ -90,6 +128,7 @@ test('a client carries the handle on its hosts, follows redirects itself, and dr
 	const client = await runtime.credential('resend')
 	expect(Object.isFrozen(client)).toBe(true)
 	expect(client).toMatchObject({ name: 'cred', kind: 'secret' })
+	expect(client.sign).toEqual(expect.any(Function))
 	expect(JSON.stringify(client)).not.toContain('kch1')
 	const response = await client.fetch!('/start', {
 		headers: { authorization: 'Bearer mine' },

@@ -43,6 +43,8 @@ const unminted: PackageWebhookListItem = {
 	replay: null,
 	challenge: null,
 	minted: false,
+	endpointId: null,
+	instanceLabel: null,
 	handle: null,
 	urlHost: null,
 	enabled: null,
@@ -69,6 +71,8 @@ const minted: PackageWebhookListItem = {
 	replay: { deliveryIdHeader: 'X-Delivery-Id' },
 	challenge: null,
 	minted: true,
+	endpointId: '11111111-1111-1111-1111-111111111111',
+	instanceLabel: null,
 	handle: 'whh_11111111-1111-1111-1111-111111111111',
 	urlHost: 'kody.example',
 	enabled: true,
@@ -111,7 +115,9 @@ test('webhooks index lists declared webhooks with status and deep-links each row
 	expect(html).toContain('>Webhooks</h1>')
 	expect(html).toContain('aria-label="Webhooks"')
 	expect(html).toContain('2 declared · 1 minted')
-	expect(html).toContain('href="/@jane/raycast/settings#webhook-run"')
+	expect(html).toContain(
+		'href="/@jane/raycast/settings#webhook-run-11111111-1111-1111-1111-111111111111"',
+	)
 	expect(html).toContain('href="/@jane/sentry-bridge/settings#webhook-sentry"')
 	expect(html).toContain('>Active<')
 	expect(html).toContain('>No URL yet<')

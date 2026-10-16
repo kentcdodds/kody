@@ -72,8 +72,10 @@ failure, with or without an `idempotencyKey`. Open errors hides successes;
 switch to **Recent runs** or filter status to success to see them. Jobs,
 webhooks, package apps, and workflows are recorded the same way.
 
-An **`idempotencyKey`** is for replaying one call after a client timeout, not
-for whether the run is listed. See [Execute and workflows](./execute.md).
+An **`idempotencyKey`** replays one call after a client timeout. Hosted execute
+assigns one when a call is still running at the transport budget and returns it
+with the run id. It does not decide whether the run is listed. See
+[Execute and workflows](./execute.md).
 
 ## React to failures from a package
 

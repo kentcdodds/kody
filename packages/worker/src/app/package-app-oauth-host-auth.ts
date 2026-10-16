@@ -6,6 +6,7 @@ import {
 } from '#worker/app-base-url.ts'
 import { consumePackageAppOauthCode } from '#app/package-app-oauth-codes.ts'
 import { formatPackageAppOauthClientId } from '#app/package-app-oauth-client-id.ts'
+import { resolvePackageAppOauthClient } from '#app/package-app-oauth-client-resolve.ts'
 import { findLivePackageAppOauthGrant } from '#app/package-app-oauth-grants.ts'
 import {
 	createPackageAppOauthCodeVerifier,
@@ -21,6 +22,7 @@ import {
 } from '#app/package-app-oauth-scopes.ts'
 import {
 	createPackageAppSessionCookie,
+	destroyLegacyPackageAppSessionCookies,
 	destroyPackageAppSessionCookie,
 	readPackageAppSession,
 } from '#app/package-app-session.ts'
@@ -52,8 +54,9 @@ import { resolvePackageAppOauthInlineIdentity } from '#app/package-app-oauth-inl
  * Host-root `/_kody/auth/*` routes on package-app origins and verified custom
  * domains (and on the app origin when `PACKAGE_APP_BASE_URL` is unset for
  * preview / path-based inline serving). Starts PKCE, exchanges the
- * authorization code for the host-only package-app session cookie, clears that
- * session on logout, and exposes `/me`.
+ * authorization code for a per-app host-only package-app session cookie, clears
+ * only that app's session on logout (shared hosts keep sibling app sessions),
+ * and exposes `/me`.
  */
 
 function redirectResponse(location: string, setCookies: Array<string> = []) {
@@ -99,6 +102,105 @@ function readAppSlugParam(url: URL) {
 	return raw ? raw.toLowerCase() : undefined
 }
 
+/** Best-effort leaf from a host-root `return_to` like `/packages/{leaf}/…`. */
+function readAppSlugFromReturnTo(returnTo: string) {
+	const match = /^\/packages\/([^/?#]+)/i.exec(returnTo)
+	const raw = match?.[1]?.trim()
+	return raw ? raw.toLowerCase() : undefined
+}
+
+async function resolveVerifiedHostApp(input: {
+	env: Env
+	orgUsername: string
+	kodyId: string
+}): Promise<{ orgUsername: string; kodyId: string } | null> {
+	// Never trust a raw subdomain label or query param as the OAuth owner —
+	// the package must exist and be served under that handle.
+	const resolved = await resolvePackageAppOauthClient({
+		env: input.env,
+		username: input.orgUsername,
+		kodyId: input.kodyId,
+	})
+	if (!resolved) return null
+	return {
+		orgUsername: resolved.client.username,
+		kodyId: resolved.client.kodyId,
+	}
+}
+
+/**
+ * Leaf from a same-origin `Referer` path `/packages/{leaf}/…`. Used on shared
+ * hosts so logout binds to the app that initiated the navigation, not an
+ * attacker-chosen `?app=` on a sibling package.
+ */
+function readAppSlugFromSameOriginReferer(request: Request, requestUrl: URL) {
+	const referer = request.headers.get('Referer')
+	if (!referer) return undefined
+	try {
+		const refererUrl = new URL(referer)
+		if (refererUrl.origin !== requestUrl.origin) return undefined
+		return readAppSlugFromReturnTo(`${refererUrl.pathname}${refererUrl.search}`)
+	} catch {
+		return undefined
+	}
+}
+
+/**
+ * Which package leaf logout should clear on this host.
+ *
+ * On shared multi-app hosts (`{user}.kody.run` and org custom hostnames), only
+ * a same-origin Referer `/packages/{leaf}` may select a per-app cookie —
+ * `?app=` / `return_to` are attacker-chosen on a top-level GET. Verified
+ * single-app custom hostnames trust the hostname mapping. Shared-host logout
+ * never waits on `APP_DB` (custom-domain lookup) so a D1 outage cannot block
+ * cookie clearing. When nothing trusted resolves, callers clear only the
+ * legacy host-wide cookie.
+ */
+async function resolveLogoutAppSlug(input: {
+	request: Request
+	env: Env
+	url: URL
+	returnTo: string
+}): Promise<string | null> {
+	const fromReferer = readAppSlugFromSameOriginReferer(input.request, input.url)
+
+	const requestHost = parsePackageAppRequestHost({
+		env: input.env,
+		url: input.url,
+	})
+	if (requestHost?.kind === 'user-subdomain') {
+		return fromReferer ?? null
+	}
+
+	// Preview / path-based inline serving: no separate package-app zone, so
+	// query / return_to remain useful when Referer is absent.
+	if (!getPackageAppBaseUrl({ env: input.env })) {
+		return (
+			fromReferer ??
+			readAppSlugParam(input.url) ??
+			readAppSlugFromReturnTo(input.returnTo) ??
+			null
+		)
+	}
+
+	const hostname = normalizeCustomHostname(input.url.hostname)
+	if (hostname && (await isPackageAppCustomDomainsEnabled(input.env.APP_DB))) {
+		const mapping = await lookupCachedPackageAppCustomHostname({
+			db: input.env.APP_DB,
+			hostname,
+		})
+		if (mapping && isVerifiedAppCustomHostname(mapping)) {
+			return mapping.kodyId.toLowerCase()
+		}
+		if (mapping && isVerifiedOrgCustomHostname(mapping)) {
+			// Multi-app org custom host: same sibling rule as user subdomains.
+			return fromReferer ?? null
+		}
+	}
+
+	return fromReferer ?? null
+}
+
 async function resolveHostApp(input: {
 	request: Request
 	env: Env
@@ -111,7 +213,11 @@ async function resolveHostApp(input: {
 	if (requestHost?.kind === 'user-subdomain') {
 		const app = readAppSlugParam(input.url)
 		if (!app) return null
-		return { orgUsername: requestHost.username, kodyId: app }
+		return await resolveVerifiedHostApp({
+			env: input.env,
+			orgUsername: requestHost.username,
+			kodyId: app,
+		})
 	}
 
 	const hostname = normalizeCustomHostname(input.url.hostname)
@@ -122,15 +228,20 @@ async function resolveHostApp(input: {
 		})
 		if (mapping) {
 			if (isVerifiedAppCustomHostname(mapping)) {
-				return {
+				return await resolveVerifiedHostApp({
+					env: input.env,
 					orgUsername: mapping.username,
 					kodyId: mapping.kodyId.toLowerCase(),
-				}
+				})
 			}
 			if (isVerifiedOrgCustomHostname(mapping)) {
 				const app = readAppSlugParam(input.url)
 				if (!app) return null
-				return { orgUsername: mapping.username, kodyId: app }
+				return await resolveVerifiedHostApp({
+					env: input.env,
+					orgUsername: mapping.username,
+					kodyId: app,
+				})
 			}
 		}
 	}
@@ -138,7 +249,13 @@ async function resolveHostApp(input: {
 	// Preview / path-based inline serving: no package-app origin, so resolve
 	// from query params or return_to on the app origin itself.
 	if (!getPackageAppBaseUrl({ env: input.env })) {
-		return resolvePackageAppOauthInlineIdentity(input.url)
+		const inline = resolvePackageAppOauthInlineIdentity(input.url)
+		if (!inline) return null
+		return await resolveVerifiedHostApp({
+			env: input.env,
+			orgUsername: inline.orgUsername,
+			kodyId: inline.kodyId,
+		})
 	}
 	return null
 }
@@ -147,7 +264,7 @@ async function handleLogin(input: { request: Request; env: Env; url: URL }) {
 	const app = await resolveHostApp(input)
 	if (!app) {
 		return badRequest(
-			'Missing app identity for sign-in. On *.kody.run pass ?app={leaf}.',
+			'Unknown or unpublished package app for this host. On *.kody.run pass ?app={leaf} for a published package under this owner.',
 		)
 	}
 	const { scopes, error: scopeError } = parsePackageAppOauthScopes(
@@ -246,18 +363,19 @@ async function handleCallback(input: { request: Request; env: Env; url: URL }) {
 		return badRequest('Authorization code was issued for a different app.', 403)
 	}
 
-	const sessionCookie = await createPackageAppSessionCookie({
+	const sessionCookies = await createPackageAppSessionCookie({
 		env: input.env,
 		session: {
 			stableUserId: record.personId,
 			username: record.orgUsername,
 		},
+		slug: record.kodyId,
 		secure,
 		expiresAt: record.sessionExpiresAt,
 	})
 	return redirectResponse(normalizeReturnTo(pkce.returnTo, input.url.origin), [
 		clearPkce,
-		sessionCookie,
+		...sessionCookies,
 	])
 }
 
@@ -267,11 +385,26 @@ async function handleLogout(input: { request: Request; env: Env; url: URL }) {
 		input.url.searchParams.get('return_to'),
 		input.url.origin,
 	)
+	// Shared hosts clear only the requesting leaf. Prefer same-origin Referer
+	// `/packages/{leaf}` over `?app=` so a sibling package cannot navigate the
+	// browser into clearing another app. Verified app custom domains resolve
+	// from the hostname mapping. When no leaf is known (older kit clients with
+	// `return_to=/` and no Referer), clear only the legacy host-wide cookie so
+	// pre-per-app sessions still end.
+	const kodyId = await resolveLogoutAppSlug({ ...input, returnTo })
 	const cookies = [
-		await destroyPackageAppSessionCookie({ env: input.env, secure }),
+		...(kodyId
+			? await destroyPackageAppSessionCookie({
+					env: input.env,
+					slug: kodyId,
+					secure,
+				})
+			: await destroyLegacyPackageAppSessionCookies({
+					env: input.env,
+					secure,
+				})),
 		await destroyPackageAppOauthPkceCookie({ env: input.env, secure }),
 	]
-	const kodyId = readAppSlugParam(input.url)
 	if (kodyId) {
 		cookies.push(
 			await destroyPackageAppTicketCookie({
@@ -297,9 +430,19 @@ async function readAvatarKeyForPerson(input: {
 }
 
 async function handleMe(input: { request: Request; env: Env; url: URL }) {
+	const app = await resolveHostApp(input)
+	const slug = app?.kodyId ?? readAppSlugParam(input.url)
+	if (!slug) {
+		return Response.json(
+			{ error: 'missing_app', message: 'Pass ?app={leaf} on this host.' },
+			{ status: 400, headers: { 'Cache-Control': 'no-store' } },
+		)
+	}
+
 	const parsedSession = await readPackageAppSession({
 		request: input.request,
 		env: input.env,
+		slug,
 	})
 	if (!parsedSession) {
 		return Response.json(
@@ -320,17 +463,9 @@ async function handleMe(input: { request: Request; env: Env; url: URL }) {
 		)
 	}
 
-	const app = await resolveHostApp(input)
-	const slug = app?.kodyId ?? readAppSlugParam(input.url)
 	const handle = (
 		app?.orgUsername ?? parsedSession.session.username
 	).toLowerCase()
-	if (!slug) {
-		return Response.json(
-			{ error: 'missing_app', message: 'Pass ?app={leaf} on this host.' },
-			{ status: 400, headers: { 'Cache-Control': 'no-store' } },
-		)
-	}
 
 	const grant = await findLivePackageAppOauthGrant({
 		db: input.env.APP_DB,

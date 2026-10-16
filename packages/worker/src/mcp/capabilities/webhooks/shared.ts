@@ -60,6 +60,18 @@ export const listedWebhookSchema = z.object({
 	minted: z
 		.boolean()
 		.describe('True when a URL secret has been minted for this webhook.'),
+	endpoint_id: z
+		.string()
+		.nullable()
+		.describe(
+			'Webhook endpoint id when minted. Pass to rotate/enable/disable when several URLs share the name. Null when not minted.',
+		),
+	instance_label: z
+		.string()
+		.nullable()
+		.describe(
+			'Short label when several URLs share the declared webhook name. Null when unlabeled or not minted.',
+		),
 	handle: z
 		.string()
 		.nullable()
@@ -88,6 +100,15 @@ export const mintedWebhookHandleSchema = z.object({
 	package_id: z.string(),
 	package_kody_id: z.string(),
 	name: z.string(),
+	endpoint_id: z
+		.string()
+		.describe('Webhook endpoint id. The URL identity for this mint.'),
+	instance_label: z
+		.string()
+		.nullable()
+		.describe(
+			'Short label when several URLs share the declared webhook name. Null on the first mint without a label.',
+		),
 	handle: z
 		.string()
 		.describe(
@@ -155,6 +176,8 @@ export function toListedWebhookCapability(webhook: {
 	replay?: z.infer<typeof webhookReplayPublicSchema>
 	challenge: PackageWebhookChallenge | null
 	minted: boolean
+	endpointId: string | null
+	instanceLabel: string | null
 	handle: string | null
 	urlHost: string | null
 	enabled: boolean | null
@@ -176,6 +199,8 @@ export function toListedWebhookCapability(webhook: {
 		replay: webhook.replay ?? null,
 		challenge: webhook.challenge,
 		minted: webhook.minted,
+		endpoint_id: webhook.endpointId,
+		instance_label: webhook.instanceLabel,
 		handle: webhook.handle,
 		url_host: webhook.urlHost,
 		enabled: webhook.enabled,
@@ -189,6 +214,8 @@ export function toMintedWebhookCapability(minted: {
 	packageId: string
 	packageKodyId: string
 	name: string
+	endpointId: string
+	instanceLabel: string | null
 	handle: string
 	urlHost: string
 	enabled: boolean
@@ -201,6 +228,8 @@ export function toMintedWebhookCapability(minted: {
 		package_id: minted.packageId,
 		package_kody_id: minted.packageKodyId,
 		name: minted.name,
+		endpoint_id: minted.endpointId,
+		instance_label: minted.instanceLabel,
 		handle: minted.handle,
 		url_host: minted.urlHost,
 		enabled: minted.enabled,

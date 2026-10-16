@@ -814,7 +814,7 @@ test('storage bytes are UserMeter-authoritative: cold zero bootstrap, denial, co
 			requested,
 		})
 
-	// Cold bootstrap zero-initializes UserMeter, then reserves 5.
+	// Cold bootstrap seeds from physical (0 here), then reserves 5.
 	const user = await seedFreeUser('meter-storage-do-authority')
 	await reserve(user, 5)
 	expect(await user.meter.readStorageBytes()).toMatchObject({

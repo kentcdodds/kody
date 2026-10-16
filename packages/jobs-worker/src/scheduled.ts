@@ -2,6 +2,7 @@ import * as Sentry from '@sentry/cloudflare'
 import { isRetryableD1LockError } from '@kody-internal/shared/d1-retry.ts'
 import {
 	getScheduledLaneCadence,
+	isInlineScheduledLane,
 	isJobsWorkerLocalLane,
 	parseScheduledLaneMessage,
 	resolveScheduledLaneQueueAction,
@@ -60,52 +61,58 @@ export async function dispatchScheduledLanes(input: {
 	const scheduledAt = new Date(input.controller.scheduledTime)
 	const lanes = getScheduledLaneCadence(scheduledAt)
 	const queue = input.env.SCHEDULED_DISPATCH_QUEUE
-	if (!queue) {
-		for (const lane of lanes) {
-			const message = {
+	// The DLQ depth alert watches this queue's dead-letter queue, so it always
+	// runs inline. Every other lane stays on the queue when the binding exists.
+	const queuedLanes = queue
+		? lanes.filter((lane) => !isInlineScheduledLane(lane))
+		: []
+	const inlineLanes = queue ? lanes.filter(isInlineScheduledLane) : lanes
+	// Page before queue sends. A failed send falls back to a lane that can
+	// run for a minute, and that wait must not postpone the dead-letter check
+	// during the outage the check exists to see.
+	for (const lane of inlineLanes) {
+		await runInlineScheduledLane({
+			env: input.env,
+			message: {
 				lane,
 				scheduledTime: input.controller.scheduledTime,
 				cron: input.controller.cron,
-			} satisfies ScheduledLaneMessage
+			},
+		})
+	}
+	if (queue) {
+		const failedMessages = await Promise.all(
+			queuedLanes.map(async (lane) => {
+				const message = {
+					lane,
+					scheduledTime: input.controller.scheduledTime,
+					cron: input.controller.cron,
+				} satisfies ScheduledLaneMessage
+				try {
+					await queue.send(message)
+					return null
+				} catch (error) {
+					console.error(`scheduled_lane_dispatch_failed lane=${lane}`, error)
+					Sentry.withScope((scope) => {
+						scope.setTag('scheduled.lane', lane)
+						scope.setContext('scheduled_dispatch', {
+							lane,
+							scheduledTime: scheduledAt.toISOString(),
+							cron: input.controller.cron,
+						})
+						Sentry.captureException(error)
+					})
+					return message
+				}
+			}),
+		)
+		for (const message of failedMessages) {
+			if (!message) continue
 			await runInlineScheduledLane({
 				env: input.env,
 				message,
 			})
 		}
-		return
-	}
-
-	const failedMessages = await Promise.all(
-		lanes.map(async (lane) => {
-			const message = {
-				lane,
-				scheduledTime: input.controller.scheduledTime,
-				cron: input.controller.cron,
-			} satisfies ScheduledLaneMessage
-			try {
-				await queue.send(message)
-				return null
-			} catch (error) {
-				console.error(`scheduled_lane_dispatch_failed lane=${lane}`, error)
-				Sentry.withScope((scope) => {
-					scope.setTag('scheduled.lane', lane)
-					scope.setContext('scheduled_dispatch', {
-						lane,
-						scheduledTime: scheduledAt.toISOString(),
-						cron: input.controller.cron,
-					})
-					Sentry.captureException(error)
-				})
-				return message
-			}
-		}),
-	)
-	for (const message of failedMessages) {
-		if (!message) continue
-		await runInlineScheduledLane({
-			env: input.env,
-			message,
-		})
 	}
 }
 

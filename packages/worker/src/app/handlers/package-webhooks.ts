@@ -1,7 +1,14 @@
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { type Action } from 'remix/router'
-import { enum_, object, parseSafe, string } from 'remix/data-schema'
+import {
+	boolean,
+	enum_,
+	object,
+	optional,
+	parseSafe,
+	string,
+} from 'remix/data-schema'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	loadPackageWebhooksData,
@@ -43,6 +50,9 @@ type WebhookActionIntent = (typeof webhookActionIntents)[number]
 const webhookActionSchema = object({
 	intent: enum_(webhookActionIntents),
 	webhookName: string(),
+	endpointId: optional(string()),
+	createInstance: optional(boolean()),
+	instanceLabel: optional(string()),
 })
 
 type AuthenticatedUser = WebhooksUser &
@@ -122,6 +132,9 @@ export function createCommunityPackageWebhooksApiHandler(env: Env) {
 			}
 
 			const intent = parsed.value.intent
+			const endpointId = parsed.value.endpointId?.trim() || null
+			const createInstance = parsed.value.createInstance === true
+			const instanceLabel = parsed.value.instanceLabel?.trim() || null
 			const audit = (result: 'success' | 'failure', reason?: string) => {
 				void logAuditEvent({
 					db: auditDatabaseFromEnv(env),
@@ -134,6 +147,8 @@ export function createCommunityPackageWebhooksApiHandler(env: Env) {
 					reason: [
 						`package=${packageKodyId}`,
 						`webhook=${webhookName}`,
+						...(endpointId ? [`endpoint=${endpointId}`] : []),
+						...(createInstance ? ['createInstance'] : []),
 						...(reason ? [reason] : []),
 					].join(' '),
 				})
@@ -147,6 +162,9 @@ export function createCommunityPackageWebhooksApiHandler(env: Env) {
 					intent,
 					packageKodyId,
 					webhookName,
+					endpointId,
+					createInstance,
+					instanceLabel,
 				})
 				audit('success')
 				const payload: PackageWebhooksActionPayload = {
@@ -174,6 +192,7 @@ export function createCommunityPackageWebhooksApiHandler(env: Env) {
 					intent,
 					packageKodyId,
 					webhookName,
+					endpointId,
 					error,
 				})
 				return jsonResponse(
@@ -192,11 +211,24 @@ async function runWebhookAction(input: {
 	intent: WebhookActionIntent
 	packageKodyId: string
 	webhookName: string
+	endpointId: string | null
+	createInstance: boolean
+	instanceLabel: string | null
 }): Promise<{
 	revealed: PackageWebhookRevealedUrl | null
 	approvalUrl: string | null
 }> {
-	const { env, request, user, intent, packageKodyId, webhookName } = input
+	const {
+		env,
+		request,
+		user,
+		intent,
+		packageKodyId,
+		webhookName,
+		endpointId,
+		createInstance,
+		instanceLabel,
+	} = input
 	const shared = {
 		env,
 		request: user.request,
@@ -209,38 +241,78 @@ async function runWebhookAction(input: {
 	}
 	switch (intent) {
 		case 'mint': {
+			if (createInstance) {
+				const minted = await mintWebhookUrlForUser({
+					...shared,
+					createInstance: true,
+					instanceLabel,
+				})
+				return {
+					revealed: await revealForUi({
+						...shared,
+						packageKodyId,
+						endpointId: minted.endpointId,
+					}),
+					approvalUrl: minted.approvalUrl,
+				}
+			}
 			// Mint on an existing row would silently rotate (and re-enable) the
 			// credential; make the owner choose Rotate for that.
 			if (await isWebhookUrlMinted(shared)) {
 				throw new McpCallerError(
-					'This webhook already has a URL. Rotate it to issue a new one.',
+					'This webhook already has a URL. Rotate it to issue a new one, or mint another URL with a label.',
 				)
 			}
-			const { approvalUrl } = await mintWebhookUrlForUser(shared)
+			const { approvalUrl, endpointId: mintedEndpointId } =
+				await mintWebhookUrlForUser(shared)
 			return {
-				revealed: await revealForUi({ ...shared, packageKodyId }),
+				revealed: await revealForUi({
+					...shared,
+					packageKodyId,
+					endpointId: mintedEndpointId,
+				}),
 				approvalUrl,
 			}
 		}
 		case 'rotate': {
-			const { approvalUrl } = await rotateWebhookUrlForUser(shared)
+			const { approvalUrl, endpointId: rotatedEndpointId } =
+				await rotateWebhookUrlForUser({
+					...shared,
+					endpointId,
+				})
 			return {
-				revealed: await revealForUi({ ...shared, packageKodyId }),
+				revealed: await revealForUi({
+					...shared,
+					packageKodyId,
+					endpointId: rotatedEndpointId,
+				}),
 				approvalUrl,
 			}
 		}
 		case 'reveal': {
 			return {
-				revealed: await revealForUi({ ...shared, packageKodyId }),
+				revealed: await revealForUi({
+					...shared,
+					packageKodyId,
+					endpointId,
+				}),
 				approvalUrl: null,
 			}
 		}
 		case 'enable': {
-			await setWebhookEnabledForUser({ ...shared, enabled: true })
+			await setWebhookEnabledForUser({
+				...shared,
+				endpointId,
+				enabled: true,
+			})
 			return { revealed: null, approvalUrl: null }
 		}
 		case 'disable': {
-			await setWebhookEnabledForUser({ ...shared, enabled: false })
+			await setWebhookEnabledForUser({
+				...shared,
+				endpointId,
+				enabled: false,
+			})
 			return { revealed: null, approvalUrl: null }
 		}
 		default: {
@@ -258,6 +330,7 @@ async function revealForUi(input: {
 	packageKodyId: string
 	webhookName: string
 	requestUrl: string
+	endpointId?: string | null
 }): Promise<PackageWebhookRevealedUrl> {
 	const revealed = await revealWebhookUrlForWebsite({
 		env: input.env,
@@ -265,12 +338,17 @@ async function revealForUi(input: {
 		email: input.email,
 		username: input.username,
 		requestUrl: input.requestUrl,
-		target: { kodyId: input.packageKodyId, webhookName: input.webhookName },
+		target: {
+			kodyId: input.packageKodyId,
+			webhookName: input.webhookName,
+			endpointId: input.endpointId,
+		},
 	})
 	return {
 		id: packageWebhookItemId({
 			packageKodyId: input.packageKodyId,
 			name: input.webhookName,
+			endpointId: revealed.endpointId,
 		}),
 		handle: revealed.handle,
 		url: revealed.url,

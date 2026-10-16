@@ -587,6 +587,10 @@
 		{
 			"filename": "0157-package-app-oauth-codes.sql",
 			"sha256": "25ea74045f17120f595d4c7b58affb5e529e84086ca7add21e9993a2c5c5d4cf"
+		},
+		{
+			"filename": "0158-webhook-endpoints-multi-per-name.sql",
+			"sha256": "628083d4404dbeb97f295f5ce89fa8e459ee41b5c97c19977e29ec8ee3a5bbd0"
 		}
 	]
 }

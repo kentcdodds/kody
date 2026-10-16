@@ -1725,7 +1725,11 @@ type PackageWebhookChallenge = {
  * SSR HTML or any list payload.
  */
 export type PackageWebhookListItem = {
-	/** `${packageKodyId}/${name}` — stable across list and reveal payloads. */
+	/**
+	 * Stable list/reveal key. One minted URL per id: `${packageKodyId}/${name}`
+	 * when unminted or the sole mint; `${packageKodyId}/${name}/${endpointId}`
+	 * when several URLs share the declared name.
+	 */
 	id: string
 	packageId: string
 	packageKodyId: string
@@ -1740,6 +1744,10 @@ export type PackageWebhookListItem = {
 	replay: PackageWebhookReplay
 	challenge: PackageWebhookChallenge
 	minted: boolean
+	/** Minted endpoint id; null when this row is the unminted declaration. */
+	endpointId: string | null
+	/** Short user-set label when several URLs share this declared name. */
+	instanceLabel: string | null
 	handle: string | null
 	urlHost: string | null
 	enabled: boolean | null
@@ -2294,6 +2302,8 @@ export type AccountPackageApproveCapabilitiesLoaderData = {
 		source?: 'need' | 'mount' | 'grant' | 'package'
 		/** The declared `kody.credentials` key a `need` credential fills. */
 		needKey?: string
+		/** Visitors of the internet-visible app may use this credential. */
+		ownerCredentialForVisitors?: true
 		credentialKind?: string
 		hosts: Array<string>
 		placement?: string | null

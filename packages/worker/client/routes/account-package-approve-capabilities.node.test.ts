@@ -455,6 +455,56 @@ test('each credential says how this package reaches it', async () => {
 	expect(html).not.toContain('used by this package')
 })
 
+test('a credential shared with app visitors says so in plain language', async () => {
+	const roomsDb = {
+		kind: 'credential' as const,
+		credentialId,
+		name: 'ROOMS_DB',
+		credentialKind: 'secret',
+		hosts: ['db.example.com'],
+		placement: null,
+		via: ['mau-chart'],
+	}
+	const html = await render(
+		loaderData({
+			entries: [
+				{
+					...roomsDb,
+					source: 'need',
+					needKey: 'database',
+					ownerCredentialForVisitors: true,
+				},
+				{ ...roomsDb, source: 'grant' },
+			],
+		}),
+	)
+	const visible = beforeDetails(html)
+
+	expect(visible).toContain(
+		'data-testid="package-approve-capabilities-credential-visitors"',
+	)
+	expect(visible).toContain(
+		'Visitors can use this credential through the app, whether they are signed out or signed in as someone else.',
+	)
+	expect(visible.match(/credential-visitors"/g)).toHaveLength(1)
+	expect(visible).not.toContain(credentialId)
+	expect(visible.toLowerCase()).not.toContain('secret')
+
+	const singleEntry = await render(
+		loaderData({ entries: [{ ...roomsDb, source: 'grant' }] }),
+	)
+	const idMentions = (page: string) => page.split(credentialId).length - 1
+	expect(idMentions(singleEntry)).toBeGreaterThan(0)
+	expect(idMentions(html)).toBe(idMentions(singleEntry))
+})
+
+test('credentials not shared with visitors carry no visitor note', async () => {
+	const html = await render(loaderData())
+
+	expect(html).not.toContain('credential-visitors')
+	expect(html).not.toContain('Visitors can use this credential')
+})
+
 test('security audit reads "No security audit performed" and offers a copyable agent prompt', async () => {
 	const html = await render(loaderData())
 	const field = securityAuditField(html)
