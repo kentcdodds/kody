@@ -643,12 +643,28 @@ function isChromeExtensionMessageChannelDisconnectedSentryEvent(
 	if (isChromeExtensionMessageChannelDisconnectedError(originalException)) {
 		return true
 	}
-	const hasMessage = sentryEventMessages(event).some(
-		(message) =>
-			typeof message === 'string' &&
-			isChromeExtensionMessageChannelDisconnectedMessage(message),
-	)
-	if (!hasMessage) return false
+
+	// Same-entry gate: never pair a matching message from one exception
+	// value with a chrome-extension frame from another (Devin on #3917).
+	const values = event.exception?.values ?? []
+	if (values.length > 0) {
+		return values.some((value) => {
+			if (typeof value.value !== 'string') return false
+			if (!isChromeExtensionMessageChannelDisconnectedMessage(value.value)) {
+				return false
+			}
+			return (value.stacktrace?.frames ?? []).some((frame) =>
+				stackFrameUrls(frame).some(isChromeExtensionStackFrameUrl),
+			)
+		})
+	}
+
+	if (
+		typeof event.message !== 'string' ||
+		!isChromeExtensionMessageChannelDisconnectedMessage(event.message)
+	) {
+		return false
+	}
 	return sentryEventStackFrameUrls(event).some(isChromeExtensionStackFrameUrl)
 }
 

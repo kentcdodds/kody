@@ -809,3 +809,32 @@ test('isChromeExtensionMessageChannelDisconnectedError requires extension proven
 		}),
 	).toBe(false)
 })
+
+test('message-channel filter does not pair message and extension frames across exception values', () => {
+	// First-party disconnected message + unrelated extension sibling must stay
+	// visible (Devin on #3917).
+	const crossValueEvent = {
+		exception: {
+			values: [
+				{
+					type: 'Error',
+					value: messageChannelDisconnected,
+					stacktrace: { frames: [kodyEntry] },
+				},
+				{
+					type: 'Error',
+					value: 'unrelated extension noise',
+					stacktrace: {
+						frames: [
+							{
+								filename:
+									'chrome-extension://acmacodkjbdgmoleebolmdjonilkdbch/content-script.js',
+							},
+						],
+					},
+				},
+			],
+		},
+	}
+	expect(filterBrowserSentryEvent(crossValueEvent)).toBe(crossValueEvent)
+})
