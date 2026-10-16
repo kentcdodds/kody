@@ -128,6 +128,11 @@ async function refreshReadyAuthority(
 		)
 		return await resolveAuthority(db, scope)
 	}
+	const cacheKey = JSON.stringify([
+		scope.orgId,
+		scope.packageId,
+		scope.publishedCommit,
+	])
 	// Always re-read the approved credential ids so a remapped or revoked
 	// visitor credential fails on the next use, not after the cache TTL.
 	const approval = await getLatestPackageCapabilityApproval(db, {
@@ -135,9 +140,20 @@ async function refreshReadyAuthority(
 		ownerUserId: scope.orgId,
 	})
 	if (!approval || approval.publishedCommit !== scope.publishedCommit) {
-		authorityCache.delete(
-			JSON.stringify([scope.orgId, scope.packageId, scope.publishedCommit]),
-		)
+		authorityCache.delete(cacheKey)
+		return notShared
+	}
+	if (personIdFromStored(approval.approvedByUserId) !== personId) {
+		// A different owner re-approved: rebuild as that person.
+		authorityCache.delete(cacheKey)
+		return await resolveAuthority(db, scope)
+	}
+	const saved = await getSavedPackageById(db, {
+		userId: scope.orgId,
+		packageId: scope.packageId,
+	})
+	if (!saved?.hasApp || !saved.isInternetVisible) {
+		authorityCache.delete(cacheKey)
 		return notShared
 	}
 	return {
