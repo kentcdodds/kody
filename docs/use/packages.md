@@ -270,10 +270,11 @@ await resend.fetch('/emails', { method: 'POST', body: JSON.stringify(email) })
 
 #### Let app visitors use the owner's credential
 
-An internet-visible app runs as its visitor: the signed-in member, or no one for
-a signed-out visitor or someone outside the org. Neither can use the org's
-credentials, so a need the app fills for every visitor (a shared database, an
-email sender) opts in per slot with `ownerCredentialForVisitors: true`:
+An internet-visible app runs as its visitor: the signed-in person, or no one for
+a signed-out visitor or someone outside the org. A signed-in member with Use can
+still open org credentials they hold; a signed-out visitor and anyone without
+Use cannot. A need the app fills for every visitor (a shared database, an email
+sender) opts in per slot with `ownerCredentialForVisitors: true`:
 
 ```json
 {
@@ -308,8 +309,8 @@ email sender) opts in per slot with `ownerCredentialForVisitors: true`:
   deleted, it fails with `credential_denied` until an owner approves again.
 - Everything else in the run still acts as the visitor: other needs,
   placeholders (`{{secret:NAME}}`), and the app's own sign-in checks.
-- Each use by someone other than the approver is rate-limited per visitor, with
-  all signed-out visitors sharing one budget, and fails with
+- Each use by someone other than the approver is rate-limited per app credential
+  (every non-owner viewer shares one budget), and fails with
   `credential_rate_limited` past it. Its `credential.resolve` row in the org
   activity log names the app, the approver, and the visitor (or `anonymous`).
 

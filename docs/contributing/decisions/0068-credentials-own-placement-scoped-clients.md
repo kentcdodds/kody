@@ -746,10 +746,11 @@ that reads a shared database or sends email for every visitor had no way to.
   The authority never becomes the run's user. The client handle is signed with
   the flag and checked against the authority on each use.
 - **Abuse.** Each use whose viewer is not the authority is rate-limited per org,
-  app, credential, and viewer (300 per minute; all anonymous visitors share one
-  bucket) and fails with `credential_rate_limited`. Its `credential.resolve`
-  audit row is attributed to the authority and adds
-  `ownerCredentialForVisitors`, `appPackageId`, `credentialAuthorityUserId`,
-  `viewerUserId`, and `viewerKind` (`person` or `anonymous`).
+  app, and credential (300 per minute; every non-owner viewer shares one budget
+  so one-time visitors cannot grow the limiter table) and fails with
+  `credential_rate_limited`. Its `credential.resolve` audit row is attributed to
+  the authority and adds `ownerCredentialForVisitors`, `appPackageId`,
+  `credentialAuthorityUserId`, `viewerUserId`, and `viewerKind` (`person` or
+  `anonymous`).
 - **Unchanged.** Credential-need enforcement and the self-published package
   guard still apply; a self-published app gets no credentials either way.

@@ -67,7 +67,7 @@ export async function loadOwnerCredentialAuthority(input: {
 }): Promise<OwnerCredentialAuthority> {
 	const { scope } = input
 	if (!scope.publishedCommit) return notShared
-	return await authorityCache.getOrCreate({
+	const cached = await authorityCache.getOrCreate({
 		cacheKey: JSON.stringify([
 			scope.orgId,
 			scope.packageId,
@@ -75,6 +75,78 @@ export async function loadOwnerCredentialAuthority(input: {
 		]),
 		create: () => resolveAuthority(input.env.APP_DB, scope),
 	})
+	// The cache may outlive a suspend/delete/leave. Re-check the approving
+	// person before handing visitors their credentials.
+	return await refreshReadyAuthority(input.env.APP_DB, scope, cached)
+}
+
+async function refreshReadyAuthority(
+	db: D1Database,
+	scope: OwnerCredentialScope,
+	authority: OwnerCredentialAuthority,
+): Promise<OwnerCredentialAuthority> {
+	if (authority.status !== 'ready') return authority
+	const personId = authority.request.actor?.userId
+	if (!personId) {
+		authorityCache.delete(
+			JSON.stringify([scope.orgId, scope.packageId, scope.publishedCommit]),
+		)
+		return {
+			status: 'unavailable',
+			message:
+				'The owner who approved this app for visitors can no longer use its org’s credentials. An owner must approve the app’s capabilities again.',
+		}
+	}
+	const approver = await db
+		.prepare(
+			`SELECT username FROM users
+			 WHERE stable_user_id = ? AND deleted_at IS NULL
+			   AND deleting_at IS NULL AND suspended_at IS NULL`,
+		)
+		.bind(personId)
+		.first<{ username: string | null }>()
+	const binding = approver
+		? await loadOrgBindingForOrg(db, personId, scope.orgId)
+		: null
+	if (!approver || !binding) {
+		authorityCache.delete(
+			JSON.stringify([scope.orgId, scope.packageId, scope.publishedCommit]),
+		)
+		return {
+			status: 'unavailable',
+			message:
+				'The owner who approved this app for visitors can no longer use its org’s credentials. An owner must approve the app’s capabilities again.',
+		}
+	}
+	if (
+		binding.role !== authority.request.membership?.role ||
+		(approver.username ?? null) !== (authority.request.actor?.username ?? null)
+	) {
+		// Role or username changed: rebuild so the door sees the live binding.
+		authorityCache.delete(
+			JSON.stringify([scope.orgId, scope.packageId, scope.publishedCommit]),
+		)
+		return await resolveAuthority(db, scope)
+	}
+	// Always re-read the approved credential ids so a remapped or revoked
+	// visitor credential fails on the next use, not after the cache TTL.
+	const approval = await getLatestPackageCapabilityApproval(db, {
+		packageId: scope.packageId,
+		ownerUserId: scope.orgId,
+	})
+	if (!approval || approval.publishedCommit !== scope.publishedCommit) {
+		authorityCache.delete(
+			JSON.stringify([scope.orgId, scope.packageId, scope.publishedCommit]),
+		)
+		return notShared
+	}
+	return {
+		status: 'ready',
+		request: authority.request,
+		approvedCredentialIds: visitorCredentialIdsByNeedKey(
+			approval.capabilitySetJson,
+		),
+	}
 }
 
 async function resolveAuthority(
@@ -151,9 +223,10 @@ export function ownerCredentialAuditDetails(input: {
 }
 
 /**
- * Uses of an owner's credential by one viewer of one app. Every anonymous
- * visitor shares one budget, so a flood of signed-out requests cannot run up
- * the owner's provider quota without bound.
+ * Uses of an owner's credential by every non-owner viewer of one app
+ * credential. One shared budget (not per viewer) so a flood of one-time
+ * visitors cannot grow `_rate_limits` without bound, and cannot run up the
+ * owner's provider quota. The approving owner is not rate-limited.
  */
 export const ownerCredentialForVisitorsRateLimitConfig = {
 	maxRequests: 300,
@@ -164,7 +237,6 @@ export async function checkOwnerCredentialForVisitorsRateLimit(input: {
 	db: D1Database
 	scope: OwnerCredentialScope
 	credentialId: string
-	viewerUserId: string | null
 }) {
 	return await checkRateLimit(
 		input.db,
@@ -173,7 +245,6 @@ export async function checkOwnerCredentialForVisitorsRateLimit(input: {
 			input.scope.orgId,
 			input.scope.packageId,
 			input.credentialId,
-			input.viewerUserId ?? 'anonymous',
 		].join(':'),
 		ownerCredentialForVisitorsRateLimitConfig,
 	)

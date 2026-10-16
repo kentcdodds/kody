@@ -174,9 +174,9 @@ Declare `kind` only when the package needs a specific shape:
 ### Let app visitors use your credential
 
 People who open an internet-visible app run it as themselves, or as no one when
-they are signed out or outside your org, so they cannot use your org's
-credentials. To let the app use one for every visitor, add
-`"ownerCredentialForVisitors": true` to that need:
+they are signed out or outside your org. A signed-in member with Use can still
+open org credentials they hold; everyone else cannot. To let the app use one for
+every visitor, add `"ownerCredentialForVisitors": true` to that need:
 
 ```json
 "credentials": {

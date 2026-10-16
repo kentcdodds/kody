@@ -27,9 +27,11 @@ const handlePayloadSchema = z.object({
 	binding: z.string().min(1),
 	/**
 	 * Opened for an `ownerCredentialForVisitors` need: `actor` is the app's
-	 * credential authority, not the run's viewer.
+	 * credential authority, not the run's viewer. `needKey` is the declared
+	 * need this handle fills so later uses can re-check the approval list.
 	 */
 	ownerCredentialForVisitors: z.literal(true).optional(),
+	needKey: z.string().min(1).max(100).optional(),
 	exp: z.number(),
 })
 

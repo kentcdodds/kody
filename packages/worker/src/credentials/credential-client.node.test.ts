@@ -1605,7 +1605,63 @@ test('a private app or an unapproved commit ignores the opt-in, and visitors use
 	})
 })
 
-test('visitor use of an owner credential is rate-limited per viewer; the owner is not', async () => {
+test('a suspended approver stops visitor credential use even when authority was cached', async () => {
+	const t = await setupVisitorApp()
+	const opened = await openCredentialClient(t.appContext(null), {
+		key: 'database',
+	})
+	await t.fetchAs(null, opened.handle)
+	await t.db
+		.prepare(`UPDATE users SET suspended_at = ? WHERE stable_user_id = ?`)
+		.bind(new Date().toISOString(), t.people.bea.stableUserId)
+		.run()
+	await expect(
+		rejection(t.fetchAs(null, opened.handle)),
+	).resolves.toMatchObject({
+		body: { code: 'invalid_request' },
+	})
+	await expect(
+		rejection(openCredentialClient(t.appContext(null), { key: 'database' })),
+	).resolves.toMatchObject({
+		body: { code: 'credential_denied' },
+		message: expect.stringContaining('can no longer use its org’s credentials'),
+	})
+})
+
+test('a visitor handle fails once the approval no longer lists that credential', async () => {
+	const t = await setupVisitorApp()
+	const opened = await openCredentialClient(t.appContext(null), {
+		key: 'database',
+	})
+	await t.fetchAs(null, opened.handle)
+	await t.db
+		.prepare(
+			`UPDATE package_capability_approvals
+			 SET capability_set_json = ?
+			 WHERE package_id = ? AND owner_user_id = ?`,
+		)
+		.bind(
+			JSON.stringify([
+				{
+					kind: 'credential',
+					credentialId: 'some-other-credential',
+					source: 'need',
+					needKey: 'database',
+					ownerCredentialForVisitors: true,
+					hosts: ['db.example.com'],
+					via: ['rooms'],
+				},
+			]),
+			t.packageId,
+			t.acmeId,
+		)
+		.run()
+	await expect(t.fetchAs(null, opened.handle)).rejects.toMatchObject({
+		body: { code: 'invalid_request' },
+	})
+})
+
+test('visitor use of an owner credential is rate-limited across viewers; the owner is not', async () => {
 	const t = await setupVisitorApp()
 	const original = ownerCredentialForVisitorsRateLimitConfig.maxRequests
 	ownerCredentialForVisitorsRateLimitConfig.maxRequests = 1
@@ -1620,11 +1676,14 @@ test('visitor use of an owner credential is rate-limited per viewer; the owner i
 			body: { code: 'credential_rate_limited' },
 			message: expect.stringMatching(/^\[credential_rate_limited\] /),
 		})
+		// Ann shares the same visitor budget as anonymous.
 		const ann = t.requestAs('ann', 'member')
 		const annOpened = await openCredentialClient(t.appContext(ann), {
 			key: 'database',
 		})
-		await t.fetchAs(ann, annOpened.handle)
+		await expect(
+			rejection(t.fetchAs(ann, annOpened.handle)),
+		).resolves.toMatchObject({ body: { code: 'credential_rate_limited' } })
 		const bea = t.requestAs('bea', 'owner')
 		const beaOpened = await openCredentialClient(t.appContext(bea), {
 			key: 'database',

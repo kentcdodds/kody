@@ -733,8 +733,11 @@ async function issueClient(
 			org: request.org.id,
 			actor: request.actor!.userId,
 			binding: ctx.binding,
-			...(options.ownerCredentialForVisitors
-				? { ownerCredentialForVisitors: true as const }
+			...(options.ownerCredentialForVisitors && key
+				? {
+						ownerCredentialForVisitors: true as const,
+						needKey: key,
+					}
 				: {}),
 		},
 	})
@@ -909,18 +912,11 @@ type HandleUse = {
 	auditDetails?: Record<string, string | null>
 }
 
-async function ownerCredentialRequest(ctx: HandleContext) {
-	if (!ctx.ownerCredentialScope) return null
-	const authority = await loadOwnerCredentialAuthority({
-		env: ctx.env,
-		scope: ctx.ownerCredentialScope,
-	})
-	return authority.status === 'ready' ? authority.request : null
-}
-
 /**
  * A visitor handle resolves as the authority. When the viewer is someone
  * else (or no one), the use is rate-limited and its audit row names them.
+ * Each use re-checks that the approval still lists this credential for the
+ * handle's need, so a remapped or revoked visitor credential fails closed.
  */
 async function readHandle(
 	ctx: HandleContext,
@@ -928,14 +924,26 @@ async function readHandle(
 	kinds: ReadonlyArray<PackageCredentialKind>,
 	operation: string,
 ): Promise<HandleUse> {
-	const authority: { request: RequestContext | null } = { request: null }
+	const authority: {
+		request: RequestContext | null
+		approvedCredentialIds: ReadonlyMap<string, ReadonlySet<string>> | null
+	} = { request: null, approvedCredentialIds: null }
 	const handle = await verifyCredentialClientHandle({
 		env: ctx.env,
 		token: typeof token === 'string' ? token : '',
 		request: ctx.callerContext.request,
 		binding: ctx.binding,
-		ownerCredentialRequest: async () =>
-			(authority.request = await ownerCredentialRequest(ctx)),
+		ownerCredentialRequest: async () => {
+			if (!ctx.ownerCredentialScope) return null
+			const loaded = await loadOwnerCredentialAuthority({
+				env: ctx.env,
+				scope: ctx.ownerCredentialScope,
+			})
+			if (loaded.status !== 'ready') return null
+			authority.request = loaded.request
+			authority.approvedCredentialIds = loaded.approvedCredentialIds
+			return loaded.request
+		},
 	})
 	if (!kinds.includes(handle.kind)) {
 		throw refusal(
@@ -948,6 +956,12 @@ async function readHandle(
 	if (!handle.ownerCredentialForVisitors || !authority.request || !scope) {
 		return { handle, request: viewer! }
 	}
+	if (
+		!handle.needKey ||
+		!authority.approvedCredentialIds?.get(handle.needKey)?.has(handle.id)
+	) {
+		throw new CredentialClientHandleError()
+	}
 	const auditDetails = ownerCredentialAuditDetails({
 		scope,
 		authority: authority.request,
@@ -958,7 +972,6 @@ async function readHandle(
 			db: ctx.env.APP_DB,
 			scope,
 			credentialId: handle.id,
-			viewerUserId: viewer?.actor?.userId ?? null,
 		})
 		if (!limited.allowed) {
 			throw refusal(
