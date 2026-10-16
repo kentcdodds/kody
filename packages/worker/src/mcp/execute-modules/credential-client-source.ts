@@ -160,18 +160,24 @@ function __kodyCreateCredentialRuntime(__kodyCredentialCall) {
     if (opened.kind === 'mcp') {
       client.callTool = async (tool, args) =>
         await invoke(${JSON.stringify(credentialClientToolNames.callTool)}, { handle: opened.handle, tool, args: args ?? {} });
-    } else if (opened.kind === 'signing') {
-      client.sign = async (operation) => {
-        const { host, ...rest } = operation ?? {};
-        const result = await invoke(${JSON.stringify(credentialClientToolNames.sign)}, {
-          handle: opened.handle,
-          host: host ?? firstExactHost(opened.hosts),
-          operation: rest,
-        });
-        return result?.signature;
-      };
     } else {
-      client.fetch = createFetch(opened);
+      // Keys (secret kind) keep fetch and also expose HMAC sign() so webhook
+      // CRC / signature helpers work without re-kinding the Key as signing.
+      // JWT sign() still requires kind signing (enforced on the host).
+      if (opened.kind === 'signing' || opened.kind === 'secret') {
+        client.sign = async (operation) => {
+          const { host, ...rest } = operation ?? {};
+          const result = await invoke(${JSON.stringify(credentialClientToolNames.sign)}, {
+            handle: opened.handle,
+            host: host ?? firstExactHost(opened.hosts),
+            operation: rest,
+          });
+          return result?.signature;
+        };
+      }
+      if (opened.kind !== 'signing') {
+        client.fetch = createFetch(opened);
+      }
     }
     return Object.freeze(client);
   };

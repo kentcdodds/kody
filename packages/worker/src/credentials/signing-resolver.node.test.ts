@@ -235,6 +235,39 @@ test('a signing credential returns only an HMAC signature, for an actor with Use
 	expect(JSON.stringify(rows)).not.toContain(hmacKey)
 })
 
+test('HMAC sign accepts a Key (secret kind); JWT still requires signing', async () => {
+	const t = await setup()
+	const expected = await computeWebhookHmacSignature({
+		algorithm: 'hmac-sha256',
+		secret: hmacKey,
+		body: new TextEncoder().encode('1700000000.{"id":1}').buffer as ArrayBuffer,
+		encoding: 'hex',
+		prefix: 'sha256=',
+	})
+	const keyId = await t.storeCredential({
+		name: 'xClientSecret',
+		value: hmacKey,
+		kind: 'secret',
+	})
+	await expect(
+		t.sign({
+			actor: t.requestAs('bea', 'owner'),
+			credentialId: keyId,
+		}),
+	).resolves.toEqual({ signature: expected })
+	await expect(
+		t.sign({
+			actor: t.requestAs('bea', 'owner'),
+			credentialId: keyId,
+			operation: {
+				type: 'jwt',
+				algorithm: 'HS256',
+				claims: { sub: 'user-1', iat: 1700000000 },
+			},
+		}),
+	).rejects.toBeInstanceOf(CredentialNotFoundError)
+})
+
 test('a signing credential signs a JWT the same way secretJwtSign does', async () => {
 	const t = await setup()
 	const key = btoa('k'.repeat(32))
@@ -274,17 +307,9 @@ test('a signing credential signs a JWT the same way secretJwtSign does', async (
 	).toBe(true)
 })
 
-test('only signing credentials with hosts sign, and nothing is read otherwise', async () => {
+test('HMAC refuses credentials without hosts; missing ids stay not-found', async () => {
 	const t = await setup()
 	const actor = t.requestAs('bea', 'owner')
-	const key = await t.storeCredential({
-		name: 'plain-key',
-		value: hmacKey,
-		kind: 'secret',
-	})
-	await expect(t.sign({ actor, credentialId: key })).rejects.toBeInstanceOf(
-		CredentialNotFoundError,
-	)
 	await expect(
 		t.sign({ actor, credentialId: 'missing-id' }),
 	).rejects.toBeInstanceOf(CredentialNotFoundError)
@@ -296,6 +321,15 @@ test('only signing credentials with hosts sign, and nothing is read otherwise', 
 	await expect(t.sign({ actor, credentialId: noHosts })).rejects.toBeInstanceOf(
 		CredentialRequestRefusedError,
 	)
+	const keyNoHosts = await t.storeCredential({
+		name: 'plain-key-no-hosts',
+		value: hmacKey,
+		kind: 'secret',
+		hosts: [],
+	})
+	await expect(
+		t.sign({ actor, credentialId: keyNoHosts }),
+	).rejects.toBeInstanceOf(CredentialRequestRefusedError)
 	expect(valueReads.count).toBe(0)
 })
 

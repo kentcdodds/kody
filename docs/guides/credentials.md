@@ -282,7 +282,10 @@ the token in the JSON response.
 ### Signing
 
 For APIs that want a signed JWT or an HMAC. Code gets the signature, never the
-key.
+key. Declare `kind: "signing"` for JWT key material. HMAC also works through
+`sign({ type: "hmac", ... })` on an ordinary Key (`secret`) — the same Key a
+webhook `verification.secretName` already uses — so you do not need to re-kind a
+webhook consumer secret as `signing`.
 
 ```ts
 const appleMusic = await credential('apple-music')

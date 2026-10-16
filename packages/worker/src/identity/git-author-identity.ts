@@ -51,10 +51,24 @@ export function gitAuthorIdentityFromUser(user: {
 	return { name, email }
 }
 
-/** Local-repo git config commands; run after `cd` into the clone. */
+/**
+ * Local-repo git config commands; run after `cd` into the clone.
+ *
+ * Put `--` before the config key (not between key and value). The old form
+ * `git config --local user.email -- 'addr'` stores the literal `--` as the
+ * value (git treats `--` as the value and the quoted address as a value-pattern),
+ * which produced Artifacts commits authored as `-- <-->`.
+ */
 export function gitAuthorSetupCommands(author: GitAuthorIdentity) {
+	const email = sanitizeGitIdentityValue(author.email)
+	const name = sanitizeGitIdentityValue(author.name)
+	if (!email || !name || email === '--' || name === '--') {
+		throw new Error(
+			'Git author name and email must be non-empty and must not be "--".',
+		)
+	}
 	return [
-		`git config --local user.email -- ${shellQuote(author.email)}`,
-		`git config --local user.name -- ${shellQuote(author.name)}`,
+		`git config --local -- user.email ${shellQuote(email)}`,
+		`git config --local -- user.name ${shellQuote(name)}`,
 	]
 }

@@ -268,7 +268,7 @@ test('package job sync reports scheduler changes for add, update, and remove onl
 	expect(await listRows()).toEqual([])
 })
 
-test('package job sync preserves a runtime-enabled job when the manifest still says disabled', async () => {
+test('package job sync preserves runtime enabled and does not re-enable from the manifest', async () => {
 	const env = createJobServiceTestEnv({ APP_DB: createDatabase() })
 	const input = {
 		env,
@@ -295,18 +295,37 @@ test('package job sync preserves a runtime-enabled job when the manifest still s
 		...input,
 		publishedCommit: 'package-published-commit',
 	})
+	const { ensureOwnerCronEnablementForJob } =
+		await import('#worker/enablements/owner-cron-enablement.ts')
 
 	expect(await sync(false)).toBe(true)
 	expect((await firstRow())?.record.enabled).toBe(false)
+	const createCalls = vi.mocked(ensureOwnerCronEnablementForJob).mock.calls
+		.length
 
-	expect(await sync(true)).toBe(true)
-	const turnedOn = await firstRow()
-	expect(turnedOn?.record.enabled).toBe(true)
+	// Manifest enabled:true must not flip a disabled job on (fleet/codemod
+	// republish) and must not insert/reactivate owner cron enablements.
+	vi.mocked(ensureOwnerCronEnablementForJob).mockClear()
+	expect(await sync(true)).toBe(false)
+	expect((await firstRow())?.record.enabled).toBe(false)
+	expect(ensureOwnerCronEnablementForJob).not.toHaveBeenCalled()
+	expect(createCalls).toBeGreaterThan(0)
 
+	const callerContext = createPlanUserCallerContext({
+		userId: 'user-1',
+		email: 'user-1@example.com',
+	})
+	await updateJob({
+		env,
+		callerContext,
+		body: { id: (await firstRow())!.record.id, enabled: true },
+	})
+	expect((await firstRow())?.record.enabled).toBe(true)
+
+	// Manifest enabled:false must not stop a running job.
 	expect(await sync(false)).toBe(false)
 	const preserved = await firstRow()
 	expect(preserved?.record.enabled).toBe(true)
-	expect(preserved?.record.nextRunAt).toBe(turnedOn?.record.nextRunAt)
 })
 
 test('package job sync preflights the full addition set without partial inserts', async () => {
