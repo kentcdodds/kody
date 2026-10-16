@@ -304,8 +304,8 @@ email sender) opts in per slot with `ownerCredentialForVisitors: true`:
   credentials the approval listed for that need. A private app, or a commit that
   is not the approved one, opens the need as the visitor like any other. When
   the need now resolves to a credential the approval did not list (say, after
-  remapping it), or the approver can no longer use the org's credentials, it
-  fails with `credential_denied` until an owner approves again.
+  remapping it), or the approver left the org or their account is suspended or
+  deleted, it fails with `credential_denied` until an owner approves again.
 - Everything else in the run still acts as the visitor: other needs,
   placeholders (`{{secret:NAME}}`), and the app's own sign-in checks.
 - Each use by someone other than the approver is rate-limited per visitor, with
