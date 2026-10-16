@@ -10,7 +10,10 @@ import {
 	mappingFixtureBaseUrl,
 	setupPackageCredentialMappingFixture,
 } from '#worker/test-support/package-credential-mapping-fixture.ts'
-import { computePackageCapabilitySet } from './compute-package-capability-set.ts'
+import {
+	computePackageCapabilitySet,
+	mergeOwnNeedsOntoClosure,
+} from './compute-package-capability-set.ts'
 import { sourceFilesUsePackageStorage } from './package-storage-use.ts'
 
 const mocks = vi.hoisted(() => ({
@@ -207,6 +210,88 @@ test('a need inherited from a dependency lists the credential mapped to it on th
 			needKey: 'chat',
 		}),
 	])
+})
+
+test('mergeOwnNeedsOntoClosure keeps a live manifest visitor opt-in over a stale stored closure', () => {
+	const closure = ownCredentialNeeds({
+		database: { description: 'Rooms.' },
+	})
+	const own = ownCredentialNeeds({
+		database: {
+			description: 'Rooms.',
+			ownerCredentialForVisitors: true,
+		},
+	})
+	expect(mergeOwnNeedsOntoClosure({ closure, own })).toEqual([
+		expect.objectContaining({
+			key: 'database',
+			ownerCredentialForVisitors: true,
+		}),
+	])
+	expect(
+		mergeOwnNeedsOntoClosure({
+			closure: own,
+			own: ownCredentialNeeds({ database: { description: 'Rooms.' } }),
+		}),
+	).toEqual([
+		expect.objectContaining({
+			key: 'database',
+			ownerCredentialForVisitors: true,
+		}),
+	])
+})
+
+test('a stale stored closure without the visitor flag still fingerprints visitor sharing from the live manifest', async () => {
+	const t = await setup({
+		kody: {
+			credentials: {
+				resend: {
+					description: 'Send the digest',
+					ownerCredentialForVisitors: true,
+				},
+			},
+		},
+		closure: ownCredentialNeeds({
+			resend: { description: 'Send the digest' },
+		}),
+	})
+	const resendId = await t.storeKey('RESEND_KEY', 'resend')
+	const withFlag = await t.compute()
+	expect(withFlag.capabilitySet.entries).toEqual([
+		expect.objectContaining({
+			credentialId: resendId,
+			needKey: 'resend',
+			ownerCredentialForVisitors: true,
+		}),
+	])
+
+	vi.mocked(needsClosure.loadPublishedCredentialNeeds).mockResolvedValue(
+		ownCredentialNeeds({ resend: { description: 'Send the digest' } }),
+	)
+	mocks.loadPackageManifestBySourceId.mockResolvedValue({
+		manifest: {
+			name: '@acme/digest',
+			kody: {
+				id: 'digest',
+				description: 'digest',
+				credentials: { resend: { description: 'Send the digest' } },
+			},
+		},
+	})
+	const withoutFlag = await t.compute()
+	expect(withoutFlag.capabilitySet.fingerprint).not.toBe(
+		withFlag.capabilitySet.fingerprint,
+	)
+	expect(withoutFlag.capabilitySet.entries).toEqual([
+		expect.objectContaining({
+			credentialId: resendId,
+			source: 'need',
+			needKey: 'resend',
+		}),
+	])
+	expect(withoutFlag.capabilitySet.entries[0]).not.toHaveProperty(
+		'ownerCredentialForVisitors',
+	)
 })
 
 test('a need that shares a credential with visitors lists it as its own entry, even when also granted', async () => {

@@ -106,6 +106,9 @@ type PageStatus = 'loading' | 'ready' | 'error' | 'approving'
 
 const loadFailureMessage = 'Unable to load this capability approval.'
 
+/** Long enough for a paused credential-needs publish + capability pin. */
+const approveRequestTimeoutMs = 120_000
+
 function isApproveCapabilitiesPath(href: string) {
 	return (
 		approveCapabilitiesMatcher.match(new URL(href, 'http://localhost')) !== null
@@ -181,6 +184,7 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 						'Content-Type': 'application/json',
 					},
 					credentials: 'include',
+					signal: AbortSignal.timeout(approveRequestTimeoutMs),
 					body: JSON.stringify({
 						action: approval.approveAction,
 						packageId: payload.package.id,
@@ -196,9 +200,12 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 				return
 			}
 			window.location.reload()
-		} catch {
+		} catch (error) {
 			approvingRequestId = null
-			message = 'Could not approve this publish.'
+			message =
+				error instanceof DOMException && error.name === 'TimeoutError'
+					? 'Approval timed out. Reload and try again.'
+					: 'Could not approve this publish.'
 			handle.update()
 		}
 	}
@@ -219,6 +226,7 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 						'Content-Type': 'application/json',
 					},
 					credentials: 'include',
+					signal: AbortSignal.timeout(approveRequestTimeoutMs),
 					body: JSON.stringify(
 						goPublicRequestId
 							? {
@@ -248,9 +256,12 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 				// Capability pin recorded; went_public is now pending on this page.
 				window.location.reload()
 			}
-		} catch {
+		} catch (error) {
 			approving = false
-			message = 'Could not approve capabilities.'
+			message =
+				error instanceof DOMException && error.name === 'TimeoutError'
+					? 'Approval timed out. Reload and try again.'
+					: 'Could not approve capabilities.'
 			handle.update()
 		}
 	}
@@ -449,7 +460,8 @@ export function AccountPackageApproveCapabilitiesRoute(handle: Handle) {
 								</p>
 							</div>
 						) : null}
-						{payload.fingerprintMatchesApproval ? (
+						{payload.fingerprintMatchesApproval &&
+						!hasCredentialNeedsPending ? (
 							<div mix={css(getAccentCalloutCss())}>
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									This capability set is already approved

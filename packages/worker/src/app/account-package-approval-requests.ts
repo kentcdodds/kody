@@ -18,7 +18,11 @@ import {
 	type PackageApprovalReason,
 } from '#worker/package-capabilities/approval-requests-repo.ts'
 import { findPackageCapabilityApprovalByFingerprint } from '#worker/package-capabilities/capability-approvals-repo.ts'
-import { loadCapabilityApprovalSummary } from '#worker/package-capabilities/capability-approval-service.ts'
+import {
+	approvePackageCapabilitySet,
+	CapabilityApprovalError,
+	loadCapabilityApprovalSummary,
+} from '#worker/package-capabilities/capability-approval-service.ts'
 import { serializeDependencySnapshot } from '#worker/package-capabilities/dependency-snapshot.ts'
 import { readWentPublicSummary } from '#worker/package-capabilities/went-public-approval.ts'
 import {
@@ -112,10 +116,58 @@ export type ApproveCredentialNeedsResult =
 	| { ok: false; status: 400 | 404 | 409; error: string }
 
 /**
+ * After a needs-change publish lands on an internet-visible package, pin the
+ * live capability set. Turning on `ownerCredentialForVisitors` (and similar
+ * need reshapes) changes the fingerprint; without this pin the new commit
+ * stays refused for anonymous visitors until a second Approve.
+ */
+async function pinInternetVisibleCapabilitiesAfterNeedsPublish(input: {
+	env: Env
+	request: Request
+	savedPackage: SavedPackageRecord
+	ownerUserId: string
+	actorUserId: string
+}): Promise<ApproveCredentialNeedsResult | null> {
+	if (!input.savedPackage.isInternetVisible) return null
+	const live =
+		(await getSavedPackageById(input.env.APP_DB, {
+			userId: input.ownerUserId,
+			packageId: input.savedPackage.id,
+		})) ?? input.savedPackage
+	if (!live.isInternetVisible) return null
+	try {
+		const summary = await loadCapabilityApprovalSummary({
+			env: input.env,
+			ownerUserId: input.ownerUserId as OwnerId,
+			savedPackage: live,
+			requestUrl: input.request.url,
+		})
+		if (!summary.publishedCommit) return null
+		await approvePackageCapabilitySet({
+			env: input.env,
+			ownerUserId: input.ownerUserId as OwnerId,
+			actorUserId: input.actorUserId,
+			savedPackage: live,
+			requestUrl: input.request.url,
+			expectedFingerprint: summary.capabilitySet.fingerprint,
+			enqueueWentPublic: false,
+		})
+		return null
+	} catch (error) {
+		if (error instanceof CapabilityApprovalError) {
+			return { ok: false, status: 409, error: error.message }
+		}
+		throw error
+	}
+}
+
+/**
  * Publishes a paused commit whose credential needs changed. The click
  * (`package:publish`) is the owner's approval of that exact commit, so it also
  * counts as the locked-publish approval (`package:write`); checks and the
- * fast-forward rules still apply.
+ * fast-forward rules still apply. On an internet-visible package it also pins
+ * the live capability set so anonymous serving is not left waiting on a second
+ * Approve after a visitor-flag (or other fingerprint) change.
  */
 export async function approveCredentialNeedsRequest(input: {
 	env: Env
@@ -216,8 +268,12 @@ export async function approveCredentialNeedsRequest(input: {
 			throw error
 		}
 		switch (sessionResult.status) {
-			case 'ok':
+			case 'ok': {
+				const pinFailed =
+					await pinInternetVisibleCapabilitiesAfterNeedsPublish(input)
+				if (pinFailed) return pinFailed
 				return await approved()
+			}
 			case 'base_moved':
 			case 'checks_outdated':
 				return await supersede()
@@ -258,8 +314,12 @@ export async function approveCredentialNeedsRequest(input: {
 	}
 	switch (result.status) {
 		case 'published':
-		case 'already_published':
+		case 'already_published': {
+			const pinFailed =
+				await pinInternetVisibleCapabilitiesAfterNeedsPublish(input)
+			if (pinFailed) return pinFailed
 			return await approved()
+		}
 		case 'not_fast_forward':
 			return await supersede()
 		case 'checks_failed':

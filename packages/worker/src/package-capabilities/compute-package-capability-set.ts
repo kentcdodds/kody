@@ -30,6 +30,37 @@ import {
 } from './dependency-snapshot.ts'
 import { publishedPackageUsesStorage } from './package-storage-use.ts'
 
+/**
+ * Closure needs win for keys they already list, except `ownerCredentialForVisitors`:
+ * the live published manifest may turn that on after a stored closure was written
+ * without it. Prefer the live opt-in so the capability fingerprint and approval
+ * page always see visitor sharing when the package declares it.
+ */
+export function mergeOwnNeedsOntoClosure(input: {
+	closure: ReadonlyArray<CredentialNeed> | undefined
+	own: ReadonlyArray<CredentialNeed>
+}): Array<CredentialNeed> {
+	if (!input.closure || input.closure.length === 0) return [...input.own]
+	const byKey = new Map(input.closure.map((need) => [need.key, need]))
+	for (const need of input.own) {
+		const existing = byKey.get(need.key)
+		if (!existing) {
+			byKey.set(need.key, need)
+			continue
+		}
+		if (
+			need.ownerCredentialForVisitors === true &&
+			existing.ownerCredentialForVisitors !== true
+		) {
+			byKey.set(need.key, {
+				...existing,
+				ownerCredentialForVisitors: true,
+			})
+		}
+	}
+	return [...byKey.values()]
+}
+
 export type PackageCapabilityComputeResult = {
 	capabilitySet: CapabilitySet
 	dependencySnapshot: PackageDependencySnapshot
@@ -411,13 +442,10 @@ async function appendPackageCapabilityEntries(input: {
 		})
 	}
 
-	const ownNeeds = ownCredentialNeeds(loaded.manifest.kody.credentials)
-	const needs = [
-		...(input.needs ?? []),
-		...ownNeeds.filter(
-			(need) => !input.needs?.some((closure) => closure.key === need.key),
-		),
-	]
+	const needs = mergeOwnNeedsOntoClosure({
+		closure: input.needs,
+		own: ownCredentialNeeds(loaded.manifest.kody.credentials),
+	})
 	if (needs.length === 0) return
 	const [reachableCredentials, mappings] = await Promise.all([
 		input.loadReachableCredentials(input.packageId),

@@ -345,6 +345,8 @@ test('credential-needs-only copy wins over an already internet-visible package',
 				...loaderData().package,
 				isInternetVisible: true,
 			},
+			fingerprintMatchesApproval: true,
+			latestApprovedAt: '2026-10-16T04:36:41Z',
 			pendingApprovals: [
 				{
 					id: 'req-cred-1',
@@ -363,6 +365,8 @@ test('credential-needs-only copy wins over an already internet-visible package',
 
 	expect(html).toContain('Approve credential needs')
 	expect(html).toContain('The previously published version can use these.')
+	expect(html).not.toContain('This capability set is already approved')
+	expect(html).not.toContain('2026-10-16T04:36:41Z')
 	expect(html).not.toContain(
 		'It is internet-visible, so requests from anyone can run code that uses these.',
 	)
