@@ -84,8 +84,16 @@ import {
 	executeRepeatKey,
 } from '#mcp/execute-admission.ts'
 import {
+	createDefaultExecuteIdempotencyKey,
+	createDetachableAbortSignal,
+	remainingTransportBudgetMs,
+	watchExecuteTransport,
+} from '#mcp/execute-transport-budget.ts'
+import {
 	abandonRunRecord,
+	beginRunRecord,
 	claimRunRecord,
+	ensureRunRecordStarted,
 	finishRunRecord,
 	getRunRecord,
 	getRunRecordByIdempotencyKey,
@@ -141,7 +149,15 @@ export const executeToolOutputSchema = {
 	runId: z
 		.string()
 		.optional()
-		.describe('Run record id for keyed or persisted runs; poll via runGet.'),
+		.describe(
+			'Run record id. When the call is still running at the transport budget, poll runGet with this id.',
+		),
+	idempotencyKey: z
+		.string()
+		.optional()
+		.describe(
+			'Caller-supplied or server-assigned idempotency key. Present on a transport-budget follow response. Retry execute with this key to read the same run.',
+		),
 	inProgress: z
 		.boolean()
 		.optional()
@@ -271,7 +287,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					.max(runRecordMaxIdempotencyKeyLength)
 					.optional()
 					.describe(
-						'Optional idempotency key. Set it on the first attempt when a transport timeout retry may be needed; reusing the key returns the retained or in-progress run without re-executing (use its runId with runGet). Omit for ordinary calls.',
+						'Optional idempotency key. Omit it for ordinary calls. If the call is still running at the transport budget, Kody assigns one and returns it with runId. Reuse that key to read the in-progress or retained run instead of starting the mutation again.',
 					),
 				credentials: credentialCallMapSchema.optional(),
 			},
@@ -528,8 +544,15 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					: null
 				void admissionPromise?.catch(() => {})
 
-				if (normalizedIdempotencyKey && storageOwnerId) {
+				if (storageOwnerId) {
+					// Claim or begin before sandbox work so a transport-budget
+					// follow response already has a run id. Caller-supplied keys
+					// stay on the awaited claim path. Omitted keys get a
+					// server-assigned key without failing the call when RUN_LOG
+					// cannot record one.
 					await admissionPromise
+				}
+				if (normalizedIdempotencyKey && storageOwnerId) {
 					const claim = await claimRunRecord({
 						env,
 						userId: storageOwnerId,
@@ -555,6 +578,20 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						})
 					}
 					claimedRunHandle = claim.handle
+				} else if (storageOwnerId) {
+					const generatedKey = createDefaultExecuteIdempotencyKey()
+					claimedRunHandle = beginRunRecord({
+						env,
+						userId: storageOwnerId,
+						waitUntil,
+						context: {
+							surface: 'execute',
+							name: null,
+							storageId: activeStorageId,
+							idempotencyKey: generatedKey,
+							metadata: executeRunMetadata,
+						},
+					})
 				}
 
 				// Only the pure registry read overlaps admission. Memory retrievers
@@ -583,7 +620,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							},
 						}
 					: null
-				const result = await Sentry.startSpan(
+				const spanned = await Sentry.startSpan(
 					{
 						name: 'mcp.tool.execute',
 						op: 'mcp.tool',
@@ -593,7 +630,10 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					},
 					async () => {
 						try {
-							const inboundSignal = getInboundRequestSignal()
+							const transportSignal = createDetachableAbortSignal(
+								getInboundRequestSignal(),
+							)
+							const detached = { current: false }
 							const execution = runWithRequestPermissions(
 								{ env, request: callerContext.request },
 								async () =>
@@ -612,27 +652,92 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 											credentialCallMap,
 											waitUntil,
 											reportProgress: reportProgress ?? undefined,
-											signal: inboundSignal,
+											signal: transportSignal.signal,
 											runRecord: {
 												surface: 'execute',
 												name: null,
 												storageId: activeStorageId,
-												idempotencyKey: normalizedIdempotencyKey,
+												idempotencyKey:
+													claimedRunHandle?.context.idempotencyKey ??
+													normalizedIdempotencyKey,
 												metadata: executeRunMetadata,
 											},
 										},
 									),
 							)
-							// Client disconnect cancels the request task. Keep
-							// the sandbox promise alive so its abort handler can
-							// finish the run record.
-							waitUntil?.(
-								execution.then(
-									() => undefined,
-									() => undefined,
-								),
+							const recordDetachedExecuteFailure = async (cause: unknown) => {
+								if (!claimedRunHandle) return
+								try {
+									const current = await getRunRecord({
+										env,
+										userId: claimedRunHandle.userId,
+										runId: claimedRunHandle.id,
+									})
+									if (current && current.run.status !== 'running') return
+									// The caller already left with this run id. Persist
+									// the failure for runGet instead of abandoning it.
+									await finishRunRecord({
+										env,
+										handle: claimedRunHandle,
+										status: 'error',
+										error: cause,
+									})
+								} catch (error) {
+									console.warn('execute-transport-budget-finish-failed', error)
+								}
+							}
+							const observed = execution.then(
+								() => undefined,
+								async (cause: unknown) => {
+									if (!detached.current) return
+									await recordDetachedExecuteFailure(cause)
+								},
 							)
-							return await execution
+							waitUntil?.(observed)
+							if (!claimedRunHandle) return await execution
+							const watched = watchExecuteTransport(
+								execution,
+								remainingTransportBudgetMs({
+									startedAtMs: timingStart.startedAtMs,
+								}),
+							)
+							const raced = await watched.raced
+							if (raced.kind === 'budget') {
+								await Promise.resolve()
+								const peeked = watched.peek()
+								if (peeked?.ok === true) return peeked.value
+								if (peeked && peeked.ok === false) throw peeked.error
+								transportSignal.detach()
+								detached.current = true
+								await ensureRunRecordStarted({
+									env,
+									handle: claimedRunHandle,
+								})
+								const current = await getRunRecord({
+									env,
+									userId: claimedRunHandle.userId,
+									runId: claimedRunHandle.id,
+								})
+								if (current && current.run.status !== 'running') {
+									return {
+										transportFollow: 'terminal' as const,
+										run: current.run,
+									}
+								}
+								const idempotencyKey =
+									claimedRunHandle.context.idempotencyKey?.trim() ?? ''
+								await reportProgress?.({
+									progress: 1,
+									message: `Still running (runId: ${claimedRunHandle.id}). Poll runGet. idempotencyKey: ${idempotencyKey}.`,
+								})
+								return {
+									transportFollow: 'running' as const,
+									runId: claimedRunHandle.id,
+									idempotencyKey,
+								}
+							}
+							if (raced.kind === 'rejected') throw raced.error
+							return raced.value
 						} catch (cause) {
 							// A usage denial happens before the worker loads: the
 							// outer boundary releases the key, as for any other
@@ -668,6 +773,57 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						}
 					},
 				)
+				if (
+					'transportFollow' in spanned &&
+					spanned.transportFollow === 'terminal'
+				) {
+					const timing = finishToolTiming(timingStart)
+					const outcome = spanned.run.status === 'error' ? 'failure' : 'success'
+					logMcpEvent({
+						category: 'mcp',
+						tool: 'execute',
+						toolName: 'execute',
+						outcome,
+						durationMs: timing.durationMs,
+						...mcpCallerFields,
+						registeredCapabilityCount,
+						sandboxError: outcome === 'failure',
+						context: { transportBudgetFollow: true, runId: spanned.run.id },
+					})
+					return buildKeyedExecuteLookupResponse({
+						run: spanned.run,
+						conversationId: resolvedConversationId,
+						timing,
+					})
+				}
+				if (
+					'transportFollow' in spanned &&
+					spanned.transportFollow === 'running'
+				) {
+					const timing = finishToolTiming(timingStart)
+					logMcpEvent({
+						category: 'mcp',
+						tool: 'execute',
+						toolName: 'execute',
+						outcome: 'success',
+						durationMs: timing.durationMs,
+						...mcpCallerFields,
+						registeredCapabilityCount,
+						sandboxError: false,
+						context: {
+							transportBudgetFollow: true,
+							runId: spanned.runId,
+						},
+					})
+					return buildTransportBudgetFollowResponse({
+						conversationId: resolvedConversationId,
+						timing,
+						runId: spanned.runId,
+						idempotencyKey: spanned.idempotencyKey,
+						memories: surfacedMemories,
+					})
+				}
+				const result = spanned
 				const timing = {
 					...finishToolTiming(timingStart),
 					...(result.serverTiming && result.serverTiming.length > 0
@@ -692,6 +848,16 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					typeof result.runId === 'string'
 						? result.runId
 						: (claimedRunHandle?.id ?? undefined)
+				const idempotencyKeyForResponse =
+					claimedRunHandle?.context.idempotencyKey?.trim() ||
+					normalizedIdempotencyKey ||
+					undefined
+				const follow = {
+					...(runId ? { runId } : {}),
+					...(idempotencyKeyForResponse
+						? { idempotencyKey: idempotencyKeyForResponse }
+						: {}),
+				}
 
 				if (result.error) {
 					const errorDetails = getExecutionErrorDetails(result.error, {
@@ -723,7 +889,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						structuredContent: {
 							conversationId: resolvedConversationId,
 							timing,
-							...(runId ? { runId } : {}),
+							...follow,
 							returnedBytes: 0,
 							error: errorMessage,
 							errorDetails,
@@ -774,7 +940,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							structuredContent: {
 								conversationId: resolvedConversationId,
 								timing,
-								...(runId ? { runId } : {}),
+								...follow,
 								returnedBytes: 0,
 								error: message,
 								result: passthrough?.structuredResult ?? null,
@@ -801,7 +967,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							structuredContent: {
 								conversationId: resolvedConversationId,
 								timing,
-								...(runId ? { runId } : {}),
+								...follow,
 								returnedBytes: contentLimited.returnedBytes,
 								truncated: true,
 								note: contentLimited.note,
@@ -846,7 +1012,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						structuredContent: {
 							conversationId: resolvedConversationId,
 							timing,
-							...(runId ? { runId } : {}),
+							...follow,
 							returnedBytes:
 								contentLimited.returnedBytes +
 								(companionLimited?.returnedBytes ?? 0),
@@ -909,7 +1075,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					structuredContent: {
 						conversationId: resolvedConversationId,
 						timing,
-						...(runId ? { runId } : {}),
+						...follow,
 						returnedBytes: structuredResultValue.returnedBytes,
 						...(structuredResultValue.truncated
 							? {
@@ -939,6 +1105,38 @@ function normalizeExecuteIdempotencyKey(
 	return trimmed.slice(0, runRecordMaxIdempotencyKeyLength)
 }
 
+function buildTransportBudgetFollowResponse(input: {
+	conversationId: string
+	timing: {
+		startedAt: string
+		endedAt: string
+		durationMs: number
+	}
+	runId: string
+	idempotencyKey: string
+	memories: Parameters<typeof formatSurfacedMemoriesMarkdown>[0]
+}) {
+	const text = input.idempotencyKey
+		? `Execute is still running (runId: ${input.runId}). Poll runGet with that id. Retrying execute with idempotencyKey "${input.idempotencyKey}" reads this run instead of starting another mutation.`
+		: `Execute is still running (runId: ${input.runId}). Poll runGet with that id. Do not start another mutation for this call.`
+	return {
+		content: prependToolMetadataContent(input.conversationId, [
+			{ type: 'text' as const, text },
+			...formatSurfacedMemoriesMarkdown(input.memories),
+		]),
+		structuredContent: {
+			conversationId: input.conversationId,
+			timing: input.timing,
+			runId: input.runId,
+			...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
+			inProgress: true as const,
+			status: 'running' as const,
+			...buildMemoryStructuredContent(input.memories),
+		},
+		isError: false,
+	}
+}
+
 function buildKeyedExecuteLookupResponse(input: {
 	run: RunRecord
 	conversationId: string
@@ -960,6 +1158,9 @@ function buildKeyedExecuteLookupResponse(input: {
 				conversationId: input.conversationId,
 				timing: input.timing,
 				runId: input.run.id,
+				...(input.run.idempotencyKey
+					? { idempotencyKey: input.run.idempotencyKey }
+					: {}),
 				inProgress: true,
 				status: 'running' as const,
 			},
@@ -984,6 +1185,9 @@ function buildKeyedExecuteLookupResponse(input: {
 				conversationId: input.conversationId,
 				timing: input.timing,
 				runId: input.run.id,
+				...(input.run.idempotencyKey
+					? { idempotencyKey: input.run.idempotencyKey }
+					: {}),
 				replayed: true,
 				returnedBytes: 0,
 				error: errorMessage,
@@ -1012,6 +1216,9 @@ function buildKeyedExecuteLookupResponse(input: {
 			conversationId: input.conversationId,
 			timing: input.timing,
 			runId: input.run.id,
+			...(input.run.idempotencyKey
+				? { idempotencyKey: input.run.idempotencyKey }
+				: {}),
 			replayed: true,
 			returnedBytes: 0,
 			result: retainedResult,

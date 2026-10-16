@@ -338,6 +338,40 @@ export function beginRunRecord(input: {
 }
 
 /**
+ * Await a running-row insert for a handle {@link beginRunRecord} already
+ * minted. `startRun` is INSERT OR IGNORE, so a finish that landed first is
+ * left alone. Never throws.
+ *
+ * Hosted execute calls this before handing a run id back at the transport
+ * budget. The fire-and-forget begin stays off the fast path; the follow
+ * response waits until `runGet` can see the row.
+ */
+export async function ensureRunRecordStarted(input: {
+	env: Env
+	handle: RunRecordHandle | null
+}): Promise<void> {
+	const handle = input.handle
+	if (!handle || handle.persistence !== 'eager') return
+	if (!runLogBinding(input.env)) return
+	try {
+		const run = buildRunRow({
+			handle,
+			status: 'running',
+			finishedAt: null,
+			durationMs: null,
+			errorName: null,
+			errorMessage: null,
+			updatedAt: handle.startedAt,
+		})
+		await runLogRpc({ env: input.env, userId: handle.userId }).startRun({
+			run,
+		})
+	} catch (error) {
+		console.warn('run-record-ensure-start-failed', error)
+	}
+}
+
+/**
  * Awaited claim for keyed runs (execute with `idempotencyKey`). Returns the
  * existing owner when the key is already taken so callers can replay or report
  * in-progress without starting a duplicate sandbox.

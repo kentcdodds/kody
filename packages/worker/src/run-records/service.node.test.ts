@@ -49,6 +49,7 @@ vi.mock('./package-subscriptions.ts', () => ({
 
 const {
 	beginRunRecord,
+	ensureRunRecordStarted,
 	finishRunRecord,
 	getAdminInsightsSnapshot,
 	getSqlBillingStats,
@@ -217,6 +218,43 @@ test('finishRunRecord dispatches run.error.recorded only for persisted non-subsc
 		'run-error-subscription-dispatch-failed',
 		expect.any(Error),
 	)
+})
+
+test('ensureRunRecordStarted reissues the running insert and swallows RPC failures', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const env = createEnv()
+	const handle = beginRunRecord({
+		env,
+		userId: ownerIdFromStored('user-1'),
+		context: {
+			surface: 'execute',
+			name: null,
+			idempotencyKey: 'execute:key-1',
+		},
+	})
+	expect(handle).not.toBeNull()
+	mocks.startRun.mockClear()
+	await ensureRunRecordStarted({ env, handle })
+	expect(mocks.startRun).toHaveBeenCalledTimes(1)
+	expect(mocks.startRun).toHaveBeenCalledWith(
+		expect.objectContaining({
+			run: expect.objectContaining({
+				id: handle?.id,
+				status: 'running',
+				idempotencyKey: 'execute:key-1',
+			}),
+		}),
+	)
+
+	mocks.startRun.mockRejectedValueOnce(new Error('do unavailable'))
+	await expect(ensureRunRecordStarted({ env, handle })).resolves.toBeUndefined()
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'run-record-ensure-start-failed',
+		expect.any(Error),
+	)
+	await expect(
+		ensureRunRecordStarted({ env, handle: null }),
+	).resolves.toBeUndefined()
 })
 
 test('finishRunRecord awaits the terminal Durable Object write before scheduling side effects', async () => {
