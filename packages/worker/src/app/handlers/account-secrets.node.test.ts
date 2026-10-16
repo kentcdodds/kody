@@ -95,6 +95,18 @@ const mockModule = vi.hoisted(() => ({
 		allowedPackages: [],
 	})),
 	deleteSecret: vi.fn<typeof secretsService.deleteSecret>(async () => false),
+	renameSecret: vi.fn<typeof secretsService.renameSecret>(async (input) => ({
+		name: input.toName,
+		scope: input.scope,
+		description: '',
+		packageId: null,
+		allowedHosts: [],
+		allowedPackages: [],
+		createdAt: new Date(0).toISOString(),
+		updatedAt: new Date(0).toISOString(),
+		expiresAt: null,
+		ttlMs: null,
+	})),
 	findSecret: vi.fn<typeof secretsService.findSecret>(async () => ({
 		found: true,
 		credentialId: 'cred-saved',
@@ -280,6 +292,8 @@ vi.mock('#mcp/secrets/service.ts', () => ({
 		mockModule.resolveSecret(...args),
 	deleteSecret: (...args: Parameters<typeof secretsService.deleteSecret>) =>
 		mockModule.deleteSecret(...args),
+	renameSecret: (...args: Parameters<typeof secretsService.renameSecret>) =>
+		mockModule.renameSecret(...args),
 	findSecret: (...args: Parameters<typeof secretsService.findSecret>) =>
 		mockModule.findSecret(...args),
 	setSecretAllowedPackages: (
@@ -1503,64 +1517,6 @@ test('account secrets save keeps an opt-in credential hosts when the form sends 
 	expect(response.status).toBe(200)
 	expect(mockModule.saveSecret.mock.lastCall?.[0].credential).toBeUndefined()
 	expect(mockModule.setSecretAllowedHosts).not.toHaveBeenCalled()
-})
-
-test('account secrets save refuses to rename or re-host an opt-in credential without its kind', async () => {
-	const placement = {
-		id: 'cred-webhook',
-		kind: 'url' as const,
-		allowedHosts: ['hooks.example.com'],
-		loginExchange: null,
-		provider: null,
-		inject: {
-			kind: 'header' as const,
-			name: 'Authorization',
-			format: 'Bearer {value}',
-		},
-	}
-	const save = (body: Record<string, unknown>) =>
-		createHandler()(
-			postRequest({
-				action: 'save',
-				currentId: 'user::::webhook',
-				scope: 'user',
-				value: 'https://hooks.example.com/new',
-				allowedPackages: [],
-				...body,
-			}),
-		)
-
-	mockSecretsListing([makeSecret('webhook')])
-	mockModule.readStoredCredentialPlacement.mockResolvedValueOnce(placement)
-	mockModule.saveSecret.mockClear()
-	const renamed = await save({ name: 'webhook2', allowedHosts: [] })
-	expect(renamed.status).toBe(400)
-	await expect(renamed.json()).resolves.toMatchObject({
-		error: expect.stringContaining('would drop its kind'),
-	})
-	expect(mockModule.readStoredCredentialPlacement.mock.lastCall?.[0].name).toBe(
-		'webhook',
-	)
-
-	mockSecretsListing([makeSecret('webhook')])
-	mockModule.readStoredCredentialPlacement.mockResolvedValueOnce(placement)
-	const rehosted = await save({
-		name: 'webhook',
-		allowedHosts: ['other.example.com'],
-	})
-	expect(rehosted.status).toBe(400)
-	await expect(rehosted.json()).resolves.toMatchObject({
-		error: expect.stringContaining('take hosts, not approved hosts'),
-	})
-	expect(mockModule.saveSecret).not.toHaveBeenCalled()
-
-	mockSecretsListing([makeSecret('webhook')])
-	mockModule.readStoredCredentialPlacement.mockResolvedValueOnce(placement)
-	const unchanged = await save({
-		name: 'webhook',
-		allowedHosts: ['HOOKS.example.com'],
-	})
-	expect(unchanged.status).toBe(200)
 })
 
 test('account secrets save stays ok when metadata reload fails after write', async () => {

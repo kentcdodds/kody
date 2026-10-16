@@ -42,6 +42,7 @@ import {
 	deleteSecret,
 	findSecret,
 	listSecrets,
+	renameSecret,
 	resolveSecret,
 	saveSecret,
 	type SaveSecretCredential,
@@ -1350,6 +1351,8 @@ async function handleSaveAction(input: {
 		scope,
 		packageId,
 	})
+	// Uniqueness matches lookup: exact (case-sensitive) name + scope. A
+	// case-only rename of the current secret is therefore not a collision.
 	if (currentId !== nextId && secretById.has(nextId)) {
 		return jsonResponse(
 			{
@@ -1358,6 +1361,52 @@ async function handleSaveAction(input: {
 			},
 			409,
 		)
+	}
+
+	const samePlacement =
+		currentSecret != null &&
+		currentSecret.scope === scope &&
+		(currentSecret.packageId ?? null) === (packageId ?? null)
+	const nameChanged = currentSecret != null && currentSecret.name !== name
+	// Same-scope renames (including Henry → henry) update the row in place so
+	// the credential id and opt-in kind stay put. Scope/package moves still use
+	// create-under-new + delete-old below.
+	let renamedInPlace = false
+	if (nameChanged && samePlacement) {
+		try {
+			const renamed = await renameSecret({
+				env: input.env,
+				userId: ownerIdFromCaller({
+					request: input.user.request,
+					user: input.user.mcpUser,
+				}),
+				scope: currentSecret.scope,
+				fromName: currentSecret.name,
+				toName: name,
+				storageContext: getSecretContextForAccountSecret(currentSecret),
+			})
+			if (renamed.name !== name) {
+				return jsonResponse(
+					{
+						ok: false,
+						error: 'Secret rename did not persist the new name.',
+					},
+					500,
+				)
+			}
+			renamedInPlace = true
+		} catch (error) {
+			return jsonResponse(
+				{
+					ok: false,
+					error:
+						error instanceof Error ? error.message : 'Unable to rename secret.',
+				},
+				error instanceof Error && error.message.includes('already exists')
+					? 409
+					: 400,
+			)
+		}
 	}
 
 	const orgId = ownerIdFromCaller({
@@ -1398,11 +1447,15 @@ async function handleSaveAction(input: {
 			const placement = await readStoredCredentialPlacement({
 				db: input.env.APP_DB,
 				orgId,
-				name: currentSecret?.scope === 'user' ? currentSecret.name : name,
+				// After an in-place rename the row already uses `name`.
+				name:
+					renamedInPlace || currentSecret?.scope !== 'user'
+						? name
+						: currentSecret.name,
 			})
 			keepsOptInHosts = placement != null && placement.kind !== 'secret'
 			if (placement && keepsOptInHosts) {
-				if (currentSecret && currentId !== nextId) {
+				if (currentSecret && currentId !== nextId && !renamedInPlace) {
 					return jsonResponse(
 						{
 							ok: false,
@@ -1541,7 +1594,7 @@ async function handleSaveAction(input: {
 		}
 	}
 
-	if (currentSecret && currentSecret.id !== nextId) {
+	if (currentSecret && currentSecret.id !== nextId && !renamedInPlace) {
 		try {
 			await deleteSecret({
 				env: input.env,

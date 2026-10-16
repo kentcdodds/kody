@@ -95,6 +95,18 @@ const mockModule = vi.hoisted(() => ({
 		allowedPackages: [],
 	})),
 	deleteSecret: vi.fn<typeof secretsService.deleteSecret>(async () => false),
+	renameSecret: vi.fn<typeof secretsService.renameSecret>(async (input) => ({
+		name: input.toName,
+		scope: input.scope,
+		description: '',
+		packageId: null,
+		allowedHosts: [],
+		allowedPackages: [],
+		createdAt: new Date(0).toISOString(),
+		updatedAt: new Date(0).toISOString(),
+		expiresAt: null,
+		ttlMs: null,
+	})),
 	findSecret: vi.fn<typeof secretsService.findSecret>(async () => ({
 		found: true,
 		credentialId: 'cred-saved',
@@ -280,6 +292,8 @@ vi.mock('#mcp/secrets/service.ts', () => ({
 		mockModule.resolveSecret(...args),
 	deleteSecret: (...args: Parameters<typeof secretsService.deleteSecret>) =>
 		mockModule.deleteSecret(...args),
+	renameSecret: (...args: Parameters<typeof secretsService.renameSecret>) =>
+		mockModule.renameSecret(...args),
 	findSecret: (...args: Parameters<typeof secretsService.findSecret>) =>
 		mockModule.findSecret(...args),
 	setSecretAllowedPackages: (
@@ -429,17 +443,37 @@ function makeSecret(name: string, overrides: Record<string, unknown> = {}) {
 }
 
 test('account secrets save reports rename cleanup failure without failing the save', async () => {
+	// Scope move still uses create-under-new + delete-old; same-scope renames
+	// update the row in place and never hit this cleanup path.
 	const existing = makeSecret('oldApiKey')
-	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
+	const pkg = {
+		id: 'pkg-1',
+		userId: ownerIdFromStored('stable-user-1'),
+		name: '@user/notes',
+		kodyId: 'notes',
+		description: '',
+		tags: [] as Array<string>,
+		searchText: null,
+		sourceId: 'source-1',
+		hasApp: false,
+		hidden: false,
+		isPrivate: false,
+		isInternetVisible: false,
+		createdAt: epoch,
+		updatedAt: epoch,
+	}
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([pkg] as never)
 	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
 	mockModule.listSecrets
 		.mockResolvedValueOnce([existing])
-		.mockResolvedValueOnce([makeSecret('renamedApiKey')])
+		.mockResolvedValueOnce([
+			makeSecret('oldApiKey', { scope: 'package', packageId: 'pkg-1' }),
+		])
 	mockModule.saveSecret.mockResolvedValueOnce({
-		name: 'renamedApiKey',
-		scope: 'user',
+		name: 'oldApiKey',
+		scope: 'package',
 		description: '',
-		packageId: null,
+		packageId: 'pkg-1',
 		allowedHosts: [],
 		allowedPackages: [],
 		createdAt: epoch,
@@ -460,8 +494,9 @@ test('account secrets save reports rename cleanup failure without failing the sa
 		postRequest({
 			action: 'save',
 			currentId: 'user::::oldApiKey',
-			name: 'renamedApiKey',
-			scope: 'user',
+			name: 'oldApiKey',
+			scope: 'package',
+			packageId: 'pkg-1',
 			value: 'fresh-secret',
 			allowedHosts: [],
 			allowedPackages: [],
@@ -472,9 +507,166 @@ test('account secrets save reports rename cleanup failure without failing the sa
 	await expect(response.json()).resolves.toMatchObject({
 		ok: true,
 		renameCleanupError: 'delete prior secret failed',
-		selectedSecret: { name: 'renamedApiKey' },
+		selectedSecret: { name: 'oldApiKey', scope: 'package' },
 	})
+	expect(mockModule.renameSecret).not.toHaveBeenCalled()
 	expect(mockModule.deleteSecret).toHaveBeenCalledWith(
 		expect.objectContaining({ name: 'oldApiKey', scope: 'user' }),
 	)
+})
+
+function mockSecretsListing(secrets: Array<unknown>) {
+	mockModule.listSecrets.mockResolvedValue(secrets as never)
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
+}
+
+test('account secrets save renames opt-in credentials in place without their kind, including case-only', async () => {
+	const placement = {
+		id: 'cred-webhook',
+		kind: 'url' as const,
+		allowedHosts: ['hooks.example.com'],
+		loginExchange: null,
+		provider: null,
+		inject: {
+			kind: 'header' as const,
+			name: 'Authorization',
+			format: 'Bearer {value}',
+		},
+	}
+	const save = (body: Record<string, unknown>) =>
+		createHandler()(
+			postRequest({
+				action: 'save',
+				currentId: 'user::::webhook',
+				scope: 'user',
+				value: 'https://hooks.example.com/new',
+				allowedPackages: [],
+				...body,
+			}),
+		)
+
+	mockSecretsListing([makeSecret('webhook')])
+	mockModule.readStoredCredentialPlacement.mockResolvedValueOnce(placement)
+	mockModule.saveSecret.mockClear()
+	mockModule.renameSecret.mockClear()
+	mockModule.listSecrets
+		.mockResolvedValueOnce([makeSecret('webhook')])
+		.mockResolvedValueOnce([makeSecret('webhook2')])
+	const renamed = await save({ name: 'webhook2', allowedHosts: [] })
+	expect(renamed.status).toBe(200)
+	expect(mockModule.renameSecret).toHaveBeenCalledWith(
+		expect.objectContaining({
+			fromName: 'webhook',
+			toName: 'webhook2',
+			scope: 'user',
+		}),
+	)
+	expect(mockModule.deleteSecret).not.toHaveBeenCalled()
+	expect(mockModule.readStoredCredentialPlacement.mock.lastCall?.[0].name).toBe(
+		'webhook2',
+	)
+
+	mockSecretsListing([makeSecret('Henry')])
+	mockModule.readStoredCredentialPlacement.mockResolvedValueOnce(placement)
+	mockModule.renameSecret.mockClear()
+	mockModule.listSecrets
+		.mockResolvedValueOnce([makeSecret('Henry')])
+		.mockResolvedValueOnce([makeSecret('henry')])
+	const caseOnly = await createHandler()(
+		postRequest({
+			action: 'save',
+			currentId: 'user::::Henry',
+			name: 'henry',
+			scope: 'user',
+			value: 'https://hooks.example.com/new',
+			allowedHosts: [],
+			allowedPackages: [],
+		}),
+	)
+	expect(caseOnly.status).toBe(200)
+	expect(mockModule.renameSecret).toHaveBeenCalledWith(
+		expect.objectContaining({ fromName: 'Henry', toName: 'henry' }),
+	)
+	await expect(caseOnly.json()).resolves.toMatchObject({
+		ok: true,
+		selectedSecret: { name: 'henry', id: 'user::::henry' },
+	})
+
+	mockSecretsListing([makeSecret('webhook')])
+	mockModule.readStoredCredentialPlacement.mockResolvedValueOnce(placement)
+	mockModule.saveSecret.mockClear()
+	const rehosted = await save({
+		name: 'webhook',
+		allowedHosts: ['other.example.com'],
+	})
+	expect(rehosted.status).toBe(400)
+	await expect(rehosted.json()).resolves.toMatchObject({
+		error: expect.stringContaining('take hosts, not approved hosts'),
+	})
+	expect(mockModule.saveSecret).not.toHaveBeenCalled()
+
+	mockSecretsListing([makeSecret('webhook')])
+	mockModule.readStoredCredentialPlacement.mockResolvedValueOnce(placement)
+	const unchanged = await save({
+		name: 'webhook',
+		allowedHosts: ['HOOKS.example.com'],
+	})
+	expect(unchanged.status).toBe(200)
+})
+
+test('account secrets save still refuses moving an opt-in credential across scopes without its kind', async () => {
+	const placement = {
+		id: 'cred-webhook',
+		kind: 'url' as const,
+		allowedHosts: ['hooks.example.com'],
+		loginExchange: null,
+		provider: null,
+		inject: {
+			kind: 'header' as const,
+			name: 'Authorization',
+			format: 'Bearer {value}',
+		},
+	}
+	const pkg = {
+		id: 'pkg-1',
+		userId: ownerIdFromStored('stable-user-1'),
+		name: '@user/notes',
+		kodyId: 'notes',
+		description: '',
+		tags: [] as Array<string>,
+		searchText: null,
+		sourceId: 'source-1',
+		hasApp: false,
+		hidden: false,
+		isPrivate: false,
+		isInternetVisible: false,
+		createdAt: epoch,
+		updatedAt: epoch,
+	}
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([pkg] as never)
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
+	mockModule.listSecrets.mockResolvedValue([makeSecret('webhook')] as never)
+	mockModule.readStoredCredentialPlacement.mockResolvedValueOnce(placement)
+	mockModule.renameSecret.mockClear()
+	mockModule.saveSecret.mockClear()
+
+	const moved = await createHandler()(
+		postRequest({
+			action: 'save',
+			currentId: 'user::::webhook',
+			name: 'webhook',
+			scope: 'package',
+			packageId: 'pkg-1',
+			value: 'https://hooks.example.com/new',
+			allowedHosts: [],
+			allowedPackages: [],
+		}),
+	)
+	expect(moved.status).toBe(400)
+	await expect(moved.json()).resolves.toMatchObject({
+		error: expect.stringContaining('would drop its kind'),
+	})
+	expect(mockModule.renameSecret).not.toHaveBeenCalled()
+	expect(mockModule.saveSecret).not.toHaveBeenCalled()
 })

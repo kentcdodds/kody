@@ -438,6 +438,36 @@ export async function updateApprovedUserSecretEntriesForPackageAtomically(input:
 	}
 }
 
+/**
+ * Rename a live secret entry in place (same row, same credential id). Names
+ * compare exactly: lookup and uniqueness are case-sensitive, so a case-only
+ * change such as Henry → henry must update the stored name.
+ */
+export async function renameSecretEntry(input: {
+	db: D1Database
+	bucketId: string
+	fromName: string
+	toName: string
+	updatedAt?: string
+}): Promise<boolean> {
+	const fromName = input.fromName.trim()
+	const toName = input.toName.trim()
+	if (!fromName || !toName) {
+		throw new Error('Secret name is required.')
+	}
+	if (fromName === toName) return false
+	const updatedAt = input.updatedAt ?? new Date().toISOString()
+	const result = await input.db
+		.prepare(
+			`UPDATE secret_entries
+			SET name = ?, updated_at = ?
+			WHERE bucket_id = ? AND name = ?${andLiveDeletedAtSql()}`,
+		)
+		.bind(toName, updatedAt, input.bucketId, fromName)
+		.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
 export async function deleteSecretEntry(input: {
 	db: D1Database
 	userId: string

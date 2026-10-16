@@ -41,6 +41,7 @@ import {
 	listSecretMetadataForBucket,
 	listUserScopeSecretMetadata,
 	prepareUpsertCredentialSecretEntryStatement,
+	renameSecretEntry,
 	updateApprovedUserSecretEntriesForPackageAtomically,
 	upsertSecretBucket,
 	upsertSecretEntry,
@@ -1013,6 +1014,99 @@ export async function deleteSecret(input: DeleteSecretInput) {
 		userId: input.userId,
 		bucketId: bucket.id,
 		name: input.name,
+	})
+}
+
+/**
+ * Rename a secret in its current scope/binding without changing its credential
+ * id. Matching is case-sensitive (same as resolve/list), so Henry → henry is a
+ * real rename. Throws when the source is missing or the destination is taken.
+ */
+export async function renameSecret(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: OwnerId
+	scope: SecretScope
+	fromName: string
+	toName: string
+	storageContext?: StorageContext | null
+}): Promise<SecretMetadata> {
+	const fromName = input.fromName.trim()
+	const toName = input.toName.trim()
+	if (!fromName || !toName) {
+		throw new Error('Secret name is required.')
+	}
+	assertSecretNameAllowed(fromName)
+	assertSecretNameAllowed(toName)
+	const bucket = await getExistingBucketForScope({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		scope: input.scope,
+		storageContext: input.storageContext ?? null,
+	})
+	if (!bucket) {
+		throw new Error('Secret not found for this scope.')
+	}
+	const existing = await getSecretEntry({
+		db: input.env.APP_DB,
+		bucketId: bucket.id,
+		name: fromName,
+	})
+	if (!existing) {
+		throw new Error('Secret not found for this scope.')
+	}
+	if (fromName === toName) {
+		return toSecretMetadata({
+			name: fromName,
+			scope: input.scope,
+			description: existing.description,
+			packageId: input.scope === 'package' ? bucket.binding_key : null,
+			allowedHosts: parseAllowedHosts(existing.allowed_hosts),
+			allowedPackages: parseAllowedPackages(existing.allowed_packages),
+			createdAt: existing.created_at,
+			updatedAt: existing.updated_at,
+			expiresAt: earliestSecretExpiresAt(
+				existing.expires_at,
+				bucket.expires_at,
+			),
+		})
+	}
+	const taken = await getSecretEntry({
+		db: input.env.APP_DB,
+		bucketId: bucket.id,
+		name: toName,
+	})
+	if (taken) {
+		throw new Error('A secret with that name and scope already exists.')
+	}
+	const now = new Date().toISOString()
+	const renamed = await renameSecretEntry({
+		db: input.env.APP_DB,
+		bucketId: bucket.id,
+		fromName,
+		toName,
+		updatedAt: now,
+	})
+	if (!renamed) {
+		throw new Error('Secret not found for this scope.')
+	}
+	const updated = await getSecretEntry({
+		db: input.env.APP_DB,
+		bucketId: bucket.id,
+		name: toName,
+	})
+	if (!updated || updated.name !== toName) {
+		throw new Error('Secret rename did not persist the new name.')
+	}
+	return toSecretMetadata({
+		name: updated.name,
+		scope: input.scope,
+		description: updated.description,
+		packageId: input.scope === 'package' ? bucket.binding_key : null,
+		allowedHosts: parseAllowedHosts(updated.allowed_hosts),
+		allowedPackages: parseAllowedPackages(updated.allowed_packages),
+		createdAt: updated.created_at,
+		updatedAt: updated.updated_at,
+		expiresAt: earliestSecretExpiresAt(updated.expires_at, bucket.expires_at),
 	})
 }
 

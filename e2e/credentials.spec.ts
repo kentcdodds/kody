@@ -360,3 +360,58 @@ test('the legacy secret intake link opens the Key form with its prefill', async 
 		new RegExp(`/@${user.username}/-/credentials\\?kind=secret$`),
 	)
 })
+
+test('case-only credential rename persists on the secrets editor', async ({
+	page,
+	seedE2eUser,
+	login,
+}) => {
+	test.setTimeout(process.env.CI ? 90_000 : 60_000)
+	const runId = Date.now()
+	const user = await seedE2eUser({
+		email: `cred-case-rename-${runId}@example.com`,
+		username: `credcaserename${runId}`,
+		password: 'cred-case-rename-password',
+	})
+	await login({ email: user.email, password: user.password, mode: 'login' })
+	const created = await page.request.post('/account/secrets.json', {
+		data: {
+			action: 'save',
+			name: 'Henry',
+			scope: 'user',
+			kind: 'url',
+			value: 'https://hooks.example.com/henry',
+			hosts: ['hooks.example.com'],
+			allowedHosts: [],
+			allowedPackages: [],
+		},
+		headers: { 'Content-Type': 'application/json' },
+	})
+	expect(created.ok()).toBe(true)
+
+	await page.goto(`/@${user.username}/-/secrets/user/Henry`)
+	await waitForClientHydration(page)
+	const nameInput = page.locator('input[placeholder="api-token"]')
+	await expect(nameInput).toHaveValue('Henry')
+	await nameInput.fill('henry')
+	await page.getByRole('button', { name: 'Save' }).click()
+	await expect(page).toHaveURL(
+		new RegExp(`/@${user.username}/-/secrets/user/henry`),
+	)
+	await expect(nameInput).toHaveValue('henry')
+	await expect(
+		page.getByRole('link', { name: 'henry', exact: true }),
+	).toBeVisible()
+
+	const listed = await page.request.get('/account/credentials.json')
+	expect(listed.ok()).toBe(true)
+	const payload = (await listed.json()) as {
+		credentials: Array<{ name: string }>
+	}
+	expect(payload.credentials.map((credential) => credential.name)).toContain(
+		'henry',
+	)
+	expect(
+		payload.credentials.map((credential) => credential.name),
+	).not.toContain('Henry')
+})

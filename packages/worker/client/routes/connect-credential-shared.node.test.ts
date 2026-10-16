@@ -177,6 +177,20 @@ test('replacing an existing Key keeps its hosts; package locks follow the form',
 			allowedPackages: ['pkg-1'],
 		},
 	})
+	// Case-only rename keeps currentId on the stored casing so the server can
+	// update the row in place instead of treating it as a create.
+	expect(
+		buildKeySaveBody({
+			kind: 'secret',
+			form: { ...form, name: 'openai_api_key' },
+			existing,
+		}),
+	).toMatchObject({
+		body: {
+			currentId: 'user::::OPENAI_API_KEY',
+			name: 'openai_api_key',
+		},
+	})
 	expect(
 		buildKeySaveBody({
 			kind: 'secret',
