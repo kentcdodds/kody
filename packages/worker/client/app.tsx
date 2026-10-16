@@ -280,7 +280,8 @@ export function App(handle: Handle<AppProps>) {
 			isLoggedIn && session != null && userHasRole(session, 'admin')
 		const showDemoIndicator = isFeatureFlagEnabled(session, 'demo-indicator')
 		const oauthRedirectTo =
-			currentPathname === '/oauth/authorize'
+			currentPathname === '/oauth/authorize' ||
+			currentPathname === '/oauth/package-app/authorize'
 				? `${currentPathname}${readRouterSearch(handle)}`
 				: null
 		const loginHref = buildAuthLink('/login', oauthRedirectTo)

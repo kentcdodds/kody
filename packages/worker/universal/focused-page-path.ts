@@ -12,6 +12,7 @@ const focusedPageMatchers = [
  * account menu: no site nav, no workspace rail, no footer.
  */
 export function isFocusedPagePathname(pathname: string) {
+	if (pathname === '/oauth/package-app/authorize') return true
 	const url = new URL(pathname, 'http://localhost')
 	return focusedPageMatchers.some((matcher) => matcher.match(url) !== null)
 }

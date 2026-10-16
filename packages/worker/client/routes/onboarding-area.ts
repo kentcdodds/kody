@@ -16,6 +16,10 @@ export {
 	OAuthAuthorizeRoute,
 	oauthAuthorizeRouteLoader,
 } from './oauth-authorize.tsx'
+export {
+	PackageAppOauthConsentRoute,
+	packageAppOauthConsentRouteLoader,
+} from './package-app-oauth-consent.tsx'
 
 export {
 	ConnectWebhookApplyRoute,

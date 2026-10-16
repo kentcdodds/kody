@@ -581,7 +581,15 @@
 			"sha256": "48d2174068a5dd678f65ddf2b5fd43b6202cee0d617f5672163837f21bad0233"
 		},
 		{
-			"filename": "0156-webhook-endpoints-multi-per-name.sql",
+			"filename": "0156-package-app-oauth-grants.sql",
+			"sha256": "ae3c96e2e6acf66c7def18e4365a55aceacd3be0ed0483b6214fa4492a1fd474"
+		},
+		{
+			"filename": "0157-package-app-oauth-codes.sql",
+			"sha256": "25ea74045f17120f595d4c7b58affb5e529e84086ca7add21e9993a2c5c5d4cf"
+		},
+		{
+			"filename": "0158-webhook-endpoints-multi-per-name.sql",
 			"sha256": "40ba8141a3fb45a48639a5cef8720e8b31d1faa31a77956200728fef73b2edac"
 		}
 	]

@@ -45,11 +45,13 @@ export function initBrowserSentry(config: SentryClientConfig) {
 		// Matching Id…", Chrome/Firefox extension "Receiving end does not
 		// exist", extension "Invalid call to runtime.sendMessage(). Tab not
 		// found", MetaMask inpage connect failures, MetaMask plain-object
-		// "wallet must has at least one account" rejections, Chrome
-		// extension "Client has been destroyed" with exclusively
-		// chrome-extension frames, Chrome extension TypeError reading
-		// `M_ID` with exclusively chrome-extension frames, Twitter/X in-app
-		// browser chrome `CONFIG`
+		// "wallet must has at least one account" rejections, Rabby /
+		// Chrome-extension plain-object "Message channel disconnected"
+		// rejections (KODY-72 / issue 7715934699), Chrome extension
+		// "Client has been destroyed" with exclusively chrome-extension
+		// frames, Chrome extension TypeError reading `M_ID` with
+		// exclusively chrome-extension frames, Twitter/X in-app browser
+		// chrome `CONFIG`
 		// ReferenceErrors / `sendScrollEvent`→ `window.webkit.messageHandlers`
 		// TypeErrors, injected unguarded `meta[property='og:type']` probes
 		// from `global code`, and optional Shiki `syntax-highlight-core`
@@ -63,11 +65,11 @@ export function initBrowserSentry(config: SentryClientConfig) {
 		// KODY-CLOUDFLARE-3X / KODY-CLOUDFLARE-43 / KODY-CLOUDFLARE-46 /
 		// KODY-CLOUDFLARE-4F / KODY-CLOUDFLARE-5C / KODY-CLOUDFLARE-5K /
 		// KODY-CLOUDFLARE-5W / KODY-CLOUDFLARE-5X / KODY-CLOUDFLARE-5Y /
-		// KODY-CLOUDFLARE-64 / KODY-6Z / KODY-8W /
+		// KODY-CLOUDFLARE-64 / KODY-6Z / KODY-8W / KODY-72 /
 		// issues 7639685398, 7648833360, 7648833403, 7653117289, 7655189301,
 		// 7658961865, 7659616372, 7660258027, 7662064169, 7677729361,
 		// 7682968915, 7687920474, 7689579030, 7690163947, 7696001937,
-		// 7717003182, 7777463624.
+		// 7715934699, 7717003182, 7777463624.
 		beforeSend(event, hint) {
 			return filterBrowserSentryEvent(event, hint.originalException)
 		},

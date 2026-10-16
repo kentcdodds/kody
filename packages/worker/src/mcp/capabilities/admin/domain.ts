@@ -34,6 +34,7 @@ import { adminPlatformFeedbackUpdateCapability } from './admin-platform-feedback
 import { adminUserUsageCapability } from './admin-user-usage.ts'
 import { adminOrgUsageCapability } from './admin-org-usage.ts'
 import { adminUserOauthGrantsCapability } from './admin-user-oauth-grants.ts'
+import { adminOauthGrantsLackingOrgIdRevokeCapability } from './admin-oauth-grants-lacking-org-id-revoke.ts'
 import { adminSystemEmailDeleteCapability } from './admin-system-email-delete.ts'
 import { adminSystemEmailGetCapability } from './admin-system-email-get.ts'
 import { adminSystemEmailListCapability } from './admin-system-email-list.ts'
@@ -134,6 +135,8 @@ export const adminDomain = defineDomain({
 		'org usage',
 		'oauth grants',
 		'grant bindings',
+		'oauth grants lacking orgId',
+		'revoke oauth orgId fallback',
 	],
 	capabilities: [
 		adminUserListCapability,
@@ -179,6 +182,7 @@ export const adminDomain = defineDomain({
 		adminUserUsageCapability,
 		adminOrgUsageCapability,
 		adminUserOauthGrantsCapability,
+		adminOauthGrantsLackingOrgIdRevokeCapability,
 		adminCreditWalletGetCapability,
 		adminCreditGrantCapability,
 		adminCreditEligibilitySetCapability,

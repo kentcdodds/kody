@@ -1,6 +1,7 @@
 import { css, type Handle } from 'remix/component'
 import { createMultiMatcher } from 'remix/route-pattern/match'
 import { oauthPaths } from '#universal/oauth-paths.ts'
+import { packageAppOauthPaths } from '#universal/package-app-oauth-paths.ts'
 import { routePattern } from '#universal/route-pattern.ts'
 import { routes } from '#universal/routes.ts'
 import { colors, spacing } from '#universal/styles/tokens.ts'
@@ -369,6 +370,7 @@ registerPreloadPatterns(
 		routePattern(routes.connectSecretSet),
 		routePattern(routes.connectWebhookApply),
 		oauthPaths.authorize,
+		packageAppOauthPaths.authorize,
 	],
 	{
 		name: 'onboarding-area',

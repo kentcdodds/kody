@@ -188,6 +188,57 @@ function readBodyString(body: object, key: string) {
 	return typeof value === 'string' ? value.trim() : ''
 }
 
+/** Actions the approve-capabilities page API may accept. */
+export const accountPackageApproveCapabilitiesPageActions = [
+	'approve-capabilities',
+	'approve-capabilities-and-go-public',
+	'approve-credential-needs',
+	'approve-went-public',
+] as const
+
+export type AccountPackageApproveCapabilitiesPageAction =
+	(typeof accountPackageApproveCapabilitiesPageActions)[number]
+
+const accountPackageInternetVisibleActions = [
+	...accountPackageApproveCapabilitiesPageActions,
+	'set-internet-visible',
+] as const
+
+export type AccountPackageInternetVisibleAction =
+	(typeof accountPackageInternetVisibleActions)[number]
+
+function isAccountPackageInternetVisibleAction(
+	action: string,
+): action is AccountPackageInternetVisibleAction {
+	return (accountPackageInternetVisibleActions as readonly string[]).includes(
+		action,
+	)
+}
+
+export function isAccountPackageApproveCapabilitiesPageAction(
+	action: string,
+): action is AccountPackageApproveCapabilitiesPageAction {
+	return (
+		accountPackageApproveCapabilitiesPageActions as readonly string[]
+	).includes(action)
+}
+
+/**
+ * Resolve the page API action. Absent `action` defaults to approve-capabilities;
+ * any other missing/unknown value is rejected (caller returns 400).
+ */
+export function resolveAccountPackageApproveCapabilitiesPageAction(
+	body: object,
+): AccountPackageApproveCapabilitiesPageAction | null {
+	if (!('action' in body)) {
+		return 'approve-capabilities'
+	}
+	const value: unknown = (body as Record<string, unknown>).action
+	if (typeof value !== 'string') return null
+	const action = value.trim()
+	return isAccountPackageApproveCapabilitiesPageAction(action) ? action : null
+}
+
 export async function handleAccountPackageInternetVisibleAction(input: {
 	env: Env
 	request: Request
@@ -195,13 +246,7 @@ export async function handleAccountPackageInternetVisibleAction(input: {
 	body: object
 }): Promise<Response | null> {
 	const action = readBodyString(input.body, 'action')
-	if (
-		action !== 'set-internet-visible' &&
-		action !== 'approve-capabilities' &&
-		action !== 'approve-capabilities-and-go-public' &&
-		action !== 'approve-credential-needs' &&
-		action !== 'approve-went-public'
-	) {
+	if (!isAccountPackageInternetVisibleAction(action)) {
 		return null
 	}
 

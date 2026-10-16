@@ -377,3 +377,32 @@ test('a stale combined click after going public was turned off changes nothing',
 	expect(after.fingerprintMatchesApproval).toBe(false)
 	expect(await t.packageAudits()).toEqual([])
 })
+
+test('approval page API rejects unknown actions with 400 instead of rewriting', async () => {
+	const t = await setup()
+	const page = await t.loadPage()
+	expect(page.fingerprintMatchesApproval).toBe(false)
+
+	const rejected = await t.approve({
+		action: 'not-a-real-action',
+		fingerprint: page.fingerprint,
+	})
+	expect(rejected.status).toBe(400)
+	await expect(rejected.json()).resolves.toEqual({
+		ok: false,
+		error: 'Unsupported action.',
+	})
+	expect((await t.loadPage()).fingerprintMatchesApproval).toBe(false)
+	expect(await t.packageAudits()).toEqual([])
+})
+
+test('approval page API defaults to approve-capabilities only when action is absent', async () => {
+	const t = await setup()
+	const page = await t.loadPage()
+
+	const approved = await t.approve({
+		fingerprint: page.fingerprint,
+	})
+	expect(approved.status).toBe(200)
+	expect((await t.loadPage()).fingerprintMatchesApproval).toBe(true)
+})

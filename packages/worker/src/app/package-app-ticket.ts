@@ -154,6 +154,24 @@ function isStoredTicket(value: unknown): value is StoredTicket {
 	)
 }
 
+/** Clears the host-only ticket cookie for `slug`. */
+export async function destroyPackageAppTicketCookie(input: {
+	env: Env
+	slug: string
+	secure: boolean
+}) {
+	const name = await ticketCookieName(input.slug, input.secure)
+	return [
+		`${name}=`,
+		'Path=/',
+		'Max-Age=0',
+		'HttpOnly',
+		'SameSite=Lax',
+		'Expires=Thu, 01 Jan 1970 00:00:00 GMT',
+		...(input.secure ? ['Secure'] : []),
+	].join('; ')
+}
+
 /** `Set-Cookie` value for a fresh ticket on `host` for app `slug`. */
 export async function mintPackageAppTicketCookie(input: {
 	env: Env
