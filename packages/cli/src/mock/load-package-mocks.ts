@@ -11,7 +11,6 @@ import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import type { RequestHandler } from 'msw'
 import { StructuredCliError } from '../structured-error.js'
 import {
 	type EnsureMswInput,
@@ -23,7 +22,7 @@ export const packageMocksRelativePath = '.kody/mocks.ts'
 
 export type LoadedPackageMocks = {
 	path: string
-	handlers: Array<RequestHandler>
+	handlers: Array<unknown>
 }
 
 export async function resolvePackageMocksPath(
@@ -94,7 +93,7 @@ export async function loadPackageMocks(
 				fix: `export const handlers = [http.get('https://api.example.com/…', () => HttpResponse.json({ ok: true }))]`,
 			})
 		}
-		return { path, handlers: raw as Array<RequestHandler> }
+		return { path, handlers: raw as Array<unknown> }
 	} catch (error) {
 		if (error instanceof StructuredCliError) throw error
 		throw new StructuredCliError({

@@ -11,7 +11,6 @@
  * hosts fail closed with `unmocked_request`.
  */
 
-import { type RequestHandler } from 'msw'
 import { StructuredCliError } from '../structured-error.js'
 import { type KodyTarget } from '../target.js'
 import { type EnsureMswInput, importMsw, mswPackageSpec } from './ensure-msw.js'
@@ -39,7 +38,7 @@ export type MockFetchGateway = {
 	enabled: boolean
 	/** Fail-closed MSW mode vs public-network passthrough when no mocks file. */
 	mode: 'msw' | 'passthrough-all'
-	handlers: ReadonlyArray<RequestHandler>
+	handlers: ReadonlyArray<unknown>
 	passthroughHosts: ReadonlyArray<string>
 	allowPrivateNetwork: boolean
 	handle: (
@@ -66,7 +65,7 @@ export function parsePassthroughHosts(raw: string | undefined): Array<string> {
 }
 
 export function createMockFetchGateway(input: {
-	handlers: ReadonlyArray<RequestHandler>
+	handlers: ReadonlyArray<unknown>
 	passthroughHosts?: ReadonlyArray<string>
 	allowPrivateNetwork?: boolean
 	/** When true, unmatched hosts use real network (no mocks.ts). */
@@ -117,7 +116,7 @@ export function createMockFetchGateway(input: {
 }
 
 export async function dispatchMockGatewayFetch(input: {
-	handlers: ReadonlyArray<RequestHandler>
+	handlers: ReadonlyArray<unknown>
 	passthroughHosts: ReadonlyArray<string>
 	allowPrivateNetwork: boolean
 	passthroughAll?: boolean

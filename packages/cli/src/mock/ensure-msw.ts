@@ -20,7 +20,18 @@ export const mswPinnedVersion = '3.0.3'
 
 export const mswPackageSpec = `msw@${mswPinnedVersion}`
 
-export type MswModule = typeof import('msw')
+/**
+ * The MSW surface `kody dev` / `--target mock` uses. Kept as a structural type
+ * so the published bundle does not emit `import "msw"` (msw is installed into
+ * the Kody cache on demand, not shipped as a dependency).
+ */
+export type MswModule = {
+	getResponse: (
+		handlers: Array<unknown>,
+		request: Request,
+	) => Promise<Response | null | undefined>
+	isPassthroughResponse: (response: Response) => boolean
+}
 
 export function cachedMswRoot(
 	cacheDir: string,
