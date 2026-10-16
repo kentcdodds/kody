@@ -502,7 +502,7 @@ function buildDocumentBody(registry: BuiltCapabilityRegistry) {
 				'Authenticate with `Authorization: Bearer kody_at_…`. Tokens are minted by the MCP `api` tool (`tokenCreate`) or by another token, and each carries explicit org-permission scopes. There is no write-implies-read hierarchy.',
 				apiTokenIdleTtlDescription(),
 				'',
-				'Errors use `{ "error": { "code", "message", "details"? } }` (see components.schemas.Error). Documented 4xx/5xx responses reference that schema. Requests are rate limited per IP (600/min) and per token (300/min); HTTP 429 includes `Retry-After` and a `RateLimit-Policy` advertisement.',
+				'Errors use `{ "error": { "code", "message", "details"? } }` (see components.schemas.Error). Documented 4xx/5xx responses reference that schema. Requests are rate limited per IP (600/min) and per token (300/min); HTTP 429 includes `Retry-After`. Edge-generated 429 responses also include a `RateLimit-Policy` advertisement; entitlement 429s send `Retry-After` only.',
 				'',
 				'`operationId` values match Kody capability names, so the same ids work with the MCP `api` tool (`{ operationId, params }`, where params hold path, query, and body fields flat).',
 				'',
