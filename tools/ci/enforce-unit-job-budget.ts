@@ -3,11 +3,19 @@
  * budget (Node ≤720s, Workers ≤720s). Measured from a start epoch recorded at
  * the beginning of the same job. Cache hit or miss does not change the cap.
  *
+ * Workers also soft-caps each suite attempt at this budget in Validate and
+ * retries once on GNU `timeout` exit 124 so a mid-suite cancel does not paint
+ * ✅ Validate red (#3763). Assertion failures keep their own status and never
+ * retry. ADR 0011 isolation is unchanged.
+ *
  * Usage:
  *   node tools/ci/enforce-unit-job-budget.ts --leg node --start-epoch 1710000000
  *   node tools/ci/enforce-unit-job-budget.ts --leg workers --start-epoch 1710000000
  */
 import { isExecutedDirectly } from '../node-runtime.ts'
+
+/** GNU `timeout(1)` exit status when the soft attempt budget fires. */
+export const unitJobAttemptTimeoutExitCode = 124
 
 const unitJobBudgets = {
 	node: {
@@ -23,6 +31,15 @@ const unitJobBudgets = {
 } as const
 
 export type UnitJobLeg = keyof typeof unitJobBudgets
+
+export function getUnitJobMaxSeconds(leg: UnitJobLeg) {
+	return unitJobBudgets[leg].maxSeconds
+}
+
+/** Soft-cap / job-budget overruns are retryable once; assertion failures are not. */
+export function isRetryableUnitJobAttemptExit(status: number) {
+	return status === unitJobAttemptTimeoutExitCode
+}
 
 export type UnitJobBudgetResult = {
 	ok: boolean
