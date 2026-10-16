@@ -60,7 +60,7 @@ const outcomeSchema = z.discriminatedUnion('outcome', [
 				}),
 			)
 			.describe(
-				'Up to 12 blocking stamp-gate failures (path + message) for false-positive sampling before stop-and-notify.',
+				'Up to 3 sampled blocking stamp-gate failures (one per distinct code first, messages truncated) for false-positive sampling before stop-and-notify. Full codes are in blockingFailureCodes.',
 			),
 	}),
 	z.object({

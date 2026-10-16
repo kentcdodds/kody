@@ -41,6 +41,44 @@ export const credentialStampFleetScanLimitMax = 200
 export const credentialStampFleetApplyLimitDefault = 5
 export const credentialStampFleetApplyLimitMax = 10
 
+/** Max blockingFailures samples per unconvertible outcome (response budget). */
+export const credentialStampFleetFailureSampleMax = 3
+/** Truncate each sampled failure message for execute response budgets. */
+export const credentialStampFleetFailureMessageMax = 120
+
+/**
+ * Sample blocking failures for fleet dry-run: at least one example per distinct
+ * code (when possible), then fill remaining slots. Truncates messages so a
+ * full unconvertible page stays within the execute result budget.
+ */
+export function sampleFleetBlockingFailures(
+	failures: ReadonlyArray<CredentialStampGateFailure>,
+): Array<CredentialStampGateFailure> {
+	const truncate = (
+		failure: CredentialStampGateFailure,
+	): CredentialStampGateFailure => ({
+		code: failure.code,
+		message:
+			failure.message.length > credentialStampFleetFailureMessageMax
+				? `${failure.message.slice(0, credentialStampFleetFailureMessageMax - 1)}…`
+				: failure.message,
+		...(failure.path ? { path: failure.path } : {}),
+	})
+	const byCode = new Map<string, CredentialStampGateFailure>()
+	const extras: Array<CredentialStampGateFailure> = []
+	for (const failure of failures) {
+		const sampled = truncate(failure)
+		if (!byCode.has(failure.code)) byCode.set(failure.code, sampled)
+		else extras.push(sampled)
+	}
+	const out = [...byCode.values()]
+	for (const failure of extras) {
+		if (out.length >= credentialStampFleetFailureSampleMax) break
+		out.push(failure)
+	}
+	return out.slice(0, credentialStampFleetFailureSampleMax)
+}
+
 export type CredentialStampFleetOutcome =
 	| {
 			packageId: string
@@ -369,8 +407,6 @@ export async function runCredentialStampFleet(input: {
 				const blockingFailureCodes = [
 					...new Set(plan.blockingFailures.map((failure) => failure.code)),
 				].sort()
-				// Cap detail so a fleet page stays within capability response budgets.
-				const blockingFailures = plan.blockingFailures.slice(0, 12)
 				outcomes.push({
 					packageId: savedPackage.id,
 					ownerUserId: savedPackage.userId,
@@ -381,7 +417,7 @@ export async function runCredentialStampFleet(input: {
 					stampKeyCount,
 					outcome: 'unconvertible',
 					blockingFailureCodes,
-					blockingFailures,
+					blockingFailures: sampleFleetBlockingFailures(plan.blockingFailures),
 				})
 				continue
 			}
