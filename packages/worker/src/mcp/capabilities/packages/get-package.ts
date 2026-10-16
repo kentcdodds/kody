@@ -97,6 +97,7 @@ export const getPackageCapability = defineDomainCapability(
 				request,
 				ownerUserId: owner.ownerUserId,
 				sourceId: saved.sourceId,
+				packageId: saved.id,
 			})
 			return {
 				package_id: saved.id,

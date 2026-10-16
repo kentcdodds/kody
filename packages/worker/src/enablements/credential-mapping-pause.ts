@@ -81,10 +81,12 @@ export async function checkEnablementMappedCredentials(input: {
 	const declared = picks.filter((pick) => needs.has(pick.needKey))
 	if (declared.length === 0) return null
 	const usable = new Map(
-		(await listUsableCredentials(input)).map((credential) => [
-			credential.id,
-			credential,
-		]),
+		(
+			await listUsableCredentials({
+				...input,
+				packageId,
+			})
+		).map((credential) => [credential.id, credential]),
 	)
 	for (const { needKey, ids } of declared) {
 		const need = needs.get(needKey)!

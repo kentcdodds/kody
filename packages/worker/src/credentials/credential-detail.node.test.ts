@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
 		provider: string | null
 		hosts: Array<string>
 		scope: 'org' | 'personal'
+		packageId: string | null
 	}>,
 }))
 
@@ -113,6 +114,7 @@ test('usage reports how each package need relates to the credential', async () =
 			provider: 'openai',
 			hosts: [],
 			scope: 'org',
+			packageId: null,
 		},
 		{
 			id: 'gh-1',
@@ -121,6 +123,7 @@ test('usage reports how each package need relates to the credential', async () =
 			provider: 'github',
 			hosts: [],
 			scope: 'org',
+			packageId: null,
 		},
 		{
 			id: 'gh-2',
@@ -129,6 +132,7 @@ test('usage reports how each package need relates to the credential', async () =
 			provider: 'github',
 			hosts: [],
 			scope: 'org',
+			packageId: null,
 		},
 		{
 			id: 'loose',
@@ -137,6 +141,7 @@ test('usage reports how each package need relates to the credential', async () =
 			provider: null,
 			hosts: [],
 			scope: 'org',
+			packageId: null,
 		},
 	]
 	mocks.needs.set('src-triage', [
@@ -193,10 +198,28 @@ test('usage reports how each package need relates to the credential', async () =
 			)
 		).usage.map((use) => use.kodyId),
 	).toEqual(['digest'])
-	// A package key belongs to its package; it fills no declared need.
+	// A package key belongs to its package and can fill that package's needs.
 	expect(
-		await detail(item({ id: 'openai-1', name: 'OPENAI', packageId: 'triage' })),
-	).toMatchObject({ usage: [], usageTruncated: false, usageUnreadable: 0 })
+		await detail(
+			item({
+				id: 'openai-1',
+				name: 'OPENAI',
+				provider: 'openai',
+				packageId: 'triage',
+			}),
+		),
+	).toMatchObject({
+		usage: [
+			{
+				packageId: 'triage',
+				kodyId: 'triage',
+				needKey: 'openai',
+				fit: 'auto',
+			},
+		],
+		usageTruncated: false,
+		usageUnreadable: 0,
+	})
 })
 
 test('usage checks a bounded number of packages and says so', async () => {

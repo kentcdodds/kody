@@ -646,26 +646,27 @@ async function resolveKey(
 				(credential) => ({ credential, hint: null }),
 			)
 		}
-		const { candidates, possibleMatches } = need
+		const resolution = need
 			? resolveNeedCandidates(need, usable)
 			: {
+					autoPick: null as UsableCredential | null,
 					candidates: usable.filter(
 						(candidate) => candidate.provider === target.provider,
 					),
-					possibleMatches: [],
+					possibleMatches: [] as Array<UsableCredential>,
 				}
-		const createUrl =
-			candidates.length !== 1
-				? await createUrlForNeed(ctx, {
-						key,
-						provider: target.provider,
-						need,
-					})
-				: undefined
+		if (resolution.autoPick) {
+			return [{ credential: resolution.autoPick, hint: null }]
+		}
+		const createUrl = await createUrlForNeed(ctx, {
+			key,
+			provider: target.provider,
+			need,
+		})
 		const credential = pickOne({
 			key,
-			candidates,
-			possibleMatches,
+			candidates: resolution.candidates,
+			possibleMatches: resolution.possibleMatches,
 			describe: target.describe,
 			createUrl,
 		})
@@ -758,7 +759,11 @@ export async function openCredentialClient(
 ): Promise<OpenedCredentialClient> {
 	if (input.name != null) {
 		const request = requireActorRequest(ctx)
-		const usable = await listUsableCredentials({ env: ctx.env, request })
+		const usable = await listUsableCredentials({
+			env: ctx.env,
+			request,
+			packageId: ctx.packageId,
+		})
 		await assertNamedAllowed(ctx)
 		const pick = {
 			name: readText(input.name, 'A credential name'),
@@ -778,6 +783,7 @@ export async function openCredentialClient(
 	const usable = await listUsableCredentials({
 		env: ctx.env,
 		request: requireActorRequest(opener),
+		packageId: opener.packageId,
 	})
 	const picked = await resolveKey(opener, key, usable, 'one')
 	if (owner) assertApprovedForVisitors(key, owner, picked)
@@ -800,6 +806,7 @@ export async function openCredentialClients(
 	const usable = await listUsableCredentials({
 		env: ctx.env,
 		request: requireActorRequest(opener),
+		packageId: opener.packageId,
 	})
 	const picked = await resolveKey(opener, key, usable, 'many')
 	if (owner) assertApprovedForVisitors(key, owner, picked)
@@ -858,14 +865,28 @@ export async function validateCredentialCallMap(input: {
 				'A credentials map needs a person. This run has no acting person.',
 			)
 		}
-		const [usable, needs] = await Promise.all([
-			listUsableCredentials({ env: input.env, request }),
+		const packageIds = input.packageIds.length > 0 ? input.packageIds : [null]
+		const [usableLists, needs] = await Promise.all([
+			Promise.all(
+				packageIds.map((packageId) =>
+					listUsableCredentials({
+						env: input.env,
+						request,
+						packageId,
+					}),
+				),
+			),
 			loadRunCredentialNeeds({
 				env: input.env,
 				orgId: request.org.id,
 				packageIds: input.packageIds,
 			}),
 		])
+		const usableById = new Map<string, UsableCredential>()
+		for (const list of usableLists) {
+			for (const credential of list) usableById.set(credential.id, credential)
+		}
+		const usable = [...usableById.values()]
 		const warnings: Array<string> = []
 		for (const [key, picks] of input.map) {
 			const need = needs.get(key) ?? null

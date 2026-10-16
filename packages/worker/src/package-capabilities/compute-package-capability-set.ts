@@ -69,12 +69,18 @@ export async function computePackageCapabilitySet(input: {
 	})
 	const entries: Array<CapabilitySetEntry> = []
 	const viaRoot = [input.packageKodyId]
-	let reachableCredentials: Promise<Array<UsableCredential>> | null = null
-	const loadReachableCredentials = () =>
-		(reachableCredentials ??= listOrgReachableCredentials({
+	const reachableByPackage = new Map<string, Promise<Array<UsableCredential>>>()
+	const loadReachableCredentials = (packageId: string) => {
+		const existing = reachableByPackage.get(packageId)
+		if (existing) return existing
+		const next = listOrgReachableCredentials({
 			db: input.env.APP_DB,
 			orgId: input.ownerUserId,
-		}))
+			packageId,
+		})
+		reachableByPackage.set(packageId, next)
+		return next
+	}
 
 	await appendPackageCapabilityEntries({
 		env: input.env,
@@ -316,7 +322,9 @@ async function appendPackageCapabilityEntries(input: {
 	baseUrl: string
 	via: Array<string>
 	entries: Array<CapabilitySetEntry>
-	loadReachableCredentials: () => Promise<Array<UsableCredential>>
+	loadReachableCredentials: (
+		packageId: string,
+	) => Promise<Array<UsableCredential>>
 	/** Needs beyond the package's own manifest (the root's published closure). */
 	needs?: ReadonlyArray<CredentialNeed>
 }): Promise<void> {
@@ -412,7 +420,7 @@ async function appendPackageCapabilityEntries(input: {
 	]
 	if (needs.length === 0) return
 	const [reachableCredentials, mappings] = await Promise.all([
-		input.loadReachableCredentials(),
+		input.loadReachableCredentials(input.packageId),
 		loadAllCredentialMappingsForPackage({
 			db: input.env.APP_DB,
 			orgId: input.ownerUserId,
@@ -437,10 +445,11 @@ async function appendPackageCapabilityEntries(input: {
 				const credential = reachableById.get(id)
 				return credential ? [credential] : []
 			})
-		for (const candidate of [
-			...mapped,
-			...resolveNeedCandidates(need, reachableCredentials).candidates,
-		]) {
+		const resolution = resolveNeedCandidates(need, reachableCredentials)
+		const fromResolution = resolution.autoPick
+			? [resolution.autoPick]
+			: resolution.candidates
+		for (const candidate of [...mapped, ...fromResolution]) {
 			if (forVisitors) {
 				const visitorKey = `${need.key}\0${candidate.id}`
 				if (seenVisitorEntries.has(visitorKey)) continue

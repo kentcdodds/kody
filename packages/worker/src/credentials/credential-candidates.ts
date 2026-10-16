@@ -5,11 +5,12 @@
  *
  * Candidates are credentials of the need's provider that the actor can Use in
  * the run org: org credentials with Use, plus the actor's own personal
- * credentials granted to that org. When the need declares `kind`, candidates
- * must match it; when `kind` is omitted, any fetch-capable credential
- * (secret/Key, oauth, login) qualifies. A credential with no provider never
- * auto-resolves; it is still an explicit option of a matching kind. Nothing
- * here reads a value.
+ * credentials granted to that org. When resolving for package P, keys bound to
+ * P are included too (never keys bound to other packages). When the need
+ * declares `kind`, candidates must match it; when `kind` is omitted, any
+ * fetch-capable credential (secret/Key, oauth, login) qualifies. A credential
+ * with no provider never auto-resolves unless it is a package-bound key whose
+ * name matches the need key exactly. Nothing here reads a value.
  */
 import {
 	chunkArray,
@@ -41,6 +42,8 @@ export type UsableCredential = {
 	provider: string | null
 	hosts: Array<string>
 	scope: 'org' | 'personal'
+	/** Set when the Key lives in a package-scope bucket bound to that package. */
+	packageId: string | null
 }
 
 type Row = {
@@ -53,46 +56,73 @@ type Row = {
 	/** OAuth only: the app's current hosts and API base URL host. */
 	app_hosts_json: string | null
 	api_base_url: string | null
+	bucket_scope: string | null
+	binding_key: string | null
+}
+
+type SecretScopeFilter = {
+	/** Include user-scope (unbound) secrets. */
+	includeUserScope: boolean
+	/** Include package-scope secrets bound to this package id only. */
+	packageId: string | null
 }
 
 const usableRowQueries = [
 	{
 		family: 'secret' as const,
-		sql: (filter: (column: string) => string) =>
-			`SELECT e.id AS id, e.name AS name, e.kind AS kind, e.provider AS provider,
+		sql: (filter: (column: string) => string, scope: SecretScopeFilter) => {
+			const scopeClauses: Array<string> = []
+			if (scope.includeUserScope) {
+				scopeClauses.push(`(b.scope = 'user' AND b.binding_key = '')`)
+			}
+			if (scope.packageId) {
+				scopeClauses.push(`(b.scope = 'package' AND b.binding_key = ?)`)
+			}
+			const scopeSql =
+				scopeClauses.length > 0
+					? ` AND (${scopeClauses.join(' OR ')})`
+					: ` AND 0`
+			return `SELECT e.id AS id, e.name AS name, e.kind AS kind, e.provider AS provider,
 				e.allowed_hosts AS hosts_json, NULL AS url, NULL AS app_hosts_json,
-				NULL AS api_base_url
+				NULL AS api_base_url, b.scope AS bucket_scope, b.binding_key AS binding_key
 			FROM secret_entries e JOIN secret_buckets b ON b.id = e.bucket_id
-			WHERE b.user_id = ? AND b.scope = 'user' AND b.binding_key = ''
+			WHERE b.user_id = ?${scopeSql}
 				AND e.deleted_at IS NULL AND b.deleted_at IS NULL
 				AND (e.expires_at IS NULL OR e.expires_at > ?)
-				AND (b.expires_at IS NULL OR b.expires_at > ?)${filter('e.id')}`,
-		binds: (now: string) => [now, now],
+				AND (b.expires_at IS NULL OR b.expires_at > ?)${filter('e.id')}`
+		},
+		binds: (now: string, scope: SecretScopeFilter) => [
+			...(scope.packageId ? [scope.packageId] : []),
+			now,
+			now,
+		],
 	},
 	{
 		family: 'integration' as const,
-		sql: (filter: (column: string) => string) =>
+		sql: (filter: (column: string) => string, _scope: SecretScopeFilter) =>
 			`SELECT i.id AS id, i.name AS name, 'oauth' AS kind, i.provider AS provider,
 				i.required_hosts_json AS hosts_json, NULL AS url,
 				p.required_hosts_json AS app_hosts_json,
 				CASE WHEN i.platform_app_slug IS NOT NULL THEN p.api_base_url
-					ELSE a.api_base_url END AS api_base_url
+					ELSE a.api_base_url END AS api_base_url,
+				NULL AS bucket_scope, NULL AS binding_key
 			FROM user_integrations i
 			LEFT JOIN user_oauth_apps a
 				ON a.user_id = i.user_id AND a.slug = i.app_slug AND a.deleted_at IS NULL
 			LEFT JOIN platform_oauth_apps p ON p.slug = i.platform_app_slug
 			WHERE i.user_id = ? AND i.deleted_at IS NULL
 				AND ${integrationConnectedSql('i.connected_at')}${filter('i.id')}`,
-		binds: () => [],
+		binds: (_now: string, _scope: SecretScopeFilter) => [],
 	},
 	{
 		family: 'integration' as const,
-		sql: (filter: (column: string) => string) =>
+		sql: (filter: (column: string) => string, _scope: SecretScopeFilter) =>
 			`SELECT id, name, 'mcp' AS kind, provider, '[]' AS hosts_json, url,
-				NULL AS app_hosts_json, NULL AS api_base_url
+				NULL AS app_hosts_json, NULL AS api_base_url,
+				NULL AS bucket_scope, NULL AS binding_key
 			FROM mcp_server_settings
 			WHERE user_id = ? AND deleted_at IS NULL AND enabled = 1${filter('id')}`,
-		binds: () => [],
+		binds: (_now: string, _scope: SecretScopeFilter) => [],
 	},
 ]
 
@@ -146,20 +176,33 @@ async function loadRows(input: {
 	ownerId: string
 	ids: ReadonlyArray<string> | null
 	now: string
+	secretScope?: SecretScopeFilter
 }) {
+	const secretScope: SecretScopeFilter = input.secretScope ?? {
+		includeUserScope: true,
+		packageId: null,
+	}
 	const rows: Array<Row & { family: 'secret' | 'integration' }> = []
+	const extraBinds = secretScope.packageId ? 1 : 0
 	const chunks =
 		input.ids === null
 			? [null]
-			: chunkArray([...new Set(input.ids)], maxD1BoundParameters - 3)
+			: chunkArray(
+					[...new Set(input.ids)],
+					maxD1BoundParameters - 3 - extraBinds,
+				)
 	for (const chunk of chunks) {
 		if (chunk?.length === 0) continue
 		const filter = (column: string) =>
 			chunk ? ` AND ${column} IN (${chunk.map(() => '?').join(', ')})` : ''
 		for (const query of usableRowQueries) {
 			const result = await input.db
-				.prepare(query.sql(filter))
-				.bind(input.ownerId, ...query.binds(input.now), ...(chunk ?? []))
+				.prepare(query.sql(filter, secretScope))
+				.bind(
+					input.ownerId,
+					...query.binds(input.now, secretScope),
+					...(chunk ?? []),
+				)
 				.all<Row>()
 			for (const row of result.results ?? []) {
 				if (!needKinds.has(row.kind)) continue
@@ -181,6 +224,10 @@ function toUsable(
 		provider: row.provider,
 		hosts: parseHosts(row),
 		scope,
+		packageId:
+			row.bucket_scope === 'package' && row.binding_key
+				? row.binding_key
+				: null,
 	}
 }
 
@@ -194,12 +241,18 @@ export async function findCredentialById(input: {
 	id: string
 	scope: UsableCredential['scope']
 	now?: Date
+	/** When set, also look in that package's bound Key bucket. */
+	packageId?: string | null
 }): Promise<UsableCredential | null> {
 	const [row] = await loadRows({
 		db: input.db,
 		ownerId: input.ownerId,
 		ids: [input.id],
 		now: (input.now ?? new Date()).toISOString(),
+		secretScope: {
+			includeUserScope: true,
+			packageId: input.packageId ?? null,
+		},
 	})
 	return row ? toUsable(row, input.scope) : null
 }
@@ -213,6 +266,11 @@ export async function listOrgReachableCredentials(input: {
 	db: D1Database
 	orgId: OwnerId
 	now?: Date
+	/**
+	 * When set, also include Keys bound to this package (never other packages'
+	 * Keys).
+	 */
+	packageId?: string | null
 }): Promise<Array<UsableCredential>> {
 	const now = (input.now ?? new Date()).toISOString()
 	const orgRows = await loadRows({
@@ -220,6 +278,10 @@ export async function listOrgReachableCredentials(input: {
 		ownerId: input.orgId,
 		ids: null,
 		now,
+		secretScope: {
+			includeUserScope: true,
+			packageId: input.packageId ?? null,
+		},
 	})
 	const credentials = orgRows.map((row) => toUsable(row, 'org'))
 	const grantors = await input.db
@@ -252,29 +314,46 @@ export async function listOrgReachableCredentials(input: {
  * Every credential the actor can Use in the run org, by kind: the org's own
  * credentials the actor holds Use on, and the actor's own personal
  * credentials granted to the org. In the actor's personal org, its
- * credentials are org credentials.
+ * credentials are org credentials. When `packageId` is set, Keys bound to
+ * that package are included too.
  */
 export async function listUsableCredentials(input: {
 	env: Env
 	request: RequestContext
 	now?: Date
+	/**
+	 * When set, also include Keys bound to this package (never other packages'
+	 * Keys). Pass the package whose needs are being resolved.
+	 */
+	packageId?: string | null
 }): Promise<Array<UsableCredential>> {
 	const orgId = input.request.org.id
 	const now = (input.now ?? new Date()).toISOString()
-	const [secretScope, integrationScope, orgRows, personal] = await Promise.all([
-		loadResourceListScope(input, 'secret:use', 'credential'),
-		loadResourceListScope(input, 'integration:use', 'credential'),
-		loadRows({ db: input.env.APP_DB, ownerId: orgId, ids: null, now }),
-		listPersonalCredentialCandidates({
-			db: input.env.APP_DB,
-			actorPersonId: input.request.actor?.userId ?? null,
-			orgId: orgId as OwnerId,
-		}),
-	])
+	const secretScope: SecretScopeFilter = {
+		includeUserScope: true,
+		packageId: input.packageId ?? null,
+	}
+	const [secretScopeAuth, integrationScope, orgRows, personal] =
+		await Promise.all([
+			loadResourceListScope(input, 'secret:use', 'credential'),
+			loadResourceListScope(input, 'integration:use', 'credential'),
+			loadRows({
+				db: input.env.APP_DB,
+				ownerId: orgId,
+				ids: null,
+				now,
+				secretScope,
+			}),
+			listPersonalCredentialCandidates({
+				db: input.env.APP_DB,
+				actorPersonId: input.request.actor?.userId ?? null,
+				orgId: orgId as OwnerId,
+			}),
+		])
 	const usable = orgRows
 		.filter((row) =>
 			listScopeIncludes(
-				row.family === 'secret' ? secretScope : integrationScope,
+				row.family === 'secret' ? secretScopeAuth : integrationScope,
 				row.id,
 			),
 		)
@@ -316,8 +395,14 @@ export type NeedResolution = {
 	possibleMatches: Array<UsableCredential>
 }
 
+/**
+ * Auto-pick when there is exactly one provider-matching candidate, or when a
+ * package-bound Key's name matches the need key exactly (sole such match among
+ * candidates and null-provider options). Other null-provider credentials stay
+ * options only.
+ */
 export function resolveNeedCandidates(
-	need: Pick<CredentialNeed, 'kind' | 'provider'>,
+	need: Pick<CredentialNeed, 'kind' | 'provider'> & { key?: string },
 	usable: ReadonlyArray<UsableCredential>,
 ): NeedResolution {
 	const matchesKind = (credential: UsableCredential) =>
@@ -331,17 +416,36 @@ export function resolveNeedCandidates(
 	const possibleMatches = sameKind.filter(
 		(credential) => credential.provider === null,
 	)
+	const options = [...candidates, ...possibleMatches]
 	const [only] = candidates
+	const packageNameMatch =
+		need.key != null
+			? options.filter(
+					(credential) =>
+						credential.packageId != null && credential.name === need.key,
+				)
+			: []
+	const [packageOnly, packageSecond] = packageNameMatch
+	let autoPick: UsableCredential | null = null
+	let status: NeedResolution['status']
+	if (candidates.length === 1 && only) {
+		autoPick = only
+		status = 'ready'
+	} else if (packageOnly && !packageSecond) {
+		autoPick = packageOnly
+		status = 'ready'
+	} else if (candidates.length === 0) {
+		autoPick = null
+		status = 'unbound'
+	} else {
+		autoPick = null
+		status = 'ambiguous'
+	}
 	return {
-		status:
-			candidates.length === 0
-				? 'unbound'
-				: candidates.length === 1
-					? 'ready'
-					: 'ambiguous',
-		autoPick: candidates.length === 1 && only ? only : null,
+		status,
+		autoPick,
 		candidates,
-		options: [...candidates, ...possibleMatches],
+		options,
 		possibleMatches,
 	}
 }

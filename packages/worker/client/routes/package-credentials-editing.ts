@@ -55,6 +55,36 @@ export function draftFromStored(
 	return { mode: 'pick', ids: stored.credentials.map((ref) => ref.id) }
 }
 
+/**
+ * Opening draft for a mapping cell: stored mapping when present; inherit when
+ * auto-resolve already covers the need; otherwise pre-select the sole option
+ * or the option whose name matches the need key so the owner can save without
+ * hunting.
+ */
+export function draftForMappingEditor(
+	need: PackageCredentialNeedView,
+	target: CredentialMappingTarget,
+	stored: StoredCredentialMapping | null,
+): MappingDraft {
+	if (stored) return draftFromStored(stored)
+	if (need.effective.status === 'ready' && need.effective.source === 'auto') {
+		return { mode: 'inherit' }
+	}
+	const choices = mappingOptions(need, target)
+	if (choices.length === 1 && choices[0]) {
+		return { mode: 'pick', ids: [choices[0].id] }
+	}
+	const named = choices.filter((choice) => choice.name === need.key)
+	if (named.length === 1 && named[0]) {
+		return { mode: 'pick', ids: [named[0].id] }
+	}
+	return { mode: 'inherit' }
+}
+
+/** Shown under the mapping picker: Keys bound to other packages stay out. */
+export const packageBoundKeysPickerNote =
+	'Keys bound to other packages are hidden. A Key bound to this package can fill its needs.'
+
 /** The org default can only point at org credentials; other targets take any option. */
 export function mappingOptions(
 	need: PackageCredentialNeedView,

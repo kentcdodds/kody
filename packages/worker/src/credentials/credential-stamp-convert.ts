@@ -10,7 +10,11 @@
  * Unconvertible patterns (computed names, `|scope=` including package/user/
  * session, secretMounts, server_eval, vault placeholders, credential.named)
  * stay skipped. Do not strip `|scope=package`: unsuffixed lookup prefers
- * session before package, which would widen resolution.
+ * session before package, which would widen resolution. Package-bound Keys
+ * can fill that same package's declared needs (name match or sole candidate),
+ * so owners can move off `|scope=package` placeholders onto declared needs
+ * without creating new secrets; this codemod still will not rewrite those
+ * placeholders automatically.
  */
 import {
 	applyCredentialStampSealPlan,

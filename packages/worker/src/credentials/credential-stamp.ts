@@ -1285,7 +1285,7 @@ function unstampablePatternFix(pattern: LegacyCredentialPattern): string {
 		case 'computed integration':
 			return credentialStampConversionFixGuidance
 		case '|scope=':
-			return `Remove |scope= (and any helper scope option). Use an org credential assigned to the package. ${credentialStampConversionFixGuidance}`
+			return `Remove |scope= (and any helper scope option). Prefer a declared kody.credentials need filled by an org Key or by a Key bound to this same package (package Keys fill that package's needs when the name matches or they are the only match). ${credentialStampConversionFixGuidance}`
 		case 'secretMounts':
 			return `Delete kody.secretMounts. ${credentialStampConversionFixGuidance}`
 		case 'packageSecrets.get':

@@ -142,7 +142,11 @@ export async function loadPackageMappingScope(input: {
 			userId: savedPackage.userId,
 			sourceId: savedPackage.sourceId,
 		}),
-		listUsableCredentials({ env: input.env, request: input.request }),
+		listUsableCredentials({
+			env: input.env,
+			request: input.request,
+			packageId: savedPackage.id,
+		}),
 		listDeclaredTriggers({
 			env: input.env,
 			baseUrl: input.baseUrl,
@@ -320,19 +324,18 @@ function effectiveMapping(
 			}
 		}
 	}
-	const { candidates } = resolveNeedCandidates(need, scope.usable)
-	const [only, second] = candidates
-	if (only && !second) {
+	const resolution = resolveNeedCandidates(need, scope.usable)
+	if (resolution.autoPick) {
 		return {
 			source: 'auto',
 			status: 'ready',
-			credentials: [toCredentialRef(only)],
+			credentials: [toCredentialRef(resolution.autoPick)],
 			candidates: [],
 			createUrl: null,
 		}
 	}
-	return only
-		? notReady('ambiguous', 'auto', candidates.map(toCredentialRef))
+	return resolution.status === 'ambiguous'
+		? notReady('ambiguous', 'auto', resolution.candidates.map(toCredentialRef))
 		: notReady('unbound', 'auto')
 }
 

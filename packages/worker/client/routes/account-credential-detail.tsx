@@ -340,10 +340,33 @@ export function renderCredentialDetail(input: {
 				detail === null ? (
 					<p mix={mutedCss}>Loading…</p>
 				) : credential.packageId ? (
-					<p mix={mutedCss}>
-						Only {packageName(credential.packageId, packagesById)}, through its
-						placeholders. Package keys do not fill declared needs.
-					</p>
+					detail.usage.length === 0 ? (
+						<p mix={mutedCss}>
+							Only {packageName(credential.packageId, packagesById)}, through
+							its placeholders and that package’s declared needs when the Key’s
+							name matches a need (or it is the only match).
+						</p>
+					) : (
+						<div mix={css({ display: 'grid', gap: spacing.xs })}>
+							<p mix={mutedCss}>
+								Fills needs on {packageName(credential.packageId, packagesById)}{' '}
+								(and its placeholders):
+							</p>
+							<ul mix={listCss}>
+								{detail.usage.map((use) => (
+									<li key={`${use.packageId}:${use.needKey}`}>
+										<code mix={codeCss}>
+											{use.kodyId} · {use.needKey}
+										</code>{' '}
+										<span mix={css({ color: colors.textMuted })}>
+											{fitLabel(use.fit)}
+										</span>
+									</li>
+								))}
+							</ul>
+							{renderUsageGaps(detail)}
+						</div>
+					)
 				) : detail.usage.length === 0 ? (
 					<div mix={css({ display: 'grid', gap: spacing.xs })}>
 						<p mix={mutedCss}>

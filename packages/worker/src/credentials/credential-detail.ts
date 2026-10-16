@@ -75,25 +75,22 @@ async function listUsage(input: {
 	credentialId: string
 	packages: ReadonlyArray<SavedPackageRecord>
 }) {
-	const [usable, closures] = await Promise.all([
-		listUsableCredentials({ env: input.env, request: input.request }),
-		Promise.all(
-			input.packages.map(async (pkg) => ({
-				pkg,
-				needs: await loadPublishedCredentialNeeds({
-					env: input.env,
-					userId: input.orgId,
-					sourceId: pkg.sourceId,
-				}).catch((error: unknown) => {
-					Sentry.captureException(error, {
-						tags: { scope: 'credentials.detail.usage' },
-						extra: { packageId: pkg.id },
-					})
-					return null
-				}),
-			})),
-		),
-	])
+	const closures = await Promise.all(
+		input.packages.map(async (pkg) => ({
+			pkg,
+			needs: await loadPublishedCredentialNeeds({
+				env: input.env,
+				userId: input.orgId,
+				sourceId: pkg.sourceId,
+			}).catch((error: unknown) => {
+				Sentry.captureException(error, {
+					tags: { scope: 'credentials.detail.usage' },
+					extra: { packageId: pkg.id },
+				})
+				return null
+			}),
+		})),
+	)
 	const usage: AccountCredentialDetail['usage'] = []
 	let unreadable = 0
 	for (const { pkg, needs } of closures) {
@@ -101,6 +98,13 @@ async function listUsage(input: {
 			unreadable += 1
 			continue
 		}
+		// Per package so Keys bound to that package appear as candidates for
+		// its needs (and Keys bound to other packages stay hidden).
+		const usable = await listUsableCredentials({
+			env: input.env,
+			request: input.request,
+			packageId: pkg.id,
+		})
 		for (const need of needs) {
 			const resolution = resolveNeedCandidates(need, usable)
 			const fit: CredentialNeedFit | null =
@@ -178,15 +182,16 @@ export async function loadCredentialDetail(input: {
 	/** The org's packages, most recently updated first. */
 	packages: ReadonlyArray<SavedPackageRecord>
 }): Promise<AccountCredentialDetail> {
-	// A package key fills its own package's placeholders, never declared needs,
-	// and a locked credential is never picked for a package outside its locks.
+	// A package key fills its own package's placeholders and that package's
+	// declared needs. A locked credential is never picked for a package
+	// outside its locks.
 	const locks = input.credential.lockedToPackageIds
 	const reachable =
 		locks.length > 0
 			? input.packages.filter((pkg) => locks.includes(pkg.id))
 			: input.packages
 	const checked = input.credential.packageId
-		? []
+		? reachable.filter((pkg) => pkg.id === input.credential.packageId)
 		: reachable.slice(0, maxUsagePackages)
 	const [grants, usage, hostSettings] = await Promise.all([
 		input.ownedByViewer

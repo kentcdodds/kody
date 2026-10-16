@@ -16,6 +16,8 @@ export async function describePackageCredentialNeeds(input: {
 	request: RequestContext
 	ownerUserId: string
 	sourceId: string
+	/** Saved package id so Keys bound to this package can fill its needs. */
+	packageId: string
 }) {
 	try {
 		const needs = await loadPublishedCredentialNeeds({
@@ -27,6 +29,7 @@ export async function describePackageCredentialNeeds(input: {
 		const usable = await listUsableCredentials({
 			env: input.env,
 			request: input.request,
+			packageId: input.packageId,
 		})
 		return needs.map((need) => {
 			const resolution = resolveNeedCandidates(need, usable)

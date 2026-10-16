@@ -68,7 +68,7 @@ export type ApprovalViewer = {
 }
 
 type ViewerCache = {
-	usable?: Promise<Array<UsableCredential>>
+	usableByPackage: Map<string, Promise<Array<UsableCredential>>>
 }
 
 const caches = new WeakMap<ApprovalViewer, ViewerCache>()
@@ -76,19 +76,23 @@ const caches = new WeakMap<ApprovalViewer, ViewerCache>()
 function cacheFor(viewer: ApprovalViewer) {
 	let cache = caches.get(viewer)
 	if (!cache) {
-		cache = {}
+		cache = { usableByPackage: new Map() }
 		caches.set(viewer, cache)
 	}
 	return cache
 }
 
-function usableCredentials(viewer: ApprovalViewer) {
+function usableCredentials(viewer: ApprovalViewer, packageId: string) {
 	const cache = cacheFor(viewer)
-	cache.usable ??= listUsableCredentials({
+	const existing = cache.usableByPackage.get(packageId)
+	if (existing) return existing
+	const next = listUsableCredentials({
 		env: viewer.env,
 		request: viewer.request,
+		packageId,
 	})
-	return cache.usable
+	cache.usableByPackage.set(packageId, next)
+	return next
 }
 
 function orgSlug(viewer: ApprovalViewer) {
@@ -252,26 +256,31 @@ function describeMatch(candidates: ReadonlyArray<UsableCredential>) {
 async function credentialNeedGrant(
 	viewer: ApprovalViewer,
 	change: CredentialNeedChange,
+	packageId: string,
 ): Promise<ApprovalGrantLine> {
-	const usable = await usableCredentials(viewer)
+	const usable = await usableCredentials(viewer, packageId)
 	const after = change.after
-	const { candidates } = resolveNeedCandidates(
+	const resolution = resolveNeedCandidates(
 		{
+			key: change.key,
 			kind: after.kind,
 			provider: after.provider,
 		},
 		usable,
 	)
+	const matched = resolution.autoPick
+		? [resolution.autoPick]
+		: resolution.candidates
 	return {
 		change: change.change,
 		label: change.key,
 		where: change.from ? `Declared by ${change.from}` : null,
 		kind: kindLabel(after.kind),
 		provider: after.provider,
-		hosts: candidateHosts(candidates),
+		hosts: candidateHosts(matched),
 		before: describeNeedBefore(change),
 		after: describeNeedShape(after),
-		match: describeMatch(candidates),
+		match: describeMatch(matched),
 	}
 }
 
@@ -345,7 +354,9 @@ async function publishItemView(
 				summary:
 					'Approving publishes this version, which asks for the credentials below. The previously published version keeps serving until you approve. Denying drops this paused publish.',
 				grants: await Promise.all(
-					changes.map((change) => credentialNeedGrant(viewer, change)),
+					changes.map((change) =>
+						credentialNeedGrant(viewer, change, savedPackage.id),
+					),
 				),
 			}
 		}

@@ -90,20 +90,33 @@ async function setup() {
 		kind?: string
 		hosts?: Array<string>
 		expiresAt?: string
+		packageId?: string
 	}) => {
+		const scope = input.packageId ? 'package' : 'user'
 		await saveSecret({
 			env,
 			userId: input.ownerId,
-			scope: 'user',
+			scope,
 			name: input.name,
 			value: 'value-never-read',
 			...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
+			...(input.packageId
+				? {
+						storageContext: {
+							sessionId: null,
+							appId: input.packageId,
+							packageId: input.packageId,
+							storageId: input.packageId,
+						},
+					}
+				: {}),
 		})
 		const row = await db
 			.prepare(
 				`UPDATE secret_entries SET kind = ?, provider = ?, allowed_hosts = ?
 				WHERE name = ? AND bucket_id IN (
-					SELECT id FROM secret_buckets WHERE user_id = ? AND scope = 'user'
+					SELECT id FROM secret_buckets
+					WHERE user_id = ? AND scope = ? AND binding_key = ?
 				)
 				RETURNING id`,
 			)
@@ -113,6 +126,8 @@ async function setup() {
 				JSON.stringify(input.hosts ?? []),
 				input.name,
 				input.ownerId,
+				scope,
+				input.packageId ?? '',
 			)
 			.first<{ id: string }>()
 		return row!.id
@@ -132,7 +147,13 @@ async function setup() {
 		person: keyof typeof people,
 		role: OrgRole | null,
 		scopes?: Array<OrgPermission>,
-	) => listUsableCredentials({ env, request: requestAs(person, role, scopes) })
+		packageId?: string,
+	) =>
+		listUsableCredentials({
+			env,
+			request: requestAs(person, role, scopes),
+			packageId,
+		})
 	const grantUse = (credentialId: string, person: keyof typeof people) =>
 		upsertGrant({
 			db,
@@ -479,6 +500,81 @@ test('a member sees only org credentials they can Use, plus their own granted pe
 	expect(
 		(await t.usableAs('bea', 'owner')).map((credential) => credential.name),
 	).toEqual(['gh-pat'])
+})
+
+test('package-bound Keys fill that package’s needs by name or as the only candidate', async () => {
+	const t = await setup()
+	const packageId = 'qub-poll'
+	const otherPackageId = 'other-pkg'
+	await t.storeSecret({
+		ownerId: t.acmeId,
+		name: 'webhook',
+		packageId,
+	})
+	await t.storeSecret({
+		ownerId: t.acmeId,
+		name: 'other-webhook',
+		packageId: otherPackageId,
+	})
+	await t.storeSecret({
+		ownerId: t.acmeId,
+		name: 'org-loose',
+	})
+	const withoutPackage = await t.usableAs('bea', 'owner')
+	expect(withoutPackage.map((credential) => credential.name)).toEqual([
+		'org-loose',
+	])
+	const forPackage = await t.usableAs('bea', 'owner', undefined, packageId)
+	expect(
+		forPackage.map(({ name, packageId: bound }) => ({
+			name,
+			packageId: bound,
+		})),
+	).toEqual([
+		{ name: 'org-loose', packageId: null },
+		{ name: 'webhook', packageId },
+	])
+	expect(
+		forPackage.some((credential) => credential.name === 'other-webhook'),
+	).toBe(false)
+
+	const named = resolveNeedCandidates(
+		{ key: 'webhook', kind: 'secret', provider: 'webhook' },
+		forPackage,
+	)
+	expect(named.status).toBe('ready')
+	expect(named.autoPick).toMatchObject({
+		name: 'webhook',
+		packageId,
+		provider: null,
+	})
+	// Without a name match, a null-provider package Key stays an option only.
+	expect(
+		resolveNeedCandidates(
+			{ key: 'mail', kind: 'secret', provider: 'resend' },
+			forPackage,
+		),
+	).toMatchObject({ status: 'unbound', autoPick: null })
+	expect(
+		resolveNeedCandidates(
+			{ key: 'mail', kind: 'secret', provider: 'resend' },
+			forPackage,
+		).possibleMatches.map((credential) => credential.name),
+	).toEqual(['org-loose', 'webhook'])
+
+	await t.storeSecret({
+		ownerId: t.acmeId,
+		name: 'solo-hook',
+		provider: 'hooks',
+		packageId,
+	})
+	const withSolo = await t.usableAs('bea', 'owner', undefined, packageId)
+	expect(
+		resolveNeedCandidates(
+			{ key: 'anything', kind: 'secret', provider: 'hooks' },
+			withSolo,
+		).autoPick?.name,
+	).toBe('solo-hook')
 })
 
 test('org-reachable credentials include each member personal credential granted to the org', async () => {

@@ -15,10 +15,11 @@ import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	type MappingDraft,
 	describeMappingTarget,
-	draftFromStored,
+	draftForMappingEditor,
 	draftToChange,
 	mappingEditorKey,
 	mappingOptions,
+	packageBoundKeysPickerNote,
 	mappingSaveAgentPrompt,
 	postPackageCredentialChanges,
 	toggleDraftPick,
@@ -257,7 +258,18 @@ export function createPackageMappingEditor(
 							No credential you can map matches this need.{' '}
 							<a href={input.need.createUrl}>Add a credential</a>
 						</p>
-					) : null}
+					) : (
+						<p
+							mix={css({
+								margin: 0,
+								color: colors.textMuted,
+								fontSize: typography.fontSize.sm,
+							})}
+							data-testid="package-mapping-bound-keys-note"
+						>
+							{packageBoundKeysPickerNote}
+						</p>
+					)}
 					{radio('none', 'None on purpose (runs get no credential)')}
 					{radio('inherit', input.inheritLabel)}
 				</fieldset>
@@ -333,7 +345,11 @@ export function createPackageMappingEditor(
 									key,
 									target: input.target,
 									needKey: input.need.key,
-									draft: draftFromStored(input.stored),
+									draft: draftForMappingEditor(
+										input.need,
+										input.target,
+										input.stored,
+									),
 									saving: false,
 									messages: [],
 								})

@@ -550,7 +550,10 @@ Safe transforms only:
 
 Does **not** strip `|scope=package` (or any `|scope=`): unsuffixed secret lookup
 prefers session before package, so removing the suffix would widen resolution.
-Those packages stay on the publish gate.
+Those packages stay on the publish gate. Package-bound Keys can fill that same
+package's declared needs (exact name match or sole candidate), which lets owners
+convert off `|scope=package` placeholders onto needs without new secrets; this
+codemod still does not rewrite those placeholders itself.
 
 Skips without writing when:
 
