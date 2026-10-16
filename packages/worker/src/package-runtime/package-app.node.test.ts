@@ -763,6 +763,9 @@ test('buildPackageAppWorker serves an artifactName-null artifact hit and reuses 
 	expect(packageAppHostSource).toContain('__kodyCredentialRuntimeFor')
 	expect(packageAppHostSource).toContain('credentialClientCall')
 	expect(packageAppHostSource).toContain('x-kody-credential-client')
+	expect(packageAppHostSource).toContain(
+		'credential().fetch is not available in hosted package apps yet',
+	)
 })
 
 test('package app createCredentialRuntime exposes callable credential().sign via the bridge', async () => {

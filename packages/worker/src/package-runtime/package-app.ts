@@ -172,11 +172,16 @@ if (!globalThis[__kodyEvaluateFetchPatchedSymbol]) {
 					: undefined),
 		);
 		headers.delete(${JSON.stringify(secretAuthorityHeaderName)});
-		// credential() .fetch carries an opaque handle; package-app does not
-		// yet route that header through the fetch gateway with a run binding,
-		// so strip it here and never leak it to the public internet. .sign /
-		// .callTool go through runtimeBridge.credentialClientCall instead.
-		headers.delete(${JSON.stringify(credentialClientHeaderName)});
+		// credential() .fetch carries an opaque handle for the fetch gateway.
+		// Package-app does not yet pass a matching credentialClientBinding on
+		// globalOutbound, so refuse the call instead of stripping the handle
+		// and sending an unauthenticated upstream request. .sign / .callTool
+		// go through runtimeBridge.credentialClientCall and do not use this path.
+		if (headers.has(${JSON.stringify(credentialClientHeaderName)})) {
+			throw new Error(
+				'credential().fetch is not available in hosted package apps yet. Use credential().sign or credential().callTool, or run through execute.',
+			);
+		}
 		if (authority) {
 			headers.set(${JSON.stringify(secretAuthorityHeaderName)}, authority);
 		}
