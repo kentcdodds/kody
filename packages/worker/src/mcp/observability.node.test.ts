@@ -623,13 +623,24 @@ test('unauthenticated capability calls stay off Sentry (KODY-9C)', () => {
 	const missingRequest = thrownBy(() => requireMcpRequest({}))
 	for (const error of [missingUser, missingRequest]) {
 		expect(error).toBeInstanceOf(McpCallerError)
-		captureMcpEvents(() => {
+		const payloads = captureMcpEvents(() => {
 			logMcpEvent(
 				handlerFailure('metaGetCurrentUser', 'meta', error.name, error, {
 					hasUser: false,
 					userId: undefined,
 				}),
 			)
+		})
+		expect(payloads).toHaveLength(1)
+		expect(JSON.parse(payloads[0]!)).toMatchObject({
+			tool: 'capability',
+			capabilityName: 'metaGetCurrentUser',
+			domain: 'meta',
+			outcome: 'failure',
+			failurePhase: 'handler',
+			hasUser: false,
+			errorName: 'McpCallerError',
+			errorMessage: 'Authenticated MCP user is required for this capability.',
 		})
 		expectNoSentry()
 	}
