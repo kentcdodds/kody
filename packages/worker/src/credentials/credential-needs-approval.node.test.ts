@@ -460,7 +460,7 @@ test('a failed capability pin after needs publish leaves the request pending for
 			'The capability set changed since you loaded this page. Reload, review the updated summary, and approve again.',
 		),
 	)
-	await expect(
+	const approve = () =>
 		approveCredentialNeedsRequest({
 			env: t.env,
 			request: new Request('https://kody.test/approve'),
@@ -468,8 +468,8 @@ test('a failed capability pin after needs publish leaves the request pending for
 			ownerUserId: ownerId,
 			actorUserId: 'person-bea',
 			requestId: request.id,
-		}),
-	).resolves.toMatchObject({ ok: false, status: 409 })
+		})
+	await expect(approve()).resolves.toMatchObject({ ok: false, status: 409 })
 	await expect(
 		getPackageApprovalRequest(t.db, {
 			id: request.id,
@@ -477,6 +477,41 @@ test('a failed capability pin after needs publish leaves the request pending for
 			ownerUserId: ownerId,
 		}),
 	).resolves.toMatchObject({ status: 'pending' })
+
+	// Publish already moved the source off the pause base; the page still
+	// shows the request, and a second Approve pins without republishing.
+	mocks.source = { ...t.source, published_commit: 'commit-new' }
+	await expect(
+		loadPendingPackageApprovals({
+			env: t.env,
+			ownerUserId: ownerId,
+			packageId: t.packageId,
+			publishedCommit: 'commit-new',
+		}),
+	).resolves.toEqual([
+		expect.objectContaining({
+			id: request.id,
+			approveAction: 'approve-credential-needs',
+			pendingCommit: 'commit-new',
+		}),
+	])
+	mocks.approvePackageCapabilitySet.mockClear()
+	mocks.publishFromExternalRef.mockClear()
+	mocks.approvePackageCapabilitySet.mockResolvedValueOnce({
+		approval: { id: 'pin-retry', publishedCommit: 'commit-new' },
+		capabilitySet: { fingerprint: 'fp-after-needs', entries: [] },
+		wentPublicRequest: null,
+	})
+	await expect(approve()).resolves.toEqual({ ok: true })
+	expect(mocks.publishFromExternalRef).not.toHaveBeenCalled()
+	expect(mocks.approvePackageCapabilitySet).toHaveBeenCalledTimes(1)
+	await expect(
+		getPackageApprovalRequest(t.db, {
+			id: request.id,
+			packageId: t.packageId,
+			ownerUserId: ownerId,
+		}),
+	).resolves.toMatchObject({ status: 'approved' })
 })
 
 test('approving publishes the paused commit past the pause; a moved base supersedes it', async () => {

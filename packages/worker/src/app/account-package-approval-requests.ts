@@ -84,9 +84,12 @@ function pendingChanges(
 }
 
 /**
- * Pending requests the approval page shows. A request whose base is no
- * longer the published commit is stale (a later publish replaced it), so it
- * is left out.
+ * Pending requests the approval page shows.
+ *
+ * Keep a request when its base is still the published commit (normal pause),
+ * or when its pending commit is already published (publish landed but the
+ * post-publish capability pin still needs a retry). A later publish that
+ * matches neither base nor pending replaces the pause, so those rows stay out.
  */
 export async function loadPendingPackageApprovals(input: {
 	env: Env
@@ -99,7 +102,11 @@ export async function loadPendingPackageApprovals(input: {
 		ownerUserId: input.ownerUserId,
 	})
 	return pending
-		.filter((request) => request.baseCommit === input.publishedCommit)
+		.filter(
+			(request) =>
+				request.baseCommit === input.publishedCommit ||
+				request.pendingCommit === input.publishedCommit,
+		)
 		.map((request) => ({
 			id: request.id,
 			reason: request.reason,
@@ -213,7 +220,6 @@ export async function approveCredentialNeedsRequest(input: {
 				'The published version changed since this publish was paused. Publish again to request approval.',
 		}
 	}
-	if (source.published_commit !== approval.baseCommit) return await supersede()
 	const approved = async () => {
 		await resolvePackageApprovalRequest(input.env.APP_DB, {
 			id: approval.id,
@@ -222,6 +228,15 @@ export async function approveCredentialNeedsRequest(input: {
 		})
 		return { ok: true as const }
 	}
+	// Publish already landed (pin failed on the previous click). Resume with
+	// only the capability pin so Approve is not superseded off the old base.
+	if (source.published_commit === approval.pendingCommit) {
+		const pinFailed =
+			await pinInternetVisibleCapabilitiesAfterNeedsPublish(input)
+		if (pinFailed) return pinFailed
+		return await approved()
+	}
+	if (source.published_commit !== approval.baseCommit) return await supersede()
 	const sessionGone = async () => {
 		await resolvePackageApprovalRequest(input.env.APP_DB, {
 			id: approval.id,
