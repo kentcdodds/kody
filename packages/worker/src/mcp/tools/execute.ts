@@ -956,10 +956,15 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					typeof result.runId === 'string'
 						? result.runId
 						: (claimedRunHandle?.id ?? undefined)
-				const idempotencyKeyForResponse =
-					claimedRunHandle?.context.idempotencyKey?.trim() ||
-					normalizedIdempotencyKey ||
-					undefined
+				// A generated key is not durable until the running row is confirmed.
+				// In-budget responses already carry the module result, so they
+				// include only a caller-supplied key. The transport-budget
+				// follow response adds a generated key after that confirmation.
+				const idempotencyKeyForResponse = runRowOwned
+					? claimedRunHandle?.context.idempotencyKey?.trim() ||
+						normalizedIdempotencyKey ||
+						undefined
+					: undefined
 				const follow = {
 					...(runId ? { runId } : {}),
 					...(idempotencyKeyForResponse

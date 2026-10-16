@@ -1420,9 +1420,9 @@ test('execute returns the server-assigned key with a finished run and does not a
 	expect(response.structuredContent.inProgress).toBeUndefined()
 	expect(response.structuredContent).toMatchObject({
 		runId: 'run-follow-fast',
-		idempotencyKey: 'execute:fast-key',
 		result: { ok: true },
 	})
+	expect(response.structuredContent).not.toHaveProperty('idempotencyKey')
 	expect(mockModule.ensureRunRecordStarted).not.toHaveBeenCalled()
 	expect(mockModule.beginRunRecord).toHaveBeenCalledWith(
 		expect.objectContaining({
