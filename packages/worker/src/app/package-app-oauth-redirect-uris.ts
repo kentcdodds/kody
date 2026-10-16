@@ -1,4 +1,4 @@
-import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
+import { getAppBaseUrl, getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import {
 	lookupVerifiedAppCustomHostnameForPackage,
 	lookupVerifiedOrgCustomHostnameForPackage,
@@ -12,7 +12,9 @@ import { type PackageAppOauthClientId } from '#app/package-app-oauth-client-id.t
  * Redirect URIs for package-app OAuth are not registered. They must be the
  * platform callback on an origin that already serves this package:
  * the owner's `*.kody.run` (or local) subdomain, a verified app custom
- * hostname, or a verified org custom hostname (private apps).
+ * hostname, a verified org custom hostname (private apps), or — when
+ * `PACKAGE_APP_BASE_URL` is unset (preview / path-based inline serving) —
+ * the app origin itself.
  */
 
 function normalizeCallbackUrl(raw: string): URL | null {
@@ -53,6 +55,16 @@ export async function listAllowedPackageAppOauthRedirectUris(input: {
 			allowed.push(`${subdomain.origin}${packageAppOauthPaths.callback}`)
 		} catch {
 			// Ignore unparsable package-app origin.
+		}
+	} else {
+		// Preview and other non-production envs leave PACKAGE_APP_BASE_URL
+		// unset and serve package apps inline on the app origin. Consent still
+		// needs an allowlisted callback on that same origin.
+		try {
+			const appOrigin = new URL(getAppBaseUrl({ env: input.env })).origin
+			allowed.push(`${appOrigin}${packageAppOauthPaths.callback}`)
+		} catch {
+			// Ignore unparsable app origin.
 		}
 	}
 
