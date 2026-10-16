@@ -92,15 +92,25 @@ function locatePackage(
 	}
 }
 
+/**
+ * Write only convert `changedPaths` back onto the snapshot. `locatePackage` may
+ * alias a nested manifest onto `package.json` while leaving the original nested
+ * key in the map — mirroring every converted key would let that stale nested
+ * copy overwrite the sealed manifest at `manifestWriteKey` (same trap 0014
+ * avoids by writing only the locate snapshot key).
+ */
 function remapConvertFilesToSnapshot(
 	original: Record<string, string>,
 	converted: Record<string, string>,
+	changedPaths: ReadonlyArray<string>,
 	manifestWriteKey: string,
 	snapshotPrefix: string,
 ): Record<string, string> {
 	const next = { ...original }
 	const prefix = snapshotPrefix === '' ? '' : `${snapshotPrefix}/`
-	for (const [path, content] of Object.entries(converted)) {
+	for (const path of changedPaths) {
+		const content = converted[path]
+		if (content == null) continue
 		if (path === packageManifestPath) {
 			next[manifestWriteKey] = content
 			continue
@@ -157,6 +167,7 @@ function transformConvertCredentialStamps(
 	const nextFiles = remapConvertFilesToSnapshot(
 		files,
 		result.files,
+		result.changedPaths,
 		located.manifestWriteKey,
 		located.snapshotPrefix,
 	)
