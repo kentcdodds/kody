@@ -207,6 +207,8 @@ test('writable storageSql skips read-only fan-out and enforces mutating entitlem
 		["WITH c AS (SELECT 'insert' AS label) SELECT label FROM c", false],
 		['WITH s AS (SELECT 1 AS i) INSERT INTO t SELECT i FROM s', true],
 		['SELECT created FROM t', false],
+		['WITH create AS (SELECT 1) SELECT * FROM create', false],
+		['WITH drop AS (SELECT 1 AS alter) SELECT alter FROM drop', false],
 	]
 	expect(
 		returningMutationCases.filter(

@@ -500,10 +500,6 @@ const storageSqlWriteVerbs = [
 	'alter',
 ] as const
 
-/** Keyword token match for a write verb after a WITH clause. */
-const storageSqlWriteVerbInWithPattern =
-	/(?:^|[^a-z0-9_])(?:insert|update|delete|replace|create|drop|alter)(?:[^a-z0-9_]|$)/
-
 const storageSqlReturningMutationVerbInWithPattern =
 	/(?:^|[^a-z0-9_])(?:insert|update|delete|replace)(?:[^a-z0-9_]|$)/
 
@@ -636,13 +632,15 @@ export function isStorageSqlReturningMutation(query: string) {
  * True when the statement can change the bucket, including DDL such as
  * `CREATE TABLE AS SELECT`. Unlike {@link isStorageSqlReturningMutation}, this
  * does not require a row-yielding DML verb. Quoted words do not count.
+ * After `WITH`, only INSERT / UPDATE / DELETE / REPLACE count: SQLite does
+ * not allow CREATE / DROP / ALTER there, so those tokens are identifiers.
  */
 export function isStorageSqlWrite(query: string) {
 	const normalized = maskSqlLiteralsAndComments(query).trim().toLowerCase()
 	if (!normalized) return false
 	if (sqlStartsWithVerb(normalized, storageSqlWriteVerbs)) return true
 	if (!normalized.startsWith('with')) return false
-	return storageSqlWriteVerbInWithPattern.test(normalized)
+	return storageSqlReturningMutationVerbInWithPattern.test(normalized)
 }
 
 export const readOnlyStorageSqlDeniedMessage =

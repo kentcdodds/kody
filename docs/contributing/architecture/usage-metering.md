@@ -187,8 +187,9 @@ Mutating statements (`INSERT` / `UPDATE` / `DELETE` / `REPLACE`, including after
 `CREATE TABLE AS SELECT`, also succeed when the scan passes the ceiling:
 `warning` says the write finished and the rows are metered, because the bucket
 change is already committed. Verb checks ignore words inside strings,
-identifiers, and comments, so a `WITH … SELECT` that only mentions `insert`
-inside quotes stays a read and still stops at the ceiling.
+identifiers, and comments. After `WITH`, only `INSERT` / `UPDATE` / `DELETE` /
+`REPLACE` count as writes, so a `WITH … SELECT` that quotes `insert` or names a
+CTE `create` stays a read and still stops at the ceiling.
 
 Both constants live in `packages/worker/src/storage-sql-read-policy.ts`. They
 are a gut feel, not a price: 1,000,000 rows is one unit at the published
