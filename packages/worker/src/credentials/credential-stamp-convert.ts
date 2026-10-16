@@ -4,13 +4,13 @@
  * stamp-sealable without changing how credentials resolve at runtime.
  *
  * Safe today:
- * - Strip literal `|scope=package` placeholder suffixes (unsuffixed secrets
- *   already prefer the package-scoped bucket before the user one).
  * - Declare missing bare npm dependencies that block republish (allowlisted).
  * - Seal missing `kody.credentials` descriptions via the existing seal plan.
  *
- * Unconvertible patterns (computed names, `|scope=user` / session, secretMounts,
- * server_eval, vault placeholders, credential.named) stay skipped.
+ * Unconvertible patterns (computed names, `|scope=` including package/user/
+ * session, secretMounts, server_eval, vault placeholders, credential.named)
+ * stay skipped. Do not strip `|scope=package`: unsuffixed lookup prefers
+ * session before package, which would widen resolution.
  */
 import {
 	applyCredentialStampSealPlan,
@@ -18,11 +18,13 @@ import {
 	type CredentialStampGateFailure,
 } from '#worker/credentials/credential-stamp.ts'
 import { isCredentialStampMigrateHoldout } from '#worker/credentials/credential-stamp-migrate-holdouts.ts'
-import {
-	listScannableModulePaths,
-	scannableModuleFilePattern,
-} from '#worker/credentials/module-placeholder-scan.ts'
+import { listScannableModulePaths } from '#worker/credentials/module-placeholder-scan.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
+import {
+	collectBundlerResolvedSpecifiers,
+	getBarePackageNameFromSpecifier,
+	isBarePackageImportSpecifier,
+} from '#worker/package-runtime/import-specifiers.ts'
 
 export const credentialStampConvertCodemodId = '0015-convert-credential-stamps'
 
@@ -35,7 +37,7 @@ export const credentialStampConvertMessages = {
 	holdout:
 		'Kent holdout: left untouched for the long-term publish-gate migration (issue #3836).',
 	unconvertible:
-		'Still has credential patterns the stamp gate cannot seal without an API or behavior change (computed names, |scope=user/session, secretMounts, packageSecrets.get, credential.named, server eval, vault placeholders, or dynamic kody.mcp). Skip and leave on the publish gate.',
+		'Still has credential patterns the stamp gate cannot seal without an API or behavior change (computed names, |scope= including package/user/session, secretMounts, packageSecrets.get, credential.named, server eval, vault placeholders, or dynamic kody.mcp). Skip and leave on the publish gate.',
 	uninferable:
 		'Has stamped credential keys whose purpose cannot be inferred from source. Write a real description in kody.credentials, then republish.',
 	invalidManifest:
@@ -51,10 +53,6 @@ export const credentialStampConvertAllowedBareDeps: Readonly<
 > = {
 	remix: '3.0.0',
 }
-
-/** Literal `|scope=package` on a complete placeholder (secret / integration). */
-const scopePackagePlaceholderPattern =
-	/\{\{(secret|secret-basic|integration-token):([^}|]+)\|scope=package\}\}/g
 
 export type CredentialStampConvertFinding = {
 	path: string | null
@@ -76,14 +74,6 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return value != null && typeof value === 'object' && !Array.isArray(value)
 }
 
-function stripScopePackagePlaceholders(source: string): {
-	source: string
-	changed: boolean
-} {
-	const next = source.replace(scopePackagePlaceholderPattern, '{{$1:$2}}')
-	return { source: next, changed: next !== source }
-}
-
 function readDeclaredDependencyNames(
 	manifestSource: string | undefined,
 ): Set<string> {
@@ -101,21 +91,23 @@ function readDeclaredDependencyNames(
 }
 
 /**
- * Bare package names referenced by import/export/require in scannable modules.
- * Only allowlisted names are considered for auto-declaration.
+ * Bare package names referenced by import/export/require in scannable modules,
+ * including side-effect imports (`import 'remix/setup'`). Only allowlisted
+ * names are considered for auto-declaration.
  */
 export function collectAllowlistedUndeclaredBareDeps(
 	files: Record<string, string>,
 ): Array<string> {
 	const declared = readDeclaredDependencyNames(files[packageManifestPath])
 	const found = new Set<string>()
-	const bareImportPattern =
-		/(?:from\s+|import\s*\(|require\s*\()\s*['"]((?:@[^/'"]+\/)?[^/'"]+)(?:\/[^'"]*)?['"]/g
 	for (const path of listScannableModulePaths(files)) {
 		const source = files[path]
 		if (source == null) continue
-		for (const match of source.matchAll(bareImportPattern)) {
-			const name = match[1]
+		const specifiers = collectBundlerResolvedSpecifiers(source)
+		if (specifiers == null) continue
+		for (const specifier of specifiers) {
+			if (!isBarePackageImportSpecifier(specifier)) continue
+			const name = getBarePackageNameFromSpecifier(specifier)
 			if (name == null) continue
 			if (!(name in credentialStampConvertAllowedBareDeps)) continue
 			if (declared.has(name)) continue
@@ -166,9 +158,9 @@ function addAllowlistedDependencies(
 }
 
 /**
- * Pure conversion: holdout skip, |scope=package strip, allowlisted deps, then
- * credential-stamp seal plan. Never creates or changes credential values.
- * Writes only when the result is stamp-sealable.
+ * Pure conversion: holdout skip, allowlisted deps, then credential-stamp seal
+ * plan. Never creates or changes credential values. Never strips `|scope=`
+ * (that would widen secret resolution). Writes only when stamp-sealable.
  */
 export function convertCredentialStampFiles(input: {
 	files: Record<string, string>
@@ -190,14 +182,6 @@ export function convertCredentialStampFiles(input: {
 
 	let files = { ...input.files }
 	const changedPaths = new Set<string>()
-
-	for (const [path, content] of Object.entries(files)) {
-		if (!scannableModuleFilePattern.test(path)) continue
-		const stripped = stripScopePackagePlaceholders(content)
-		if (!stripped.changed) continue
-		files[path] = stripped.source
-		changedPaths.add(path)
-	}
 
 	const missingDeps = collectAllowlistedUndeclaredBareDeps(files)
 	if (missingDeps.length > 0) {

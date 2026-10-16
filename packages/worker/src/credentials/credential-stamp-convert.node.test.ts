@@ -21,24 +21,24 @@ function manifest(
 	)}\n`
 }
 
-test('strips literal |scope=package and seals the resulting stamp keys', () => {
+test('leaves |scope=package alone (would widen to session secrets)', () => {
+	const files = {
+		'package.json': manifest(),
+		'src/index.ts':
+			"export const h = { Authorization: 'Bearer {{secret:TOKEN|scope=package}}' }",
+	}
 	const result = convertCredentialStampFiles({
 		packageName: '@acme/demo',
-		files: {
-			'package.json': manifest(),
-			'src/index.ts':
-				"export const h = { Authorization: 'Bearer {{secret:TOKEN|scope=package}}' }",
-		},
+		files,
 	})
 	expect(result.skippedHoldout).toBe(false)
-	expect(result.sealReady).toBe(true)
-	expect(result.changed).toBe(true)
-	expect(result.needsManual).toEqual([])
-	expect(result.files['src/index.ts']).toBe(
-		"export const h = { Authorization: 'Bearer {{secret:TOKEN}}' }",
+	expect(result.sealReady).toBe(false)
+	expect(result.changed).toBe(false)
+	expect(result.files).toEqual(files)
+	expect(result.files['src/index.ts']).toContain('|scope=package')
+	expect(result.needsManual[0]?.message).toBe(
+		credentialStampConvertMessages.unconvertible,
 	)
-	const slots = JSON.parse(result.files['package.json']!).kody.credentials
-	expect(slots.TOKEN.description).toMatch(/TOKEN/)
 })
 
 test('adds allowlisted undeclared remix then seals literal credentials', () => {
@@ -64,6 +64,28 @@ test('adds allowlisted undeclared remix then seals literal credentials', () => {
 	expect(parsed.kody.credentials.API_KEY.description).toMatch(/API_KEY/)
 })
 
+test('collects side-effect bare imports for allowlisted deps', () => {
+	const files = {
+		'package.json': manifest(),
+		'src/index.ts': [
+			"import 'remix/setup'",
+			"import { credential } from 'kody:runtime'",
+			'export default async function run() {',
+			'\treturn credential("API_KEY")',
+			'}',
+		].join('\n'),
+	}
+	expect(collectAllowlistedUndeclaredBareDeps(files)).toEqual(['remix'])
+	const result = convertCredentialStampFiles({
+		packageName: '@acme/demo',
+		files,
+	})
+	expect(result.sealReady).toBe(true)
+	expect(result.changed).toBe(true)
+	const parsed = JSON.parse(result.files['package.json']!)
+	expect(parsed.dependencies.remix).toBe('3.0.0')
+})
+
 test('skips Kent holdouts without changing files', () => {
 	const files = {
 		'package.json': manifest(),
@@ -82,7 +104,7 @@ test('skips Kent holdouts without changing files', () => {
 	)
 })
 
-test('skips computed credential names without rewriting |scope=package', () => {
+test('skips computed credential names without rewriting source', () => {
 	const files = {
 		'package.json': manifest(),
 		'src/index.ts': [
@@ -117,4 +139,25 @@ test('leaves |scope=user alone (would change which secret resolves)', () => {
 	expect(result.sealReady).toBe(false)
 	expect(result.changed).toBe(false)
 	expect(result.files).toEqual(files)
+})
+
+test('seals literal credential() without scope suffixes', () => {
+	const result = convertCredentialStampFiles({
+		packageName: '@acme/demo',
+		files: {
+			'package.json': manifest(),
+			'src/index.ts': [
+				"import { credential } from 'kody:runtime'",
+				'export default async function run() {',
+				'\treturn credential("TOKEN")',
+				'}',
+			].join('\n'),
+		},
+	})
+	expect(result.skippedHoldout).toBe(false)
+	expect(result.sealReady).toBe(true)
+	expect(result.changed).toBe(true)
+	expect(result.needsManual).toEqual([])
+	const slots = JSON.parse(result.files['package.json']!).kody.credentials
+	expect(slots.TOKEN.description).toMatch(/TOKEN/)
 })

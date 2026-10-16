@@ -130,7 +130,7 @@ function detectConvertCredentialStamps(
 			{
 				path: packageManifestPath,
 				message:
-					'Convertible to sealed credential stamps (literal |scope=package strip, allowlisted missing deps, and/or inferred kody.credentials descriptions).',
+					'Convertible to sealed credential stamps (allowlisted missing deps and/or inferred kody.credentials descriptions).',
 			},
 		]
 	}
@@ -172,14 +172,15 @@ function transformConvertCredentialStamps(
 }
 
 /**
- * Conservative conversion for issue #3836: strip literal `|scope=package`,
- * declare allowlisted missing bare deps (e.g. remix), seal stamp descriptions,
- * skip holdouts and anything still unconvertible.
+ * Conservative conversion for issue #3836: declare allowlisted missing bare
+ * deps (e.g. remix), seal stamp descriptions, skip holdouts and anything still
+ * unconvertible (including all `|scope=` placeholders — stripping
+ * `|scope=package` would widen resolution to session secrets).
  */
 export const convertCredentialStampsCodemod: PackageCodemod = {
 	id: credentialStampConvertCodemodId,
 	description:
-		'Convert published packages to sealed credential stamps when safe: strip literal |scope=package placeholders, declare allowlisted missing bare deps (remix), and fill inferred kody.credentials descriptions. Skips Kent holdouts and packages that still need an owner/API change (issue #3836).',
+		'Convert published packages to sealed credential stamps when safe: declare allowlisted missing bare deps (remix), and fill inferred kody.credentials descriptions. Does not strip |scope= placeholders. Skips Kent holdouts and packages that still need an owner/API change (issue #3836).',
 	applyMode: 'published-only',
 	detect: detectConvertCredentialStamps,
 	transform: transformConvertCredentialStamps,

@@ -544,17 +544,19 @@ stamp-sealable without disruption. Operator surface:
 
 Safe transforms only:
 
-- Strip literal `|scope=package` placeholder suffixes (unsuffixed secrets
-  already prefer the package-scoped bucket).
-- Declare allowlisted missing bare npm deps the tree already imports (today:
-  `remix@3.0.0`).
+- Declare allowlisted missing bare npm deps the tree already imports, including
+  side-effect imports (today: `remix@3.0.0`).
 - Seal inferred `kody.credentials` descriptions (same plan as `0014`).
+
+Does **not** strip `|scope=package` (or any `|scope=`): unsuffixed secret lookup
+prefers session before package, so removing the suffix would widen resolution.
+Those packages stay on the publish gate.
 
 Skips without writing when:
 
 - The package is a Kent holdout (`@kentcdodds/raycast`,
   `@kentcdodds/oauth-integration-health`).
-- Blocking stamp-gate failures remain (computed names, `|scope=user` / session,
+- Blocking stamp-gate failures remain (computed names, any `|scope=`,
   `secretMounts`, vault placeholders, `server_eval`, `credential.named`, …).
 
 Never emails or notifies owners, never creates credential values, and relies on
@@ -640,8 +642,8 @@ Artifacts default-branch HEAD to equal `published_commit`, then writes through
 `syncArtifactSourceSnapshot` so HEAD and published stay aligned. Drifted
 packages are `skipped_drift`.
 
-Codemods that set `applyMode: 'published-only'` (today: `0012`, `0013`, `0014`)
-change only the **drifted** lane:
+Codemods that set `applyMode: 'published-only'` (today: `0012`, `0013`, `0014`,
+`0015`) change only the **drifted** lane:
 
 1. Load the published tree (same as today).
 2. Run the same transform + check gates.

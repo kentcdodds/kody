@@ -26,21 +26,39 @@ test('0015 id matches the convert module export', () => {
 	expect(convertCredentialStampsCodemod.applyMode).toBe('published-only')
 })
 
-test('0015 converts |scope=package placeholders and seals descriptions', () => {
+test('0015 leaves |scope=package alone and does not rewrite', () => {
+	const files = {
+		'package.json': manifest(),
+		'index.ts':
+			"export const h = { Authorization: 'Bearer {{secret:TOKEN|scope=package}}' }",
+	}
+	const result = convertCredentialStampsCodemod.transform(files, packageContext)
+	expect(result.changed).toBe(false)
+	expect(result.files).toEqual(files)
+	expect(result.needsManual[0]?.message).toBe(
+		credentialStampConvertMessages.unconvertible,
+	)
+})
+
+test('0015 seals literal credential() and declares side-effect remix', () => {
 	const result = convertCredentialStampsCodemod.transform(
 		{
 			'package.json': manifest(),
-			'index.ts':
-				"export const h = { Authorization: 'Bearer {{secret:TOKEN|scope=package}}' }",
+			'index.ts': [
+				"import 'remix/setup'",
+				"import { credential } from 'kody:runtime'",
+				'export default async function run() {',
+				'\treturn credential("TOKEN")',
+				'}',
+			].join('\n'),
 		},
 		packageContext,
 	)
 	expect(result.changed).toBe(true)
 	expect(result.needsManual).toEqual([])
-	expect(result.files['index.ts']).toContain('{{secret:TOKEN}}')
-	expect(result.files['index.ts']).not.toContain('|scope=package')
-	const slots = JSON.parse(result.files['package.json']!).kody.credentials
-	expect(slots.TOKEN.description).toMatch(/TOKEN/)
+	const parsed = JSON.parse(result.files['package.json']!)
+	expect(parsed.dependencies.remix).toBe('3.0.0')
+	expect(parsed.kody.credentials.TOKEN.description).toMatch(/TOKEN/)
 })
 
 test('0015 skips holdouts', () => {
