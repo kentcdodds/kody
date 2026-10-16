@@ -363,12 +363,13 @@ export function PrivacyRoute(_handle: Handle) {
 					the one-week last-wins referral cookie (<code>kody_ref</code>) set by{' '}
 					<code>/signup?ref=&lt;username&gt;</code> share links, and the
 					package-app session cookie on <code>kody.run</code> (
-					<code>__Host-kody_pkg_session</code> on HTTPS,{' '}
-					<code>kody_pkg_session</code> on HTTP). Short-lived cookies support
-					two-factor verification, passkey challenges, and OAuth login.
-					Analytics (Fathom and Scarf) are cookieless. The browser uses
-					sessionStorage for first-touch signup attribution and scroll
-					restoration, not tracking cookies.
+					<code>__Host-kody_pkg_session_&lt;hash&gt;</code> on HTTPS,{' '}
+					<code>kody_pkg_session_&lt;hash&gt;</code> on HTTP; one cookie per
+					package app on shared hosts). Short-lived cookies support two-factor
+					verification, passkey challenges, and OAuth login. Analytics (Fathom
+					and Scarf) are cookieless. The browser uses sessionStorage for
+					first-touch signup attribution and scroll restoration, not tracking
+					cookies.
 				</p>
 			</section>
 

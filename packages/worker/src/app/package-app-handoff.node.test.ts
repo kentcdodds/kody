@@ -161,34 +161,39 @@ test('the package-app session cookie is not interchangeable with the app session
 	const ownerSession = {
 		session: { stableUserId: ownerStableUserId, username: 'owner' },
 	}
+	const appSlug = 'x'
 	const read = (
 		cookie: string,
 		now?: number,
 		url = 'https://owner.kodyapps.dev/packages/x',
+		slug = appSlug,
 	) =>
 		readPackageAppSession({
 			request: new Request(url, { headers: { Cookie: cookie } }),
 			env,
+			slug,
 			now,
 		})
 	const localUrl = 'http://owner.packages.localhost/packages/x'
 
-	// Secure requests get the `__Host-` prefixed name, which browsers only
-	// accept host-only (`Secure`, no `Domain`, `Path=/`): a sibling package-app
+	// Secure requests get a per-app `__Host-` name, which browsers only accept
+	// host-only (`Secure`, no `Domain`, `Path=/`): a sibling package-app
 	// subdomain cannot toss a `Domain`-wide cookie under this name.
 	const now = 1_700_000_000_000
 	const expiresAt = now + 3 * 60 * 60 * 1000
-	const mintCookie = (secure: boolean, cookieExpiresAt: number) =>
+	const mintCookies = (secure: boolean, cookieExpiresAt: number) =>
 		createPackageAppSessionCookie({
 			env,
 			...ownerSession,
+			slug: appSlug,
 			secure,
 			now,
 			expiresAt: cookieExpiresAt,
 		})
-	const setCookie = await mintCookie(true, expiresAt)
+	const setCookies = await mintCookies(true, expiresAt)
+	const setCookie = setCookies[0] ?? ''
 	const attributes = [
-		'__Host-kody_pkg_session=',
+		'__Host-kody_pkg_session_',
 		'HttpOnly',
 		'SameSite=Lax',
 		'Secure',
@@ -197,14 +202,16 @@ test('the package-app session cookie is not interchangeable with the app session
 	]
 	expect(attributes.filter((part) => !setCookie.includes(part))).toEqual([])
 	expect(setCookie).not.toContain('Domain=')
-	expect(await mintCookie(true, now + 30 * 24 * 60 * 60 * 1000)).toContain(
-		'Max-Age=2592000',
-	)
+	// Host-wide legacy name must not be written for new sessions.
+	expect(setCookie).not.toMatch(/__Host-kody_pkg_session=/)
+	expect(
+		(await mintCookies(true, now + 30 * 24 * 60 * 60 * 1000))[0],
+	).toContain('Max-Age=2592000')
 
 	// Plain-HTTP local development falls back to an unprefixed name because
 	// browsers refuse `__Host-` cookies on insecure origins.
-	const insecureSetCookie = await mintCookie(false, expiresAt)
-	expect(insecureSetCookie).toContain('kody_pkg_session=')
+	const insecureSetCookie = (await mintCookies(false, expiresAt))[0] ?? ''
+	expect(insecureSetCookie).toContain('kody_pkg_session_')
 	expect(insecureSetCookie).not.toContain('__Host-')
 	await expect(
 		read(insecureSetCookie.split(';')[0] ?? '', now, localUrl),
@@ -221,6 +228,9 @@ test('the package-app session cookie is not interchangeable with the app session
 		ownerSession,
 	)
 	await expect(read(cookiePair, expiresAt)).resolves.toBeNull()
+	// A session minted for app `x` does not authorize a sibling app on the
+	// same host.
+	await expect(read(cookiePair, now, undefined, 'other')).resolves.toBeNull()
 
 	// Same secret material, different derived signing key: replaying the
 	// package-app cookie value under the app session name does not authenticate.
@@ -245,14 +255,14 @@ test('the package-app session cookie is not interchangeable with the app session
 	const appCookieValue = (appSetCookie.split(';')[0] ?? '').split('=')[1] ?? ''
 	await expect(
 		read(
-			`kody_pkg_session=${appCookieValue}`,
+			`kody_pkg_session_deadbeefcafe=${appCookieValue}`,
 			undefined,
 			'https://kodyapps.dev/@owner/packages/x',
 		),
 	).resolves.toBeNull()
 
-	// Cookies that omit expiresAt use a 12 hour bound from issuedAt, so a
-	// copied value cannot be replayed after that window.
+	// Pre-per-app host-wide cookies (v2, no app field) still authorize any
+	// leaf until login/handoff or logout clears them.
 	const legacyExpiresAt = now + 12 * 60 * 60 * 1000
 	const legacyCookie = createCookie('kody_pkg_session', {
 		httpOnly: true,

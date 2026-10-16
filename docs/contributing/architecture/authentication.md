@@ -556,8 +556,12 @@ a reason without the token and set `X-Kody-Handoff: rejected`.
 
 **Package-app session cookie**
 (`packages/worker/src/app/package-app-session.ts`). Exchanging a valid token on
-the owner's subdomain sets `__Host-kody_pkg_session` on secure requests (plain
-`kody_pkg_session` on insecure local HTTP only):
+the owner's subdomain sets a **per-app** `__Host-kody_pkg_session_<hash>` cookie
+on secure requests (plain `kody_pkg_session_<hash>` on insecure local HTTP
+only). The hash is `sha256(leaf)[0:12]`, matching package-app access tickets.
+`__Host-` rules still require `Path=/` and forbid `Domain`, so path scoping is
+unavailable; the cookie _name_ carries the app scope so logout of one leaf on a
+shared host does not clear sibling apps.
 
 - `httpOnly: true`, `sameSite: 'Lax'`, `path: '/'`, `secure` per request
 - max age is the **remaining** lifetime of the `kody_session` that minted the
@@ -572,10 +576,12 @@ the owner's subdomain sets `__Host-kody_pkg_session` on secure requests (plain
 - signed with a **derived** secret,
   `sha256Base64Url('kody-package-app-session:v2:' + COOKIE_SECRET)`, so a value
   signed for this cookie can never verify as a `kody_session`
-- payload is `{ v, stableUserId, pkgUsername, issuedAt, expiresAt? }` — a shape
-  the app session schema rejects, so the two cannot be confused even by name
-  substitution. New cookies always set `expiresAt`; readers treat a missing
-  field as the 12 hour mint/`issuedAt` fallback above.
+- payload is `{ v: 3, stableUserId, pkgUsername, app, issuedAt, expiresAt? }` —
+  a shape the app session schema rejects, so the two cannot be confused even by
+  name substitution. Readers also accept legacy host-wide `v: 2` cookies (no
+  `app` field / unhashed name) until the next login/handoff or logout clears
+  them. New cookies always set `expiresAt`; readers treat a missing field as the
+  12 hour mint/`issuedAt` fallback above.
 - the `__Host-` prefix on secure requests forbids a `Domain` attribute, so
   sibling subdomains cannot plant a shadow cookie under this name
 - sibling subdomains are still same-site (until the Public Suffix List entry),
@@ -583,11 +589,12 @@ the owner's subdomain sets `__Host-kody_pkg_session` on secure requests (plain
   subdomain itself — see the same-site paragraph in
   [security.md](../security.md#hosted-package-app-origin-isolation)
 
-It authorizes hosted package-app serving for one account on that account's
-subdomain and nothing else: the app origin has no code path that reads it, and
-the package-app domain has no first-party routes. Every request re-resolves the
-account from D1 (`resolvePackageAppOwnerByStableUserId`) and fails closed for
-unknown, deleting, or suspended accounts, for sessions issued at or before
+It authorizes hosted package-app serving for one account on one package leaf on
+that account's subdomain (or verified custom domain) and nothing else: the app
+origin has no code path that reads it, and the package-app domain has no
+first-party routes. Every request re-resolves the account from D1
+(`resolvePackageAppOwnerByStableUserId`) and fails closed for unknown, deleting,
+or suspended accounts, for sessions issued at or before
 `users.password_changed_at` — the same rules browser sessions follow — and when
 the session account's username does not match the subdomain label and requested
 package path. Confirmed local, preview, and test runtimes with

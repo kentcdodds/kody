@@ -291,10 +291,11 @@ in the Worker `fetch` handler:
 **Handoff session and fixation defense.** The app origin mints a short-lived
 single-use handoff token; the owner's subdomain exchanges it for a host-scoped
 package-app session cookie (`packages/worker/src/app/package-app-session.ts`).
-On secure requests the cookie is named `__Host-kody_pkg_session`; plain HTTP
-local dev uses `kody_pkg_session` because browsers refuse `__Host-` cookies on
-insecure origins. The `__Host-` prefix requires `Secure`, `Path=/`, and no
-`Domain` attribute, so browsers reject any variant with a `Domain` — this blocks
+On secure requests the cookie is named `__Host-kody_pkg_session_<hash>` (one
+name per package leaf; hash is `sha256(leaf)[0:12]`); plain HTTP local dev uses
+`kody_pkg_session_<hash>` because browsers refuse `__Host-` cookies on insecure
+origins. The `__Host-` prefix requires `Secure`, `Path=/`, and no `Domain`
+attribute, so browsers reject any variant with a `Domain` — this blocks
 cross-subdomain cookie tossing even before the package-app domain is on the
 Public Suffix List. Serving additionally requires the resolved session account's
 username, the subdomain label, and the path's owner username to all match

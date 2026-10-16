@@ -32,8 +32,8 @@ test('git author identity uses the Kody account and quotes setup commands', () =
 		email: "o'brien@example.com",
 	})
 	expect(quoted).toEqual([
-		`git config --local user.email -- 'o'"'"'brien@example.com'`,
-		`git config --local user.name -- 'O'"'"'Brien'`,
+		`git config --local -- user.email 'o'"'"'brien@example.com'`,
+		`git config --local -- user.name 'O'"'"'Brien'`,
 	])
 
 	const dashed = gitAuthorSetupCommands({
@@ -41,7 +41,14 @@ test('git author identity uses the Kody account and quotes setup commands', () =
 		email: 'dash@example.com',
 	})
 	expect(dashed).toEqual([
-		`git config --local user.email -- 'dash@example.com'`,
-		`git config --local user.name -- '-dash-name'`,
+		`git config --local -- user.email 'dash@example.com'`,
+		`git config --local -- user.name '-dash-name'`,
 	])
+
+	expect(() =>
+		gitAuthorSetupCommands({ name: '--', email: 'ok@example.com' }),
+	).toThrow(/must not be "--"/)
+	expect(() => gitAuthorSetupCommands({ name: 'Ok', email: '--' })).toThrow(
+		/must not be "--"/,
+	)
 })

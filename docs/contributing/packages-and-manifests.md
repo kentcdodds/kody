@@ -330,9 +330,11 @@ Jobs belong to packages.
 - Each job run binds a job-scoped scratch bucket; shared durable data uses
   `packageStorage()`
 - Package config stays keyed by the saved package id
-- Manifest `enabled` is the create-time default and can turn an existing job on.
-  Republishing with `"enabled": false` does not disable a job that is already
-  running; use `jobUpdate` (or a package pause/resume export) to turn one off.
+- Manifest `enabled` is the create-time default only. Republishing never flips
+  an existing job's runtime `enabled` flag (neither on nor off), and does not
+  insert or reactivate owner cron enablements for a disabled job. Use
+  `jobUpdate` / `enablementEnable` (or a package pause/resume export) to change
+  enabled state after create.
 
 Jobs are not their own top-level saved primitive.
 

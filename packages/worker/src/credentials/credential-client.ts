@@ -1015,7 +1015,6 @@ export async function signWithCredentialClient(
 	input: { handle?: unknown; host?: unknown; operation?: unknown },
 ) {
 	return await withClientErrors(ctx.callerContext, async () => {
-		const use = await readHandle(ctx, input.handle, ['signing'], 'sign()')
 		const host = readText(input.host, 'sign() host')
 		const operation = input.operation as SigningOperation | undefined
 		if (
@@ -1028,6 +1027,13 @@ export async function signWithCredentialClient(
 				'sign() takes { type: "jwt", ... } or { type: "hmac", ... }.',
 			)
 		}
+		// HMAC may use a Key (`secret`) or a signing credential. JWT signing
+		// still requires kind "signing" (key material that never leaves).
+		const allowedKinds =
+			operation.type === 'hmac'
+				? (['signing', 'secret'] as const)
+				: (['signing'] as const)
+		const use = await readHandle(ctx, input.handle, allowedKinds, 'sign()')
 		return await resolveCredential(
 			doorInput(ctx, use, {
 				use: 'signing',

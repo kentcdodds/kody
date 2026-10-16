@@ -61,7 +61,7 @@ async function measureGate(input: {
 	const cookie =
 		input.actor === 'anonymous'
 			? null
-			: await packageAppSessionCookieFor(input.actor)
+			: await packageAppSessionCookieFor(input.actor, input.slug)
 	const realDb = env.APP_DB
 	const counting = createCountingD1(realDb)
 	const mutableEnv = env as unknown as { APP_DB: D1Database }

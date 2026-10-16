@@ -690,11 +690,15 @@ export async function syncPackageJobsForPackage(input: {
 				id: string
 				name: string
 				enabled: boolean
+				isCreate: boolean
 			}) => {
-				// Always on create (including disabled) so a later enable runs.
-				// On identity refresh / update, only repair enabled jobs so a
-				// failed create-time write cannot leave ticks silently skipped.
-				if (!job.enabled && existingByName.has(job.name)) return
+				// Create (including disabled): insert owner cron enablement so a
+				// later job enable runs without a separate enablementEnable.
+				// Existing rows: only repair enablements for jobs that are still
+				// enabled. Never insert/reactivate enablements for a disabled
+				// job on republish — that re-fired Kent's morning-briefing
+				// crons after stamp migration (#3836).
+				if (!job.isCreate && !job.enabled) return
 				await ensureOwnerCronEnablementForJob({
 					db: input.env.APP_DB,
 					orgId: input.userId,
@@ -740,6 +744,7 @@ export async function syncPackageJobsForPackage(input: {
 							id: existing.record.id,
 							name: jobName,
 							enabled,
+							isCreate: false,
 						})
 						continue
 					}
@@ -779,6 +784,7 @@ export async function syncPackageJobsForPackage(input: {
 						id: updated.id,
 						name: jobName,
 						enabled,
+						isCreate: false,
 					})
 					schedulerStateChanged = true
 					continue
@@ -828,6 +834,7 @@ export async function syncPackageJobsForPackage(input: {
 					id: created.id,
 					name: jobName,
 					enabled,
+					isCreate: true,
 				})
 				await stampFirstJob(
 					input.env.APP_DB,
@@ -894,12 +901,13 @@ function resolvePackageJobEnabled(input: {
 }) {
 	const manifestEnabled = input.manifestEnabled ?? true
 	if (input.existingEnabled === undefined) return manifestEnabled
-	// Manifest `enabled` is the create-time default and can still turn a job
-	// on. Republishing with `enabled: false` must not stop a job that is
-	// already running — fleet-wide package publishes (codemods) otherwise
-	// silently disable production sweepers that were enabled via jobUpdate
-	// or a package resume export.
-	return input.existingEnabled || manifestEnabled
+	// Manifest `enabled` is create-time only. Once a job row exists, keep its
+	// runtime enabled flag on republish (codemod / stamp migration / ordinary
+	// publish). OR-ing with the manifest used to re-enable jobs Kent had
+	// turned off and then insert owner cron enablements for them (#3836).
+	// Use jobUpdate / enablementEnable (or a package pause-resume export) to
+	// change enabled state after create.
+	return input.existingEnabled
 }
 
 export async function updateJob(input: {
