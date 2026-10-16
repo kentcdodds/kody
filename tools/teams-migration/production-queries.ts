@@ -4,6 +4,7 @@ import {
 	getMatchingPriceIdsForPlan,
 	type BillingEnv,
 } from '#worker/billing/billing-config.ts'
+import { grantHasMetadataOrgId } from '#worker/orgs/oauth-grant.ts'
 import { isExecutedDirectly } from '../node-runtime.ts'
 import { buildPreviewResourceNames } from '../ci/preview-resources.ts'
 import { defaultOauthKvTitle } from '../ci/production-resources.ts'
@@ -271,7 +272,7 @@ export async function countOAuthGrants(
 			}
 			const userId = key.split(':')[1]
 			if (userId) users.add(userId)
-			if (grantHasOrgId(values[key])) withOrgId += 1
+			if (grantHasMetadataOrgId(values[key])) withOrgId += 1
 		}
 	}
 	return {
@@ -282,13 +283,7 @@ export async function countOAuthGrants(
 	}
 }
 
-export function grantHasOrgId(value: unknown) {
-	if (typeof value !== 'object' || value === null) return false
-	const metadata = (value as { metadata?: unknown }).metadata
-	if (typeof metadata !== 'object' || metadata === null) return false
-	const orgId = (metadata as { orgId?: unknown }).orgId
-	return typeof orgId === 'string' && orgId.length > 0
-}
+export const grantHasOrgId = grantHasMetadataOrgId
 
 export function classifyStripePrice(
 	env: BillingEnv,

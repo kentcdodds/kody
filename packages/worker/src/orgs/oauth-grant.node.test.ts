@@ -6,6 +6,7 @@ import {
 import { expect, test } from 'vitest'
 import {
 	grantBindingFields,
+	grantHasMetadataOrgId,
 	grantMatchesConsentOrg,
 	readOrgIdFromGrantMetadata,
 	readOrgIdFromGrantMetadataOrUserId,
@@ -43,6 +44,15 @@ test('readOrgId helpers ignore missing or blank values', () => {
 			userId: ownerIdFromStored('user-1'),
 		}),
 	).toBe('org-1')
+})
+
+test('grantHasMetadataOrgId reads plaintext metadata only', () => {
+	expect(
+		grantHasMetadataOrgId({ metadata: { orgId: 'org-1' }, clientId: 'c' }),
+	).toBe(true)
+	expect(grantHasMetadataOrgId({ metadata: { orgId: '  ' } })).toBe(false)
+	expect(grantHasMetadataOrgId({ metadata: {} })).toBe(false)
+	expect(grantHasMetadataOrgId(null)).toBe(false)
 })
 
 test('grantMatchesConsentOrg uses metadata.orgId then userId fallback', () => {
