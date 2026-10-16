@@ -271,6 +271,45 @@ test('packageUpdate internet_visible without an approved capability set records 
 	expect(mockModule.updateSavedPackage).not.toHaveBeenCalled()
 })
 
+test('packageUpdate internet_visible with a matching pin still records went_public when self-publish is blocked', async () => {
+	mockModule.approvePackageCapabilitySet.mockReset()
+	mockModule.enqueueWentPublicApproval.mockReset()
+	mockModule.getSavedPackageById.mockResolvedValue(createSavedPackage())
+	mockModule.loadCapabilityApprovalSummary.mockResolvedValue({
+		capabilitySet: { entries: [], fingerprint: 'fp-1' },
+		publishedCommit: 'commit-1',
+		fingerprintMatchesApproval: true,
+	})
+	mockModule.approvePackageCapabilitySet.mockResolvedValue({
+		wentPublicRequest: { id: 'request-1' },
+	})
+	mockModule.attemptSelfPublish.mockResolvedValue({
+		status: 'blocked',
+		blocker: 'enforcement_off',
+	})
+	mockModule.loadCurrentPackageSecurityAudit.mockResolvedValue({
+		verdict: 'pass',
+		summary: 'Checked',
+		auditor: 'Audit agent',
+		recordedBy: null,
+		recordedAt: '2026-10-15T00:00:00.000Z',
+	})
+
+	const result = await update({ internet_visible: true })
+	expect(result).toMatchObject({
+		ok: true,
+		approval_url: 'https://heykody.dev/@user/notes/approve-capabilities',
+		internet_visible_pending: true,
+		self_publish_blocker: 'enforcement_off',
+	})
+	expect(mockModule.approvePackageCapabilitySet).toHaveBeenCalledWith(
+		expect.objectContaining({
+			expectedFingerprint: 'fp-1',
+		}),
+	)
+	expect(mockModule.enqueueWentPublicApproval).not.toHaveBeenCalled()
+})
+
 test('packageUpdate internet_visible self-publishes a package that declares nothing', async () => {
 	mockModule.approvePackageCapabilitySet.mockReset()
 	mockModule.enqueueWentPublicApproval.mockReset()

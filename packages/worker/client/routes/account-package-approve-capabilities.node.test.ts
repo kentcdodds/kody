@@ -574,6 +574,21 @@ test('a go-public request folds into the capability Approve as one decision', as
 	expect(html).toContain(
 		'One approval records this capability set and turns on internet-visible serving.',
 	)
+
+	const alreadyPinned = await render(
+		loaderData({
+			pendingApprovals: [wentPublic],
+			goPublicRequestId: wentPublic.id,
+			fingerprintMatchesApproval: true,
+		}),
+	)
+	expect(alreadyPinned).toContain(
+		'You asked to make this package internet-visible. Approving turns on internet-visible serving.',
+	)
+	expect(alreadyPinned).toContain('Approve and make internet-visible')
+	expect(alreadyPinned).not.toContain(
+		'One approval records this capability set and turns on internet-visible serving.',
+	)
 	const approve = html.slice(
 		html.indexOf('data-testid="package-approve-capabilities"'),
 		html.indexOf(

@@ -107,13 +107,15 @@ export async function loadAccountPackageApproveCapabilitiesData(input: {
 		}),
 	])
 
-	// A pending went_public request means the owner asked to go public; when
-	// the capability set still needs approval, one Approve records both.
-	const goPublicRequestId =
-		!savedPackage.isInternetVisible && !summary.fingerprintMatchesApproval
-			? (pendingApprovals.find((approval) => approval.reason === 'went_public')
-					?.id ?? null)
-			: null
+	// A pending went_public request means the owner asked to go public. One
+	// Approve always covers that request: when the capability set still needs
+	// approval it records both; when the set already matches it only turns
+	// internet-visible on. Leaving this null after a matching pin made the
+	// main Approve re-pin capabilities and never flip internet_visible.
+	const goPublicRequestId = !savedPackage.isInternetVisible
+		? (pendingApprovals.find((approval) => approval.reason === 'went_public')
+				?.id ?? null)
+		: null
 
 	return {
 		ok: true,

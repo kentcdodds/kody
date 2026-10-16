@@ -1,5 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { createMcpCallerContext } from '#mcp/context.ts'
+import { approvalPendingListCapability } from '#mcp/capabilities/packages/approval-pending-list.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
 	mappingFixtureBaseUrl,
@@ -217,7 +219,7 @@ test('asking to go public, then one Approve, records both decisions and serves t
 	expect(after.pendingApprovals).toEqual([])
 })
 
-test('approving the capability set alone does not offer the combined Approve', async () => {
+test('approving the capability set alone leaves went_public on the combined Approve', async () => {
 	const t = await setup()
 	const page = await t.loadPage()
 	expect(page.goPublicRequestId).toBeNull()
@@ -229,10 +231,11 @@ test('approving the capability set alone does not offer the combined Approve', a
 	expect(approved.status).toBe(200)
 	const after = await t.loadPage()
 	expect(after.fingerprintMatchesApproval).toBe(true)
-	expect(after.goPublicRequestId).toBeNull()
+	expect(after.goPublicRequestId).toEqual(expect.any(String))
 	expect(after.pendingApprovals.map((approval) => approval.reason)).toEqual([
 		'went_public',
 	])
+	expect(after.goPublicRequestId).toBe(after.pendingApprovals[0]?.id)
 	expect(
 		(
 			await getSavedPackageById(t.db, {
@@ -241,6 +244,111 @@ test('approving the capability set alone does not offer the combined Approve', a
 			})
 		)?.isInternetVisible,
 	).toBe(false)
+})
+
+test('asking to go public when the capability set is already approved still folds into one Approve', async () => {
+	const t = await setup()
+	const before = await t.loadPage()
+	expect(
+		(
+			await t.approve({
+				action: 'approve-capabilities',
+				fingerprint: before.fingerprint,
+			})
+		)?.status,
+	).toBe(200)
+
+	// Withdraw the auto-enqueued ask so the toggle records a fresh one against
+	// an already-matching pin (the world-builder failure mode).
+	await t.toggle({
+		action: 'set-internet-visible',
+		internetVisible: false,
+		confirmName: 'digest',
+	})
+	expect((await t.loadPage()).goPublicRequestId).toBeNull()
+
+	const asked = await t.toggle({
+		action: 'set-internet-visible',
+		internetVisible: true,
+		confirmName: 'digest',
+	})
+	expect(asked?.status).toBe(400)
+
+	const page = await t.loadPage()
+	expect(page.fingerprintMatchesApproval).toBe(true)
+	expect(page.goPublicRequestId).toEqual(expect.any(String))
+	expect(page.pendingApprovals.map((approval) => approval.id)).toEqual([
+		page.goPublicRequestId,
+	])
+
+	const listed = await approvalPendingListCapability.handler(
+		{ packages: [t.savedPackage.id] },
+		{
+			env: t.env,
+			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
+				baseUrl: mappingFixtureBaseUrl,
+				oauthClientId: 'client-a',
+				user: {
+					userId: t.people.bea.personId,
+					email: 'bea@example.com',
+					displayName: 'bea',
+				},
+				orgBinding: {
+					org: { id: t.acmeId, slug: 'acme-clients' },
+					role: 'owner',
+				},
+			}),
+		},
+	)
+	expect(listed.items).toEqual([
+		expect.objectContaining({
+			type: 'publish',
+			key: `publish:${page.goPublicRequestId}`,
+			title: 'Serve on the public internet',
+			package: expect.objectContaining({ id: t.savedPackage.id }),
+		}),
+	])
+
+	const approved = await t.approve({
+		action: 'approve-capabilities-and-go-public',
+		fingerprint: page.fingerprint,
+		requestId: page.goPublicRequestId,
+	})
+	expect(approved.status).toBe(200)
+	expect(
+		(
+			await getSavedPackageById(t.db, {
+				userId: t.acmeId,
+				packageId: t.savedPackage.id,
+			})
+		)?.isInternetVisible,
+	).toBe(true)
+	expect((await t.loadPage()).goPublicRequestId).toBeNull()
+	expect(
+		(
+			await approvalPendingListCapability.handler(
+				{ packages: [t.savedPackage.id] },
+				{
+					env: t.env,
+					callerContext: createMcpCallerContext({
+						source: { kind: 'mcp-oauth' },
+						baseUrl: mappingFixtureBaseUrl,
+						oauthClientId: 'client-a',
+						user: {
+							userId: t.people.bea.personId,
+							email: 'bea@example.com',
+							displayName: 'bea',
+						},
+						orgBinding: {
+							org: { id: t.acmeId, slug: 'acme-clients' },
+							role: 'owner',
+						},
+					}),
+				},
+			)
+		).items,
+	).toEqual([])
 })
 
 test('a stale combined click after going public was turned off changes nothing', async () => {

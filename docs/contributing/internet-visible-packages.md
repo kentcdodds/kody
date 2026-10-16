@@ -31,16 +31,16 @@ current `published_commit`
 
 Turning internet-visible on (settings toggle or `packageUpdate`) records the
 `went_public` request right away, even before the capability set is approved.
-When that request is pending and the live capability set still needs approval,
-the approval page shows one **Approve and make internet-visible** button
-(`approve-capabilities-and-go-public`). It runs both decisions in order, each
-with its own checks and its own org audit event: the capability pin
-(`package.capabilities.approve`), then the `went_public` request
-(`package.went_public.approve`). The pin does not enqueue a new `went_public`
-request, so a request turned off meanwhile stays off. If the second step fails,
-the pin stays recorded and the page falls back to the separate went-public card
-when the request is still pending. The two steps were never split for a security
-reason; they share one queue
+While that request is pending, the approval page shows one **Approve and make
+internet-visible** button (`approve-capabilities-and-go-public`), including when
+the capability set is already approved. It runs the capability pin
+(`package.capabilities.approve`) when the live set still needs approval (or
+refreshes the pin when it already matches), then the `went_public` request
+(`package.went_public.approve`), each with its own checks and org audit event.
+The pin does not enqueue a new `went_public` request, so a request turned off
+meanwhile stays off. If the visibility write loses a race after the request is
+claimed, a fresh `went_public` row is re-queued so Approve is not lost. The two
+steps were never split for a security reason; they share one queue
 ([ADR 0068 amendment](./decisions/0068-credentials-own-placement-scoped-clients.md)).
 An approval bundle's went-public item cannot be approved until the capability
 set is, so it points at the package's approval page instead.

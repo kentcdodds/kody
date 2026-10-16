@@ -13,6 +13,7 @@ const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
 	updateSavedPackage: vi.fn(),
 	getEntitySourceById: vi.fn(),
+	enqueueWentPublicApproval: vi.fn(),
 }))
 
 vi.mock('#worker/package-capabilities/approval-requests-repo.ts', () => ({
@@ -33,6 +34,17 @@ vi.mock('#worker/package-capabilities/capability-approval-service.ts', () => ({
 	loadCapabilityApprovalSummary: (...args: Array<unknown>) =>
 		mockModule.loadCapabilityApprovalSummary(...args),
 }))
+
+vi.mock('#worker/package-capabilities/went-public-approval.ts', async () => {
+	const actual = await vi.importActual<
+		typeof import('#worker/package-capabilities/went-public-approval.ts')
+	>('#worker/package-capabilities/went-public-approval.ts')
+	return {
+		...actual,
+		enqueueWentPublicApproval: (...args: Array<unknown>) =>
+			mockModule.enqueueWentPublicApproval(...args),
+	}
+})
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
@@ -58,6 +70,7 @@ beforeEach(() => {
 	mockModule.getSavedPackageById.mockReset()
 	mockModule.updateSavedPackage.mockReset()
 	mockModule.getEntitySourceById.mockReset()
+	mockModule.enqueueWentPublicApproval.mockReset()
 })
 
 function stubApproveWentPublicHappyPath() {
@@ -191,9 +204,10 @@ test('approveWentPublicRequest flips internet-visible when capability pin matche
 	)
 })
 
-test('approveWentPublicRequest fails closed when clear bumps updated_at after claim', async () => {
+test('approveWentPublicRequest re-queues went_public when clear bumps updated_at after claim', async () => {
 	stubApproveWentPublicHappyPath()
 	mockModule.updateSavedPackage.mockResolvedValue(false)
+	mockModule.enqueueWentPublicApproval.mockResolvedValue({ id: 'req-retry' })
 
 	const result = await approveWentPublicRequest({
 		env: { APP_DB: {} } as Env,
@@ -216,6 +230,14 @@ test('approveWentPublicRequest fails closed when clear bumps updated_at after cl
 		expect.objectContaining({
 			isInternetVisible: true,
 			expectedUpdatedAt: '2026-01-01T00:00:00.000Z',
+		}),
+	)
+	expect(mockModule.enqueueWentPublicApproval).toHaveBeenCalledWith(
+		expect.objectContaining({
+			ownerUserId: 'owner-1',
+			publishedCommit: 'deadbeef',
+			fingerprint: 'fp-1',
+			requestedByUserId: personIdFromStored('actor-1'),
 		}),
 	)
 })
