@@ -14,8 +14,19 @@ const packageJsonPath = resolve(repoRoot, 'packages/cli/package.json')
 const generatedClientPath = 'packages/cli/src/generated/openapi-routes.ts'
 const pureImportMarker = 'packages/cli/src/oauth-browser.ts'
 
-function git(args: Array<string>): string {
-	return execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8' }).trim()
+const releaseTagIdentity = {
+	GIT_AUTHOR_NAME: 'github-actions[bot]',
+	GIT_AUTHOR_EMAIL: '41898282+github-actions[bot]@users.noreply.github.com',
+	GIT_COMMITTER_NAME: 'github-actions[bot]',
+	GIT_COMMITTER_EMAIL: '41898282+github-actions[bot]@users.noreply.github.com',
+}
+
+function git(args: Array<string>, identity = false): string {
+	return execFileSync('git', args, {
+		cwd: repoRoot,
+		encoding: 'utf8',
+		env: identity ? { ...process.env, ...releaseTagIdentity } : process.env,
+	}).trim()
 }
 
 function tagExists(tag: string): boolean {
@@ -102,14 +113,17 @@ function ensureBaselineTag(): string {
 			`Refusing to tag ${earliest} as ${cliBaselineTag}: that commit already contains the OpenAPI client. Merge the subtree commit so ${cliBaselineTag} can point at the imported 1.26.3 tree.`,
 		)
 	}
-	git([
-		'tag',
-		'-a',
-		cliBaselineTag,
-		earliest,
-		'-m',
-		`${cliPackageName} ${cliBaselineVersion}`,
-	])
+	git(
+		[
+			'tag',
+			'-a',
+			cliBaselineTag,
+			earliest,
+			'-m',
+			`${cliPackageName} ${cliBaselineVersion}`,
+		],
+		true,
+	)
 	if (process.env.CI === 'true') {
 		git(['push', 'origin', `refs/tags/${cliBaselineTag}`])
 	}
@@ -167,7 +181,7 @@ try {
 			{ cwd: repoRoot, stdio: 'inherit' },
 		)
 		const tag = `cli-v${plan.version}`
-		git(['tag', '-a', tag, '-m', `${cliPackageName} ${plan.version}`])
+		git(['tag', '-a', tag, '-m', `${cliPackageName} ${plan.version}`], true)
 		git(['push', 'origin', `refs/tags/${tag}`])
 	} else {
 		console.log('Dry run. Pass --publish or run in CI to npm publish.')
