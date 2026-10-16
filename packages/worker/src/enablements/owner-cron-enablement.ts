@@ -13,11 +13,30 @@ import {
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { packageIdFromJobId } from '@kody-internal/shared/jobs/package-job-id.ts'
 import { jobsData, type JobsDataEnv } from '#worker/jobs/jobs-data.ts'
-import {
-	insertEnablement,
-	listEnablementsForInstance,
-	loadEarliestLiveOwnerId,
-} from './repo.ts'
+import { insertEnablement, loadEarliestLiveOwnerId } from './repo.ts'
+
+/**
+ * True when this enabler already has any cron enablement row for the job,
+ * including `off`. Skipping off avoids re-enabling someone who disabled.
+ */
+async function ownerHasCronEnablementRow(input: {
+	db: D1Database
+	orgId: string
+	jobId: string
+	jobName: string
+	enablerUserId: string
+}): Promise<boolean> {
+	const row = await input.db
+		.prepare(
+			`SELECT id AS id FROM enablements
+			 WHERE org_id = ? AND trigger_kind = 'cron' AND instance_id = ?
+			   AND trigger_name = ? AND enabler_user_id = ?
+			 LIMIT 1`,
+		)
+		.bind(input.orgId, input.jobId, input.jobName, input.enablerUserId)
+		.first<{ id: string }>()
+	return row != null
+}
 
 export type OwnerCronEnablementOutcome =
 	| 'inserted'
@@ -58,7 +77,7 @@ export async function resolveOwnerPersonIdForCronEnablement(
 
 /**
  * Ensure the org owner has a non-off cron enablement for this job. Idempotent:
- * skips when they already have on or paused.
+ * skips when they already have on, paused, or off (off means they disabled).
  */
 export async function ensureOwnerCronEnablementForJob(input: {
 	db: D1Database
@@ -77,18 +96,14 @@ export async function ensureOwnerCronEnablementForJob(input: {
 		(await resolveOwnerPersonIdForCronEnablement(input.db, input.orgId))
 	if (!enablerUserId) return 'skipped_no_owner'
 
-	const existing = await listEnablementsForInstance({
-		db: input.db,
-		orgId: String(input.orgId),
-		triggerKind: 'cron',
-		instanceId: input.jobId,
-		triggerName: input.jobName,
-	})
 	if (
-		existing.some(
-			(enablement) =>
-				String(enablement.enablerUserId) === String(enablerUserId),
-		)
+		await ownerHasCronEnablementRow({
+			db: input.db,
+			orgId: String(input.orgId),
+			jobId: input.jobId,
+			jobName: input.jobName,
+			enablerUserId: String(enablerUserId),
+		})
 	) {
 		return 'already_present'
 	}
@@ -216,18 +231,14 @@ export async function backfillOwnerCronEnablements(input: {
 					})
 					continue
 				}
-				const existing = await listEnablementsForInstance({
-					db,
-					orgId: String(orgId),
-					triggerKind: 'cron',
-					instanceId: jobId,
-					triggerName: jobName,
-				})
 				if (
-					existing.some(
-						(enablement) =>
-							String(enablement.enablerUserId) === String(enablerUserId),
-					)
+					await ownerHasCronEnablementRow({
+						db,
+						orgId: String(orgId),
+						jobId,
+						jobName,
+						enablerUserId: String(enablerUserId),
+					})
 				) {
 					counts.alreadyPresent += 1
 					outcomes.push({

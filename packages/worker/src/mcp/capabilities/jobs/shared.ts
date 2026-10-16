@@ -161,7 +161,7 @@ export const jobInspectionSchema = z.object({
 		.string()
 		.nullable()
 		.describe(
-			'When the job is enabled but has no on enablement (or only paused ones), an agent-directed message to ask the user whether to enable it with the exact enablementEnable call. Null when the job is off or already has an on enablement.',
+			'When the job is enabled but has no on enablement (or only paused ones), an agent-directed message that includes the exact enablementEnable call. Null when the job is off or already has an on enablement.',
 		),
 })
 
@@ -236,7 +236,7 @@ export const jobViewOutputSchema = z.object({
 		.string()
 		.nullable()
 		.describe(
-			'When the job is enabled but has no on enablement (or only paused ones), an agent-directed message to ask the user whether to enable it with the exact enablementEnable call. Null when the job is off or already has an on enablement.',
+			'When the job is enabled but has no on enablement (or only paused ones), an agent-directed message that includes the exact enablementEnable call. Null when the job is off or already has an on enablement.',
 		),
 })
 

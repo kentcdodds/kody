@@ -9,7 +9,11 @@ import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { insertTestUser } from '#worker/test-support/account-export.ts'
 import { provisionPersonalOrgForSqliteUser } from '#worker/test-support/personal-org-seed.ts'
-import { listEnablementsForInstance } from './repo.ts'
+import {
+	disableEnablement,
+	insertEnablement,
+	listEnablementsForInstance,
+} from './repo.ts'
 import {
 	backfillOwnerCronEnablements,
 	ensureOwnerCronEnablementForJob,
@@ -230,4 +234,47 @@ test('sync create path helper skips when no live owner exists', async () => {
 			packageId: 'pkg-x',
 		}),
 	).toBe('skipped_no_owner')
+})
+
+test('ensureOwnerCronEnablementForJob does not re-enable an owner who turned off', async () => {
+	const { db } = await setup()
+	const packageId = 'pkg-off'
+	const jobName = 'sweep'
+	const jobId = buildPackageJobId(packageId, jobName)
+	const orgId = ownerIdFromStored('user-noah')
+	const created = await insertEnablement({
+		db,
+		enablement: {
+			orgId: String(orgId),
+			packageId,
+			triggerKind: 'cron',
+			triggerName: jobName,
+			instanceId: jobId,
+			enablerUserId: 'user-noah',
+			origin: 'enabled',
+		},
+	})
+	await disableEnablement({
+		db,
+		orgId: String(orgId),
+		id: created.id,
+	})
+	expect(
+		await ensureOwnerCronEnablementForJob({
+			db,
+			orgId,
+			jobId,
+			jobName,
+			packageId,
+		}),
+	).toBe('already_present')
+	expect(
+		await listEnablementsForInstance({
+			db,
+			orgId: String(orgId),
+			triggerKind: 'cron',
+			instanceId: jobId,
+			triggerName: jobName,
+		}),
+	).toHaveLength(0)
 })
