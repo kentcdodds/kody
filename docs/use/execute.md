@@ -324,6 +324,12 @@ when more matched — page with `LIMIT`/`OFFSET` (or a keyset) for larger result
 Mutating statements that yield rows (`INSERT`/`UPDATE`/`DELETE … RETURNING`)
 still finish the write when truncated; only the returned row list is capped.
 
+A read that examines a lot of rows is allowed and metered on the monthly Rows
+read include. `warning` is a string once the statement examines at least
+1,000,000 rows (usage past the include is billed from credits). One read stops
+after 1,000,000,000 rows examined, with `storage.sql read stopped…`. Narrow with
+`LIMIT` or `WHERE`. The 1,000-row cap limits the response, not the scan.
+
 For dedicated inspection, use:
 
 - **`storageExport`** — export one storage bucket as JSON (`page_size` max 1000)
@@ -331,7 +337,8 @@ For dedicated inspection, use:
   opt into writes explicitly). Package-bucket ids still require `package:write`
   (connection-profile write), including for SELECT inspection. Returns at most
   1000 rows and sets `truncated: true` when more matched — same cap as
-  `sql(...)`.
+  `sql(...)`. `warning` is set when the scan examines at least 1,000,000 rows.
+  The read is allowed and metered until 1,000,000,000 rows, then it stops.
 
 Both are scoped to the caller. Code running as a saved package (invocations,
 jobs, package apps, retrievers) may name only buckets that package owns — its

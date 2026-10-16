@@ -339,6 +339,7 @@ test('storage runner supports raw SQL with explicit writable access', async () =
 		rowsRead: 1,
 		rowsWritten: 0,
 		truncated: false,
+		warning: null,
 	})
 
 	await runInDurableObject(
@@ -455,6 +456,7 @@ test('storage runner enforces read-only SQL policy for mutations, multi-statemen
 		rowsRead: 0,
 		rowsWritten: 0,
 		truncated: false,
+		warning: null,
 	})
 })
 

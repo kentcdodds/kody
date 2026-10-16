@@ -35,6 +35,11 @@ import {
 	packageIdFromStorageId,
 } from '#worker/storage-ids.ts'
 import { storageRunnerDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
+import {
+	collectStorageSqlCursor,
+	settleStorageSqlRead,
+	type StorageSqlReadCollection,
+} from '#worker/storage-sql-read-policy.ts'
 import { recordDurableObjectRowsRead } from '#worker/usage/durable-object-rows.ts'
 import { createMeteredDurableObjectStub } from '#worker/usage/durable-object-usage.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
@@ -119,20 +124,6 @@ type StorageExportResult = {
 }
 
 type StorageSqlValue = string | number | null
-
-type StorageSqlResult = {
-	columns: Array<string>
-	rows: Array<Record<string, StorageSqlValue>>
-	rowCount: number
-	rowsRead: number
-	rowsWritten: number
-	/**
-	 * True when the cursor held more rows than {@link maxStorageSqlQueryRows}.
-	 * The returned `rows` / `rowCount` stop at the cap; callers should page
-	 * with LIMIT/OFFSET (or equivalent) rather than relying on a full scan.
-	 */
-	truncated: boolean
-}
 
 type StorageListResult = StorageExportResult
 
@@ -510,7 +501,7 @@ const storageSqlReturningMutationVerbInWithPattern =
  * True when `query` can mutate while yielding rows (SQLite RETURNING on
  * INSERT / UPDATE / DELETE / REPLACE, including after a WITH clause).
  *
- * Used by {@link cursorToSqlResult} drainOverflow: only these statements must
+ * Used by {@link collectStorageSqlCursor} drainOverflow: only these statements must
  * keep stepping past the row cap so the write finishes. Pure reads — including
  * `WITH … SELECT` sent with `writable: true` from packageStorage — stop early.
  */
@@ -575,39 +566,6 @@ async function withStorageEstimateReadTimeout<T>(
 		if (timeoutId !== undefined) {
 			clearTimeout(timeoutId)
 		}
-	}
-}
-
-function cursorToSqlResult(
-	cursor: SqlStorageCursor<Record<string, StorageSqlValue>>,
-	options?: {
-		/**
-		 * When true, keep stepping after the row cap so statements that yield
-		 * rows while mutating (INSERT/UPDATE/DELETE … RETURNING) finish.
-		 * Read-only SELECT/EXPLAIN/PRAGMA can stop early — they do not write.
-		 */
-		drainOverflow?: boolean
-	},
-): StorageSqlResult {
-	const rows: Array<Record<string, StorageSqlValue>> = []
-	let truncated = false
-	for (const row of cursor) {
-		if (rows.length >= maxStorageSqlQueryRows) {
-			truncated = true
-			if (!options?.drainOverflow) {
-				break
-			}
-			continue
-		}
-		rows.push(row)
-	}
-	return {
-		columns: [...cursor.columnNames],
-		rows,
-		rowCount: rows.length,
-		rowsRead: cursor.rowsRead,
-		rowsWritten: cursor.rowsWritten,
-		truncated,
 	}
 }
 
@@ -782,7 +740,7 @@ class StorageRunnerBase extends DurableObject<Env> {
 		query: string
 		params?: Array<unknown>
 		writable?: boolean
-	}): Promise<StorageSqlResult> {
+	}): Promise<StorageSqlReadCollection> {
 		const query = assertStorageSqlAllowed(input.query, input.writable)
 		const params = normalizeSqlParams(input.params)
 		const cursor = this.ctx.storage.sql.exec<Record<string, StorageSqlValue>>(
@@ -791,7 +749,10 @@ class StorageRunnerBase extends DurableObject<Env> {
 		)
 		const drainOverflow =
 			Boolean(input.writable) && isStorageSqlReturningMutation(query)
-		return cursorToSqlResult(cursor, { drainOverflow })
+		return collectStorageSqlCursor(cursor, {
+			drainOverflow,
+			maxRows: maxStorageSqlQueryRows,
+		})
 	}
 }
 
@@ -890,7 +851,7 @@ export function storageRunnerRpc(input: {
 				query: string
 				params?: Array<unknown>
 				writable?: boolean
-			}) => Promise<StorageSqlResult>
+			}) => Promise<StorageSqlReadCollection>
 		},
 	})
 
@@ -934,14 +895,49 @@ export function storageRunnerRpc(input: {
 	// Key-value reads on a SQLite-backed Durable Object are billed as rows
 	// read: one per key (including cache hits) and one per listed entry. The
 	// KV API exposes no cursor, so these are the billing units, not a guess.
-	const recordRowsRead = (rowsRead: number) => {
+	const recordRowsRead = (
+		rowsRead: number,
+		outcome: 'success' | 'error' = 'success',
+	) => {
 		recordDurableObjectRowsRead({
 			env: input.env,
 			userId: input.userId,
 			doClass: 'StorageRunner',
 			rowsRead,
+			outcome,
 			...(attributedPackageId ? { packageId: attributedPackageId } : {}),
 		})
+	}
+	const finishSqlQuery = (collection: StorageSqlReadCollection) => {
+		const settled = settleStorageSqlRead(collection)
+		switch (settled.outcome) {
+			case 'error':
+				recordRowsRead(collection.rowsRead, 'error')
+				console.warn('storage-sql-oversized-read', {
+					userId: input.userId,
+					storageId: input.storageId,
+					rowsRead: collection.rowsRead,
+					stopped: true,
+				})
+				throw settled.error
+			case 'success':
+				recordRowsRead(collection.rowsRead)
+				if (settled.result.warning) {
+					console.warn('storage-sql-oversized-read', {
+						userId: input.userId,
+						storageId: input.storageId,
+						rowsRead: collection.rowsRead,
+						stopped: false,
+					})
+				}
+				return settled.result
+			default: {
+				const exhaustive: never = settled
+				throw new Error(
+					`Unknown storage sql read settlement: ${String(exhaustive)}`,
+				)
+			}
+		}
 	}
 
 	return {
@@ -1008,8 +1004,7 @@ export function storageRunnerRpc(input: {
 			if (mutating) {
 				refreshOwnedBucketEstimate()
 			}
-			recordRowsRead(result.rowsRead)
-			return result
+			return finishSqlQuery(result)
 		},
 	}
 }

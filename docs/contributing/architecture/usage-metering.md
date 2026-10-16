@@ -165,6 +165,37 @@ Per-call rows-read points share the ~250 `writeDataPoint` per-invocation budget
 with every other usage event, so they always go through the coalescer
 (`queueDurableObjectRowsRead`) rather than writing one point per query.
 
+### Oversized storage reads
+
+A single StorageRunner SQL statement is allowed when it examines more rows than
+a typical query. That matches compute-wallet overage: meter the rows, warn, and
+do not invoice. Kody absorbs the infrastructure cost under the ceiling below.
+The monthly include, credit debit, and empty-wallet stop are unchanged (see
+[Prepaid credits](./entitlements.md#prepaid-credits)).
+
+The returned row list stays capped at `maxStorageSqlQueryRows` (1,000) with
+`truncated: true`. That cap limits the response. Scan cost is the cursor's
+`rowsRead`.
+
+| Constant                    | Value         | Effect                                                                                                                                                                                |
+| --------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `storageSqlRowsReadWarnAt`  | 1,000,000     | The call succeeds. `warning` says the read was allowed and counts toward the monthly Rows read include (credits past the include).                                                    |
+| `storageSqlRowsReadCeiling` | 1,000,000,000 | A read cursor stops. The call fails with `storage.sql read stopped…`. Rows already examined are still metered (`outcome: error`, so they stay in `event_count` and the credit debit). |
+
+Mutating statements (`INSERT` / `UPDATE` / `DELETE` / `REPLACE`, including after
+`WITH`) keep stepping so a write is not cut off. If that scan passes the
+ceiling, the call succeeds and `warning` says the write finished and the rows
+are metered.
+
+Both constants live in `packages/worker/src/storage-sql-read-policy.ts`. They
+are a gut feel, not a price: 1,000,000 rows is one unit at the published
+$0.002 per million rate, and 1,000,000,000 rows is $2 at that rate (about $1 at
+Cloudflare list). Move them when fleet data says the line is wrong. Some plans
+(`ORDER BY`, aggregates) finish the scan inside SQLite before the first row is
+yielded, so Cloudflare may already have counted those rows before the ceiling
+check runs. Stopping still refuses the result and meters what the cursor
+reports.
+
 ### Durable Object duration: estimate vs bill
 
 Cloudflare bills Durable Object duration on wall-clock time an object is active

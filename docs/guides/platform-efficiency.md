@@ -42,6 +42,15 @@ account or stops runs, and Kody does not email about it. Execute caps are the
 Free limit. Do not spend execute calls diagnosing a high Worker compute count on
 Free; move repeated ad hoc work into packages or triggers instead.
 
+## Rows read
+
+Storage SQL that examines a lot of rows is allowed. Those rows count toward the
+monthly **Rows read** include, and usage past the include is billed from
+credits, same as Worker compute. `warning` on the SQL result is set once a
+statement examines at least 1,000,000 rows. One read stops after 1,000,000,000
+rows examined. Narrow with `LIMIT` or `WHERE`. The separate 1,000-row return cap
+only limits how many rows come back in one response.
+
 ## Surfaces
 
 The same meter is tagged with the surface that minted the isolate:
