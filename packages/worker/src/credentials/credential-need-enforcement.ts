@@ -1,12 +1,15 @@
 /**
- * Credential-need enforcement (issue #3822, ADR 0068 amendment 2026-10-15).
+ * Credential-need enforcement (issue #3822, ADR 0068 amendment 2026-10-15;
+ * issue #3836 phase 3).
  *
- * A package run by anyone but its author may use only the credentials its
- * `kody.credentials` closure declares: fetch gateway placeholders and
- * `credential(key)` alike. "Its author" means the package lives in the acting
- * person's personal org, is not an unadopted community fork, and is not
- * internet-visible. Ad hoc code (no package stamp) is never limited.
- * Placement stays fill-anywhere; this is about declaration only.
+ * A package that stored a credential stamp may use only the credentials its
+ * `kody.credentials` closure declares, including when its author runs it. The
+ * global `credential-need-enforcement` flag is not that switch.
+ *
+ * A package with no stamp keeps the legacy path: the flag (off by default)
+ * limits a run by anyone but its author, and implicit user-secret read stays.
+ * Ad hoc code (no package id) is never limited. Placement stays fill-anywhere;
+ * this is about declaration only.
  */
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -21,6 +24,7 @@ import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { loadPublishedCredentialNeeds } from './credential-needs-closure.ts'
 import { type CredentialNeed } from './credential-needs.ts'
+import { packageCarriesCredentialStamp } from './credential-stamp-presence.ts'
 
 export const credentialNeedUndeclaredCode = 'credential_need_undeclared'
 
@@ -53,6 +57,8 @@ type EnforcedPackage =
 	| { kind: 'exempt' }
 	| {
 			kind: 'enforced'
+			/** Stamp enforcement applies to the author too. */
+			stamped: boolean
 			saved: SavedPackageRecord | null
 			stored: () => Promise<Declarations>
 			fresh: () => Promise<Declarations>
@@ -153,12 +159,16 @@ function describeUse(reference: CredentialNeedReference) {
 function undeclaredError(
 	reference: CredentialNeedReference,
 	saved: SavedPackageRecord | null,
+	stamped: boolean,
 ) {
 	const key = referenceKey(reference)
 	const subject = saved ? `Package ${saved.name}` : 'This package'
+	const rule = stamped
+		? 'A package with a credential stamp may use only the credentials it declares.'
+		: 'A package run by anyone but its author may use only the credentials it declares.'
 	return new CredentialNeedUndeclaredError({
 		key,
-		message: `${subject} uses ${describeUse(reference)} without declaring it. A package run by anyone but its author may use only the credentials it declares. Add "${key}" to kody.credentials in its package.json (with a description) and publish again.`,
+		message: `${subject} uses ${describeUse(reference)} without declaring it. ${rule} Add "${key}" to kody.credentials in its package.json (with a description) and publish again.`,
 	})
 }
 
@@ -195,9 +205,20 @@ async function loadEnforcedPackage(input: {
 		packageId: input.packageId,
 	})
 	const empty = async (): Promise<Declarations> => []
-	if (!saved)
-		return { kind: 'enforced', saved: null, stored: empty, fresh: empty }
-	if (await isAuthorsOwnPackage({ ...input, saved })) return { kind: 'exempt' }
+	const stamped = await packageCarriesCredentialStamp(input)
+	if (!saved) {
+		return {
+			kind: 'enforced',
+			stamped,
+			saved: null,
+			stored: empty,
+			fresh: empty,
+		}
+	}
+	// Author exemption is the legacy flag path. A stamp replaces it.
+	if (!stamped && (await isAuthorsOwnPackage({ ...input, saved }))) {
+		return { kind: 'exempt' }
+	}
 	const declarations = (fresh: boolean) =>
 		memo(() =>
 			loadPublishedCredentialNeeds({
@@ -209,6 +230,7 @@ async function loadEnforcedPackage(input: {
 		)
 	return {
 		kind: 'enforced',
+		stamped,
 		saved,
 		stored: declarations(false),
 		fresh: declarations(true),
@@ -259,8 +281,9 @@ function isEnforcementOn(env: Env, request: RequestContext | null) {
 }
 
 /**
- * Whether the stamped package is limited to its declared credentials: the
- * flag is on and the package is not its author's own. Ad hoc code never is.
+ * Whether this package is limited to its declared credentials. A stored
+ * credential stamp always limits it. Otherwise the global flag does, and the
+ * author's own package stays exempt. Ad hoc code never is.
  */
 export async function isPackageCredentialUseLimited(input: {
 	env: Env
@@ -269,7 +292,13 @@ export async function isPackageCredentialUseLimited(input: {
 	packageId: string | null
 }) {
 	if (!input.packageId) return false
-	if (!(await isEnforcementOn(input.env, input.request))) return false
+	const stamped = await packageCarriesCredentialStamp({
+		...input,
+		packageId: input.packageId,
+	})
+	if (!stamped && !(await isEnforcementOn(input.env, input.request))) {
+		return false
+	}
 	const enforced = await enforcedPackageFor({
 		...input,
 		packageId: input.packageId,
@@ -295,7 +324,13 @@ export async function assertCredentialUsesDeclared(input: {
 }): Promise<ReadonlyMap<string, CredentialNeed>> {
 	const declared = new Map<string, CredentialNeed>()
 	if (!input.packageId || input.references.length === 0) return declared
-	if (!(await isEnforcementOn(input.env, input.request))) return declared
+	const stamped = await packageCarriesCredentialStamp({
+		...input,
+		packageId: input.packageId,
+	})
+	if (!stamped && !(await isEnforcementOn(input.env, input.request))) {
+		return declared
+	}
 	const enforced = await enforcedPackageFor({
 		env: input.env,
 		request: input.request,
@@ -318,6 +353,8 @@ export async function assertCredentialUsesDeclared(input: {
 	if (missing.length === 0) return declared
 	const fresh = await enforced.fresh()
 	const undeclared = missing.find((reference) => !record(reference, fresh))
-	if (undeclared) throw undeclaredError(undeclared, enforced.saved)
+	if (undeclared) {
+		throw undeclaredError(undeclared, enforced.saved, enforced.stamped)
+	}
 	return declared
 }

@@ -25,6 +25,7 @@ import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { readPublishedCredentialStamp } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { packageSourceFiles } from './credential-needs-closure.ts'
 import {
+	isStoredCredentialStamp,
 	omitOversizedCredentialStampModules,
 	planCredentialStampSeal,
 	type CredentialStamp,
@@ -179,19 +180,6 @@ function isCredentialStampScanBudgetMessage(message: string): boolean {
  */
 export function isCredentialStampScanBudgetFailure(error: unknown): boolean {
 	return errorCauseChainIncludes(error, isCredentialStampScanBudgetMessage)
-}
-
-function isCredentialStamp(value: unknown): value is CredentialStamp {
-	if (value == null || typeof value !== 'object' || Array.isArray(value)) {
-		return false
-	}
-	const record = value as Record<string, unknown>
-	return (
-		record.version === 1 &&
-		typeof record.stampHash === 'string' &&
-		Array.isArray(record.keys) &&
-		Array.isArray(record.depStamps)
-	)
 }
 
 function sortedKeyList(keys: ReadonlyArray<unknown>): Array<string> {
@@ -440,7 +428,7 @@ export async function runCredentialStampFleet(input: {
 				sourceId: source.id,
 				publishedCommit,
 			})
-			const liveDepPins = isCredentialStamp(existing)
+			const liveDepPins = isStoredCredentialStamp(existing)
 				? await resolvePublishedCredentialDepStamps({
 						env: input.env,
 						userId: savedPackage.userId,
@@ -450,7 +438,7 @@ export async function runCredentialStampFleet(input: {
 					})
 				: []
 			const stampCurrent =
-				isCredentialStamp(existing) &&
+				isStoredCredentialStamp(existing) &&
 				stampKeysMatchPlan(existing, plan.keys) &&
 				stampDepPinsMatch(existing, liveDepPins)
 			if (stampCurrent) {

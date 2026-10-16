@@ -1,7 +1,8 @@
 /**
  * Persist a package's credential stamp next to its published artifact
  * (issue #3836 phase 1). Best effort like credential-needs: a missing stamp
- * is rebuilt on the next publish; runtime fail-closed is phase 3.
+ * is rebuilt on the next publish. A stored stamp is what turns on runtime
+ * fail-closed for that package (issue #3836 phase 3).
  */
 import * as Sentry from '@sentry/cloudflare'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
@@ -15,6 +16,7 @@ import {
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import {
 	buildCredentialStamp,
+	isStoredCredentialStamp,
 	mergeCredentialStampIntoManifestFiles,
 	omitOversizedCredentialStampModules,
 	scanCredentialStamp,
@@ -22,19 +24,6 @@ import {
 	type CredentialStamp,
 } from './credential-stamp.ts'
 import { packageSourceFiles } from './credential-needs-closure.ts'
-
-function isCredentialStamp(value: unknown): value is CredentialStamp {
-	if (value == null || typeof value !== 'object' || Array.isArray(value)) {
-		return false
-	}
-	const record = value as Record<string, unknown>
-	return (
-		record.version === 1 &&
-		typeof record.stampHash === 'string' &&
-		Array.isArray(record.keys) &&
-		Array.isArray(record.depStamps)
-	)
-}
 
 /**
  * Resolve live dependency stamp pins for a package file map (same pins
@@ -86,7 +75,7 @@ async function loadDependencyStamps(input: {
 				sourceId: resolution.row.sourceId,
 				publishedCommit,
 			})
-			if (!isCredentialStamp(stored)) {
+			if (!isStoredCredentialStamp(stored)) {
 				// Pre-stamp dependency: pin an empty stamp hash so the root
 				// still records the published commit. Phase 2 republish fills
 				// real hashes; phase 3 refuses drift.

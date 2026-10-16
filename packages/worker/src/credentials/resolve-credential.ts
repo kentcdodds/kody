@@ -76,6 +76,10 @@ import {
 } from './secret-resolvers.ts'
 import { type PackageStamp } from './package-stamp.ts'
 import { assertSelfPublishedPackageResolvesNothing } from './self-published-package-guard.ts'
+import {
+	assertCredentialUsesDeclared,
+	type CredentialNeedReference,
+} from './credential-need-enforcement.ts'
 import { signingCredentialResolver } from './signing-resolver.ts'
 import { urlCredentialResolver } from './url-resolver.ts'
 
@@ -104,6 +108,44 @@ export async function resolveCredential<T extends CredentialTarget>(
 		credentialResolvers[input.credential.use] as CredentialResolver<T['use']>,
 		input,
 	)
+}
+
+/**
+ * Name-based uses a credential stamp seals. Webhook enablement secret and
+ * integration names, and id-based client uses, stay on the legacy path:
+ * enablement picks are not stamp keys, and client uses were already checked
+ * as `credential(key)` before this door.
+ */
+function credentialUseNeedReference(
+	credential: CredentialTarget,
+): CredentialNeedReference | null {
+	switch (credential.use) {
+		case 'secret':
+			return {
+				use: 'secret',
+				name: credential.name,
+				scope: credential.scope ?? null,
+			}
+		case 'provider-secret':
+			return { use: 'provider', provider: credential.provider }
+		case 'package-secret-mount':
+			return { use: 'secret', name: credential.alias, scope: null }
+		case 'webhook-secret':
+		case 'integration-token':
+		case 'integration-refresh':
+		case 'mcp-connection':
+		case 'url':
+		case 'login':
+		case 'signing':
+		case 'client-key':
+		case 'client-oauth':
+		case 'client-oauth-refresh':
+			return null
+		default: {
+			const exhaustive: never = credential
+			throw new Error(`Unhandled credential use: ${String(exhaustive)}`)
+		}
+	}
 }
 
 async function resolveWith<U extends CredentialUse>(
@@ -152,6 +194,17 @@ async function resolveWith<U extends CredentialUse>(
 			packageId: input.packageStamp?.packageId ?? input.runPackageId,
 			credentialName: subject.name,
 		})
+		const packageId = input.packageStamp?.packageId ?? null
+		const reference = credentialUseNeedReference(credential)
+		if (packageId && reference) {
+			await assertCredentialUsesDeclared({
+				env: input.env,
+				request: input.actor,
+				orgId: input.orgId,
+				packageId,
+				references: [reference],
+			})
+		}
 		const handle = await resolver.resolve({ input, credential, subject })
 		await handle.authorize()
 		result = await handle.apply()

@@ -200,20 +200,24 @@ credentials; opt-in types that a package can declare are described in
   package without slots. See
   [Placeholders in `fetch`](./secrets-and-values.md#placeholders-in-fetch).
 
-#### Declare what someone else's run may use
+#### Declare what a stamped package may use
 
-Your own package needs no declarations. That means a package in your personal
-org that is not an unadopted Community fork and is not internet-visible. A
-package anyone else runs may use only the credentials it declares in
-`kody.credentials`: a team-org package, one a Use collaborator runs, an
-unadopted fork, or any internet-visible package. That covers `{{secret:NAME}}`,
-`{{integration-token:NAME}}`, vault refs (declare the provider), and
-`credential(key)` / `credentials(key)`. An undeclared use fails with
-`credential_need_undeclared`, naming the package and the key to add. A slot with
-no `kind` covers any of them; slots its imports declare count too. A name
-mounted in `kody.secretMounts` still needs a slot when a placeholder fills it.
-The check is behind the `credential-need-enforcement` flag (see
-[ADR 0068](../contributing/decisions/0068-credentials-own-placement-scoped-clients.md#amendment-2026-10-15-credential-need-enforcement)).
+A package whose publish stored a credential stamp may use only the credentials
+its `kody.credentials` closure declares. That includes a run by the package's
+author. It covers `{{secret:NAME}}`, `{{integration-token:NAME}}`, vault refs
+(declare the provider), `credential(key)` / `credentials(key)`, and
+`secretJwtSign`. An undeclared use fails with `credential_need_undeclared`,
+naming the package and the key to add. A slot with no `kind` covers any of them;
+slots its imports declare count too. `credential.named()` is refused. This does
+not depend on the `credential-need-enforcement` flag.
+
+A package with no stamp keeps the previous path. Your own unstamped package
+needs no declarations: a package in your personal org that is not an unadopted
+Community fork and is not internet-visible. When the
+`credential-need-enforcement` flag is on, a package anyone else runs may use
+only the credentials it declares. The flag stays off until that legacy path can
+go away, so unstamped packages keep working as they do today. See
+[ADR 0068](../contributing/decisions/0068-credentials-own-placement-scoped-clients.md#amendment-2026-10-16-stamped-packages-fail-closed).
 
 #### Opt-in: credential clients
 

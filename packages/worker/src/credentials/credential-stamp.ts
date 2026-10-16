@@ -99,6 +99,23 @@ export type CredentialStamp = {
 	stampHash: string
 }
 
+/** True for a credential-stamp.json blob stored at publish or backfill. */
+export function isStoredCredentialStamp(
+	value: unknown,
+): value is CredentialStamp {
+	if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+		return false
+	}
+	const record = value as Record<string, unknown>
+	return (
+		record.version === credentialStampVersion &&
+		typeof record.stampHash === 'string' &&
+		Array.isArray(record.keys) &&
+		record.keys.every((key) => typeof key === 'string') &&
+		Array.isArray(record.depStamps)
+	)
+}
+
 export type CredentialStampGateFailure = {
 	code:
 		| 'non_literal'

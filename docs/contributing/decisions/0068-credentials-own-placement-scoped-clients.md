@@ -25,7 +25,10 @@
   [Amendment 2026-10-15](#amendment-2026-10-15-credential-need-enforcement));
   2026-10-16 (Kent: multiple minted URLs per declared webhook name with instance
   labels and separate Approve each — see
-  [Amendment 2026-10-16](#amendment-2026-10-16-webhook-multi-instance))
+  [Amendment 2026-10-16](#amendment-2026-10-16-webhook-multi-instance));
+  2026-10-16 (Kent: packages that stored a credential stamp may use only
+  declared slots; unstamped packages keep the legacy path — see
+  [Amendment 2026-10-16](#amendment-2026-10-16-stamped-packages-fail-closed))
 - **Supersedes in part:** [0021](./0021-publish-gated-package-composition.md)
   (credential authority for the opt-in types used through scoped clients), and
   credentials plan v4 section 3.3 (assignments) and section 3.4 (placeholder
@@ -757,3 +760,32 @@ that reads a shared database or sends email for every visitor had no way to.
   `anonymous`).
 - **Unchanged.** Credential-need enforcement and the self-published package
   guard still apply; a self-published app gets no credentials either way.
+
+## Amendment 2026-10-16: stamped packages fail closed
+
+Kent approved this on 2026-10-16
+([#3836](https://github.com/kentcdodds/kody/issues/3836)). Phase 2 left
+published packages that cannot be sealed. Those packages keep running. Turning
+on the global `credential-need-enforcement` flag would limit them too, so the
+flag stays off.
+
+- **Who is limited.** A package whose current published commit has a stored
+  credential stamp (`credential-stamp.json` next to the published artifact). The
+  limit applies to every run of that package, including its author's. Ad hoc
+  code and packages with no stamp are not limited by this rule.
+- **What counts as declared.** The same needs closure as the 2026-10-15
+  amendment: the package's `kody.credentials` slots, including needs its imports
+  declare. A use the stored closure misses is checked again against a closure
+  recomputed from imports.
+- **Where it is checked.** `credential(key)` / `credentials(key)`, fetch
+  placeholders, vault placeholders, `secretJwtSign`, and `packageSecrets` mount
+  reads. `credential.named()` is refused. Webhook enablement `secretName` /
+  integration picks, and id-based credential-client uses that already passed the
+  key check, stay on the legacy access path so live webhooks and declared client
+  uses keep working.
+- **Unstamped packages.** Unchanged: implicit user-secret read, author
+  exemption, and the global flag (off). Owners convert by republishing through
+  the publish gate. There is no forced migration and no owner email.
+- **Flag.** Do not flip `credential-need-enforcement` to mean "phase 3 is on".
+  Stamped packages are enforced because a stamp is stored, not because the flag
+  changed.

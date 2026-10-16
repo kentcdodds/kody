@@ -18,6 +18,7 @@ import {
 	CredentialNotFoundError,
 	CredentialRequestRefusedError,
 } from './credential-request.ts'
+import { CredentialNeedUndeclaredError } from './credential-need-enforcement.ts'
 import { type PackageStamp } from './package-stamp.ts'
 
 export const credentialResolveAuditAction = 'credential.resolve'
@@ -51,6 +52,9 @@ export function credentialResolutionOutcomeForError(
 		return { result: 'denied', reason: error.code }
 	}
 	if (error instanceof CredentialRequestRefusedError) {
+		return { result: 'denied', reason: error.code }
+	}
+	if (error instanceof CredentialNeedUndeclaredError) {
 		return { result: 'denied', reason: error.code }
 	}
 	if (error instanceof CredentialNotFoundError) {
