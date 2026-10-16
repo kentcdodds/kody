@@ -1,6 +1,7 @@
 import { run } from 'remix/component'
 import { resolveClientFrame } from '#client/frame-resolve.ts'
 import { preloadClientRouteModules } from '#client/lazy-route.tsx'
+import { clearUnknownStartReleaseReloadFlag } from '#client/reload-on-unknown-start-release.ts'
 import {
 	captureClientException,
 	initSentryClient,
@@ -66,6 +67,10 @@ async function boot() {
 		} catch {
 			// Storage may be unavailable (private mode); the flag is best-effort.
 		}
+		// Successful boot: allow a later deploy's stale Start release to
+		// recover once more (KODY-9E). Keep the flag if preload failed so a
+		// failed recovery cannot loop.
+		clearUnknownStartReleaseReloadFlag()
 	} catch (error: unknown) {
 		console.error('Client route preload failed:', error)
 		// A stale cached entry referencing rotated chunk hashes cannot hydrate
@@ -114,6 +119,9 @@ async function boot() {
 	// buttons are visible while click handlers are still unbound. Tests wait
 	// on this marker instead of racing that gap.
 	document.documentElement.dataset.hydrated = 'true'
+	// Hydration succeeded even if preload earlier failed — clear so a later
+	// deploy can still one-shot reload (KODY-9E).
+	clearUnknownStartReleaseReloadFlag()
 }
 
 void boot().catch((error: unknown) => {

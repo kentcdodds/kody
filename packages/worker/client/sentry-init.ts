@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/browser'
+import { reloadOnUnknownStartRelease } from '#client/reload-on-unknown-start-release.ts'
 import { filterBrowserSentryEvent } from '#client/sentry-browser-filters.ts'
 import { type SentryClientConfig } from '#universal/sentry-config.ts'
 
@@ -73,6 +74,15 @@ export function initBrowserSentry(config: SentryClientConfig) {
 		// 7682968915, 7687920474, 7689579030, 7690163947, 7696001937,
 		// 7715934699, 7717003182, 7777463624, 7795797021.
 		beforeSend(event, hint) {
+			// Stale Start release after deploy (KODY-9E): recover with one hard
+			// reload even when the SDK (not captureClientException) captured
+			// the error — buffer listeners are gone after ensureSentryLoaded.
+			// One-shot guard lives in the helper; filter still drops the event.
+			reloadOnUnknownStartRelease(
+				hint.originalException ??
+					event.message ??
+					event.exception?.values?.[0]?.value,
+			)
 			return filterBrowserSentryEvent(event, hint.originalException)
 		},
 	})
