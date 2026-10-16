@@ -38,6 +38,8 @@ const { logMcpEvent } = await import('./observability.ts')
 const { assertKodyDescriptionLength, KODY_DESCRIPTION_MAX_LENGTH } =
 	await import('#worker/package-registry/types.ts')
 const { McpCallerError } = await import('./caller-error.ts')
+const { requireMcpRequest, requireMcpUser } =
+	await import('./capabilities/meta/require-user.ts')
 const { executeInvokeMissingInputMessage } = await import('./execute-invoke.ts')
 const { PackageSecretAccessDeniedError } =
 	await import('./secrets/package-access.ts')
@@ -614,4 +616,21 @@ test('package name, missing-import, execute-input, and description caller errors
 		)
 	})
 	expect(sentryMock.captureException).toHaveBeenCalledTimes(1)
+})
+
+test('unauthenticated capability calls stay off Sentry (KODY-9C)', () => {
+	const missingUser = thrownBy(() => requireMcpUser({ user: null }))
+	const missingRequest = thrownBy(() => requireMcpRequest({}))
+	for (const error of [missingUser, missingRequest]) {
+		expect(error).toBeInstanceOf(McpCallerError)
+		captureMcpEvents(() => {
+			logMcpEvent(
+				handlerFailure('metaGetCurrentUser', 'meta', error.name, error, {
+					hasUser: false,
+					userId: undefined,
+				}),
+			)
+		})
+		expectNoSentry()
+	}
 })
