@@ -60,6 +60,18 @@ export const listedWebhookSchema = z.object({
 	minted: z
 		.boolean()
 		.describe('True when a URL secret has been minted for this webhook.'),
+	endpoint_id: z
+		.string()
+		.nullable()
+		.describe(
+			'Webhook endpoint id when minted. Pass to rotate/enable/disable when several URLs share the name. Null when not minted.',
+		),
+	instance_label: z
+		.string()
+		.nullable()
+		.describe(
+			'Short label when several URLs share the declared webhook name. Null when unlabeled or not minted.',
+		),
 	handle: z
 		.string()
 		.nullable()
@@ -164,6 +176,8 @@ export function toListedWebhookCapability(webhook: {
 	replay?: z.infer<typeof webhookReplayPublicSchema>
 	challenge: PackageWebhookChallenge | null
 	minted: boolean
+	endpointId: string | null
+	instanceLabel: string | null
 	handle: string | null
 	urlHost: string | null
 	enabled: boolean | null
@@ -185,6 +199,8 @@ export function toListedWebhookCapability(webhook: {
 		replay: webhook.replay ?? null,
 		challenge: webhook.challenge,
 		minted: webhook.minted,
+		endpoint_id: webhook.endpointId,
+		instance_label: webhook.instanceLabel,
 		handle: webhook.handle,
 		url_host: webhook.urlHost,
 		enabled: webhook.enabled,

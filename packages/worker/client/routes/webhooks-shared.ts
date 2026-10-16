@@ -21,6 +21,13 @@ export const webhooksDocHref = `${docHref('triggers')}#inbound-webhooks-the-exte
 
 export type WebhookIntent = 'mint' | 'rotate' | 'reveal' | 'enable' | 'disable'
 
+/** Declared count is unique names; list rows may be one per minted URL. */
+export function webhookDeclaredCount(
+	webhooks: ReadonlyArray<{ name: string }>,
+) {
+	return new Set(webhooks.map((webhook) => webhook.name)).size
+}
+
 /** Anchor of the Webhooks section on package settings. */
 export const packageWebhooksSectionId = 'webhooks'
 

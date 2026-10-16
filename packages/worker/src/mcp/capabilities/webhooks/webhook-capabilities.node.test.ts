@@ -211,6 +211,8 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 			verification: null,
 			challenge: null,
 			minted: false,
+			endpointId: null,
+			instanceLabel: null,
 			handle: null,
 			urlHost: null,
 			enabled: null,

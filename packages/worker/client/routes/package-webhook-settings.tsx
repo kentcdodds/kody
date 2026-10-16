@@ -9,6 +9,7 @@ import {
 	fetchPackageWebhooks,
 	packageWebhooksSectionId,
 	postPackageWebhookIntent,
+	webhookDeclaredCount,
 	webhookFailureMessage,
 	webhookSuccessMessage,
 	webhooksDocHref,
@@ -197,6 +198,7 @@ export function createPackageWebhooksController(handle: Handle) {
 		const isCurrent = loadedFor === keyFor(ref)
 		const showReady = isCurrent && status === 'ready'
 		const showLoading = !isCurrent || status === 'idle' || status === 'loading'
+		const declaredCount = webhookDeclaredCount(webhooks)
 		const mintedCount = webhooks.filter((webhook) => webhook.minted).length
 		return (
 			<section
@@ -246,7 +248,7 @@ export function createPackageWebhooksController(handle: Handle) {
 				{showReady && webhooks.length > 0 ? (
 					<>
 						<p mix={css(mutedCss)} data-testid="package-webhook-settings-count">
-							{webhooks.length} declared · {mintedCount} minted
+							{declaredCount} declared · {mintedCount} minted
 						</p>
 						<div mix={css(cardListCss)}>
 							{webhooks.map((webhook, index) => {
