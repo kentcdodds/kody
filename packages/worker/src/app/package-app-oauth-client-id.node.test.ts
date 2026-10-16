@@ -19,10 +19,15 @@ test('package-app OAuth client ids are owner/leaf with optional @', () => {
 	expect(parsePackageAppOauthClientId('ab/x')).toBeNull()
 	expect(parsePackageAppOauthClientId('kentcdodds/a/b')).toBeNull()
 	expect(parsePackageAppOauthClientId('kentcdodds/%ZZdemo')).toBeNull()
+	expect(parsePackageAppOauthClientId('KentCDodds/World-Builder')).toEqual({
+		username: 'kentcdodds',
+		kodyId: 'world-builder',
+		clientId: 'kentcdodds/world-builder',
+	})
 	expect(
 		formatPackageAppOauthClientId({
 			username: 'KentCDodds',
-			kodyId: 'demo',
+			kodyId: 'Demo',
 		}),
 	).toBe('kentcdodds/demo')
 })

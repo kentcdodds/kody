@@ -2,7 +2,11 @@ import * as Sentry from '@sentry/cloudflare'
 import { OAuthProvider } from '@cloudflare/workers-oauth-provider'
 import { getWorkerSentryOptions } from './sentry-options.ts'
 import { handleRequest } from '#app/handler.ts'
-import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { getAppBaseUrl, getPackageAppBaseUrl } from '#worker/app-base-url.ts'
+import {
+	handlePackageAppOauthHostAuth,
+	isPackageAppOauthHostAuthPath,
+} from '#app/package-app-oauth-host-auth.ts'
 import {
 	handleAuthorizeRouteException,
 	handleAuthorizeRequest,
@@ -144,6 +148,7 @@ const rateLimitedAuthPaths = new Set([
 	'/auth',
 	...socialLoginStartPaths,
 	'/oauth/authorize',
+	packageAppOauthPaths.authorize,
 	'/password-reset',
 	'/password-reset/confirm',
 	'/verify/2fa.json',
@@ -320,6 +325,22 @@ const appHandler = withCors({
 					headers: { 'Cache-Control': 'no-store' },
 				})
 			}
+		}
+
+		// Preview / path-based inline package apps leave PACKAGE_APP_BASE_URL
+		// unset and allowlist the app-origin callback. Dispatch `/_kody/auth/*`
+		// here so consent redirects land on a live handler (subdomain / custom
+		// host dispatch lives in package-app-origin instead).
+		if (
+			isPackageAppOauthHostAuthPath(url.pathname) &&
+			!getPackageAppBaseUrl({ env })
+		) {
+			const hostAuth = await handlePackageAppOauthHostAuth({
+				request,
+				env,
+				url,
+			})
+			if (hostAuth) return hostAuth
 		}
 
 		if (url.pathname === oauthPaths.authorize) {

@@ -25,12 +25,26 @@ function randomCodePlaintext() {
 	return bytesToBase64Url(bytes)
 }
 
+/** Drop expired authorization codes (index-backed). Called on mint. */
+export async function deleteExpiredPackageAppOauthCodes(input: {
+	env: Env
+	now?: number
+}) {
+	const now = input.now ?? Date.now()
+	await input.env.APP_DB.prepare(
+		`DELETE FROM package_app_oauth_codes WHERE expires_at <= ?`,
+	)
+		.bind(new Date(now).toISOString())
+		.run()
+}
+
 export async function mintPackageAppOauthCode(input: {
 	env: Env
 	record: Omit<PackageAppOauthCodeRecord, 'exp'>
 	now?: number
 }): Promise<{ code: string; expiresAt: number } | null> {
 	const now = input.now ?? Date.now()
+	await deleteExpiredPackageAppOauthCodes({ env: input.env, now })
 	const code = randomCodePlaintext()
 	const exp = now + codeTtlMs
 	const hash = await sha256Base64Url(code)

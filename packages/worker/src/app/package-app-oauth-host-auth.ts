@@ -1,6 +1,7 @@
 import { isSecureRequest } from '#app/auth-session.ts'
 import {
 	getAppBaseUrl,
+	getPackageAppBaseUrl,
 	parsePackageAppRequestHost,
 } from '#worker/app-base-url.ts'
 import { consumePackageAppOauthCode } from '#app/package-app-oauth-codes.ts'
@@ -45,11 +46,14 @@ import { isPackageAppCustomDomainsEnabled } from '#worker/package-app-custom-hos
 import { buildUserAvatarUrl } from '#worker/community/public-urls.ts'
 import { resolveDisplayName } from '#worker/identity/username.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import { resolvePackageAppOauthInlineIdentity } from '#app/package-app-oauth-inline-identity.ts'
 
 /**
  * Host-root `/_kody/auth/*` routes on package-app origins and verified custom
- * domains. Starts PKCE, exchanges the authorization code for the host-only
- * package-app session cookie, clears that session on logout, and exposes `/me`.
+ * domains (and on the app origin when `PACKAGE_APP_BASE_URL` is unset for
+ * preview / path-based inline serving). Starts PKCE, exchanges the
+ * authorization code for the host-only package-app session cookie, clears that
+ * session on logout, and exposes `/me`.
  */
 
 function redirectResponse(location: string, setCookies: Array<string> = []) {
@@ -87,11 +91,12 @@ function normalizeReturnTo(raw: string | null, origin: string): string {
 }
 
 function readAppSlugParam(url: URL) {
-	return (
+	const raw = (
 		url.searchParams.get('app') ??
 		url.searchParams.get('package') ??
 		url.searchParams.get('kody_id')
 	)?.trim()
+	return raw ? raw.toLowerCase() : undefined
 }
 
 async function resolveHostApp(input: {
@@ -110,20 +115,30 @@ async function resolveHostApp(input: {
 	}
 
 	const hostname = normalizeCustomHostname(input.url.hostname)
-	if (!hostname) return null
-	if (!(await isPackageAppCustomDomainsEnabled(input.env.APP_DB))) return null
-	const mapping = await lookupCachedPackageAppCustomHostname({
-		db: input.env.APP_DB,
-		hostname,
-	})
-	if (!mapping) return null
-	if (isVerifiedAppCustomHostname(mapping)) {
-		return { orgUsername: mapping.username, kodyId: mapping.kodyId }
+	if (hostname && (await isPackageAppCustomDomainsEnabled(input.env.APP_DB))) {
+		const mapping = await lookupCachedPackageAppCustomHostname({
+			db: input.env.APP_DB,
+			hostname,
+		})
+		if (mapping) {
+			if (isVerifiedAppCustomHostname(mapping)) {
+				return {
+					orgUsername: mapping.username,
+					kodyId: mapping.kodyId.toLowerCase(),
+				}
+			}
+			if (isVerifiedOrgCustomHostname(mapping)) {
+				const app = readAppSlugParam(input.url)
+				if (!app) return null
+				return { orgUsername: mapping.username, kodyId: app }
+			}
+		}
 	}
-	if (isVerifiedOrgCustomHostname(mapping)) {
-		const app = readAppSlugParam(input.url)
-		if (!app) return null
-		return { orgUsername: mapping.username, kodyId: app }
+
+	// Preview / path-based inline serving: no package-app origin, so resolve
+	// from query params or return_to on the app origin itself.
+	if (!getPackageAppBaseUrl({ env: input.env })) {
+		return resolvePackageAppOauthInlineIdentity(input.url)
 	}
 	return null
 }
@@ -307,13 +322,22 @@ async function handleMe(input: { request: Request; env: Env; url: URL }) {
 
 	const app = await resolveHostApp(input)
 	const slug = app?.kodyId ?? readAppSlugParam(input.url)
-	const handle = app?.orgUsername ?? parsedSession.session.username
+	const handle = (
+		app?.orgUsername ?? parsedSession.session.username
+	).toLowerCase()
 	if (!slug) {
 		return Response.json(
 			{ error: 'missing_app', message: 'Pass ?app={leaf} on this host.' },
 			{ status: 400, headers: { 'Cache-Control': 'no-store' } },
 		)
 	}
+
+	const grant = await findLivePackageAppOauthGrant({
+		db: input.env.APP_DB,
+		personId: parsedSession.session.stableUserId,
+		orgUsername: handle,
+		kodyId: slug,
+	})
 
 	let role: string | null = null
 	const ticket = await readPackageAppTicket({
@@ -329,7 +353,9 @@ async function handleMe(input: { request: Request; env: Env; url: URL }) {
 	})
 	if (ticket) {
 		role = ticket.visitor.role
-	} else {
+	} else if (!grant) {
+		// No ticket and no OAuth grant: only package executors (owners /
+		// collaborators with app:execute) may read /me.
 		const org = await resolvePackageAppOrgOwnerByHandle({
 			env: input.env,
 			handle,
@@ -375,12 +401,6 @@ async function handleMe(input: { request: Request; env: Env; url: URL }) {
 		: undefined
 
 	let emailClaim: string | undefined
-	const grant = await findLivePackageAppOauthGrant({
-		db: input.env.APP_DB,
-		personId: parsedSession.session.stableUserId,
-		orgUsername: handle,
-		kodyId: slug,
-	})
 	if (grant && scopesIncludeEmail(grant.scopes)) {
 		emailClaim = person.email
 	}

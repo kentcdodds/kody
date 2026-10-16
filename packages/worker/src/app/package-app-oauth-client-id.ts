@@ -36,12 +36,13 @@ export function parsePackageAppOauthClientId(
 	const slash = withoutAt.indexOf('/')
 	if (slash <= 0 || slash === withoutAt.length - 1) return null
 	const username = withoutAt.slice(0, slash).toLowerCase()
-	const kodyId = withoutAt.slice(slash + 1)
+	const kodyIdRaw = withoutAt.slice(slash + 1)
 	if (!isDnsSafeUsername(username)) return null
-	if (!kodyIdPattern.test(kodyId)) return null
+	if (!kodyIdPattern.test(kodyIdRaw)) return null
 	// Reject nested paths / extra segments.
-	if (kodyId.includes('/')) return null
+	if (kodyIdRaw.includes('/')) return null
 	if (!dnsSafeUsernamePattern.test(username)) return null
+	const kodyId = kodyIdRaw.toLowerCase()
 	return {
 		username,
 		kodyId,
@@ -53,5 +54,5 @@ export function formatPackageAppOauthClientId(input: {
 	username: string
 	kodyId: string
 }) {
-	return `${input.username.trim().toLowerCase()}/${input.kodyId.trim()}`
+	return `${input.username.trim().toLowerCase()}/${input.kodyId.trim().toLowerCase()}`
 }
