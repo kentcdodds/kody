@@ -1152,9 +1152,10 @@ function isUnknownStartReleaseSentryEvent(
 	)
 }
 
-export function filterUnknownStartReleaseSentryEvent<
-	T extends SentryErrorEventLike,
->(event: T, originalException?: unknown): T | null {
+function filterUnknownStartReleaseSentryEvent<T extends SentryErrorEventLike>(
+	event: T,
+	originalException?: unknown,
+): T | null {
 	if (isUnknownStartReleaseSentryEvent(event, originalException)) {
 		return null
 	}
