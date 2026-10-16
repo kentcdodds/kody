@@ -38,6 +38,34 @@ export async function post(userReport: string) {
 	expect(lines(source)).toEqual([3])
 })
 
+test('uses the last body and headers properties when keys are duplicated', () => {
+	expect(
+		lines(`
+			fetch(url, {
+				body: userText,
+				body: 'fixed',
+			})
+		`),
+	).toEqual([])
+	expect(
+		lines(`
+			fetch(url, {
+				headers: {},
+				headers: { 'x-kody-secret-resolution': 'headers-only' },
+				body: userText,
+			})
+		`),
+	).toEqual([])
+	expect(
+		lines(`
+			fetch(url, {
+				body: 'fixed',
+				body: userText,
+			})
+		`),
+	).toEqual([2])
+})
+
 test('skips author-written bodies and explicit resolution modes', () => {
 	expect(
 		lines(`

@@ -139,10 +139,11 @@ function callSendsUnresolvedDynamicBody(args: Array<string>): boolean {
 	if (init == null || !init.startsWith('{')) return false
 	const properties = readObjectProperties(init)
 	if (properties == null) return false
-	const body = properties.find((property) => property.key === 'body')
+	// Last same-key wins, matching object-literal evaluation.
+	const body = lastProperty(properties, 'body')
 	if (body == null || body.spread || body.method) return false
 	if (isStaticExpression(body.value)) return false
-	const headers = properties.find((property) => property.key === 'headers')
+	const headers = lastProperty(properties, 'headers')
 	if (headers == null) return true
 	if (headers.spread || headers.method) return false
 	return headersLeaveBodyResolutionOn(headers.value)
@@ -158,13 +159,29 @@ function headersLeaveBodyResolutionOn(headersValue: string): boolean {
 	const properties = readObjectProperties(text)
 	if (properties == null) return false
 	if (properties.some((property) => property.spread)) return false
-	const resolution = properties.find(
-		(property) => property.key?.toLowerCase() === secretResolutionHeaderName,
-	)
+	const resolution = lastProperty(properties, secretResolutionHeaderName, {
+		caseInsensitive: true,
+	})
 	if (resolution == null || resolution.method) return true
 	const mode = staticStringValue(resolution.value)
 	if (mode == null) return false
 	return mode === 'on'
+}
+
+function lastProperty(
+	properties: ReadonlyArray<ObjectProperty>,
+	key: string,
+	options?: { caseInsensitive?: boolean },
+): ObjectProperty | undefined {
+	const needle = options?.caseInsensitive ? key.toLowerCase() : key
+	for (let index = properties.length - 1; index >= 0; index -= 1) {
+		const property = properties[index]!
+		const name = property.key
+		if (name == null) continue
+		const match = options?.caseInsensitive ? name.toLowerCase() : name
+		if (match === needle) return property
+	}
+	return undefined
 }
 
 type ObjectProperty = {
