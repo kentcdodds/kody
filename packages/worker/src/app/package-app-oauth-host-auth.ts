@@ -6,6 +6,7 @@ import {
 } from '#worker/app-base-url.ts'
 import { consumePackageAppOauthCode } from '#app/package-app-oauth-codes.ts'
 import { formatPackageAppOauthClientId } from '#app/package-app-oauth-client-id.ts'
+import { resolvePackageAppOauthClient } from '#app/package-app-oauth-client-resolve.ts'
 import { findLivePackageAppOauthGrant } from '#app/package-app-oauth-grants.ts'
 import {
 	createPackageAppOauthCodeVerifier,
@@ -99,6 +100,25 @@ function readAppSlugParam(url: URL) {
 	return raw ? raw.toLowerCase() : undefined
 }
 
+async function resolveVerifiedHostApp(input: {
+	env: Env
+	orgUsername: string
+	kodyId: string
+}): Promise<{ orgUsername: string; kodyId: string } | null> {
+	// Never trust a raw subdomain label or query param as the OAuth owner —
+	// the package must exist and be served under that handle.
+	const resolved = await resolvePackageAppOauthClient({
+		env: input.env,
+		username: input.orgUsername,
+		kodyId: input.kodyId,
+	})
+	if (!resolved) return null
+	return {
+		orgUsername: resolved.client.username,
+		kodyId: resolved.client.kodyId,
+	}
+}
+
 async function resolveHostApp(input: {
 	request: Request
 	env: Env
@@ -111,7 +131,11 @@ async function resolveHostApp(input: {
 	if (requestHost?.kind === 'user-subdomain') {
 		const app = readAppSlugParam(input.url)
 		if (!app) return null
-		return { orgUsername: requestHost.username, kodyId: app }
+		return await resolveVerifiedHostApp({
+			env: input.env,
+			orgUsername: requestHost.username,
+			kodyId: app,
+		})
 	}
 
 	const hostname = normalizeCustomHostname(input.url.hostname)
@@ -122,15 +146,20 @@ async function resolveHostApp(input: {
 		})
 		if (mapping) {
 			if (isVerifiedAppCustomHostname(mapping)) {
-				return {
+				return await resolveVerifiedHostApp({
+					env: input.env,
 					orgUsername: mapping.username,
 					kodyId: mapping.kodyId.toLowerCase(),
-				}
+				})
 			}
 			if (isVerifiedOrgCustomHostname(mapping)) {
 				const app = readAppSlugParam(input.url)
 				if (!app) return null
-				return { orgUsername: mapping.username, kodyId: app }
+				return await resolveVerifiedHostApp({
+					env: input.env,
+					orgUsername: mapping.username,
+					kodyId: app,
+				})
 			}
 		}
 	}
@@ -138,7 +167,13 @@ async function resolveHostApp(input: {
 	// Preview / path-based inline serving: no package-app origin, so resolve
 	// from query params or return_to on the app origin itself.
 	if (!getPackageAppBaseUrl({ env: input.env })) {
-		return resolvePackageAppOauthInlineIdentity(input.url)
+		const inline = resolvePackageAppOauthInlineIdentity(input.url)
+		if (!inline) return null
+		return await resolveVerifiedHostApp({
+			env: input.env,
+			orgUsername: inline.orgUsername,
+			kodyId: inline.kodyId,
+		})
 	}
 	return null
 }
@@ -147,7 +182,7 @@ async function handleLogin(input: { request: Request; env: Env; url: URL }) {
 	const app = await resolveHostApp(input)
 	if (!app) {
 		return badRequest(
-			'Missing app identity for sign-in. On *.kody.run pass ?app={leaf}.',
+			'Unknown or unpublished package app for this host. On *.kody.run pass ?app={leaf} for a published package under this owner.',
 		)
 	}
 	const { scopes, error: scopeError } = parsePackageAppOauthScopes(

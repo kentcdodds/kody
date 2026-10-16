@@ -9,6 +9,7 @@ import {
 } from '#app/package-app-oauth-consent-copy.ts'
 import { mintPackageAppOauthCode } from '#app/package-app-oauth-codes.ts'
 import { parsePackageAppOauthClientId } from '#app/package-app-oauth-client-id.ts'
+import { resolvePackageAppOauthClient } from '#app/package-app-oauth-client-resolve.ts'
 import {
 	findLivePackageAppOauthGrant,
 	grantCoversScopes,
@@ -258,8 +259,8 @@ async function parseAndValidateAuthorizeRequest(input: {
 	env: Env
 	query: AuthorizeQuery
 }) {
-	const client = parsePackageAppOauthClientId(input.query.clientIdRaw)
-	if (!client) {
+	const parsed = parsePackageAppOauthClientId(input.query.clientIdRaw)
+	if (!parsed) {
 		return {
 			ok: false as const,
 			response: redirectWithError({
@@ -270,6 +271,24 @@ async function parseAndValidateAuthorizeRequest(input: {
 			}),
 		}
 	}
+	const resolved = await resolvePackageAppOauthClient({
+		env: input.env,
+		username: parsed.username,
+		kodyId: parsed.kodyId,
+	})
+	if (!resolved) {
+		return {
+			ok: false as const,
+			response: redirectWithError({
+				redirectUri: null,
+				state: input.query.state,
+				error: 'invalid_client',
+				description:
+					'client_id must name a published package app (owner/leaf exists and is served).',
+			}),
+		}
+	}
+	const client = resolved.client
 	// Allowlist redirect_uri before any error redirect that would use it —
 	// otherwise unsupported_response_type becomes an open redirect.
 	if (!input.query.redirectUri) {

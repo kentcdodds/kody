@@ -85,6 +85,28 @@ async function ensureOauthGrantSchema() {
 	).run()
 }
 
+async function seedOwnerPackageApp(slug = 'demo') {
+	const ownerId = testStableUserIdFromEmail(ownerEmail)
+	const now = '2026-10-16T00:00:00.000Z'
+	await env.APP_DB.prepare(
+		`INSERT OR REPLACE INTO saved_packages (
+			id, user_id, name, kody_id, description, tags_json, search_text,
+			source_id, has_app, hidden, is_private, is_internet_visible,
+			created_at, updated_at
+		) VALUES (?, ?, ?, ?, '', '[]', NULL, ?, 1, 0, 1, 0, ?, ?)`,
+	)
+		.bind(
+			`pkg-oauth-${ownerUsername}-${slug}`,
+			ownerId,
+			`@${ownerUsername}/${slug}`,
+			slug,
+			`src-oauth-${ownerUsername}-${slug}`,
+			now,
+			now,
+		)
+		.run()
+}
+
 async function seedOwnerSessionCookie() {
 	await ensureAuditEventsTestSchema(env.AUDIT_DB)
 	await ensureRbacTestSchema(env.APP_DB)
@@ -115,6 +137,7 @@ async function seedOwnerSessionCookie() {
 		email: ownerEmail,
 		username: ownerUsername,
 	})
+	await seedOwnerPackageApp('demo')
 	setAuthSessionSecret(env.COOKIE_SECRET)
 	const setCookie = await createAuthCookie(
 		{
@@ -186,4 +209,62 @@ test('package-app OAuth authorize shows consent for email scope', async () => {
 	expect(body).toContain('Allow')
 	expect(body).toContain('Cancel')
 	expect(body).toContain('data-account-shell')
+})
+
+test('package-app OAuth authorize rejects client_id that is not a published package app', async () => {
+	configureOrigins()
+	const sessionCookie = await seedOwnerSessionCookie()
+	const verifier = 'oauth-workers-test-verifier-32chars!!'
+	const challenge = await createS256CodeChallenge(verifier)
+	const url = new URL(packageAppOauthPaths.authorize, appOrigin)
+	url.searchParams.set('response_type', 'code')
+	// Bogus subdomain-shaped owner label — no such published package.
+	url.searchParams.set('client_id', 'kentcdodds-world-builder/world-builder')
+	url.searchParams.set(
+		'redirect_uri',
+		`https://kentcdodds-world-builder.packages.isolated.test${packageAppOauthPaths.callback}`,
+	)
+	url.searchParams.set('state', 'state-bogus')
+	url.searchParams.set('code_challenge', challenge)
+	url.searchParams.set('code_challenge_method', 'S256')
+	url.searchParams.set('scope', 'profile')
+
+	const response = await workerFetch(url, {
+		headers: { Cookie: sessionCookie },
+	})
+	expect(response.status).toBe(400)
+	await expect(response.text()).resolves.toMatch(
+		/invalid_client|published package app/,
+	)
+})
+
+test('package-app OAuth login on unverified subdomain label rejects without trusting the host as owner', async () => {
+	configureOrigins()
+	await seedOwnerSessionCookie()
+	const loginUrl = new URL(
+		`https://kentcdodds-world-builder.packages.isolated.test${packageAppOauthPaths.login}`,
+	)
+	loginUrl.searchParams.set('app', 'world-builder')
+	const response = await workerFetch(loginUrl)
+	expect(response.status).toBe(400)
+	const body = await response.text()
+	expect(body).toMatch(/Unknown or unpublished package app/)
+	expect(response.headers.get('Location')).toBeNull()
+})
+
+test('package-app OAuth login on a real owner subdomain redirects to authorize with that client_id', async () => {
+	configureOrigins()
+	await seedOwnerSessionCookie()
+	const loginUrl = new URL(
+		`https://${ownerUsername}.packages.isolated.test${packageAppOauthPaths.login}`,
+	)
+	loginUrl.searchParams.set('app', 'demo')
+	const response = await workerFetch(loginUrl)
+	expect(response.status).toBe(302)
+	const location = response.headers.get('Location')
+	expect(location).toBeTruthy()
+	const authorize = new URL(location!)
+	expect(authorize.origin).toBe(appOrigin)
+	expect(authorize.pathname).toBe(packageAppOauthPaths.authorize)
+	expect(authorize.searchParams.get('client_id')).toBe(`${ownerUsername}/demo`)
 })
