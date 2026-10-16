@@ -570,6 +570,75 @@ function filterMetaMaskWalletNoAccountSentryEvent<
 }
 
 /**
+ * Rabby Wallet (`chrome-extension://acmacodkjbdgmoleebolmdjonilkdbch/…`) and
+ * sibling Chrome extensions reject page-injected messaging with
+ * `MessageDisconnectedError: Message channel disconnected` when the
+ * extension's message channel is gone (reload, update, or tab teardown).
+ * The rejection often surfaces as a plain object `{ code, message, stack }`
+ * (EIP-1193-shaped, `code: 4900`) via buffered `unhandledrejection` →
+ * `captureBrowserException` flush. Sentry synthesizes "Object captured as
+ * exception with keys: code, message, stack" because the rejection is not
+ * an `Error`. Signature from production issue 7715934699 / KODY-72 —
+ * flush stack is only our capture path (no chrome-extension frames on the
+ * event); `__serialized__` holds the Rabby object.
+ *
+ * Pre-SDK buffering attributes the flush stack to `captureBrowserException`,
+ * so there are no chrome-extension event frames to require (unlike
+ * Client-has-been-destroyed). Match is intentionally narrow: this exact
+ * "Message channel disconnected" wording (optional `MessageDisconnectedError:`
+ * / `Error:` preface). For plain-object originalExceptions, also accept when
+ * the message matches AND (`code === 4900` OR string `stack` contains
+ * `chrome-extension:`) — message-only is enough for the buffered case
+ * (same as MetaMask wallet-no-account). Never blanket-drop unrelated
+ * `{ code, message, stack }` objects or EIP-1193 `4900` with other messages.
+ */
+const chromeExtensionMessageChannelDisconnectedMessage =
+	/^(?:(?:MessageDisconnectedError|Error):\s*)?Message channel disconnected\.?$/i
+
+function isChromeExtensionMessageChannelDisconnectedMessage(message: string) {
+	return chromeExtensionMessageChannelDisconnectedMessage.test(message.trim())
+}
+
+export function isChromeExtensionMessageChannelDisconnectedError(
+	error: unknown,
+) {
+	if (typeof error === 'string') {
+		return isChromeExtensionMessageChannelDisconnectedMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isChromeExtensionMessageChannelDisconnectedMessage(error.message)
+}
+
+function isChromeExtensionMessageChannelDisconnectedSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	if (isChromeExtensionMessageChannelDisconnectedError(originalException)) {
+		return true
+	}
+	return sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' &&
+			isChromeExtensionMessageChannelDisconnectedMessage(message),
+	)
+}
+
+function filterChromeExtensionMessageChannelDisconnectedSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (
+		isChromeExtensionMessageChannelDisconnectedSentryEvent(
+			event,
+			originalException,
+		)
+	) {
+		return null
+	}
+	return event
+}
+
+/**
  * Chrome extension page hooks reject with "Client has been destroyed" when
  * their background/service-worker client is gone (reload, update, or tab
  * teardown). The rejected promise surfaces on the host page via
@@ -1836,6 +1905,14 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	}
 	if (
 		filterMetaMaskWalletNoAccountSentryEvent(event, originalException) === null
+	) {
+		return null
+	}
+	if (
+		filterChromeExtensionMessageChannelDisconnectedSentryEvent(
+			event,
+			originalException,
+		) === null
 	) {
 		return null
 	}
