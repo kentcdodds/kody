@@ -510,6 +510,8 @@ export async function buildPackageCredentialsView(
 									enabledByYou: false,
 								},
 								canEdit: false,
+								endpointId:
+									primary.kind === 'webhook' ? enablement.instanceId : null,
 								instanceLabel: labelFor(enablement),
 								mappings: [],
 							},
@@ -522,6 +524,7 @@ export async function buildPackageCredentialsView(
 							enabledByYou: true,
 						},
 						canEdit: canEditPrimary,
+						endpointId: primary.kind === 'webhook' ? row.instanceId : null,
 						instanceLabel: labelFor(row),
 						mappings: mappingRowsFor(row, { recordIncomplete: true }),
 					}))

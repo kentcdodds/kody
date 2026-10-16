@@ -354,7 +354,14 @@ export function renderTriggersTab(context: PackageTabContext): RemixNode {
 							username: context.username,
 							kodyId: context.kodyId,
 							changes: [],
-							enable: [trigger.trigger],
+							enable: [
+								{
+									...trigger.trigger,
+									...(trigger.instanceId
+										? { endpointId: trigger.instanceId }
+										: {}),
+								},
+							],
 						})
 					: null
 				return (

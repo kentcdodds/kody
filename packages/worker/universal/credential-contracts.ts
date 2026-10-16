@@ -237,6 +237,8 @@ export type PackageTriggerInstanceView = {
 	}
 	/** Only the enabler edits this instance's credential mappings. */
 	canEdit: boolean
+	/** Webhook only: minted endpoint id this enablement runs. */
+	endpointId?: string | null
 	/** Webhook only: short label for the minted URL this enablement runs. */
 	instanceLabel?: string | null
 	mappings: Array<{
