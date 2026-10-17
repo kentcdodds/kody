@@ -32,29 +32,41 @@ export async function listActiveRejectingProviders(input: {
 	const cutoff = new Date(
 		now.getTime() - emailRejectingProviderTtlMs,
 	).toISOString()
-	const result = await input.db
-		.prepare(
-			`SELECT provider_key, last_rejection_at, rejection_count,
-			        last_recipient_domain, seeded
-			 FROM email_rejecting_providers
-			 WHERE last_rejection_at >= ?
-			 ORDER BY last_rejection_at DESC`,
-		)
-		.bind(cutoff)
-		.all<{
-			provider_key: string
-			last_rejection_at: string
-			rejection_count: number
-			last_recipient_domain: string | null
-			seeded: number
-		}>()
-	return (result.results ?? []).map((row) => ({
-		providerKey: row.provider_key,
-		lastRejectionAt: row.last_rejection_at,
-		rejectionCount: row.rejection_count,
-		lastRecipientDomain: row.last_recipient_domain,
-		seeded: row.seeded === 1,
-	}))
+	try {
+		const result = await input.db
+			.prepare(
+				`SELECT provider_key, last_rejection_at, rejection_count,
+				        last_recipient_domain, seeded
+				 FROM email_rejecting_providers
+				 WHERE last_rejection_at >= ?
+				 ORDER BY last_rejection_at DESC`,
+			)
+			.bind(cutoff)
+			.all<{
+				provider_key: string
+				last_rejection_at: string
+				rejection_count: number
+				last_recipient_domain: string | null
+				seeded: number
+			}>()
+		return (result.results ?? []).map((row) => ({
+			providerKey: row.provider_key,
+			lastRejectionAt: row.last_rejection_at,
+			rejectionCount: row.rejection_count,
+			lastRecipientDomain: row.last_recipient_domain,
+			seeded: row.seeded === 1,
+		}))
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		if (
+			error instanceof TypeError ||
+			/no such table/i.test(message) ||
+			/\.all is not a function/i.test(message)
+		) {
+			return []
+		}
+		throw error
+	}
 }
 
 export async function isRejectingProviderActive(input: {
@@ -155,22 +167,23 @@ export async function findActiveRejectingProviderForRecipient(input: {
 	now?: Date
 	fetchImpl?: typeof fetch
 }): Promise<string | null> {
+	// Skip MX/DoH when nothing is currently marked rejecting — the common
+	// path after delisting and in tests without the policy tables.
+	const active = await listActiveRejectingProviders({
+		db: input.db,
+		now: input.now,
+	})
+	if (active.length === 0) return null
+
 	const mx = await resolveRecipientMxProviders({
 		db: input.db,
 		recipientOrDomain: input.recipient,
 		now: input.now,
 		fetchImpl: input.fetchImpl,
 	})
+	const activeKeys = new Set(active.map((row) => row.providerKey))
 	for (const providerKey of mx.providerKeys) {
-		if (
-			await isRejectingProviderActive({
-				db: input.db,
-				providerKey,
-				now: input.now,
-			})
-		) {
-			return providerKey
-		}
+		if (activeKeys.has(providerKey)) return providerKey
 	}
 	return null
 }

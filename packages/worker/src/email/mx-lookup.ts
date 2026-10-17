@@ -237,7 +237,18 @@ export async function resolveRecipientMxProviders(input: {
 			now,
 		})
 	} catch (error) {
-		console.warn('email-mx-cache-write-failed', error)
+		const message = error instanceof Error ? error.message : String(error)
+		// Incomplete test doubles and pre-migration schemas omit the cache
+		// table or `.run`. Fail open without noise; unexpected errors warn.
+		if (
+			!(
+				error instanceof TypeError ||
+				/no such table/i.test(message) ||
+				/\.run is not a function/i.test(message)
+			)
+		) {
+			console.warn('email-mx-cache-write-failed', error)
+		}
 	}
 	return {
 		domain,

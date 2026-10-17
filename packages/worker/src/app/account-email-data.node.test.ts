@@ -66,6 +66,20 @@ vi.mock('#app/email-verification.ts', () => ({
 	isAccountEmailVerified: vi.fn(async () => true),
 }))
 
+vi.mock('#worker/email/outbound-consecutive-failures.ts', () => ({
+	loadOutboundDeliveryPause: vi.fn(async () => ({
+		pausedAt: null,
+		consecutiveFailures: 0,
+	})),
+	clearOutboundDeliveryPause: vi.fn(async () => false),
+	applyOutboundConsecutiveFailureTracking: vi.fn(async () => ({
+		paused: false,
+		consecutiveFailures: 0,
+	})),
+	emailOutboundDeliveryPausedMessage: 'paused',
+	outboundConsecutiveFailurePauseThreshold: 5,
+}))
+
 vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof EntitlementService>()
 	return {

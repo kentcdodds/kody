@@ -595,6 +595,10 @@
 		{
 			"filename": "0159-drop-value-tables.sql",
 			"sha256": "9616ecd448ae852bbc480d0b0babc1c2c8692fbeedc87ec1a55c8ab9d925f5e6"
+		},
+		{
+			"filename": "0160-email-deliverability-policy.sql",
+			"sha256": "566011d61d71bd6e8bb0710367da5fcf7123c743bcdaf6811ca20d83ba8748e1"
 		}
 	]
 }

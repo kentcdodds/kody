@@ -58,6 +58,19 @@ test('gate holds holdable mail for active rejecting providers', async () => {
 							return null
 						},
 						async all<T>() {
+							if (sql.includes('FROM email_rejecting_providers')) {
+								const cutoff = String(binds[0])
+								const results = [...rejecting.entries()]
+									.filter(([, at]) => at >= cutoff)
+									.map(([provider_key, last_rejection_at]) => ({
+										provider_key,
+										last_rejection_at,
+										rejection_count: 1,
+										last_recipient_domain: null,
+										seeded: 0,
+									}))
+								return { results: results as Array<T> }
+							}
 							return { results: [] as Array<T> }
 						},
 						async run() {
