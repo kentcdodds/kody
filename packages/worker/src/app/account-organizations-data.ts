@@ -3,6 +3,7 @@ import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	type AccountOrganizationSummary,
 	type AccountPendingInvite,
+	type AccountRestorableOrganization,
 } from '#universal/loader-data.ts'
 import { orgRoleLabel } from '#universal/org-pages.ts'
 import { packageCollaboratorPresetLabel } from '#universal/package-collaborators.ts'
@@ -16,9 +17,11 @@ import {
 	listPendingInvitesForPerson,
 	type PendingInviteSummary,
 } from '#worker/orgs/repo.ts'
+import { listRestorableOrganizationsForPerson } from '#worker/orgs/soft-delete.ts'
 
 export type AccountOrganizationSnapshot = {
 	organizations: Array<AccountOrganizationSummary>
+	restorableOrganizations: Array<AccountRestorableOrganization>
 	inviteCount: number
 	pendingInvites: Array<AccountPendingInvite>
 }
@@ -126,11 +129,20 @@ export async function listPendingInvitesForViewer(
 export async function loadAccountOrganizationSnapshot(
 	env: Env,
 	user: PendingInviteViewer,
+	options?: { includeRestorable?: boolean },
 ): Promise<AccountOrganizationSnapshot> {
-	const [organizations, pendingInvites] = await Promise.all([
-		listOrganizationsForPerson(env.APP_DB, user.mcpUser.userId),
-		listPendingInvitesForViewer(env, user),
-	])
+	const includeRestorable = options?.includeRestorable === true
+	const [organizations, restorableOrganizations, pendingInvites] =
+		await Promise.all([
+			listOrganizationsForPerson(env.APP_DB, user.mcpUser.userId),
+			includeRestorable
+				? listRestorableOrganizationsForPerson({
+						db: env.APP_DB,
+						actorUserId: user.mcpUser.userId,
+					})
+				: Promise.resolve([]),
+			listPendingInvitesForViewer(env, user),
+		])
 	return {
 		organizations: organizations.map((org) => ({
 			slug: org.slug,
@@ -140,6 +152,15 @@ export async function loadAccountOrganizationSnapshot(
 			avatarUrl: org.personal
 				? null
 				: buildOrgAvatarUrl({ slug: org.slug, avatarKey: org.avatarKey }),
+		})),
+		restorableOrganizations: restorableOrganizations.map((org) => ({
+			slug: org.slug,
+			displayName: org.displayName,
+			deletedAt: org.deletedAt,
+			avatarUrl: buildOrgAvatarUrl({
+				slug: org.slug,
+				avatarKey: org.avatarKey,
+			}),
 		})),
 		inviteCount: pendingInvites.length,
 		pendingInvites,

@@ -78,8 +78,9 @@ function accountViewFor(href: string): AccountView | null {
 
 const accountViewHeaders = {
 	profile: {
-		title: 'Profile',
-		description: 'How you appear across Kody, and the email you sign in with.',
+		title: 'Account settings',
+		description:
+			'Sign-in email and the display name, bio, and visibility for your public profile.',
 	},
 	security: {
 		title: 'Security',

@@ -74,7 +74,7 @@ export function renderProfileIdentity(
 							Workspace
 						</a>
 						<a href={routes.account.href()} mix={css(getGhostButtonCss())}>
-							Edit profile
+							Account settings
 						</a>
 					</div>
 				) : null}

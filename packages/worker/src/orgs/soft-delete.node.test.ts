@@ -23,6 +23,8 @@ import {
 	UserDeleteBlockedSoleOwnerError,
 	assertActorCanRestoreSoftDeletedOrg,
 	assertUserDeleteNotBlockedAsSoleOwner,
+	listRestorableOrganizationsForPerson,
+	loadRestorableOrganizationBySlugForPerson,
 	restoreOrg,
 	restoreResourceRow,
 	softDeleteOrg,
@@ -159,6 +161,42 @@ test('only a deletion-generation owner can restore a soft-deleted org', async ()
 		actorUserId: ownerId,
 	})
 	expect(allowed.deletedAt).toBeTruthy()
+	expect(
+		await listRestorableOrganizationsForPerson({
+			db: appDb,
+			actorUserId: ownerId,
+			now,
+		}),
+	).toEqual([
+		expect.objectContaining({
+			orgId,
+			slug: 'restore-auth',
+			deletedAt: allowed.deletedAt,
+		}),
+	])
+	expect(
+		await listRestorableOrganizationsForPerson({
+			db: appDb,
+			actorUserId: memberId,
+			now,
+		}),
+	).toEqual([])
+	expect(
+		await loadRestorableOrganizationBySlugForPerson({
+			db: appDb,
+			actorUserId: ownerId,
+			slug: 'restore-auth',
+			now,
+		}),
+	).toMatchObject({ orgId, slug: 'restore-auth' })
+	expect(
+		await loadRestorableOrganizationBySlugForPerson({
+			db: appDb,
+			actorUserId: memberId,
+			slug: 'restore-auth',
+			now,
+		}),
+	).toBeNull()
 })
 
 test('org soft delete revokes team-bound API tokens and bootstrap codes', async () => {

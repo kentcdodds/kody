@@ -31,7 +31,7 @@ test('profile identity renders the person in HTML and keeps guest CTAs honest', 
 	expect(ownHtml).toContain('Workspace')
 	expect(ownHtml).toContain('data-testid="profile-workspace"')
 	expect(ownHtml).toContain('href="/@jane/-/repositories"')
-	expect(ownHtml).toContain('Edit profile')
+	expect(ownHtml).toContain('Account settings')
 	expect(ownHtml).toContain(`href="${routes.account.href()}"`)
 	expect(ownHtml).not.toContain('data-testid="profile-guest-cta"')
 	expect(ownHtml).not.toContain('data-testid="profile-private-badge"')
@@ -75,7 +75,7 @@ test('profile identity renders the person in HTML and keeps guest CTAs honest', 
 	expect(guestHtml).toContain(
 		`href="${routes.signup.href()}?redirectTo=${encodeURIComponent('/@jane')}"`,
 	)
-	expect(guestHtml).not.toContain('Edit profile')
+	expect(guestHtml).not.toContain('Account settings')
 	expect(guestHtml).not.toContain('Workspace')
 	expect(guestHtml).not.toContain('data-testid="profile-actions"')
 
@@ -87,7 +87,7 @@ test('profile identity renders the person in HTML and keeps guest CTAs honest', 
 		}),
 	)
 	expect(visitorHtml).not.toContain('data-testid="profile-guest-cta"')
-	expect(visitorHtml).not.toContain('Edit profile')
+	expect(visitorHtml).not.toContain('Account settings')
 	expect(visitorHtml).not.toContain('Workspace')
 	expect(visitorHtml).toContain('Jane Example')
 })

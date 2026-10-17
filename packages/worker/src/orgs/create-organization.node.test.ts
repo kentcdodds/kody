@@ -5,6 +5,7 @@ import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.t
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { MAX_FREE_ORGS_PER_USER } from './billing.ts'
 import { createOrganization } from './create-organization.ts'
+import { orgHandleRestorableError } from './org-handle-claim.ts'
 import { ensureOrgsTestSchema } from './orgs-test-schema.ts'
 import { createTestOrgAuditWriter } from '#worker/test-support/create-audit-db.ts'
 
@@ -140,6 +141,55 @@ test('createOrganization rejects a handle claimed only on users.username', async
 		displayName: 'Collision Co',
 	})
 	expect(result).toEqual({ ok: false, error: 'That name is taken.' })
+})
+
+test('createOrganization offers restore when the actor owned the soft-deleted handle', async () => {
+	const { db } = await createDb()
+	const personId = testStableUserIdFromEmail('ada@example.com')
+	const otherId = testStableUserIdFromEmail('other@example.com')
+	const deletedAt = '2026-10-01T00:00:00.000Z'
+	await db
+		.prepare(
+			`INSERT INTO orgs (
+				id, slug, display_name, plan, entitlement_ladder, created_at, updated_at, deleted_at
+			) VALUES ('org-gone', 'gone-co', 'Gone', 'free', 'public', ?, ?, ?)`,
+		)
+		.bind(now, now, deletedAt)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO org_memberships (org_id, user_id, role, created_at, deleted_at)
+			 VALUES ('org-gone', ?, 'owner', ?, ?)`,
+		)
+		.bind(personId, now, deletedAt)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO handles (handle, user_id, org_id, created_at)
+			 VALUES ('gone-co', NULL, 'org-gone', ?)`,
+		)
+		.bind(now)
+		.run()
+
+	const ownerAttempt = await createOrganization(db, env, {
+		personId,
+		audit: createTestOrgAuditWriter(),
+		slug: 'gone-co',
+		displayName: 'Gone Again',
+	})
+	expect(ownerAttempt).toEqual({
+		ok: false,
+		error: orgHandleRestorableError('gone-co'),
+		restorableSlug: 'gone-co',
+	})
+
+	const otherAttempt = await createOrganization(db, env, {
+		personId: otherId,
+		audit: createTestOrgAuditWriter(),
+		slug: 'gone-co',
+		displayName: 'Taken Co',
+	})
+	expect(otherAttempt).toEqual({ ok: false, error: 'That name is taken.' })
 })
 
 test('createOrganization rejects a handle already present in handles', async () => {

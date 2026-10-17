@@ -174,12 +174,18 @@ function accountRows(input: {
 					row(
 						'account-profile',
 						routes.profile.href({ username: input.username }),
-						'Your profile',
+						'Public profile',
 						'globe',
 					),
 				]
 			: []),
 		row('account-settings', routes.account.href(), 'Account settings', 'user'),
+		row(
+			'account-organizations',
+			routes.accountOrganizations.href(),
+			'Organizations',
+			'users',
+		),
 		row('account-usage', usageHref, 'Usage & credits', 'chart'),
 	]
 }

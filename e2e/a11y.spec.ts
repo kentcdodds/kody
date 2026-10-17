@@ -74,7 +74,7 @@ const authenticatedRoutes: RouteScenario[] = [
 			await expect(
 				page.getByRole('heading', {
 					level: 1,
-					name: 'Profile',
+					name: 'Account settings',
 					exact: true,
 				}),
 			).toBeVisible()

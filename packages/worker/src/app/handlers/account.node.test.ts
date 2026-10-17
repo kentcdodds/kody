@@ -164,7 +164,7 @@ function createAccountEnv(
 async function getAccount(env: Env, session: AuthSession) {
 	setAuthSessionSecret(testCookieSecret)
 	const cookie = await createAuthCookie(session, false)
-	return createAccountHandler(env, 'Profile').handler(
+	return createAccountHandler(env, 'Account settings').handler(
 		new RequestContext(
 			new Request('https://example.com/account', {
 				headers: { Cookie: cookie },

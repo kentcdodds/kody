@@ -23,7 +23,10 @@ import {
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 import { renderIcon } from '#universal/icon.tsx'
-import { type AccountOrganizationsLoaderData } from '#universal/loader-data.ts'
+import {
+	type AccountOrganizationsLoaderData,
+	type AccountRestorableOrganization,
+} from '#universal/loader-data.ts'
 import {
 	orderOrganizations,
 	orgIdentity,
@@ -140,7 +143,28 @@ function draftFromHref(href: string) {
 	return {
 		draftName: search.get('displayName') ?? '',
 		draftSlug: search.get('slug') ?? '',
+		restorableSlug: search.get('restorableSlug'),
 	}
+}
+
+async function postRestoreOrganization(orgSlug: string) {
+	const response = await fetch(
+		routes.accountOrganizationsRestorePost.href({ orgSlug }),
+		{
+			method: 'POST',
+			headers: { Accept: 'application/json' },
+			credentials: 'include',
+		},
+	)
+	const payload = await readJson<{
+		ok?: boolean
+		error?: string
+		redirectTo?: string
+	}>(response)
+	if (!response.ok || !payload?.ok) {
+		throw new Error(payload?.error || 'Unable to restore that organization.')
+	}
+	return payload
 }
 
 export async function accountOrganizationsNewRouteLoader(): Promise<RouteLoaderResult> {
@@ -156,6 +180,8 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 	)
 	let syncedHref = initialHref
 	let loaderError = consumed?.error ?? null
+	let restorableSlug =
+		consumed?.restorableSlug ?? draftFromHref(initialHref).restorableSlug
 	let { draftName, draftSlug } = consumed
 		? { draftName: consumed.draft.displayName, draftSlug: consumed.draft.slug }
 		: draftFromHref(initialHref)
@@ -163,10 +189,34 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 	// an untouched slug follows the name.
 	let slugEdited = draftSlug.length > 0
 	let confirming = false
+	let restoring = false
+	let restoreError: string | null = null
 	let clientError: string | null = null
 	let clientErrorField: 'displayName' | 'slug' | null = null
 	const handleInputProps = permanentHandleInputProps()
 	const formErrorId = 'create-organization-form-error'
+
+	async function restoreDraftOrg(slug: string) {
+		if (restoring) return
+		restoring = true
+		restoreError = null
+		handle.update()
+		try {
+			const payload = await postRestoreOrganization(slug)
+			if (payload.redirectTo) {
+				window.location.assign(payload.redirectTo)
+				return
+			}
+			window.location.assign(routes.accountOrganizations.href())
+		} catch (error) {
+			restoreError =
+				error instanceof Error
+					? error.message
+					: 'Unable to restore that organization.'
+			restoring = false
+			handle.update()
+		}
+	}
 
 	return () => {
 		const href = readCurrentRouterHref(handle)
@@ -177,7 +227,8 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 			loaderError = null
 			clientError = null
 			clientErrorField = null
-			;({ draftName, draftSlug } = draftFromHref(href))
+			restoreError = null
+			;({ draftName, draftSlug, restorableSlug } = draftFromHref(href))
 			slugEdited = draftSlug.length > 0
 			confirming = false
 		}
@@ -185,11 +236,15 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 			clientError ??
 			loaderError ??
 			new URL(href, 'http://localhost').searchParams.get('error')
+		const offerRestore = Boolean(restorableSlug)
 		const nameInvalid = clientErrorField === 'displayName'
 		const slugInvalid =
 			clientErrorField === 'slug' ||
 			Boolean(
-				error && !clientError && /(handle|slug|taken|reserved)/i.test(error),
+				error &&
+				!clientError &&
+				!offerRestore &&
+				/(handle|slug|taken|reserved)/i.test(error),
 			)
 		return (
 			<AccountManagementShell maxWidth="40rem">
@@ -199,9 +254,34 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 					currentHref={href}
 				/>
 				{error ? (
-					<AccountManagementMessage tone="error">
+					<AccountManagementMessage tone={offerRestore ? 'info' : 'error'}>
 						<span id={formErrorId}>{error}</span>
 					</AccountManagementMessage>
+				) : null}
+				{restoreError ? (
+					<AccountManagementMessage tone="error">
+						{restoreError}
+					</AccountManagementMessage>
+				) : null}
+				{offerRestore && restorableSlug ? (
+					<div mix={css(accountActionsCss)} data-testid="create-org-restore">
+						<button
+							type="button"
+							disabled={restoring}
+							mix={[
+								css(getPillButtonCss({ size: 'sm' })),
+								on('click', () => void restoreDraftOrg(restorableSlug!)),
+							]}
+						>
+							{restoring ? 'Restoring…' : `Restore @${restorableSlug}`}
+						</button>
+						<a
+							href={routes.accountOrganizations.href()}
+							mix={css(getGhostButtonCss({ size: 'sm' }))}
+						>
+							View deleted organizations
+						</a>
+					</div>
 				) : null}
 				<AccountManagementPanel title="Details">
 					<form
@@ -409,6 +489,102 @@ function renderOrganizationList(data: AccountOrganizationsLoaderData) {
 	)
 }
 
+function createRestorableActions(
+	handle: Handle,
+	options: { reload: () => void },
+) {
+	let busySlug: string | null = null
+	let message: string | null = null
+	let tone: 'info' | 'error' = 'info'
+
+	async function restore(org: AccountRestorableOrganization) {
+		if (busySlug) return
+		busySlug = org.slug
+		message = null
+		handle.update()
+		try {
+			const payload = await postRestoreOrganization(org.slug)
+			if (payload.redirectTo) {
+				window.location.assign(payload.redirectTo)
+				return
+			}
+			message = `Restored @${org.slug}.`
+			tone = 'info'
+		} catch (error) {
+			message =
+				error instanceof Error
+					? error.message
+					: 'Unable to restore that organization.'
+			tone = 'error'
+		}
+		busySlug = null
+		options.reload()
+		handle.update()
+	}
+
+	return {
+		get busySlug() {
+			return busySlug
+		},
+		get message() {
+			return message
+		},
+		get tone() {
+			return tone
+		},
+		restore: (org: AccountRestorableOrganization) => void restore(org),
+	}
+}
+
+type RestorableActions = ReturnType<typeof createRestorableActions>
+
+function renderRestorableOrganizations(
+	data: AccountOrganizationsLoaderData,
+	actions: RestorableActions,
+) {
+	if (data.restorableOrganizations.length === 0) return null
+	return (
+		<AccountManagementPanel
+			title="Recently deleted"
+			description="Organizations you owned that can be restored for 30 days after deletion. Handles stay reserved until the window ends."
+			ariaLabel="Recently deleted organizations"
+		>
+			{actions.message ? (
+				<AccountManagementMessage tone={actions.tone}>
+					{actions.message}
+				</AccountManagementMessage>
+			) : null}
+			<ul mix={css(orgListCss)} data-testid="restorable-organizations">
+				{data.restorableOrganizations.map((org) =>
+					renderOrgRow({
+						key: org.slug,
+						slug: org.slug,
+						displayName: org.displayName,
+						personal: false,
+						viewer: data.viewer,
+						detail: `Deleted ${formatTimestampDate(org.deletedAt)}`,
+						pills: [{ label: 'Deleted', tone: 'quiet' }],
+						testId: 'restorable-organization',
+						trailing: (
+							<button
+								type="button"
+								disabled={actions.busySlug === org.slug}
+								data-testid="restore-organization"
+								mix={[
+									css(getPillButtonCss({ size: 'sm' })),
+									on('click', () => actions.restore(org)),
+								]}
+							>
+								{actions.busySlug === org.slug ? 'Restoring…' : 'Restore'}
+							</button>
+						),
+					}),
+				)}
+			</ul>
+		</AccountManagementPanel>
+	)
+}
+
 function renderInvites(
 	data: AccountOrganizationsLoaderData,
 	actions: PendingInviteActions,
@@ -461,10 +637,10 @@ export function AccountOrganizationsRoute(handle: Handle) {
 			return payload
 		},
 	})
-	const inviteActions = createPendingInviteActions(handle, {
-		reload: () =>
-			organizationsData.reload(handle, readCurrentRouterHref(handle)),
-	})
+	const reload = () =>
+		organizationsData.reload(handle, readCurrentRouterHref(handle))
+	const inviteActions = createPendingInviteActions(handle, { reload })
+	const restorableActions = createRestorableActions(handle, { reload })
 
 	return () => {
 		const href = readCurrentRouterHref(handle)
@@ -481,7 +657,7 @@ export function AccountOrganizationsRoute(handle: Handle) {
 			<AccountManagementShell busy={pending && Boolean(data)}>
 				<AccountPageHeader
 					title="Organizations"
-					description="Each organization has its own repositories, secrets, and members. Open one to work in it, or switch from your avatar menu."
+					description="Each organization has its own repositories, secrets, and members. Open one to work in it, or switch from your avatar menu. Deleted organizations you owned can be restored here for 30 days."
 					currentHref={href}
 					actions={
 						<a
@@ -525,6 +701,7 @@ export function AccountOrganizationsRoute(handle: Handle) {
 						>
 							{renderOrganizationList(data)}
 						</AccountManagementPanel>
+						{renderRestorableOrganizations(data, restorableActions)}
 						<AccountManagementPanel
 							id="invites"
 							title="Invites"

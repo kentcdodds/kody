@@ -45,7 +45,11 @@ ${buildDeleteUserAndPersonalOrgSql({
 
 	await page.goto('/account')
 	await expect(
-		page.getByRole('heading', { level: 1, name: 'Profile', exact: true }),
+		page.getByRole('heading', {
+			level: 1,
+			name: 'Account settings',
+			exact: true,
+		}),
 	).toBeVisible()
 	// The redesign moved the verified state out of the sentence and into a pill
 	// beside the address, so "(verified)" is no longer part of one contiguous

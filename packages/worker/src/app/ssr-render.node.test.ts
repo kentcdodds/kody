@@ -430,11 +430,12 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	}
 
 	const accountPage =
-		(title: 'Profile' | 'Security' | 'Data & deletion') => (env: Env) =>
+		(title: 'Account settings' | 'Security' | 'Data & deletion') =>
+		(env: Env) =>
 			createAccountHandler(env, title)
-	const account = await signedIn(accountPage('Profile'), '/account')
+	const account = await signedIn(accountPage('Account settings'), '/account')
 	expect(account.response.status).toBe(200)
-	// `/account` is the Profile view in the account rail. The header has an
+	// `/account` is Account settings in the account rail. The header has an
 	// organization switcher and an account menu with the person's own links
 	// and Log out. The workspace sections and connected agents live elsewhere.
 	expectHtml(
@@ -501,6 +502,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		username: 'account-user',
 		viewer: { displayName: 'account-user', avatarUrl: null },
 		organizations: [],
+		restorableOrganizations: [],
 		pendingInvites: [],
 	}
 	expect(organizations.loaderData?.accountOrganizations).toEqual(
@@ -727,7 +729,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(positions).toEqual([...positions].sort((a, b) => a - b))
 
 	const anonymousAccount = await runHtml(
-		createAccountHandler(env, 'Profile'),
+		createAccountHandler(env, 'Account settings'),
 		get('/account'),
 	)
 	expect(anonymousAccount.response.status).toBe(302)

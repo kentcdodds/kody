@@ -487,7 +487,8 @@ export function OrgSettingsRoute(handle: Handle) {
 							<AccountManagementPanel title="Delete organization">
 								<p mix={css(accountFieldNoteCss)}>
 									This soft-deletes the organization. Members lose access
-									immediately. Restoration is possible for 30 days.
+									immediately. Owners can restore it for 30 days from Account →
+									Organizations.
 								</p>
 								<div mix={css(accountActionsCss)}>
 									<button

@@ -2,12 +2,14 @@
 
 Pages about the person, split from the org workspace:
 
-- `/account` (Profile): name, avatar, email, onboarding banner.
+- `/account` (Account settings): name, avatar, email, onboarding banner; links
+  to the public profile at `/@handle`.
 - `/account/security`: password, links to two-factor and passkeys, sign-in
   providers (Connected accounts), former emails.
 - `/account/organizations`: every org you belong to (no "current" marker: an org
   is current only when its slug is in the URL), pending invites (`#invites`),
-  and Create organization.
+  soft-deleted orgs you owned that can be restored for 30 days, and Create
+  organization.
 - `/account/experiments`: experiments opt-in.
 - `/account/data`: export and delete account.
 
@@ -50,14 +52,14 @@ name and `@username`, then a **Manage** group (`account-menu-manage-group`) with
 one `@<slug>` row per org (person icon for the signup org, people icon for
 teams). The URL's org leads when the page has one; otherwise the signup org
 does. Each row opens that org's workspace home (team `/@<slug>`, signup org
-`/@<slug>/-/overview`). Then Your profile, Account settings, Usage & credits
-(current org from the URL only, else the personal org), and Log out. So pages
-without a workspace rail (packages, org homes, account pages) still reach every
-org. Narrow viewports fold the account menu into the one menu panel
-(`site-menu-account`: Manage, then a "Your account" group). Own profile
-(`/@<username>`) also links **Workspace** (lands on `/@<slug>/-/repositories`)
-beside Edit profile. A team org home lists **Workspace** above its management
-links.
+`/@<slug>/-/overview`). Then Public profile, Account settings, Organizations,
+Usage & credits (current org from the URL only, else the personal org), and Log
+out. So pages without a workspace rail (packages, org homes, account pages)
+still reach every org. Narrow viewports fold the account menu into the one menu
+panel (`site-menu-account`: Manage, then a "Your account" group). Own public
+profile (`/@<username>`) also links **Workspace** (lands on
+`/@<slug>/-/repositories`) beside Account settings. A team org home lists
+**Workspace** above its management links.
 
 ## How to get there
 

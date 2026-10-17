@@ -261,7 +261,7 @@ function docDetailHead({
  */
 const routeDocumentHeads = {
 	[routePattern(routes.home)]: homeDocumentHead,
-	[routePattern(routes.account)]: titleOnly('Profile'),
+	[routePattern(routes.account)]: titleOnly('Account settings'),
 	[routePattern(routes.accountSecurity)]: titleOnly('Security'),
 	[routePattern(routes.accountData)]: titleOnly('Data & deletion'),
 	[routePattern(routes.accountOrganizations)]: titleOnly('Organizations'),

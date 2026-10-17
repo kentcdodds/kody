@@ -8,10 +8,10 @@ import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#universal/routes.ts'
 
-/** Profile, Security, and Data & deletion are views of one account page. */
+/** Account settings, Security, and Data & deletion are views of one account page. */
 export function createAccountHandler(
 	env: Env,
-	title: 'Profile' | 'Security' | 'Data & deletion',
+	title: 'Account settings' | 'Security' | 'Data & deletion',
 ) {
 	return {
 		middleware: [],

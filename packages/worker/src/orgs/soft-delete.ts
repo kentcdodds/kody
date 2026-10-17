@@ -18,7 +18,10 @@ import {
 } from '#worker/account/deletion-state.ts'
 import { bumpAccessEpochStatement } from '#worker/authorization/access-compile.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
-import { isWithinSoftDeleteRestoreWindow } from '#worker/soft-delete/window.ts'
+import {
+	isWithinSoftDeleteRestoreWindow,
+	softDeletePurgeCutoffIso,
+} from '#worker/soft-delete/window.ts'
 import {
 	logOrgAuditEvent,
 	orgAuditWriterForPerson,
@@ -447,6 +450,119 @@ export async function assertActorCanRestoreSoftDeletedOrg(input: {
 		throw new Error('org_restore_forbidden')
 	}
 	return { deletedAt: row.deleted_at }
+}
+
+export type RestorableOrganization = {
+	orgId: OwnerId
+	slug: string
+	displayName: string | null
+	deletedAt: string
+	avatarKey: string | null
+}
+
+/**
+ * Soft-deleted team organizations the actor owned at the deletion generation
+ * and that are still inside the restore window. Personal orgs are omitted —
+ * those restore only with the person account.
+ */
+export async function listRestorableOrganizationsForPerson(input: {
+	db: D1Database
+	actorUserId: string
+	now?: Date
+}): Promise<Array<RestorableOrganization>> {
+	const now = input.now ?? new Date()
+	const cutoff = softDeletePurgeCutoffIso(now)
+	const rows = await input.db
+		.prepare(
+			`SELECT o.id AS org_id,
+			        o.slug AS slug,
+			        o.display_name AS display_name,
+			        o.deleted_at AS deleted_at,
+			        o.avatar_key AS avatar_key
+			 FROM orgs o
+			 INNER JOIN org_memberships m
+			   ON m.org_id = o.id
+			  AND m.user_id = ?
+			  AND m.role = 'owner'
+			  AND m.deleted_at = o.deleted_at
+			 WHERE o.deleted_at IS NOT NULL
+			   AND o.deleted_at >= ?
+			   AND NOT EXISTS (
+			     SELECT 1 FROM users u
+			     WHERE u.stable_user_id = o.id
+			        OR u.personal_org_id = o.id
+			   )
+			 ORDER BY o.deleted_at DESC, o.slug ASC`,
+		)
+		.bind(input.actorUserId, cutoff)
+		.all<{
+			org_id: string
+			slug: string
+			display_name: string | null
+			deleted_at: string
+			avatar_key: string | null
+		}>()
+	return (rows.results ?? []).map((row) => ({
+		orgId: ownerIdFromStored(row.org_id),
+		slug: row.slug,
+		displayName: row.display_name,
+		deletedAt: row.deleted_at,
+		avatarKey: row.avatar_key,
+	}))
+}
+
+/**
+ * Soft-deleted organization named by slug when the actor can restore it
+ * within the window. Used by create-org ("offer restore") and the restore
+ * POST (slug in the URL; no raw id in the UI).
+ */
+export async function loadRestorableOrganizationBySlugForPerson(input: {
+	db: D1Database
+	actorUserId: string
+	slug: string
+	now?: Date
+}): Promise<RestorableOrganization | null> {
+	const now = input.now ?? new Date()
+	const cutoff = softDeletePurgeCutoffIso(now)
+	const row = await input.db
+		.prepare(
+			`SELECT o.id AS org_id,
+			        o.slug AS slug,
+			        o.display_name AS display_name,
+			        o.deleted_at AS deleted_at,
+			        o.avatar_key AS avatar_key
+			 FROM orgs o
+			 INNER JOIN org_memberships m
+			   ON m.org_id = o.id
+			  AND m.user_id = ?
+			  AND m.role = 'owner'
+			  AND m.deleted_at = o.deleted_at
+			 WHERE o.slug = ?
+			   AND o.deleted_at IS NOT NULL
+			   AND o.deleted_at >= ?
+			   AND NOT EXISTS (
+			     SELECT 1 FROM users u
+			     WHERE u.stable_user_id = o.id
+			        OR u.personal_org_id = o.id
+			   )
+			 LIMIT 1`,
+		)
+		.bind(input.actorUserId, input.slug, cutoff)
+		.first<{
+			org_id: string
+			slug: string
+			display_name: string | null
+			deleted_at: string
+			avatar_key: string | null
+		}>()
+	if (!row) return null
+	return {
+		orgId: ownerIdFromStored(row.org_id),
+		slug: row.slug,
+		displayName: row.display_name,
+		deletedAt: row.deleted_at,
+		avatarKey: row.avatar_key,
+	}
 }
 
 /**

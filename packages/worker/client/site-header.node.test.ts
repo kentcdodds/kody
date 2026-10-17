@@ -82,9 +82,12 @@ test('logged-in header has only the account menu; the org switcher lives in the 
 	)
 	expect(accountPanel).toContain('>@ada<')
 	expect(accountPanel).not.toContain('>Your account<')
-	expect(accountPanel).toMatch(/href="\/@ada"[^>]*>[\s\S]*?>Your profile</)
+	expect(accountPanel).toMatch(/href="\/@ada"[^>]*>[\s\S]*?>Public profile</)
 	expect(accountPanel).toMatch(
 		/href="\/account"[^>]*>[\s\S]*?>Account settings</,
+	)
+	expect(accountPanel).toMatch(
+		/href="\/account\/organizations"[^>]*>[\s\S]*?>Organizations</,
 	)
 	expect(accountPanel).toContain('action="/logout"')
 
@@ -103,7 +106,10 @@ test('logged-in header has only the account menu; the org switcher lives in the 
 		menu.indexOf('data-testid="org-switcher-account-group"'),
 	)
 	expect(account).toContain('>Your account<')
-	expect(account).toMatch(/href="\/@ada"[^>]*>[\s\S]*?>Your profile</)
+	expect(account).toMatch(/href="\/@ada"[^>]*>[\s\S]*?>Public profile</)
+	expect(account).toMatch(
+		/href="\/account\/organizations"[^>]*>[\s\S]*?>Organizations</,
+	)
 	expect(account).toContain('>Usage &amp; credits<')
 	expect(account).toMatch(
 		/<form[^>]*action="\/logout"[\s\S]*?data-testid="org-switcher-logout"[\s\S]*?>Log out</,
@@ -305,7 +311,7 @@ test('account menu shows a Manage section before the person links, in the phone 
 		manage.indexOf('>@kentcdodds<'),
 	)
 	expect(accountPanel.indexOf('account-menu-manage-group')).toBeLessThan(
-		accountPanel.indexOf('>Your profile<'),
+		accountPanel.indexOf('>Public profile<'),
 	)
 
 	const menu = html.slice(html.indexOf('data-testid="site-menu-account"'))

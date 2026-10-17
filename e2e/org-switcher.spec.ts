@@ -89,7 +89,7 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 		name: 'Your account',
 	})
 	await expect(
-		accountGroup.getByRole('link', { name: 'Your profile' }),
+		accountGroup.getByRole('link', { name: 'Public profile' }),
 	).toHaveAttribute('href', `/@${user.username}`)
 	await expect(
 		accountGroup.getByRole('link', { name: 'Account settings' }),

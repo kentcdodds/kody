@@ -108,7 +108,7 @@ export type AccountRailGroup = {
 
 /** Settings that belong to the person, whichever organization they are in. */
 const accountRailItems: Array<AccountRailItem> = [
-	{ href: routes.account.href(), label: 'Profile', icon: 'user' },
+	{ href: routes.account.href(), label: 'Account settings', icon: 'user' },
 	{
 		href: routes.accountSecurity.href(),
 		label: 'Security',

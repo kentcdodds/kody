@@ -326,6 +326,7 @@ import {
 	createAccountOrganizationsHandler,
 	createAccountOrganizationsNewHandler,
 	createAccountOrganizationsNewPostHandler,
+	createAccountOrganizationsRestorePostHandler,
 } from '#app/handlers/account-organizations.ts'
 import { createLegacyOrgConnectionsRedirectHandler } from '#app/handlers/legacy-org-connections-redirect.ts'
 import {
@@ -504,7 +505,7 @@ export function createAppRouter(env: Env) {
 			pendingVerification: createPendingVerificationHandler(env),
 			signup: createSignupHandler(env),
 			youtubeThumb: createYoutubeThumbHandler(env),
-			account: createAccountHandler(env, 'Profile'),
+			account: createAccountHandler(env, 'Account settings'),
 			accountSecurity: createAccountHandler(env, 'Security'),
 			accountData: createAccountHandler(env, 'Data & deletion'),
 			accountOrganizations: createAccountOrganizationsHandler(env),
@@ -512,6 +513,8 @@ export function createAppRouter(env: Env) {
 			accountOrganizationsNew: createAccountOrganizationsNewHandler(env),
 			accountOrganizationsNewPost:
 				createAccountOrganizationsNewPostHandler(env),
+			accountOrganizationsRestorePost:
+				createAccountOrganizationsRestorePostHandler(env),
 			accountInviteLinkAcceptPost:
 				createAccountInviteLinkAcceptPostHandler(env),
 			accountInviteLinkDeclinePost:

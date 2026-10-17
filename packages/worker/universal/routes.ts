@@ -450,6 +450,9 @@ export const routes = route({
 	accountOrganizationsApi: '/account/organizations.json',
 	accountOrganizationsNew: get('/account/organizations/new'),
 	accountOrganizationsNewPost: post('/account/organizations/new'),
+	accountOrganizationsRestorePost: post(
+		'/account/organizations/:orgSlug/restore.json',
+	),
 	accountInviteLinkAcceptPost: post(
 		'/account/organizations/invite-links/:linkId/accept.json',
 	),

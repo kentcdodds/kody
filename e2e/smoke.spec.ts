@@ -50,7 +50,7 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	// The header has only the account menu; the organization switcher heads
 	// the workspace rail, a click away from the Profile page.
 	await expect(
-		page.getByRole('heading', { level: 1, name: 'Profile' }),
+		page.getByRole('heading', { level: 1, name: 'Account settings' }),
 	).toBeVisible()
 	await expect(page.getByTestId('account-menu')).toBeVisible()
 	await expect(page.getByTestId('org-switcher')).toHaveCount(0)

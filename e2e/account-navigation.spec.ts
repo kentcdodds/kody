@@ -97,7 +97,7 @@ test('account section switches keep the current page on screen (no loading flash
 		.getByRole('link', { name: 'Account settings' })
 		.click()
 	await expect(
-		page.getByRole('heading', { level: 1, name: 'Profile' }),
+		page.getByRole('heading', { level: 1, name: 'Account settings' }),
 	).toBeVisible()
 	await expect(
 		page.getByRole('navigation', { name: 'Workspace sections' }),
@@ -109,9 +109,9 @@ test('account section switches keep the current page on screen (no loading flash
 			{ link: 'Security', heading: 'Security' },
 			{ link: 'Organizations', heading: 'Organizations' },
 			{ link: 'Data & deletion', heading: 'Data & deletion' },
-			{ link: 'Profile', heading: 'Profile' },
+			{ link: 'Account settings', heading: 'Account settings' },
 		],
-		'Profile',
+		'Account settings',
 	)
 })
 
@@ -132,7 +132,7 @@ test('every workspace section is reachable from /account through the avatar menu
 	await page.goto('/account')
 	await waitForClientHydration(page)
 	await expect(
-		page.getByRole('heading', { level: 1, name: 'Profile' }),
+		page.getByRole('heading', { level: 1, name: 'Account settings' }),
 	).toBeVisible()
 
 	// The account rail holds only the person's pages. The avatar menu's
