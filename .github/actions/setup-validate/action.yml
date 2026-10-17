@@ -12,9 +12,9 @@ inputs:
     default: 'false'
   no_cache:
     description: >
-      When true, skip setup-node npm cache, Playwright actions/cache restore/save,
-      and Nx remote-cache probe (caller must also clear the remote-cache token and
-      set NX_SKIP_NX_CACHE). Always runs a fresh npm ci.
+      When true, skip setup-node npm cache, Playwright actions/cache
+      restore/save, and Nx remote-cache probe (caller must also clear the
+      remote-cache token and set NX_SKIP_NX_CACHE). Always runs a fresh npm ci.
     required: false
     default: 'false'
 
@@ -67,7 +67,9 @@ runs:
           ${{ runner.os }}-playwright-
 
     - name: 🧊 Enable Nx remote cache
-      if: inputs.no_cache != 'true' && env.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN != ''
+      if:
+        inputs.no_cache != 'true' &&
+        env.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN != ''
       shell: bash
       # Sets NX_SELF_HOSTED_REMOTE_CACHE_SERVER only when the server is
       # reachable and the token reads (Nx treats a configured-but-unauthorized

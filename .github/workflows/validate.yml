@@ -16,10 +16,11 @@ on:
     inputs:
       no_cache:
         description: >
-          Skip every Validate cache layer (Nx remote token unbound, NX_SKIP_NX_CACHE,
-          setup-node npm cache, Playwright actions/cache) and run a fresh npm ci.
-          Use for apples-to-apples runner timing baselines. Default true on
-          manual dispatch; push/PR runs ignore this and keep normal caching.
+          Skip every Validate cache layer (Nx remote token unbound,
+          NX_SKIP_NX_CACHE, setup-node npm cache, Playwright actions/cache) and
+          run a fresh npm ci. Use for apples-to-apples runner timing baselines.
+          Default true on manual dispatch; push/PR runs ignore this and keep
+          normal caching.
         type: boolean
         default: true
 
@@ -42,11 +43,11 @@ permissions:
 env:
   CI: '1'
   VALIDATE_NO_CACHE: >-
-    ${{ github.event_name == 'workflow_dispatch' && inputs.no_cache && 'true'
-    || 'false' }}
+    ${{ github.event_name == 'workflow_dispatch' && inputs.no_cache && 'true' ||
+    'false' }}
   NX_SKIP_NX_CACHE: >-
-    ${{ github.event_name == 'workflow_dispatch' && inputs.no_cache && 'true'
-    || '' }}
+    ${{ github.event_name == 'workflow_dispatch' && inputs.no_cache && 'true' ||
+    '' }}
   NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN: >-
     ${{ (github.event_name != 'workflow_dispatch' || inputs.no_cache != true) &&
     (github.event.pull_request.head.repo.fork == true &&
