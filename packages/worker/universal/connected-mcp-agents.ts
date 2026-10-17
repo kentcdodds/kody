@@ -73,7 +73,8 @@ const clientNameKindRules = [
 	{ kind: 'opencode', needles: ['opencode', 'open code'] },
 	{ kind: 'openclaw', needles: ['openclaw', 'open claw'] },
 	// Hermes registers its OAuth client as "Hermes Agent".
-	{ kind: 'hermes', needles: ['hermes agent', 'hermes-agent', 'hermes'] },
+	// Do not match bare `hermes` — that would mis-label clients like "Hermes Metrics".
+	{ kind: 'hermes', needles: ['hermes agent', 'hermes-agent'] },
 	// OpenMuse before bare `muse` so CopilotKit OpenMuse does not classify as Muse.
 	{ kind: 'openmuse', needles: ['openmuse', 'open muse'] },
 	{ kind: 'wajo', needles: ['wajo'] },

@@ -230,6 +230,9 @@ test('inbound labels prefer a known kind, then clientName, then hostname, then a
 		['Dots', 'dots', 'Dots'],
 		['Hermes Agent', 'hermes', 'Hermes Agent'],
 		['hermes-agent', 'hermes', 'Hermes Agent'],
+		// Bare `hermes` must not classify unrelated clients (CodeRabbit).
+		['Hermes Metrics', null, 'Hermes Metrics'],
+		['hermes', null, 'hermes'],
 	]
 	expect(names.map(([name]) => [name, classifyMcpClientName(name)])).toEqual(
 		names.map(([name, kind, label]) => [name, { kind, label }]),
