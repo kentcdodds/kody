@@ -138,6 +138,15 @@ export function createAccountEmailApiHandler(env: Env) {
 			}
 
 			if (action === 'resume_outbound_delivery') {
+				// Clearing the org-wide consecutive-failure pause is a write
+				// to shared mailbox state — require email:write, not only the
+				// email:read gate at the top of this handler.
+				try {
+					await authorize({ env, request: user.request }, 'email:write')
+				} catch (error) {
+					if (!(error instanceof AuthorizationError)) throw error
+					return jsonResponse({ ok: false, error: error.message }, 403)
+				}
 				const ownerId = ownerIdFromCaller({
 					request: user.request,
 					user: user.mcpUser,

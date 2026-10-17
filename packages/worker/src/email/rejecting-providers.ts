@@ -160,20 +160,31 @@ export async function clearRejectingProvidersForRecipient(input: {
 	now?: Date
 	fetchImpl?: typeof fetch
 }): Promise<Array<string>> {
+	// Ordinary delivered mail should not pay for MX/DoH when nothing is
+	// currently marked rejecting.
+	const active = await listActiveRejectingProviders({
+		db: input.db,
+		now: input.now,
+	})
+	if (active.length === 0) return []
+	const activeKeys = new Set(active.map((row) => row.providerKey))
+
 	const mx = await resolveRecipientMxProviders({
 		db: input.db,
 		recipientOrDomain: input.recipient,
 		now: input.now,
 		fetchImpl: input.fetchImpl,
 	})
-	if (mx.providerKeys.length === 0) return []
+	const cleared: Array<string> = []
 	for (const providerKey of mx.providerKeys) {
+		if (!activeKeys.has(providerKey)) continue
 		await input.db
 			.prepare(`DELETE FROM email_rejecting_providers WHERE provider_key = ?`)
 			.bind(providerKey)
 			.run()
+		cleared.push(providerKey)
 	}
-	return mx.providerKeys
+	return cleared
 }
 
 export async function findActiveRejectingProviderForRecipient(input: {

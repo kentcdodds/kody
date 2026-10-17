@@ -4,8 +4,11 @@
  * Cloudflare DNS-over-HTTPS. Results are cached in D1.
  */
 
+import { getDomain } from 'tldts'
+
 export const emailMxLookupCacheTtlSeconds = 6 * 60 * 60
 export const emailMxLookupNegativeTtlSeconds = 15 * 60
+export const emailMxDohTimeoutMs = 3_000
 
 const dohEndpoint = 'https://cloudflare-dns.com/dns-query'
 
@@ -35,12 +38,16 @@ export type EmailMxLookupResult = {
 }
 
 /**
- * Collapse an MX hostname to a stable provider key (registrable-ish suffix).
+ * Collapse an MX hostname to a stable provider key (registrable domain).
  * `in1-smtp.messagingengine.com` → `messagingengine.com`.
+ * Uses tldts so multi-label public suffixes (`co.uk`, `com.au`) are not
+ * mistaken for the provider key.
  */
 export function providerKeyFromMxHost(mxHost: string): string | null {
 	const host = mxHost.trim().toLowerCase().replace(/\.$/u, '')
 	if (!host || host.includes(' ') || !host.includes('.')) return null
+	const registrable = getDomain(host)
+	if (registrable) return registrable.toLowerCase()
 	const labels = host.split('.').filter(Boolean)
 	if (labels.length < 2) return null
 	return labels.slice(-2).join('.')
@@ -79,6 +86,7 @@ export async function lookupMxViaDoh(
 	try {
 		response = await fetchImpl(url.toString(), {
 			headers: { Accept: 'application/dns-json' },
+			signal: AbortSignal.timeout(emailMxDohTimeoutMs),
 		})
 	} catch (error) {
 		console.warn('email-mx-doh-request-failed', error)

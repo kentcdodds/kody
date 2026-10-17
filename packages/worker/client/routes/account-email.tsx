@@ -228,6 +228,46 @@ export function AccountEmailRoute(handle: Handle) {
 		}
 	}
 
+	async function resumeOutboundDelivery() {
+		if (!data?.outboundDeliveryPausedAt || classifyState !== 'idle') return
+		message = null
+		handle.update()
+		try {
+			const response = await fetch(buildEmailApiRequestUrl(getCurrentHref()), {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action: 'resume_outbound_delivery',
+				}),
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<
+				AccountEmailLoaderData & { error?: string; ok?: boolean }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to resume outbound email.')
+			}
+			applyPayload(payload, getCurrentHref())
+			message = 'Outbound email resumed.'
+			messageTone = 'info'
+			handle.update()
+		} catch (error) {
+			message =
+				error instanceof Error
+					? error.message
+					: 'Unable to resume outbound email.'
+			messageTone = 'error'
+			handle.update()
+		}
+	}
+
 	async function classifySelectedMessage(
 		classification: 'accepted' | 'quarantined',
 	) {
@@ -417,33 +457,7 @@ export function AccountEmailRoute(handle: Handle) {
 									type="button"
 									mix={[
 										on('click', () => {
-											void (async () => {
-												const response = await fetch('/account/email.json', {
-													method: 'POST',
-													headers: {
-														Accept: 'application/json',
-														'Content-Type': 'application/json',
-													},
-													credentials: 'include',
-													body: JSON.stringify({
-														action: 'resume_outbound_delivery',
-													}),
-												})
-												const payload = await readJson<
-													AccountEmailLoaderData & { error?: string }
-												>(response)
-												if (!response.ok || !payload?.ok) {
-													message =
-														payload?.error ?? 'Unable to resume outbound email.'
-													messageTone = 'error'
-													handle.update()
-													return
-												}
-												data = payload
-												message = 'Outbound email resumed.'
-												messageTone = 'info'
-												handle.update()
-											})()
+											void resumeOutboundDelivery()
 										}),
 										css(getGhostButtonCss({ size: 'sm' })),
 									]}

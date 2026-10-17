@@ -35,7 +35,7 @@ the same verification message will not get through and can make delivery worse.
    link over a path that is not `kody.codes` mail.
 
 **If mail is delayed rather than blocked:** check Spam/Junk, then whitelist
-`kody.codes` / `noreply@kody.codes` (exact steps vary by provider). On Fastmail,
+`kody.codes` / `kody@kody.codes` (exact steps vary by provider). On Fastmail,
 adding `*@kody.codes` as a contact helps once the domain is not blocklisted.
 
 ## For support / agents

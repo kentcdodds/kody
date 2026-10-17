@@ -14,6 +14,8 @@ test('providerKeyFromMxHost collapses Fastmail and SimpleLogin hosts', () => {
 	)
 	expect(providerKeyFromMxHost('mx1.simplelogin.co')).toBe('simplelogin.co')
 	expect(providerKeyFromMxHost('aspmx.l.google.com')).toBe('google.com')
+	expect(providerKeyFromMxHost('mx.example.co.uk')).toBe('example.co.uk')
+	expect(providerKeyFromMxHost('mail.foo.com.au')).toBe('foo.com.au')
 	expect(providerKeyFromMxHost('')).toBeNull()
 })
 

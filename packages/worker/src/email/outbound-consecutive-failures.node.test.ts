@@ -18,6 +18,16 @@ function createOrgDb(initialFailures = 0, pausedAt: string | null = null) {
 				bind(...binds: Array<unknown>) {
 					return {
 						async first<T>() {
+							if (
+								sql.includes('email_outbound_consecutive_failures + 1') &&
+								sql.includes('RETURNING')
+							) {
+								state.failures += 1
+								return {
+									email_outbound_consecutive_failures: state.failures,
+									email_outbound_delivery_paused_at: state.pausedAt,
+								} as T
+							}
 							if (sql.includes('SELECT email_outbound_consecutive_failures')) {
 								return {
 									email_outbound_consecutive_failures: state.failures,
@@ -27,10 +37,18 @@ function createOrgDb(initialFailures = 0, pausedAt: string | null = null) {
 							return null
 						},
 						async run() {
-							if (sql.includes('email_outbound_delivery_paused_at = ?')) {
-								state.failures = Number(binds[0])
-								state.pausedAt = String(binds[1])
-								return { meta: { changes: 1 } }
+							if (
+								sql.includes('email_outbound_delivery_paused_at = ?') &&
+								sql.includes('email_outbound_consecutive_failures >= ?')
+							) {
+								if (
+									state.pausedAt == null &&
+									state.failures >= Number(binds[3])
+								) {
+									state.pausedAt = String(binds[0])
+									return { meta: { changes: 1 } }
+								}
+								return { meta: { changes: 0 } }
 							}
 							if (
 								sql.includes('email_outbound_consecutive_failures = 0') &&
@@ -43,10 +61,6 @@ function createOrgDb(initialFailures = 0, pausedAt: string | null = null) {
 							}
 							if (sql.includes('email_outbound_consecutive_failures = 0')) {
 								state.failures = 0
-								return { meta: { changes: 1 } }
-							}
-							if (sql.includes('email_outbound_consecutive_failures = ?')) {
-								state.failures = Number(binds[0])
 								return { meta: { changes: 1 } }
 							}
 							return { meta: { changes: 0 } }
