@@ -1,4 +1,4 @@
-import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
+import { sendGatedTransactionalEmail } from '#worker/email/transactional-send-policy.ts'
 import { buildPlatformFeedbackOutcomeEmail } from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import {
@@ -84,22 +84,25 @@ export async function sendPlatformFeedbackOutcomeEmail(input: {
 		summary: input.feedback.summary,
 		userMessage: input.userMessage,
 	})
-	let sendResult: Awaited<ReturnType<typeof sendCloudflareEmail>>
+	let sendResult: Awaited<ReturnType<typeof sendGatedTransactionalEmail>>
 	try {
-		sendResult = await sendCloudflareEmail(
-			{
+		sendResult = await sendGatedTransactionalEmail({
+			db: input.env.APP_DB,
+			config: {
 				accountId: input.env.CLOUDFLARE_ACCOUNT_ID,
 				apiBaseUrl: input.env.CLOUDFLARE_API_BASE_URL,
 				apiToken: input.env.CLOUDFLARE_API_TOKEN,
 			},
-			{
+			category: 'essential',
+			kind: 'platform_feedback_outcome',
+			message: {
 				to: submitter.email,
 				from: emailConfig.fromEmail,
 				subject: email.subject,
 				html: email.html,
 				text: email.text,
 			},
-		)
+		})
 	} catch (error) {
 		console.warn('platform-feedback-outcome-email-send-failed', {
 			feedbackId: input.feedback.id,

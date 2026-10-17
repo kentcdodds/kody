@@ -2811,6 +2811,11 @@ export type AccountEmailLoaderData = {
 	username: string
 	inboxAddress: string | null
 	verificationMessage: string | null
+	/**
+	 * Owner-clearable pause after consecutive outbound delivery failures.
+	 * Distinct from the admin abuse pause.
+	 */
+	outboundDeliveryPausedAt: string | null
 	inboxes: Array<AccountEmailInbox>
 	messages: Array<AccountEmailMessageListItem>
 	selectedMessage: AccountEmailMessageDetail | null

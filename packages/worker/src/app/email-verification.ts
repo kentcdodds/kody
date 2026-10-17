@@ -1,10 +1,14 @@
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
-import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { buildVerificationEmail } from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import {
+	sendGatedTransactionalEmail,
+	type GatedTransactionalSendResult,
+} from '#worker/email/transactional-send-policy.ts'
+import {
 	clearUserEmailVerificationDelivery,
+	EmailVerificationSendBlockedError,
 	registerTransactionalEmailDelivery,
 	setUserEmailVerificationDelivery,
 } from '#worker/email/verification-delivery.ts'
@@ -81,27 +85,34 @@ export async function createEmailVerification(input: {
 		verificationUrl: verificationUrl.toString(),
 	})
 
-	let sendResult: Awaited<ReturnType<typeof sendCloudflareEmail>>
+	let sendResult: GatedTransactionalSendResult
 	try {
-		sendResult = await sendCloudflareEmail(
-			{
+		sendResult = await sendGatedTransactionalEmail({
+			db: input.env.APP_DB,
+			config: {
 				accountId: input.env.CLOUDFLARE_ACCOUNT_ID,
 				apiBaseUrl: input.env.CLOUDFLARE_API_BASE_URL,
 				apiToken: input.env.CLOUDFLARE_API_TOKEN,
 			},
-			{
+			category: 'essential',
+			kind: 'email_verification',
+			message: {
 				to: input.email,
 				from: emailConfig.fromEmail,
 				subject: email.subject,
 				html: email.html,
 				text: email.text,
 			},
-		)
+		})
 	} catch (error) {
 		await discardNewToken()
 		throw error
 	}
 	if (!sendResult.ok) {
+		if ('hold' in sendResult && sendResult.hold) {
+			await discardNewToken()
+			throw new EmailVerificationSendBlockedError(sendResult.error)
+		}
 		// Local dev, preview, and test runtimes may have no email sender
 		// configured; those accounts are verified through seeded tokens
 		// instead. Anywhere else an unsent verification email would strand

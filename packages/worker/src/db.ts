@@ -174,6 +174,8 @@ export const orgsTable = table({
 		automation_budget_micro_usd: c.integer(),
 		access_epoch: c.integer(),
 		email_outbound_paused_at: c.text(),
+		email_outbound_delivery_paused_at: c.text(),
+		email_outbound_consecutive_failures: c.integer(),
 		suspended_at: c.text(),
 		deleted_at: c.text(),
 		deleting_at: c.text(),

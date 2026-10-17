@@ -22,7 +22,9 @@ import {
 	type EmailNotificationDestination,
 } from './destinations.ts'
 import { emailOutboundPausedMessage } from './outbound-abuse.ts'
+import { emailOutboundDeliveryPausedMessage } from './outbound-consecutive-failures.ts'
 import { resolveUserPlatformSender } from './platform-address.ts'
+import { gateTransactionalSend } from './transactional-send-policy.ts'
 import {
 	CloudflareEmailProviderSkippedError,
 	sendViaCloudflareEmailProvider,
@@ -198,6 +200,9 @@ async function sendDestinationVerificationEmail(input: {
 		if (restrictions?.emailOutboundPausedAt) {
 			throw new Error(emailOutboundPausedMessage)
 		}
+		if (restrictions?.emailOutboundDeliveryPausedAt) {
+			throw new Error(emailOutboundDeliveryPausedMessage)
+		}
 
 		const linkConfig = getDestinationLinkConfig({
 			env: input.env,
@@ -219,6 +224,15 @@ async function sendDestinationVerificationEmail(input: {
 			destinationEmail: input.destinationEmail,
 			verificationUrl: verificationUrl.toString(),
 		})
+
+		const gate = await gateTransactionalSend({
+			db: input.env.APP_DB,
+			recipient: input.destinationEmail,
+			category: 'essential',
+		})
+		if (!gate.allowed) {
+			throw new Error(gate.message)
+		}
 
 		const sendResult = await sendViaCloudflareEmailProvider({
 			env: input.env,

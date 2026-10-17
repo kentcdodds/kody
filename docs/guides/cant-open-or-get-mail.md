@@ -3,7 +3,7 @@ id: cant_open_or_get_mail
 title: If you can't open kody.codes or get mail from us
 summary:
   Unblock NextDNS and similar DNS filters for kody.codes, and recover missing
-  signup or verification mail on Fastmail and other providers.
+  signup or verification mail when a provider is blocking our domain.
 category: platform
 ---
 
@@ -20,23 +20,33 @@ every NextDNS user by default.
 added under Security → Block Top-Level Domains, remove it. Check **Logs** to see
 which rule fired.
 
-## Signup or verification email never arrives (Fastmail and others)
+## Signup or verification email never arrives
 
-Our SPF, DKIM, and DMARC for `kody.codes` are set up correctly. Filters still
-sometimes junk or drop mail from a newer domain.
+If your mailbox provider is blocking `kody.codes` right now (for example a
+Spamhaus DBL listing that Fastmail and some alias providers honor), resending
+the same verification message will not get through and can make delivery worse.
 
-**Fastmail (strongest fix):** add `*@kody.codes` as a contact — mail from
-contacts skips greylisting and gets a clean spam score. If something already
-landed in Spam, open it and choose **Not spam**. Also check Blocked senders.
-Prefer Standard spam protection over Aggressive.
+**What to do:**
 
-**Any provider:** check Spam/Junk, then whitelist `kody.codes` /
-`noreply@kody.codes` (exact steps vary). If you still get nothing, try social
-login on the signup page, or [contact support](https://kody.codes/support) with
-the address you used.
+1. Try another address (Gmail and most providers still accept us), or use social
+   login on the signup page.
+2. Or contact [support](https://kody.codes/support) with the address you used —
+   an operator can verify your account manually or send a one-time verification
+   link over a path that is not `kody.codes` mail.
+
+**If mail is delayed rather than blocked:** check Spam/Junk, then whitelist
+`kody.codes` / `noreply@kody.codes` (exact steps vary by provider). On Fastmail,
+adding `*@kody.codes` as a contact helps once the domain is not blocklisted.
 
 ## For support / agents
 
 Ask for: provider (Gmail, Fastmail, etc.), whether mail was rejected vs silent,
-and if possible full headers or bounce text (`X-Spam-score`,
-`X-Spam-sender-reputation` on Fastmail).
+and if possible full headers or bounce text (`blacklisted`, `RLR613`,
+`dbl.spamhaus.org`).
+
+**Operator verification rescue** (no raw D1 write):
+
+- Admin Users → find the account → **Mark email verified**, or **Mint verify
+  URL** and send that one-time `/verify-email?token=...` link over Discord,
+  chat, or another channel that is not `kody.codes` mail.
+- Both actions are audited.

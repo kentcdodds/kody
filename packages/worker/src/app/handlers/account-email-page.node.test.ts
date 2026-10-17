@@ -58,6 +58,7 @@ test('email inbox SSR includes destinations and not just the message list', asyn
 		username: 'test-user',
 		inboxAddress: 'test-user@inbox.example.com',
 		verificationMessage: null,
+		outboundDeliveryPausedAt: null,
 		inboxes: [],
 		messages: [],
 		selectedMessage: null,

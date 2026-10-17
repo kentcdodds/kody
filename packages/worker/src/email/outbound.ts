@@ -38,6 +38,7 @@ import {
 	type MailboxThreadInput,
 } from './mailbox-types.ts'
 import { emailOutboundPausedMessage } from './outbound-abuse.ts'
+import { emailOutboundDeliveryPausedMessage } from './outbound-consecutive-failures.ts'
 import {
 	emailOutboundProviderCloudflare,
 	upsertOutboundProviderIndexRow,
@@ -525,6 +526,9 @@ export async function sendOutboundEmail(
 		}
 		if (restrictions?.emailOutboundPausedAt) {
 			throw new Error(emailOutboundPausedMessage)
+		}
+		if (restrictions?.emailOutboundDeliveryPausedAt) {
+			throw new Error(emailOutboundDeliveryPausedMessage)
 		}
 		// Sends reference the platform-provisioned sender identity. It is
 		// normally created alongside the default inbox at signup; ensuring it

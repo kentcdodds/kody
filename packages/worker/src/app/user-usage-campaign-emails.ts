@@ -1,4 +1,3 @@
-import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import {
 	buildAdvocateReferralEmail,
 	buildConnectAgentEmail,
@@ -6,6 +5,7 @@ import {
 	buildKeepPackageEmail,
 	buildSecondAgentEmail,
 } from '#app/email/messages.ts'
+import { sendGatedTransactionalEmail } from '#worker/email/transactional-send-policy.ts'
 import {
 	normalizeReferralCode,
 	referralSharePath,
@@ -431,15 +431,28 @@ async function sendClaimedCampaignEmail(input: {
 		shareUrl: shareUrl ?? undefined,
 		unsubscribe: unsubscribe?.unsubscribe,
 	})
-	let sendResult: Awaited<ReturnType<typeof sendCloudflareEmail>>
+	const campaignKind =
+		template === 'verified_no_mcp'
+			? 'connect_agent'
+			: template === 'connected_no_package'
+				? 'keep_package'
+				: template === 'packaged_single_client'
+					? 'second_agent'
+					: template === 'cooling'
+						? 'cooling_home'
+						: 'advocate_referral'
+	let sendResult: Awaited<ReturnType<typeof sendGatedTransactionalEmail>>
 	try {
-		sendResult = await sendCloudflareEmail(
-			{
+		sendResult = await sendGatedTransactionalEmail({
+			db: input.env.APP_DB,
+			config: {
 				accountId: input.env.CLOUDFLARE_ACCOUNT_ID,
 				apiBaseUrl: input.env.CLOUDFLARE_API_BASE_URL,
 				apiToken: input.env.CLOUDFLARE_API_TOKEN,
 			},
-			{
+			category: 'holdable',
+			kind: campaignKind,
+			message: {
 				to: input.user.email,
 				from: input.emailConfig.fromEmail,
 				subject: email.subject,
@@ -447,7 +460,7 @@ async function sendClaimedCampaignEmail(input: {
 				text: email.text,
 				headers: unsubscribe?.headers,
 			},
-		)
+		})
 	} catch (error) {
 		console.warn('usage-campaign-send-failed', {
 			state: input.decision.state,

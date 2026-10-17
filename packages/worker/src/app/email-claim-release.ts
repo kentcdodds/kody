@@ -1,5 +1,5 @@
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
-import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
+import { sendGatedTransactionalEmail } from '#worker/email/transactional-send-policy.ts'
 import { hashVerificationToken } from '#app/email-verification.ts'
 import { buildEmailClaimReleaseEmail } from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
@@ -107,27 +107,34 @@ export async function createEmailClaimReleaseVerification(input: {
 		verificationUrl: verificationUrl.toString(),
 	})
 
-	let sendResult: Awaited<ReturnType<typeof sendCloudflareEmail>>
+	let sendResult: Awaited<ReturnType<typeof sendGatedTransactionalEmail>>
 	try {
-		sendResult = await sendCloudflareEmail(
-			{
+		sendResult = await sendGatedTransactionalEmail({
+			db: input.env.APP_DB,
+			config: {
 				accountId: input.env.CLOUDFLARE_ACCOUNT_ID,
 				apiBaseUrl: input.env.CLOUDFLARE_API_BASE_URL,
 				apiToken: input.env.CLOUDFLARE_API_TOKEN,
 			},
-			{
+			category: 'essential',
+			kind: 'email_claim_release',
+			message: {
 				to: email,
 				from: emailConfig.fromEmail,
 				subject: message.subject,
 				html: message.html,
 				text: message.text,
 			},
-		)
+		})
 	} catch (error) {
 		await discardNewToken()
 		throw error
 	}
 	if (!sendResult.ok) {
+		if ('hold' in sendResult && sendResult.hold) {
+			await discardNewToken()
+			throw new Error(sendResult.error)
+		}
 		if (!(sendResult.skipped && isNonProductionRuntime(input.env))) {
 			await discardNewToken()
 			throw new Error(sendResult.error ?? 'Release email could not be sent.')

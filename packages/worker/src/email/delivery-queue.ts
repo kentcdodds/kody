@@ -1,5 +1,6 @@
 import { processCloudflareEmailDeliveryEvent } from './delivery-events.ts'
 import { applyOutboundEmailAbusePause } from './outbound-abuse.ts'
+import { applyOutboundConsecutiveFailureTracking } from './outbound-consecutive-failures.ts'
 import { dispatchEmailDeliverySubscriptionEvents } from './package-subscriptions.ts'
 import { type EmailReportingEnv } from './reporting-events.ts'
 import { notifyAdminsOfVerificationDeliveryFailure } from './verification-delivery-notify.ts'
@@ -90,6 +91,11 @@ export async function handleEmailDeliveryQueue(
 						deliveryStatus: result.providerEvent.payload.delivery.status,
 						eventRecorded: result.outcome === 'recorded',
 						waitUntil,
+					})
+					await applyOutboundConsecutiveFailureTracking({
+						db: env.APP_DB,
+						ownerId: result.message.userId,
+						deliveryStatus: result.providerEvent.payload.delivery.status,
 					})
 					await dispatchEmailDeliverySubscriptionEvents({
 						env,

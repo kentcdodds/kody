@@ -8,7 +8,7 @@ import {
 	redactEmailRecipient,
 } from '#worker/audit-log.ts'
 import { deferWork } from '#worker/deferred-work.ts'
-import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
+import { sendGatedTransactionalEmail } from '#worker/email/transactional-send-policy.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import {
 	createPasswordResetToken,
@@ -140,20 +140,23 @@ export function createPasswordResetRequestHandler(env: Env) {
 					}
 
 					try {
-						await sendCloudflareEmail(
-							{
+						await sendGatedTransactionalEmail({
+							db: env.APP_DB,
+							config: {
 								accountId: env.CLOUDFLARE_ACCOUNT_ID,
 								apiBaseUrl: env.CLOUDFLARE_API_BASE_URL,
 								apiToken: env.CLOUDFLARE_API_TOKEN,
 							},
-							{
+							category: 'essential',
+							kind: 'password_reset',
+							message: {
 								to: normalizedEmail,
 								from: emailConfig.fromEmail,
 								subject: email.subject,
 								html: email.html,
 								text: email.text,
 							},
-						)
+						})
 					} catch (error) {
 						console.warn('cloudflare-email-error', error)
 					}
@@ -353,20 +356,23 @@ export function createPasswordResetConfirmHandler(env: Env) {
 				})
 			} else {
 				try {
-					await sendCloudflareEmail(
-						{
+					await sendGatedTransactionalEmail({
+						db: env.APP_DB,
+						config: {
 							accountId: env.CLOUDFLARE_ACCOUNT_ID,
 							apiBaseUrl: env.CLOUDFLARE_API_BASE_URL,
 							apiToken: env.CLOUDFLARE_API_TOKEN,
 						},
-						{
+						category: 'essential',
+						kind: 'password_reset_confirmed',
+						message: {
 							to: userRecord.email,
 							from: emailConfig.fromEmail,
 							subject: email.subject,
 							html: email.html,
 							text: email.text,
 						},
-					)
+					})
 				} catch (error) {
 					console.warn('cloudflare-email-error', error)
 				}

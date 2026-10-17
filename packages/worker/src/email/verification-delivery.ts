@@ -16,7 +16,7 @@ export const transactionalEmailDestinationVerificationKind =
 const deliveryDetailMaxLength = 500
 
 const senderBlockPattern =
-	/\brlr613\b|\brlr813\b|blacklisted|blacklist|blocked.*sender|sender.*blocked|sender domain|blocked by policy|rejected by policy/
+	/\brlr613\b|\brlr813\b|blacklisted|blacklist|\bdbl\b|spamhaus|blocked.*sender|sender.*blocked|sender domain|blocked by policy|rejected by policy/
 
 export class EmailVerificationSendBlockedError extends Error {
 	readonly code = 'sender_block'
@@ -24,7 +24,7 @@ export class EmailVerificationSendBlockedError extends Error {
 	constructor(message?: string) {
 		super(
 			message ??
-				'Verification email cannot be resent because the mailbox provider blocked kody.codes.',
+				'Your mail provider is blocking our domain right now, try another address.',
 		)
 		this.name = 'EmailVerificationSendBlockedError'
 	}
@@ -35,6 +35,19 @@ export function classifyVerificationDeliveryFailure(input: {
 	smtpResponse?: string | null
 	smtpEnhancedStatusCode?: string | null
 }): EmailVerificationDeliveryClass | null {
+	const haystack = [
+		input.smtpResponse ?? '',
+		input.smtpEnhancedStatusCode ?? '',
+	]
+		.join(' ')
+		.toLowerCase()
+	const isSenderBlock = senderBlockPattern.test(haystack)
+	// Deferred 4xx blocklist rejections (Fastmail RLR613) are retried by the
+	// provider for a long time. Classify them immediately so signup stops
+	// resending into a known block instead of waiting for the final failure.
+	if (input.status === 'deferred') {
+		return isSenderBlock ? 'sender_block' : null
+	}
 	if (
 		input.status !== 'bounced' &&
 		input.status !== 'failed' &&
@@ -43,13 +56,7 @@ export function classifyVerificationDeliveryFailure(input: {
 	) {
 		return null
 	}
-	const haystack = [
-		input.smtpResponse ?? '',
-		input.smtpEnhancedStatusCode ?? '',
-	]
-		.join(' ')
-		.toLowerCase()
-	if (senderBlockPattern.test(haystack)) return 'sender_block'
+	if (isSenderBlock) return 'sender_block'
 	return 'other'
 }
 

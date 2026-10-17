@@ -39,7 +39,7 @@ export type EmailVerificationDeliveryIndicator =
 	(typeof emailVerificationDeliveryIndicatorValues)[number]
 
 export const emailVerificationSenderBlockMessage =
-	'Your mailbox provider rejected mail from kody.codes (sender domain or IP block). Resending the same message will not get through and can make delivery worse. Try social login on the signup page, or contact support with the address you used.'
+	'Your mail provider is blocking our domain right now, try another address. Social login on the signup page still works. Support can also verify you manually — contact support with the address you used.'
 
 const emailVerificationDeliveryFailedMessage =
 	'The verification email could not be delivered. Try social login on the signup page, or contact support with the address you used.'

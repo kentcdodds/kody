@@ -8,6 +8,7 @@ import {
 const mocks = vi.hoisted(() => ({
 	processCloudflareEmailDeliveryEvent: vi.fn(),
 	applyOutboundEmailAbusePause: vi.fn(),
+	applyOutboundConsecutiveFailureTracking: vi.fn(),
 	dispatchEmailDeliverySubscriptionEvents: vi.fn(),
 	notifyAdminsOfVerificationDeliveryFailure: vi.fn(),
 }))
@@ -19,6 +20,11 @@ vi.mock('./delivery-events.ts', () => ({
 
 vi.mock('./outbound-abuse.ts', () => ({
 	applyOutboundEmailAbusePause: mocks.applyOutboundEmailAbusePause,
+}))
+
+vi.mock('./outbound-consecutive-failures.ts', () => ({
+	applyOutboundConsecutiveFailureTracking:
+		mocks.applyOutboundConsecutiveFailureTracking,
 }))
 
 vi.mock('./package-subscriptions.ts', () => ({
@@ -113,6 +119,10 @@ test('delivery queue handles terminal outcomes without a D1-to-Mailbox graph mir
 		}
 	})
 	mocks.applyOutboundEmailAbusePause.mockResolvedValue(undefined)
+	mocks.applyOutboundConsecutiveFailureTracking.mockResolvedValue({
+		paused: false,
+		consecutiveFailures: 0,
+	})
 	mocks.dispatchEmailDeliverySubscriptionEvents
 		.mockResolvedValueOnce([])
 		.mockResolvedValueOnce([])

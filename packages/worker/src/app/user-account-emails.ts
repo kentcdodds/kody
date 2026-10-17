@@ -1,4 +1,3 @@
-import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import {
 	buildBillingSuccessEmail,
 	buildConnectAgentEmail,
@@ -8,6 +7,10 @@ import {
 	buildPastDueEmail,
 	buildPaymentFailedEmail,
 } from '#app/email/messages.ts'
+import {
+	categoryForTransactionalEmailKind,
+	sendGatedTransactionalEmail,
+} from '#worker/email/transactional-send-policy.ts'
 import { accountCreditsPath } from '#universal/compute-overage.ts'
 import { orgBillingPath } from '#universal/org-pages.ts'
 import { formatCents, formatMicroUsd } from '#universal/credits.ts'
@@ -93,15 +96,18 @@ async function claimAndSend(input: {
 	}
 
 	const email = await input.build(emailConfig)
-	let sendResult: Awaited<ReturnType<typeof sendCloudflareEmail>>
+	let sendResult: Awaited<ReturnType<typeof sendGatedTransactionalEmail>>
 	try {
-		sendResult = await sendCloudflareEmail(
-			{
+		sendResult = await sendGatedTransactionalEmail({
+			db: input.env.APP_DB,
+			config: {
 				accountId: input.env.CLOUDFLARE_ACCOUNT_ID,
 				apiBaseUrl: input.env.CLOUDFLARE_API_BASE_URL,
 				apiToken: input.env.CLOUDFLARE_API_TOKEN,
 			},
-			{
+			category: categoryForTransactionalEmailKind(input.kind),
+			kind: input.kind,
+			message: {
 				to: input.to,
 				from: emailConfig.fromEmail,
 				subject: email.subject,
@@ -109,7 +115,7 @@ async function claimAndSend(input: {
 				text: email.text,
 				headers: email.headers,
 			},
-		)
+		})
 	} catch (error) {
 		console.warn('user-account-email-send-failed', {
 			kind: input.kind,
@@ -122,6 +128,7 @@ async function claimAndSend(input: {
 		console.warn('user-account-email-send-skipped', {
 			kind: input.kind,
 			reason: sendResult.error ?? 'unconfigured',
+			hold: 'hold' in sendResult ? sendResult.hold : false,
 		})
 		await releaseEmailClaim(kv, key)
 		return false

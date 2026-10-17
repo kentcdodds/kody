@@ -1,11 +1,11 @@
 import { redactKodyCredentials } from '@kody-internal/shared/api-token-format.ts'
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
-import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import {
 	buildUserErrorRateEmail,
 	type UserErrorRateEmailRun,
 } from '#app/email/messages.ts'
+import { sendGatedTransactionalEmail } from '#worker/email/transactional-send-policy.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import { routes } from '#universal/routes.ts'
 import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
@@ -245,22 +245,25 @@ async function sendOneUserErrorRateEmail(input: {
 		}),
 	})
 
-	let sendResult: Awaited<ReturnType<typeof sendCloudflareEmail>>
+	let sendResult: Awaited<ReturnType<typeof sendGatedTransactionalEmail>>
 	try {
-		sendResult = await sendCloudflareEmail(
-			{
+		sendResult = await sendGatedTransactionalEmail({
+			db: input.env.APP_DB,
+			config: {
 				accountId: input.env.CLOUDFLARE_ACCOUNT_ID,
 				apiBaseUrl: input.env.CLOUDFLARE_API_BASE_URL,
 				apiToken: input.env.CLOUDFLARE_API_TOKEN,
 			},
-			{
+			category: 'holdable',
+			kind: 'error_rate',
+			message: {
 				to: input.user.email,
 				from: input.emailConfig.fromEmail,
 				subject: email.subject,
 				html: email.html,
 				text: email.text,
 			},
-		)
+		})
 	} catch (error) {
 		console.warn('user-error-rate-email-send-failed', error)
 		return false

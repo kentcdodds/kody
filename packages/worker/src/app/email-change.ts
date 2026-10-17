@@ -1,7 +1,7 @@
 import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
-import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
+import { sendGatedTransactionalEmail } from '#worker/email/transactional-send-policy.ts'
 import { hashVerificationToken } from '#app/email-verification.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { buildEmailChangeEmail } from '#app/email/messages.ts'
@@ -91,27 +91,34 @@ export async function createEmailChangeVerification(input: {
 		verificationUrl: verificationUrl.toString(),
 	})
 
-	let sendResult: Awaited<ReturnType<typeof sendCloudflareEmail>>
+	let sendResult: Awaited<ReturnType<typeof sendGatedTransactionalEmail>>
 	try {
-		sendResult = await sendCloudflareEmail(
-			{
+		sendResult = await sendGatedTransactionalEmail({
+			db: input.env.APP_DB,
+			config: {
 				accountId: input.env.CLOUDFLARE_ACCOUNT_ID,
 				apiBaseUrl: input.env.CLOUDFLARE_API_BASE_URL,
 				apiToken: input.env.CLOUDFLARE_API_TOKEN,
 			},
-			{
+			category: 'essential',
+			kind: 'email_change',
+			message: {
 				to: input.newEmail,
 				from: emailConfig.fromEmail,
 				subject: email.subject,
 				html: email.html,
 				text: email.text,
 			},
-		)
+		})
 	} catch (error) {
 		await discardNewToken()
 		throw error
 	}
 	if (!sendResult.ok) {
+		if ('hold' in sendResult && sendResult.hold) {
+			await discardNewToken()
+			throw new Error(sendResult.error)
+		}
 		if (!(sendResult.skipped && isNonProductionRuntime(input.env))) {
 			await discardNewToken()
 			throw new Error(sendResult.error ?? 'Email change could not be sent.')

@@ -189,12 +189,20 @@ on support rather than the transactional sender. Provider accept is not
 delivery: the send stores `provider_message_id` in
 `transactional_email_delivery_index` with kind `email_verification` and sets
 `users.email_verification_delivery_status` to `accepted`. Later Cloudflare
-lifecycle events (`delivered`, `bounced`, `failed`, `rejected`, `complained`)
-update that status. A Fastmail-style sender-domain/IP block (`RLR613`, `RLR813`,
-"blacklisted") is classified as `sender_block`. The pending-verification,
+lifecycle events (`delivered`, `deferred`, `bounced`, `failed`, `rejected`,
+`complained`) update that status. A Fastmail-style sender-domain/IP block
+(`RLR613`, `RLR813`, "blacklisted", Spamhaus DBL) — including deferred 4xx that
+carry those signals — is classified as `sender_block`. The pending-verification,
 account, and OAuth authorize UIs surface the bounce instead of staying silently
 pending, and `POST /account/resend-verification.json` refuses to retry into a
-known `sender_block`. `/pending-verification` polls
+known `sender_block`. The same events write a per-recipient cooldown
+(`email_recipient_cooldowns`) so other transactional mail stops hammering that
+address, and mark the recipient's MX provider (`email_rejecting_providers`,
+keyed by host suffix such as `messagingengine.com`) so holdable kody@ mail
+(campaigns, plan-limit nudges) is skipped for that provider until rejections age
+out or a successful delivery clears it. Essential mail (verification,
+password/sign-in, security, billing) still attempts the send, subject only to
+the recipient cooldown. `/pending-verification` polls
 `GET /account/email-verification-delivery.json` (session cookie only; no email
 query param) for spinner / delivered / failed indicators without exposing other
 users' delivery state. The first terminal failure fans

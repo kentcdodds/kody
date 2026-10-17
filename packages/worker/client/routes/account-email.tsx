@@ -396,6 +396,62 @@ export function AccountEmailRoute(handle: Handle) {
 								) : null}
 							</div>
 						) : null}
+						{data.outboundDeliveryPausedAt ? (
+							<div
+								mix={css({
+									display: 'grid',
+									gap: spacing.sm,
+									marginBottom: spacing.md,
+									padding: spacing.md,
+									border: `1px solid ${colors.border}`,
+									borderRadius: '8px',
+									background: colors.primarySoftest,
+								})}
+							>
+								<p mix={css({ margin: 0 })}>
+									Outbound email is paused after repeated delivery failures.
+									Resume once the destination can receive mail from kody.codes
+									again.
+								</p>
+								<button
+									type="button"
+									mix={[
+										on('click', () => {
+											void (async () => {
+												const response = await fetch('/account/email.json', {
+													method: 'POST',
+													headers: {
+														Accept: 'application/json',
+														'Content-Type': 'application/json',
+													},
+													credentials: 'include',
+													body: JSON.stringify({
+														action: 'resume_outbound_delivery',
+													}),
+												})
+												const payload = await readJson<
+													AccountEmailLoaderData & { error?: string }
+												>(response)
+												if (!response.ok || !payload?.ok) {
+													message =
+														payload?.error ?? 'Unable to resume outbound email.'
+													messageTone = 'error'
+													handle.update()
+													return
+												}
+												data = payload
+												message = 'Outbound email resumed.'
+												messageTone = 'info'
+												handle.update()
+											})()
+										}),
+										css(getGhostButtonCss({ size: 'sm' })),
+									]}
+								>
+									Resume outbound email
+								</button>
+							</div>
+						) : null}
 						{appliedDestinations
 							? renderAccountEmailDestinationsPanel({
 									destinations: accountEmailDestinations.destinations,

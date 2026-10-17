@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { recordDeliveryAlertEvent } from './delivery-alert-events.ts'
+import { applyDeliverabilitySideEffects } from './deliverability-side-effects.ts'
 import { type MailboxEnv } from './mailbox-client.ts'
 import { type EmailReportingEnv } from './reporting-events.ts'
 import { recordProviderEmailDeliveryEvent } from './service.ts'
@@ -128,6 +129,14 @@ export async function processCloudflareEmailDeliveryEvent(input: {
 		},
 	})
 	if (result.outcome !== 'unmatched') {
+		await applyDeliverabilitySideEffects({
+			db: input.env.APP_DB,
+			recipient: providerEvent.payload.recipient,
+			deliveryStatus: providerEvent.payload.delivery.status,
+			smtpResponse: providerEvent.payload.delivery.smtpResponse,
+			smtpEnhancedStatusCode:
+				providerEvent.payload.delivery.smtpEnhancedStatusCode,
+		})
 		return { ...result, providerEvent }
 	}
 
@@ -143,6 +152,15 @@ export async function processCloudflareEmailDeliveryEvent(input: {
 	if (transactional.outcome !== 'recorded') {
 		return { ...result, providerEvent }
 	}
+
+	await applyDeliverabilitySideEffects({
+		db: input.env.APP_DB,
+		recipient: transactional.event.recipient || providerEvent.payload.recipient,
+		deliveryStatus: providerEvent.payload.delivery.status,
+		smtpResponse: providerEvent.payload.delivery.smtpResponse,
+		smtpEnhancedStatusCode:
+			providerEvent.payload.delivery.smtpEnhancedStatusCode,
+	})
 
 	if (
 		providerEvent.payload.delivery.status === 'bounced' ||

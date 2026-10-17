@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/cloudflare'
-import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
+import { sendGatedTransactionalEmail } from '#worker/email/transactional-send-policy.ts'
 import { buildPlatformFeedbackAcknowledgementEmail } from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import {
@@ -83,22 +83,25 @@ export async function sendPlatformFeedbackAcknowledgementEmail(input: {
 		appBaseUrl: emailConfig.appBaseUrl,
 		feedbackId: input.feedback.id,
 	})
-	let sendResult: Awaited<ReturnType<typeof sendCloudflareEmail>>
+	let sendResult: Awaited<ReturnType<typeof sendGatedTransactionalEmail>>
 	try {
-		sendResult = await sendCloudflareEmail(
-			{
+		sendResult = await sendGatedTransactionalEmail({
+			db: input.env.APP_DB,
+			config: {
 				accountId: input.env.CLOUDFLARE_ACCOUNT_ID,
 				apiBaseUrl: input.env.CLOUDFLARE_API_BASE_URL,
 				apiToken: input.env.CLOUDFLARE_API_TOKEN,
 			},
-			{
+			category: 'essential',
+			kind: 'platform_feedback_acknowledgement',
+			message: {
 				to: submitter.email,
 				from: emailConfig.fromEmail,
 				subject: email.subject,
 				html: email.html,
 				text: email.text,
 			},
-		)
+		})
 	} catch (error) {
 		await releasePlatformFeedbackEmailClaim(
 			kv,

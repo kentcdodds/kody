@@ -95,7 +95,7 @@ export function createAccountResendVerificationHandler(env: Env) {
 					return jsonResponse(
 						{
 							ok: false,
-							error: emailVerificationSenderBlockMessage,
+							error: error.message || emailVerificationSenderBlockMessage,
 							code: 'sender_block',
 						},
 						409,

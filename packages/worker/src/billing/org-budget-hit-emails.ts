@@ -1,6 +1,6 @@
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import { escapeHtml } from '@kody-internal/shared/escape-html.ts'
-import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
+import { sendGatedTransactionalEmail } from '#worker/email/transactional-send-policy.ts'
 import {
 	resolveTransactionalEmailConfig,
 	type TransactionalEmailEnv,
@@ -130,20 +130,23 @@ export async function sendBudgetHitEmail(input: {
 			db: input.db,
 			orgId: input.orgId,
 			sendOne: async (recipient) => {
-				const sendResult = await sendCloudflareEmail(
-					{
+				const sendResult = await sendGatedTransactionalEmail({
+					db: input.db,
+					config: {
 						accountId: input.env.CLOUDFLARE_ACCOUNT_ID,
 						apiBaseUrl: input.env.CLOUDFLARE_API_BASE_URL,
 						apiToken: input.env.CLOUDFLARE_API_TOKEN,
 					},
-					{
+					category: 'essential',
+					kind: 'org_budget_hit',
+					message: {
 						to: recipient.email,
 						from: emailConfig.fromEmail,
 						subject,
 						html,
 						text,
 					},
-				)
+				})
 				if (!sendResult.ok) {
 					console.warn('org-budget-hit-email-skipped', {
 						orgId: input.orgId,

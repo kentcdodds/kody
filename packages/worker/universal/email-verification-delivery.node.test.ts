@@ -107,3 +107,16 @@ test('deferred delivery shows delayed and keeps polling', () => {
 		}),
 	).toBe(true)
 })
+
+test('sender_block copy tells people to try another address', () => {
+	const blocked = describeEmailVerificationDelivery({
+		status: 'failed',
+		class: 'sender_block',
+		at: '2026-10-15T12:00:00.000Z',
+	})
+	expect(blocked.canResend).toBe(false)
+	expect(blocked.detail).toMatch(/blocking our domain right now/i)
+	expect(blocked.detail).toMatch(/try another address/i)
+	expect(blocked.detail).toMatch(/support/i)
+	expect(blocked.helpHref).toBe(emailVerificationDeliveryHelpPath)
+})
