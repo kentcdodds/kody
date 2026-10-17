@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-4x
     timeout-minutes: 20
     steps:
       - name: 📦 Checkout

@@ -90,7 +90,7 @@ concurrency:
 # gate.
 jobs:
   static:
-    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ inputs.runner || 'warp-ubuntu-latest-x64-4x' }}
     name: 🧹 Static
     timeout-minutes: 10
     permissions:
@@ -281,7 +281,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   node:
-    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ inputs.runner || 'warp-ubuntu-latest-x64-4x' }}
     name: 🧪 Node
     timeout-minutes: 15
     if: >-
@@ -340,7 +340,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   workers:
-    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ inputs.runner || 'warp-ubuntu-latest-x64-4x' }}
     name: ☁️ Workers
     # Room for one ≤720s attempt + one retry + setup. Soft-capping the suite
     # below the old 15m job wall avoids workers=cancelled mid-suite (#3763).
@@ -461,7 +461,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   mcp:
-    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ inputs.runner || 'warp-ubuntu-latest-x64-4x' }}
     name: 🔌 MCP
     timeout-minutes: 10
     if: >-
@@ -500,7 +500,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   e2e:
-    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ inputs.runner || 'warp-ubuntu-latest-x64-4x' }}
     name: 🎭 E2E
     timeout-minutes: 15
     if: >-
@@ -577,7 +577,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   cli:
-    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ inputs.runner || 'warp-ubuntu-latest-x64-4x' }}
     name: 🧰 CLI
     timeout-minutes: 20
     if: >-
@@ -618,7 +618,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   validate:
-    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ inputs.runner || 'warp-ubuntu-latest-x64-4x' }}
     name: ✅ Validate
     timeout-minutes: 2
     needs:

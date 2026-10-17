@@ -24,7 +24,7 @@ jobs:
     strategy:
       matrix:
         node: [lts/-1, lts/*, latest]
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-4x
     steps:
       - name: Checkout repo
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
@@ -50,7 +50,7 @@ jobs:
 
   build-release-artifact:
     needs: main
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-4x
     permissions:
       contents: read
     if:
@@ -81,7 +81,7 @@ jobs:
 
   release:
     needs: build-release-artifact
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-4x
     permissions:
       contents: write
       id-token: write
