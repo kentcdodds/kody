@@ -108,6 +108,20 @@ const hostKindRules = [
 	hosts: ReadonlyArray<string>
 }>
 
+/**
+ * CIMD `client_id` URLs on shared hosts, where the host alone is too broad.
+ * Matched even when the metadata lookup fails.
+ */
+const clientIdUrlKindRules = [
+	{
+		kind: 'hermes',
+		prefixes: ['https://nousresearch.github.io/hermes-agent/'],
+	},
+] as const satisfies ReadonlyArray<{
+	kind: McpClientKind
+	prefixes: ReadonlyArray<string>
+}>
+
 export function uniqueOAuthClientIds(
 	grants: ReadonlyArray<{ clientId?: string | null }>,
 ): Array<string> {
@@ -338,7 +352,20 @@ function kindFromInboundSignals(
 	if (surface === 'cloud') return 'cursor-cloud'
 	if (surface === 'local') return 'cursor-local'
 	if (named) return named
-	return kindFromHosts(collectSignalHosts(signals))
+	return (
+		kindFromClientIdUrl(signals.clientId) ??
+		kindFromHosts(collectSignalHosts(signals))
+	)
+}
+
+function kindFromClientIdUrl(clientId: string): McpClientKind | null {
+	const normalized = clientId.trim().toLowerCase()
+	for (const rule of clientIdUrlKindRules) {
+		if (rule.prefixes.some((prefix) => normalized.startsWith(prefix))) {
+			return rule.kind
+		}
+	}
+	return null
 }
 
 function kindFromClientName(clientName: string | null): McpClientKind | null {

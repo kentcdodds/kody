@@ -186,6 +186,22 @@ test('inbound labels prefer a known kind, then clientName, then hostname, then a
 			'Hermes Agent',
 		],
 		[
+			{
+				clientId:
+					'https://nousresearch.github.io/hermes-agent/docs/oauth/client-metadata.json',
+			},
+			'hermes',
+			'Hermes Agent',
+		],
+		[
+			{
+				clientId:
+					'https://nousresearch.github.io/other-project/client-metadata.json',
+			},
+			null,
+			'nousresearch.github.io',
+		],
+		[
 			{ clientId: 'https://unknown.example/oauth/client.json' },
 			null,
 			'unknown.example',
