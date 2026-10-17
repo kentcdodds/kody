@@ -417,6 +417,41 @@ test('convertPersonalOrg refuses while personal credentials are granted into oth
 	).toEqual({ username: 'granted' })
 })
 
+test('convertPersonalOrg surfaces the same reserved error as username signup', async () => {
+	const { db, env } = await createHarness()
+	const personId = await seedEqualIdPerson(db, {
+		email: 'reserved@example.com',
+		username: 'reserved-user',
+	})
+	for (const newHandle of ['admin', 'me', 'ME', 'kody']) {
+		await expect(
+			convertPersonalOrg({
+				env,
+				personId,
+				newHandle,
+				now: new Date(now),
+			}),
+		).rejects.toMatchObject({
+			name: 'ConvertPersonalOrgError',
+			code: 'invalid_handle',
+			message: 'This username is reserved.',
+		} satisfies Partial<ConvertPersonalOrgError>)
+	}
+	expect(
+		await db
+			.prepare(`SELECT username FROM users WHERE stable_user_id = ?`)
+			.bind(personId)
+			.first(),
+	).toEqual({ username: 'reserved-user' })
+	expect(
+		await db
+			.prepare(
+				`SELECT COUNT(*) AS count FROM orgs WHERE slug IN ('admin', 'me', 'kody')`,
+			)
+			.first<{ count: number }>(),
+	).toEqual({ count: 0 })
+})
+
 test('convertPersonalOrg refuses when minting the new free personal org would exceed the free-org cap', async () => {
 	const { db, env } = await createHarness()
 	const personId = await seedEqualIdPerson(db, {
