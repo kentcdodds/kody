@@ -31,7 +31,12 @@ function bumpForCommit(commit: ReleaseCommit): ReleaseBump {
 		return 'major'
 	}
 	if (breaking) return 'major'
-	if (!releasableTypes.has(match.groups.type)) return 'none'
+	// docs / chore / ci / test / build / style / refactor: patch when they
+	// touch packages/cli so help and other CLI-facing source still publishes
+	// (#3975). feat stays minor; fix / perf / revert stay patch via releasableTypes.
+	if (!releasableTypes.has(match.groups.type)) {
+		return commit.touchesCli ? 'patch' : 'none'
+	}
 	if (match.groups.type === 'feat') return 'minor'
 	return 'patch'
 }
@@ -82,9 +87,12 @@ function nextVersion(current: string, bump: ReleaseBump): string | null {
 }
 
 /**
- * Publish when a releasable commit touches the CLI, or when the generated
+ * Publish when a conventional commit touches the CLI (`feat` → minor;
+ * `fix` / `perf` / `revert` → patch; `docs` / `chore` / `ci` / `test` /
+ * `build` / `style` / `refactor` → patch per #3975), or when the generated
  * route table changed (spec/shared input) even if those commits are not
- * `feat`/`fix`. Other commits do not publish.
+ * `feat`/`fix`. Commits that do not touch the CLI (and do not change the
+ * generated client) do not publish.
  */
 export function planCliRelease(input: {
 	currentVersion: string

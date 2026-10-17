@@ -58,15 +58,44 @@ test('shared spec commits publish only when the generated client changes', () =>
 	).toEqual({ version: '1.27.0' })
 })
 
-test('unrelated and docs commits do not publish', () => {
+test('docs and other non-fix/feat types patch-bump when they touch the CLI', () => {
+	expect(
+		planCliRelease({
+			currentVersion: cliBaselineVersion,
+			generatedClientChanged: false,
+			commits: [commit({ subject: 'docs(cli): readme', touchesCli: true })],
+		}),
+	).toEqual({ version: '1.26.4' })
+	expect(
+		planCliRelease({
+			currentVersion: '1.27.7',
+			generatedClientChanged: false,
+			commits: [
+				commit({ subject: 'chore(cli): format help', touchesCli: true }),
+			],
+		}),
+	).toEqual({ version: '1.27.8' })
+	expect(
+		planCliRelease({
+			currentVersion: cliBaselineVersion,
+			generatedClientChanged: false,
+			commits: [
+				commit({ subject: 'ci: tweak workflow', touchesCli: true }),
+				commit({ subject: 'refactor(cli): rename a local', touchesCli: true }),
+			],
+		}),
+	).toEqual({ version: '1.26.4' })
+})
+
+test('unrelated commits and non-fix/feat types that skip the CLI do not publish', () => {
 	expect(
 		planCliRelease({
 			currentVersion: cliBaselineVersion,
 			generatedClientChanged: false,
 			commits: [
 				commit({ subject: 'feat(worker): unrelated' }),
-				commit({ subject: 'docs(cli): readme', touchesCli: true }),
-				commit({ subject: 'chore: format', touchesCli: true }),
+				commit({ subject: 'docs: guide only' }),
+				commit({ subject: 'chore: format' }),
 			],
 		}),
 	).toBeNull()
