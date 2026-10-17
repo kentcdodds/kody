@@ -243,9 +243,26 @@ export function closePackageSqlDbsForSession(sessionId: string): void {
 }
 
 /**
+ * True when the prepared statement yields result columns (SELECT / WITH /
+ * PRAGMA / EXPLAIN, or DML with RETURNING). Prefer `StatementSync.columns()`
+ * (Node ≥22.16) over verb-prefix matching so `INSERT … RETURNING` is not
+ * treated as a silent mutation. A `returning` regex would also match string
+ * literals — columns() does not.
+ */
+export function statementYieldsRows(stmt: {
+	columns?: () => Array<unknown>
+}): boolean | null {
+	if (typeof stmt.columns !== 'function') return null
+	return stmt.columns().length > 0
+}
+
+/**
  * Run SQL against the package's scratch SQLite file.
  * Returns `{ rows }` so callers that accept either an array or `{ rows }` work
  * (same shape dropbox-delete-me / data-table expect from hosted packageStorage).
+ * Mutations without result columns also return `changes` (node:sqlite `run`).
+ * Hosted `packageStorage().sql` returns RETURNING rows the same way via the
+ * Durable Object SQL cursor (see storage-runner `sqlQuery`).
  */
 export function packageStorageSql(
 	state: MockSessionState,
@@ -270,19 +287,39 @@ export function packageStorageSql(
 			if (value instanceof Uint8Array) return value
 			return String(value)
 		})
+	const yields = statementYieldsRows(stmt)
+	if (yields === true) {
+		return { rows: plainSqlRows(stmt.all(...params)) }
+	}
+	if (yields === false) {
+		const info = stmt.run(...params) as { changes?: number }
+		return {
+			rows: [],
+			changes: typeof info.changes === 'number' ? info.changes : 0,
+		}
+	}
+	// Node < 22.16: columns() missing. Prefer all() so RETURNING still works
+	// (never match the word "returning" in the SQL text). all() already ran
+	// the statement — do not call run() afterward (that would double-write).
+	const rows = plainSqlRows(stmt.all(...params))
+	if (rows.length > 0) return { rows }
 	const trimmed = query.trimStart().toLowerCase()
-	const isQuery =
+	const isReadLike =
 		trimmed.startsWith('select') ||
 		trimmed.startsWith('with') ||
 		trimmed.startsWith('pragma') ||
 		trimmed.startsWith('explain')
-	if (isQuery) {
-		const rows = stmt.all(...params) as Array<Record<string, unknown>>
-		return { rows }
-	}
-	const info = stmt.run(...params) as { changes?: number }
+	if (isReadLike) return { rows }
+	const changesRow = db.prepare('select changes() as c').get() as
+		| { c?: number }
+		| undefined
 	return {
 		rows: [],
-		changes: typeof info.changes === 'number' ? info.changes : 0,
+		changes: typeof changesRow?.c === 'number' ? changesRow.c : 0,
 	}
+}
+
+/** node:sqlite returns null-prototype row objects; plain clones JSON-cleanly. */
+function plainSqlRows(rows: Array<unknown>): Array<Record<string, unknown>> {
+	return rows.map((row) => ({ ...(row as Record<string, unknown>) }))
 }
