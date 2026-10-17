@@ -228,6 +228,15 @@ test('unknown --code-file is rejected and suggests --file', () => {
 		() => resolveCommand(['execute', '--local', '--code-file', 'mod.js']),
 		/Unknown option "--code-file".*Did you mean --file\?/,
 	)
+	assert.throws(
+		() =>
+			resolveCommand(['execute', '--local', '--file', '--code-file', 'mod.js']),
+		/Unknown option "--code-file".*Did you mean --file\?/,
+	)
+	assert.equal(
+		resolveCommand(['execute', '--local', '--file=--code-file']).values.file,
+		'--code-file',
+	)
 })
 
 test('unknown flags write a usage error to stderr and do not run the module path', async () => {

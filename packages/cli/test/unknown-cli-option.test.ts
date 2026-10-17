@@ -45,3 +45,36 @@ test('assertNoUnknownCliOptions ignores known options and positionals', () => {
 		/Did you mean --file\?/,
 	)
 })
+
+test('assertNoUnknownCliOptions rejects a flag consumed as a string option value', () => {
+	assert.throws(
+		() =>
+			assertNoUnknownCliOptions(
+				[
+					{
+						kind: 'option',
+						name: 'file',
+						rawName: '--file',
+						value: '--code-file',
+						inlineValue: false,
+					},
+				],
+				known,
+			),
+		/Did you mean --file\?/,
+	)
+	assert.doesNotThrow(() =>
+		assertNoUnknownCliOptions(
+			[
+				{
+					kind: 'option',
+					name: 'file',
+					rawName: '--file',
+					value: '--code-file',
+					inlineValue: true,
+				},
+			],
+			known,
+		),
+	)
+})
