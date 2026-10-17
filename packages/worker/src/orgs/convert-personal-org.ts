@@ -102,6 +102,28 @@ export type ConvertPersonalOrgResult = {
 
 type CryptoEnv = Pick<Env, 'SECRET_STORE_KEY'>
 
+async function listLiveCredentialIdsForOwner(db: D1Database, ownerId: string) {
+	const { results } = await db
+		.prepare(
+			`SELECT e.id AS id FROM secret_entries e
+			 INNER JOIN secret_buckets b ON b.id = e.bucket_id
+			 WHERE b.user_id = ? AND b.scope = 'user'
+			   AND e.deleted_at IS NULL AND b.deleted_at IS NULL
+			   AND e.id IS NOT NULL AND TRIM(e.id) != ''
+			 UNION
+			 SELECT i.id AS id FROM user_integrations i
+			 WHERE i.user_id = ? AND i.deleted_at IS NULL
+			   AND i.id IS NOT NULL AND TRIM(i.id) != ''
+			 UNION
+			 SELECT m.id AS id FROM mcp_server_settings m
+			 WHERE m.user_id = ? AND m.deleted_at IS NULL
+			   AND m.id IS NOT NULL AND TRIM(m.id) != ''`,
+		)
+		.bind(ownerId, ownerId, ownerId)
+		.all<{ id: string }>()
+	return (results ?? []).map((row) => row.id)
+}
+
 async function listCredentialOrgGrantNames(db: D1Database, personId: string) {
 	const { results } = await db
 		.prepare(
@@ -185,7 +207,7 @@ async function moveOauthAppsAndIntegrations(input: {
 }) {
 	const apps = await input.db
 		.prepare(
-			`SELECT rowid, slug, client_secret_encrypted, logo_key
+			`SELECT rowid, slug, client_secret_encrypted
 			 FROM user_oauth_apps
 			 WHERE user_id = ? AND deleted_at IS NULL`,
 		)
@@ -194,7 +216,6 @@ async function moveOauthAppsAndIntegrations(input: {
 			rowid: number
 			slug: string
 			client_secret_encrypted: string | null
-			logo_key: string | null
 		}>()
 	const integrations = await input.db
 		.prepare(
@@ -233,10 +254,8 @@ async function moveOauthAppsAndIntegrations(input: {
 				),
 			)
 		}
-		if (row.logo_key?.includes(input.fromId)) {
-			updates.push('logo_key = ?')
-			binds.push(row.logo_key.split(input.fromId).join(input.toId))
-		}
+		// Keep logo_key on the existing R2 object. Rewriting the owner segment
+		// without copying the blob would 404; org-transfer copies first.
 		updates.push('user_id = ?')
 		binds.push(input.toId, row.rowid)
 		statements.push(
@@ -333,11 +352,21 @@ async function moveMcpServers(input: {
 		const transfer = await sourceHub.exportServerForTransfer({
 			serverId: row.id,
 		})
-		if (transfer) {
-			await targetHub.importServerForTransfer(transfer)
-			await sourceHub.removeServerForTransfer({ serverId: row.id })
-			await targetHub.connectTransferredServer({ serverId: row.id })
+		if (!transfer) {
+			throw new ConvertPersonalOrgError(
+				`Unable to move MCP server "${row.name}" during conversion.`,
+				'failed',
+			)
 		}
+		const imported = await targetHub.importServerForTransfer(transfer)
+		if (!imported.ok) {
+			throw new ConvertPersonalOrgError(
+				`Unable to import MCP server "${row.name}" during conversion.`,
+				'failed',
+			)
+		}
+		await sourceHub.removeServerForTransfer({ serverId: row.id })
+		await targetHub.connectTransferredServer({ serverId: row.id })
 	}
 	await input.db
 		.prepare(
@@ -525,6 +554,31 @@ export async function convertPersonalOrg(input: {
 		}
 	}
 
+	// Fail closed before irreversible identity writes.
+	let emailDomain: string | null = null
+	if (convertPersonalOrgKeepEmailOnConvertedOrg) {
+		emailDomain = getPlatformEmailDomain(input.env)
+		if (!emailDomain) {
+			throw new ConvertPersonalOrgError(
+				'Outbound email is unavailable because no platform email domain is configured.',
+				'failed',
+			)
+		}
+	}
+	const mcpServerCount = await db
+		.prepare(
+			`SELECT COUNT(*) AS count FROM mcp_server_settings
+			 WHERE user_id = ? AND deleted_at IS NULL`,
+		)
+		.bind(convertedOrgId)
+		.first<{ count: number }>()
+	if ((mcpServerCount?.count ?? 0) > 0 && !input.env.MCP_CLIENT_HUB) {
+		throw new ConvertPersonalOrgError(
+			'Unable to move MCP server connections during conversion.',
+			'failed',
+		)
+	}
+
 	const newPersonalOrgId = mintOwnerId()
 	const displayName = person.display_name ?? convertedOrg.display_name
 	const avatarKey = person.avatar_key ?? convertedOrg.avatar_key
@@ -574,6 +628,11 @@ export async function convertPersonalOrg(input: {
 		.bind(newPersonalOrgId, convertedOrgId)
 		.run()
 
+	const movedCredentialIds = await listLiveCredentialIdsForOwner(
+		db,
+		convertedOrgId,
+	)
+
 	const userSecrets = await resealUserSecretEntries({
 		env: input.env,
 		db,
@@ -593,6 +652,21 @@ export async function convertPersonalOrg(input: {
 		fromId: convertedOrgId,
 		toId: newPersonalOrgId,
 	})
+
+	// Credentials left the converted org; drop that org's live grants to them
+	// so team members cannot keep using the person's private credentials.
+	if (movedCredentialIds.length > 0) {
+		await db
+			.prepare(
+				`UPDATE grants SET deleted_at = ?, updated_at = ?
+				 WHERE org_id = ?
+				   AND resource_type = 'credential'
+				   AND deleted_at IS NULL
+				   AND resource_id IN (SELECT value FROM json_each(?))`,
+			)
+			.bind(now, now, convertedOrgId, JSON.stringify(movedCredentialIds))
+			.run()
+	}
 
 	const apiTokens = await db
 		.prepare(
@@ -620,29 +694,10 @@ export async function convertPersonalOrg(input: {
 		.bind(convertedOrgId, now, input.personId, convertedOrgId)
 		.run()
 
-	// Person-subject grants that still name the person id as subject stay
-	// person-keyed (subject_type is user|team only). Package ownership under
-	// @old already uses convertedOrgId. Retarget any grant subject that
-	// incorrectly stored the person id as if it were the org owner id when
-	// that id differs from the converted org (legacy rows).
+	// Person-subject grants stay person-keyed (`subject_type` is user|team only).
+	// Follows that targeted the person id under a distinct personal org are
+	// retargeted above to the converted org. Invalidate access caches on both.
 	await db.batch([
-		db
-			.prepare(
-				`UPDATE grants SET subject_id = ?, updated_at = ?
-				 WHERE subject_type = 'user'
-				   AND subject_id = ?
-				   AND org_id = ?
-				   AND deleted_at IS NULL
-				   AND ? != ?`,
-			)
-			.bind(
-				convertedOrgId,
-				now,
-				input.personId,
-				convertedOrgId,
-				input.personId,
-				convertedOrgId,
-			),
 		bumpAccessEpochStatement(db, convertedOrgId),
 		bumpAccessEpochStatement(db, newPersonalOrgId),
 	])
@@ -654,19 +709,12 @@ export async function convertPersonalOrg(input: {
 		toOrgId: newPersonalOrgId,
 	})
 
-	if (convertPersonalOrgKeepEmailOnConvertedOrg) {
-		const domain = getPlatformEmailDomain(input.env)
-		if (!domain) {
-			throw new ConvertPersonalOrgError(
-				'Outbound email is unavailable because no platform email domain is configured.',
-				'failed',
-			)
-		}
+	if (convertPersonalOrgKeepEmailOnConvertedOrg && emailDomain) {
 		await ensureDefaultEmailInbox({
 			db,
 			userId: newPersonalOrgId,
 			username: newUsername,
-			domain,
+			domain: emailDomain,
 		})
 	}
 
