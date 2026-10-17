@@ -117,7 +117,7 @@ test('openCapabilityProxySession explains rejected login OAuth and names the pla
 			}),
 		(error: Error) => {
 			assert.match(error.message, /kody login/)
-			assert.match(error.message, /kentcdodds\/kody\/issues\/2812/)
+			assert.match(error.message, /kody-hq\/kody\/issues\/2812/)
 			assert.match(error.message, /kody_at_/)
 			assert.equal(error.message.includes(oauth), false)
 			return true
