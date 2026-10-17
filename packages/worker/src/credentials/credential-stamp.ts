@@ -818,6 +818,7 @@ export function scanLiteralMcpServerKeys(files: Record<string, string>): {
 					mcpAliases,
 					constantsWithoutShadows(constants, ancestors),
 					declaredMcpKeys,
+					ancestors,
 				)
 				if (server === null) {
 					failures.push({
@@ -905,15 +906,62 @@ function declaredMcpCredentialKeys(
 	return keys
 }
 
+function isFunctionLikeAstNode(node: AstNode): boolean {
+	return (
+		node.type === 'FunctionDeclaration' ||
+		node.type === 'FunctionExpression' ||
+		node.type === 'ArrowFunctionExpression' ||
+		node.type === 'ObjectMethod' ||
+		node.type === 'ClassMethod'
+	)
+}
+
+function functionParamNames(node: AstNode): Array<string> {
+	const names: Array<string> = []
+	for (const param of node.params ?? []) {
+		if (param.type === 'Identifier') {
+			const name = getNodeName(param)
+			if (name) names.push(name)
+			continue
+		}
+		if (
+			param.type === 'AssignmentPattern' &&
+			param.left?.type === 'Identifier'
+		) {
+			const name = getNodeName(param.left)
+			if (name) names.push(name)
+		}
+	}
+	return names
+}
+
 /**
- * `cm.mcp` / `cm?.mcp` / `cm['mcp']` when `cm` is not a known kody/mcp alias.
- * Used only to mark already-declared MCP slots as used (kasa helpers); never
- * seals new keys or fails the publish gate.
+ * True when `name` is a parameter of an enclosing function (inner-to-outer).
+ * Used so loose `cm.mcp?.['home']` on a helper parameter counts, while
+ * unrelated `settings.mcp.home` data does not.
+ */
+function isEnclosingFunctionParameter(
+	name: string,
+	ancestors: ReadonlyArray<AstNode>,
+): boolean {
+	for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+		const ancestor = ancestors[index]
+		if (!ancestor || !isFunctionLikeAstNode(ancestor)) continue
+		if (functionParamNames(ancestor).includes(name)) return true
+	}
+	return false
+}
+
+/**
+ * `cm.mcp` / `cm?.mcp` / `cm['mcp']` when `cm` is an enclosing function
+ * parameter (not a known kody/mcp alias). Used only to mark already-declared
+ * MCP slots as used (kasa helpers); never seals new keys or fails the gate.
  */
 function isLooseDeclaredMcpRoot(
 	node: AstNode,
 	kodyAliases: Set<string>,
 	mcpAliases: Set<string>,
+	ancestors: ReadonlyArray<AstNode>,
 ): boolean {
 	if (
 		node.type !== 'MemberExpression' &&
@@ -926,7 +974,7 @@ function isLooseDeclaredMcpRoot(
 	const objectName = getNodeName(node.object)
 	if (objectName == null) return false
 	if (kodyAliases.has(objectName) || mcpAliases.has(objectName)) return false
-	return true
+	return isEnclosingFunctionParameter(objectName, ancestors)
 }
 
 function collectLiteralMcpServersFromObjectPattern(input: {
@@ -999,6 +1047,7 @@ function mcpServerFromMember(
 	mcpAliases: Set<string>,
 	constants: ReadonlyMap<string, string> = new Map(),
 	declaredMcpKeys: ReadonlySet<string> = new Set(),
+	ancestors: ReadonlyArray<AstNode> = [],
 ): string | null | undefined {
 	if (
 		node.type !== 'MemberExpression' &&
@@ -1016,12 +1065,13 @@ function mcpServerFromMember(
 		// scope — same as credential("KEY") const folding. Dynamic → fail.
 		return server
 	}
-	// Helpers like kasa's `cm.mcp?.['home']`: count a literal server only when
-	// that slot is already declared kind "mcp". Ignore unrelated `*.mcp` data
-	// and never fail the gate for dynamic access on those roots.
+	// Helpers like kasa's `cm.mcp?.['home']` on a function parameter: count a
+	// literal server only when that slot is already declared kind "mcp".
+	// Unrelated locals such as `settings.mcp.home` are ignored even if `home`
+	// is declared.
 	if (
 		node.object &&
-		isLooseDeclaredMcpRoot(node.object, kodyAliases, mcpAliases)
+		isLooseDeclaredMcpRoot(node.object, kodyAliases, mcpAliases, ancestors)
 	) {
 		const server = literalMcpServerName(node, constants)
 		if (server != null && declaredMcpKeys.has(server)) return server

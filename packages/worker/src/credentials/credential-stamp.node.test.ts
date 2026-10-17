@@ -271,6 +271,23 @@ test('scanLiteralMcpServerKeys stamps literal servers and fails dynamic access',
 	expect(unrelatedMcpData.keys).toEqual([])
 	expect(unrelatedMcpData.failures).toEqual([])
 
+	// Declared slot name on unrelated local data must not count as use.
+	const unrelatedMatchingSlot = scanLiteralMcpServerKeys({
+		'package.json': manifest({
+			credentials: {
+				home: { kind: 'mcp', description: 'Home connector.' },
+			},
+		}),
+		'src/index.ts': [
+			'const settings = { mcp: { home: { enabled: true } } }',
+			'export default async function run() {',
+			'\treturn settings.mcp.home',
+			'}',
+		].join('\n'),
+	})
+	expect(unrelatedMatchingSlot.keys).toEqual([])
+	expect(unrelatedMatchingSlot.failures).toEqual([])
+
 	const serverNamedMcp = scanLiteralMcpServerKeys({
 		'package.json': manifest(),
 		'src/index.ts': [
