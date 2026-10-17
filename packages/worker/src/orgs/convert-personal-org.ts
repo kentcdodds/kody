@@ -319,21 +319,28 @@ async function moveOauthAppsAndIntegrations(input: {
 	return (integrations.results ?? []).length
 }
 
-async function moveMcpServers(input: {
+type ConvertMcpServerRow = { id: string; name: string }
+
+/**
+ * Stage MCP hub copies onto the new personal org id before any irreversible
+ * identity writes. Mirrors org-transfer: export + import only (no source
+ * remove / target connect). On failure, discard already-staged imports.
+ */
+async function stageMcpServerTransfers(input: {
 	env: Env
 	db: D1Database
 	fromId: OwnerId
 	toId: OwnerId
-}) {
+}): Promise<Array<ConvertMcpServerRow>> {
 	const { results } = await input.db
 		.prepare(
 			`SELECT id, name FROM mcp_server_settings
 			 WHERE user_id = ? AND deleted_at IS NULL`,
 		)
 		.bind(input.fromId)
-		.all<{ id: string; name: string }>()
+		.all<ConvertMcpServerRow>()
 	const rows = results ?? []
-	if (rows.length === 0) return 0
+	if (rows.length === 0) return []
 	if (!input.env.MCP_CLIENT_HUB) {
 		throw new ConvertPersonalOrgError(
 			'Unable to move MCP server connections during conversion.',
@@ -348,26 +355,56 @@ async function moveMcpServers(input: {
 		env: input.env,
 		userId: input.toId,
 	})
-	for (const row of rows) {
-		const transfer = await sourceHub.exportServerForTransfer({
-			serverId: row.id,
-		})
-		if (!transfer) {
-			throw new ConvertPersonalOrgError(
-				`Unable to move MCP server "${row.name}" during conversion.`,
-				'failed',
-			)
+	const staged: Array<ConvertMcpServerRow> = []
+	try {
+		for (const row of rows) {
+			const transfer = await sourceHub.exportServerForTransfer({
+				serverId: row.id,
+			})
+			if (!transfer) {
+				throw new ConvertPersonalOrgError(
+					`Unable to move MCP server "${row.name}" during conversion.`,
+					'failed',
+				)
+			}
+			const imported = await targetHub.importServerForTransfer(transfer)
+			if (!imported.ok) {
+				throw new ConvertPersonalOrgError(
+					`Unable to import MCP server "${row.name}" during conversion.`,
+					'failed',
+				)
+			}
+			staged.push(row)
 		}
-		const imported = await targetHub.importServerForTransfer(transfer)
-		if (!imported.ok) {
-			throw new ConvertPersonalOrgError(
-				`Unable to import MCP server "${row.name}" during conversion.`,
-				'failed',
-			)
+	} catch (error) {
+		for (const row of staged) {
+			await targetHub.discardTransferredServer({ serverId: row.id })
 		}
-		await sourceHub.removeServerForTransfer({ serverId: row.id })
-		await targetHub.connectTransferredServer({ serverId: row.id })
+		throw error
 	}
+	return rows
+}
+
+async function discardStagedMcpServerTransfers(input: {
+	env: Env
+	toId: OwnerId
+	servers: Array<ConvertMcpServerRow>
+}) {
+	if (input.servers.length === 0 || !input.env.MCP_CLIENT_HUB) return
+	const targetHub = mcpClientHubTransferStub({
+		env: input.env,
+		userId: input.toId,
+	})
+	for (const row of input.servers) {
+		await targetHub.discardTransferredServer({ serverId: row.id })
+	}
+}
+
+async function rewriteMcpServerOwnership(input: {
+	db: D1Database
+	fromId: OwnerId
+	toId: OwnerId
+}) {
 	await input.db
 		.prepare(
 			`UPDATE mcp_server_settings SET user_id = ?
@@ -382,7 +419,36 @@ async function moveMcpServers(input: {
 		)
 		.bind(input.toId, input.fromId)
 		.run()
-	return rows.length
+}
+
+/**
+ * After D1 ownership rewrite: close the source hub connection, then dial the
+ * staged target. Best-effort — identity is already committed; staged hub state
+ * plus rewritten `mcp_server_settings` is the recovery path.
+ */
+async function finalizeMcpServerTransfers(input: {
+	env: Env
+	fromId: OwnerId
+	toId: OwnerId
+	servers: Array<ConvertMcpServerRow>
+}) {
+	if (input.servers.length === 0 || !input.env.MCP_CLIENT_HUB) return
+	const sourceHub = mcpClientHubTransferStub({
+		env: input.env,
+		userId: input.fromId,
+	})
+	const targetHub = mcpClientHubTransferStub({
+		env: input.env,
+		userId: input.toId,
+	})
+	for (const row of input.servers) {
+		try {
+			await sourceHub.removeServerForTransfer({ serverId: row.id })
+			await targetHub.connectTransferredServer({ serverId: row.id })
+		} catch {
+			// Leave staged + D1-owned; operator recovery can reconnect later.
+		}
+	}
 }
 
 async function retargetOauthGrantMetadata(input: {
@@ -583,160 +649,187 @@ export async function convertPersonalOrg(input: {
 	const displayName = person.display_name ?? convertedOrg.display_name
 	const avatarKey = person.avatar_key ?? convertedOrg.avatar_key
 
-	await provisionPersonalOrg(db, {
-		stableUserId: input.personId,
-		orgId: newPersonalOrgId,
-		username: newUsername,
-		createdAt: now,
-		displayName,
-		avatarKey,
-		plan: 'free',
-	})
-
-	// Detach the person from the old handle row so @old is org-only.
-	await db
-		.prepare(
-			`UPDATE handles SET user_id = NULL WHERE handle = ? AND org_id = ?`,
-		)
-		.bind(convertedOrg.slug, convertedOrgId)
-		.run()
-
-	await db
-		.prepare(
-			`UPDATE users
-			 SET username = ?, personal_org_id = ?, updated_at = ?
-			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
-		)
-		.bind(newUsername, newPersonalOrgId, now, input.personId)
-		.run()
-
-	// provisionPersonalOrg inserted a handle with user_id; keep it.
-	// Owner membership on the converted org already exists — no members added.
-
-	const memories = await db
-		.prepare(
-			`UPDATE mcp_memories SET user_id = ?
-			 WHERE user_id = ? AND deleted_at IS NULL`,
-		)
-		.bind(newPersonalOrgId, convertedOrgId)
-		.run()
-	await db
-		.prepare(
-			`UPDATE mcp_memory_conversation_suppressions SET user_id = ?
-			 WHERE user_id = ?`,
-		)
-		.bind(newPersonalOrgId, convertedOrgId)
-		.run()
-
-	const movedCredentialIds = await listLiveCredentialIdsForOwner(
-		db,
-		convertedOrgId,
-	)
-
-	const userSecrets = await resealUserSecretEntries({
+	// Hub stage before irreversible identity writes (org-transfer pattern).
+	const stagedMcpServers = await stageMcpServerTransfers({
 		env: input.env,
 		db,
 		fromId: convertedOrgId,
 		toId: newPersonalOrgId,
 	})
-	const integrations = await moveOauthAppsAndIntegrations({
-		env: input.env,
-		db,
-		fromId: convertedOrgId,
-		toId: newPersonalOrgId,
-	})
+	let mcpOwnershipRewritten = false
 
-	const mcpServers = await moveMcpServers({
-		env: input.env,
-		db,
-		fromId: convertedOrgId,
-		toId: newPersonalOrgId,
-	})
+	try {
+		await provisionPersonalOrg(db, {
+			stableUserId: input.personId,
+			orgId: newPersonalOrgId,
+			username: newUsername,
+			createdAt: now,
+			displayName,
+			avatarKey,
+			plan: 'free',
+		})
 
-	// Credentials left the converted org; drop that org's live grants to them
-	// so team members cannot keep using the person's private credentials.
-	if (movedCredentialIds.length > 0) {
+		// Detach the person from the old handle row so @old is org-only.
 		await db
 			.prepare(
-				`UPDATE grants SET deleted_at = ?, updated_at = ?
-				 WHERE org_id = ?
-				   AND resource_type = 'credential'
-				   AND deleted_at IS NULL
-				   AND resource_id IN (SELECT value FROM json_each(?))`,
+				`UPDATE handles SET user_id = NULL WHERE handle = ? AND org_id = ?`,
 			)
-			.bind(now, now, convertedOrgId, JSON.stringify(movedCredentialIds))
+			.bind(convertedOrg.slug, convertedOrgId)
 			.run()
-	}
 
-	const apiTokens = await db
-		.prepare(
-			`UPDATE api_tokens SET org_id = ?, updated_at = ?
-			 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
-		)
-		.bind(newPersonalOrgId, now, convertedOrgId, input.personId)
-		.run()
+		await db
+			.prepare(
+				`UPDATE users
+				 SET username = ?, personal_org_id = ?, updated_at = ?
+				 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			)
+			.bind(newUsername, newPersonalOrgId, now, input.personId)
+			.run()
 
-	// Passkeys are person-only (no org_id). CLI bootstrap codes bound to the
-	// old personal org follow API tokens.
-	await db
-		.prepare(
-			`UPDATE cli_credential_bootstrap_codes SET org_id = ?
-			 WHERE org_id = ? AND user_id = ?`,
-		)
-		.bind(newPersonalOrgId, convertedOrgId, input.personId)
-		.run()
+		// provisionPersonalOrg inserted a handle with user_id; keep it.
+		// Owner membership on the converted org already exists — no members added.
 
-	const followsRetargeted = await db
-		.prepare(
-			`UPDATE follows SET target_owner_id = ?, updated_at = ?
-			 WHERE target_owner_id = ? AND target_owner_id != ?`,
-		)
-		.bind(convertedOrgId, now, input.personId, convertedOrgId)
-		.run()
+		const memories = await db
+			.prepare(
+				`UPDATE mcp_memories SET user_id = ?
+				 WHERE user_id = ? AND deleted_at IS NULL`,
+			)
+			.bind(newPersonalOrgId, convertedOrgId)
+			.run()
+		await db
+			.prepare(
+				`UPDATE mcp_memory_conversation_suppressions SET user_id = ?
+				 WHERE user_id = ?`,
+			)
+			.bind(newPersonalOrgId, convertedOrgId)
+			.run()
 
-	// Person-subject grants stay person-keyed (`subject_type` is user|team only).
-	// Follows that targeted the person id under a distinct personal org are
-	// retargeted above to the converted org. Invalidate access caches on both.
-	await db.batch([
-		bumpAccessEpochStatement(db, convertedOrgId),
-		bumpAccessEpochStatement(db, newPersonalOrgId),
-	])
-
-	const oauthGrants = await retargetOauthGrantMetadata({
-		env: input.env,
-		personId: input.personId,
-		fromOrgId: convertedOrgId,
-		toOrgId: newPersonalOrgId,
-	})
-
-	if (convertPersonalOrgKeepEmailOnConvertedOrg && emailDomain) {
-		await ensureDefaultEmailInbox({
+		const movedCredentialIds = await listLiveCredentialIdsForOwner(
 			db,
-			userId: newPersonalOrgId,
-			username: newUsername,
-			domain: emailDomain,
+			convertedOrgId,
+		)
+
+		const userSecrets = await resealUserSecretEntries({
+			env: input.env,
+			db,
+			fromId: convertedOrgId,
+			toId: newPersonalOrgId,
 		})
-	}
+		const integrations = await moveOauthAppsAndIntegrations({
+			env: input.env,
+			db,
+			fromId: convertedOrgId,
+			toId: newPersonalOrgId,
+		})
 
-	await reindexMovedMemories({
-		env: input.env,
-		db,
-		toId: newPersonalOrgId,
-	})
+		await rewriteMcpServerOwnership({
+			db,
+			fromId: convertedOrgId,
+			toId: newPersonalOrgId,
+		})
+		mcpOwnershipRewritten = true
 
-	return {
-		convertedOrgId,
-		convertedSlug: convertedOrg.slug,
-		newPersonalOrgId,
-		newUsername,
-		moved: {
-			memories: memories.meta.changes ?? 0,
-			userSecrets,
-			integrations,
-			mcpServers,
-			apiTokens: apiTokens.meta.changes ?? 0,
-			oauthGrants,
-			followsRetargeted: followsRetargeted.meta.changes ?? 0,
-		},
+		// Credentials left the converted org; drop that org's live grants to them
+		// so team members cannot keep using the person's private credentials.
+		if (movedCredentialIds.length > 0) {
+			await db
+				.prepare(
+					`UPDATE grants SET deleted_at = ?, updated_at = ?
+					 WHERE org_id = ?
+					   AND resource_type = 'credential'
+					   AND deleted_at IS NULL
+					   AND resource_id IN (SELECT value FROM json_each(?))`,
+				)
+				.bind(now, now, convertedOrgId, JSON.stringify(movedCredentialIds))
+				.run()
+		}
+
+		const apiTokens = await db
+			.prepare(
+				`UPDATE api_tokens SET org_id = ?, updated_at = ?
+				 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
+			)
+			.bind(newPersonalOrgId, now, convertedOrgId, input.personId)
+			.run()
+
+		// Passkeys are person-only (no org_id). CLI bootstrap codes bound to the
+		// old personal org follow API tokens.
+		await db
+			.prepare(
+				`UPDATE cli_credential_bootstrap_codes SET org_id = ?
+				 WHERE org_id = ? AND user_id = ?`,
+			)
+			.bind(newPersonalOrgId, convertedOrgId, input.personId)
+			.run()
+
+		const followsRetargeted = await db
+			.prepare(
+				`UPDATE follows SET target_owner_id = ?, updated_at = ?
+				 WHERE target_owner_id = ? AND target_owner_id != ?`,
+			)
+			.bind(convertedOrgId, now, input.personId, convertedOrgId)
+			.run()
+
+		// Person-subject grants stay person-keyed (`subject_type` is user|team only).
+		// Follows that targeted the person id under a distinct personal org are
+		// retargeted above to the converted org. Invalidate access caches on both.
+		await db.batch([
+			bumpAccessEpochStatement(db, convertedOrgId),
+			bumpAccessEpochStatement(db, newPersonalOrgId),
+		])
+
+		const oauthGrants = await retargetOauthGrantMetadata({
+			env: input.env,
+			personId: input.personId,
+			fromOrgId: convertedOrgId,
+			toOrgId: newPersonalOrgId,
+		})
+
+		if (convertPersonalOrgKeepEmailOnConvertedOrg && emailDomain) {
+			await ensureDefaultEmailInbox({
+				db,
+				userId: newPersonalOrgId,
+				username: newUsername,
+				domain: emailDomain,
+			})
+		}
+
+		await reindexMovedMemories({
+			env: input.env,
+			db,
+			toId: newPersonalOrgId,
+		})
+
+		await finalizeMcpServerTransfers({
+			env: input.env,
+			fromId: convertedOrgId,
+			toId: newPersonalOrgId,
+			servers: stagedMcpServers,
+		})
+
+		return {
+			convertedOrgId,
+			convertedSlug: convertedOrg.slug,
+			newPersonalOrgId,
+			newUsername,
+			moved: {
+				memories: memories.meta.changes ?? 0,
+				userSecrets,
+				integrations,
+				mcpServers: stagedMcpServers.length,
+				apiTokens: apiTokens.meta.changes ?? 0,
+				oauthGrants,
+				followsRetargeted: followsRetargeted.meta.changes ?? 0,
+			},
+		}
+	} catch (error) {
+		if (!mcpOwnershipRewritten) {
+			await discardStagedMcpServerTransfers({
+				env: input.env,
+				toId: newPersonalOrgId,
+				servers: stagedMcpServers,
+			})
+		}
+		throw error
 	}
 }

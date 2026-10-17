@@ -5,7 +5,7 @@ import {
 	type OwnerId,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 import {
 	decryptSecretValue,
 	decryptUserOauthAccessToken,
@@ -25,16 +25,74 @@ import {
 import { isPersonalOrg } from './is-personal-org.ts'
 import { provisionPersonalOrg } from './provision.ts'
 
+const hubMock = vi.hoisted(() => {
+	const calls: Array<string> = []
+	let failImportOnServerId: string | null = null
+	let usernameAtFirstImport: string | null = null
+	let readUsername: (() => Promise<string | null>) | null = null
+	return {
+		calls,
+		reset() {
+			calls.length = 0
+			failImportOnServerId = null
+			usernameAtFirstImport = null
+			readUsername = null
+		},
+		failImportOn(serverId: string) {
+			failImportOnServerId = serverId
+		},
+		observeUsername(reader: () => Promise<string | null>) {
+			readUsername = reader
+		},
+		usernameAtFirstImport: () => usernameAtFirstImport,
+		stub: ({ userId }: { userId: string }) => ({
+			exportServerForTransfer: async ({ serverId }: { serverId: string }) => {
+				calls.push(`export:${userId}:${serverId}`)
+				return {
+					row: {
+						id: serverId,
+						name: serverId,
+						server_url: 'https://mcp.example.com',
+						client_id: null,
+						auth_url: null,
+						callback_url: 'https://kody.codes/mcp/callback',
+						server_options: null,
+					},
+					entries: [] as Array<[string, unknown]>,
+				}
+			},
+			importServerForTransfer: async (transfer: { row: { id: string } }) => {
+				calls.push(`import:${userId}:${transfer.row.id}`)
+				if (usernameAtFirstImport === null && readUsername) {
+					usernameAtFirstImport = await readUsername()
+				}
+				if (failImportOnServerId === transfer.row.id) {
+					return { ok: false as const, reason: 'already_registered' as const }
+				}
+				return { ok: true as const }
+			},
+			removeServerForTransfer: async ({ serverId }: { serverId: string }) => {
+				calls.push(`remove:${userId}:${serverId}`)
+			},
+			connectTransferredServer: async ({ serverId }: { serverId: string }) => {
+				calls.push(`connect:${userId}:${serverId}`)
+				return { ok: true as const }
+			},
+			discardTransferredServer: async ({ serverId }: { serverId: string }) => {
+				calls.push(`discard:${userId}:${serverId}`)
+			},
+			listServerIdsForTransfer: async () => [],
+		}),
+	}
+})
+
 vi.mock('#worker/mcp-client/hub-transfer.ts', () => ({
-	mcpClientHubTransferStub: () => ({
-		exportServerForTransfer: async () => null,
-		importServerForTransfer: async () => ({ ok: true as const }),
-		removeServerForTransfer: async () => {},
-		connectTransferredServer: async () => ({ ok: true as const }),
-		discardTransferredServer: async () => {},
-		listServerIdsForTransfer: async () => [],
-	}),
+	mcpClientHubTransferStub: hubMock.stub,
 }))
+
+beforeEach(() => {
+	hubMock.reset()
+})
 
 vi.mock('#mcp/memory/memory-vectorize.ts', () => ({
 	deleteMemoryVector: async (_env: unknown, _memoryId: string) => {},
@@ -450,6 +508,118 @@ test('convertPersonalOrg surfaces the same reserved error as username signup', a
 			)
 			.first<{ count: number }>(),
 	).toEqual({ count: 0 })
+})
+
+test('convertPersonalOrg stages MCP hub transfers before identity rewrite and discards on import failure', async () => {
+	const { db, env } = await createHarness()
+	const personId = await seedEqualIdPerson(db, {
+		email: 'mcp@example.com',
+		username: 'mcp-user',
+	})
+	const convertedOrgId = personalOrgId(personId)
+	;(env as { MCP_CLIENT_HUB?: unknown }).MCP_CLIENT_HUB = {}
+	await db
+		.prepare(
+			`INSERT INTO mcp_server_settings (id, user_id, name, url)
+			 VALUES ('srv-a', ?, 'alpha', 'https://a.example.com'),
+			        ('srv-b', ?, 'beta', 'https://b.example.com')`,
+		)
+		.bind(convertedOrgId, convertedOrgId)
+		.run()
+
+	hubMock.failImportOn('srv-b')
+	hubMock.observeUsername(async () => {
+		const row = await db
+			.prepare(`SELECT username FROM users WHERE stable_user_id = ?`)
+			.bind(personId)
+			.first<{ username: string }>()
+		return row?.username ?? null
+	})
+
+	await expect(
+		convertPersonalOrg({
+			env,
+			personId,
+			newHandle: 'mcp-new',
+			now: new Date(now),
+		}),
+	).rejects.toMatchObject({
+		name: 'ConvertPersonalOrgError',
+		code: 'failed',
+		message: 'Unable to import MCP server "beta" during conversion.',
+	})
+
+	expect(hubMock.usernameAtFirstImport()).toBe('mcp-user')
+	expect(
+		await db
+			.prepare(`SELECT username FROM users WHERE stable_user_id = ?`)
+			.bind(personId)
+			.first(),
+	).toEqual({ username: 'mcp-user' })
+	expect(await isPersonalOrg(db, convertedOrgId)).toBe(true)
+	expect(
+		await db
+			.prepare(`SELECT id, user_id FROM mcp_server_settings ORDER BY id`)
+			.all(),
+	).toMatchObject({
+		results: [
+			{ id: 'srv-a', user_id: convertedOrgId },
+			{ id: 'srv-b', user_id: convertedOrgId },
+		],
+	})
+	expect(hubMock.calls.some((call) => call.startsWith('remove:'))).toBe(false)
+	expect(hubMock.calls.some((call) => call.startsWith('connect:'))).toBe(false)
+	expect(
+		hubMock.calls.some(
+			(call) => call.startsWith('discard:') && call.endsWith(':srv-a'),
+		),
+	).toBe(true)
+})
+
+test('convertPersonalOrg finalizes MCP remove/connect only after identity rewrite', async () => {
+	const { db, env } = await createHarness()
+	const personId = await seedEqualIdPerson(db, {
+		email: 'mcp-ok@example.com',
+		username: 'mcp-ok',
+	})
+	const convertedOrgId = personalOrgId(personId)
+	;(env as { MCP_CLIENT_HUB?: unknown }).MCP_CLIENT_HUB = {}
+	await db
+		.prepare(
+			`INSERT INTO mcp_server_settings (id, user_id, name, url)
+			 VALUES ('srv-ok', ?, 'ok', 'https://ok.example.com')`,
+		)
+		.bind(convertedOrgId)
+		.run()
+
+	hubMock.observeUsername(async () => {
+		const row = await db
+			.prepare(`SELECT username FROM users WHERE stable_user_id = ?`)
+			.bind(personId)
+			.first<{ username: string }>()
+		return row?.username ?? null
+	})
+
+	const result = await convertPersonalOrg({
+		env,
+		personId,
+		newHandle: 'mcp-ok-new',
+		now: new Date(now),
+	})
+
+	expect(result.moved.mcpServers).toBe(1)
+	expect(hubMock.usernameAtFirstImport()).toBe('mcp-ok')
+	expect(hubMock.calls).toEqual([
+		`export:${convertedOrgId}:srv-ok`,
+		`import:${result.newPersonalOrgId}:srv-ok`,
+		`remove:${convertedOrgId}:srv-ok`,
+		`connect:${result.newPersonalOrgId}:srv-ok`,
+	])
+	expect(
+		await db
+			.prepare(`SELECT user_id FROM mcp_server_settings WHERE id = 'srv-ok'`)
+			.first(),
+	).toEqual({ user_id: result.newPersonalOrgId })
 })
 
 test('convertPersonalOrg refuses when minting the new free personal org would exceed the free-org cap', async () => {
