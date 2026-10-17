@@ -194,6 +194,19 @@ test('missing personal-org membership fails closed as signed out instead of 500'
 	expect(resolved.setCookie ?? '').toContain('Max-Age=0')
 })
 
+test('missing personal-org membership fails closed even when a team org is bound', async () => {
+	const env = createUsersDb({
+		user: { username: 'team-orphan' },
+		missingPersonalOrgBinding: true,
+	})
+	// Org-binding middleware would set a team slug; resolution that is not
+	// personal/denied must still require a live personal-org membership.
+	const request = await sessionRequest(
+		'https://example.com/@acme/-/billing.json',
+	)
+	await expect(readAuthenticatedAppUser(request, env)).resolves.toBeNull()
+})
+
 test('readAuthenticatedAppUser prefetches flags only when HTML pages opt in', async () => {
 	const counts = { batch: 0, flagPrepares: 0 }
 	const env = createUsersDb({ user: { username: 'html-user' }, counts })

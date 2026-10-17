@@ -326,7 +326,8 @@ export function createWebauthnAuthenticationHandler(env: Env) {
 			const userRecord = await db.findOne(usersTable, {
 				where: { id: passkey.user_id },
 			})
-			if (!userRecord) {
+			// Soft-deleted people cannot mint a session via passkey.
+			if (!userRecord || userRecord.deleted_at) {
 				return jsonResponse(
 					{ ok: false, error: 'Passkey sign-in failed.' },
 					{ status: 401, headers: { 'Set-Cookie': clearChallengeCookie } },

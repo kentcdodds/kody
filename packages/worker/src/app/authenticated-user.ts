@@ -54,15 +54,15 @@ async function readAuthenticatedAppUserInternal(
 		env,
 		resolved.user.mcpUser.userId,
 	)
-	let orgBinding
+	// Every live person must have a personal-org membership. Check that even
+	// when the request is bound to a team org, so a broken personal row cannot
+	// keep acting on team surfaces.
+	let personalBinding
 	try {
-		orgBinding =
-			resolution === 'personal' || resolution === 'denied'
-				? await loadOrgBindingForPerson(
-						env.APP_DB,
-						resolved.user.mcpUser.userId,
-					)
-				: resolution
+		personalBinding = await loadOrgBindingForPerson(
+			env.APP_DB,
+			resolved.user.mcpUser.userId,
+		)
 	} catch (error) {
 		// Soft-deleted people (or otherwise missing personal-org membership)
 		// must not 500 on every authenticated surface — fail closed as signed
@@ -73,6 +73,10 @@ async function readAuthenticatedAppUserInternal(
 		}
 		throw error
 	}
+	const orgBinding =
+		resolution === 'personal' || resolution === 'denied'
+			? personalBinding
+			: resolution
 	const user = {
 		sessionUserId: resolved.sessionUserId,
 		userId: resolved.user.userId,

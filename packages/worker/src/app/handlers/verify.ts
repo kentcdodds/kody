@@ -137,11 +137,13 @@ export function createTwoFactorVerifyApiHandler(env: Env) {
 			const userRecord = await db.findOne(usersTable, {
 				where: { stable_user_id: pendingSession.stableUserId },
 			})
+			// Soft-deleted people cannot finish 2FA into a session cookie.
+			const liveUserRecord = userRecord?.deleted_at ? null : userRecord
 			const codeValid =
-				userRecord != null &&
+				liveUserRecord != null &&
 				(await verifyTwoFactorCode({
 					db: env.APP_DB,
-					userId: userRecord.id,
+					userId: liveUserRecord.id,
 					code,
 					type: twoFactorVerificationType,
 				}))
