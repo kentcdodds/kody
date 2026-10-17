@@ -46,7 +46,7 @@ export type OrgViewer = { displayName: string; avatarUrl: string | null }
  * with an `href` is a link card; without one it is a plain listing (invites
  * point at organizations the person cannot open yet).
  */
-export function renderOrgRow(input: {
+function renderOrgRow(input: {
 	key: string
 	slug: string
 	displayName: string | null
@@ -291,7 +291,7 @@ export function renderInvites(
 	)
 }
 
-export const orgListCss = {
+const orgListCss = {
 	listStyle: 'none',
 	margin: 0,
 	padding: 0,
