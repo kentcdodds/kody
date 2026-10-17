@@ -2,11 +2,12 @@ import { expect, test } from 'vitest'
 import {
 	builtInReservedUsernameList,
 	isPermanentlyReservedUsername,
+	permanentlyReservedSystemLocals,
 	usernameCollidesWithReservedNames,
 } from '#worker/identity/reserved-usernames.ts'
 import { normalizeEmailAddress, splitEmailLocalPart } from './address.ts'
 import { resolveInboundMailboxRoute } from './inbound-mailbox-route.ts'
-import { systemEmailLocals } from './system-email.ts'
+import { systemEmailInboundAliases, systemEmailLocals } from './system-email.ts'
 
 const userDomain = 'inbox.kody.codes'
 const heykodyUserDomain = 'inbox.heykody.app'
@@ -20,6 +21,17 @@ function routeFor(envelopeTo: string) {
 		systemDomain,
 	})
 }
+
+test('permanent reserved locals cover system locals and inbound aliases', () => {
+	for (const local of systemEmailLocals) {
+		expect(isPermanentlyReservedUsername(local)).toBe(true)
+		expect(permanentlyReservedSystemLocals).toContain(local)
+	}
+	for (const alias of Object.keys(systemEmailInboundAliases)) {
+		expect(isPermanentlyReservedUsername(alias)).toBe(true)
+		expect(permanentlyReservedSystemLocals).toContain(alias)
+	}
+})
 
 test('plus tags on org inbox hosts are never reserved system locals', () => {
 	expect(normalizeEmailAddress('Kent <alice+Kody@Inbox.Kody.CODES>')).toBe(
@@ -82,11 +94,28 @@ test('plus tags on org inbox hosts are never reserved system locals', () => {
 		localBase: 'support',
 		systemDomain,
 	})
+	// Inbound-only alias: team@apex stores in the support system inbox.
+	expect(routeFor(`team@${systemDomain}`)).toEqual({
+		kind: 'system',
+		recipient: `team@${systemDomain}`,
+		localBase: 'support',
+		systemDomain,
+	})
+	expect(routeFor(`Team+ops@${systemDomain}`)).toEqual({
+		kind: 'system',
+		recipient: `team+ops@${systemDomain}`,
+		localBase: 'support',
+		systemDomain,
+	})
 	expect(routeFor(`kody@${userDomain}`)).toEqual({
 		kind: 'reject',
 		reason: 'This address is reserved for system mail.',
 	})
 	expect(routeFor(`kody+tag@${userDomain}`)).toEqual({
+		kind: 'reject',
+		reason: 'This address is reserved for system mail.',
+	})
+	expect(routeFor(`team@${userDomain}`)).toEqual({
 		kind: 'reject',
 		reason: 'This address is reserved for system mail.',
 	})

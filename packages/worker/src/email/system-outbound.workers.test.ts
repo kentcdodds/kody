@@ -152,6 +152,8 @@ test('sendSystemEmail rejects unusable senders, recipients, and bodies', async (
 		[Partial<Parameters<typeof sendSystemEmail>[0]>, string]
 	> = [
 		[{ localPart: 'marketing' as 'kody' }, 'Unknown system sender "marketing"'],
+		// Inbound-only alias: never a system sender.
+		[{ localPart: 'team' as 'kody' }, 'Unknown system sender "team"'],
 		[
 			{ to: 'not-an-address' },
 			'Invalid recipient email address: not-an-address',

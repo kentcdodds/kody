@@ -290,9 +290,10 @@ const reservedUsernameSeparators = new RegExp(
 const reservedUsernameSubstringMinLength = 4
 
 /**
- * Platform system-email locals that must never be unreserved. Mirrors
- * `systemEmailLocals` without importing `#worker/email/*` (that graph already
- * imports this module).
+ * Platform system-email locals (and inbound-only aliases such as `team`) that
+ * must never be unreserved. Mirrors `systemEmailLocals` plus every key of
+ * `systemEmailInboundAliases` without importing `#worker/email/*` (that graph
+ * already imports this module).
  */
 export const permanentlyReservedSystemLocals = [
 	'kody',
@@ -303,6 +304,7 @@ export const permanentlyReservedSystemLocals = [
 	'security',
 	'admin',
 	'psl',
+	'team',
 ] as const
 
 const permanentlyReservedSystemLocalSet = new Set<string>(

@@ -38,10 +38,11 @@ platform-assigned sender address.
   unsubscribe footer and `List-Unsubscribe` headers), and platform-feedback
   resolve/dismiss mail) and the operator-owned system inboxes (`kody`,
   `support`, `abuse`, `postmaster`, `security`, `admin`, and `psl` at the apex
-  route to Kody's system inbox). Mail from `kody@<apex>` sets
-  `Reply-To: support@<apex>` unless the caller supplies a different Reply-To, so
-  human replies land at support rather than at the transactional sender. All
-  other apex mail is rejected.
+  route to Kody's system inbox). `team@<apex>` is an inbound-only alias of
+  `support@` (same inbox; original To kept; not a send-as address). Mail from
+  `kody@<apex>` sets `Reply-To: support@<apex>` unless the caller supplies a
+  different Reply-To, so human replies land at support rather than at the
+  transactional sender. All other apex mail is rejected.
 - Reserved local parts never route to an org inbox and can never be registered
   as usernames or slugs.
 - Outbound user mail always sends from `{username}@<platform domain>` of the

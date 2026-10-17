@@ -37,6 +37,21 @@ export const systemEmailLocals = [
 
 export type SystemEmailLocal = (typeof systemEmailLocals)[number]
 
+/**
+ * Inbound-only apex aliases. Mail to the alias local is stored in the
+ * canonical system inbox; the envelope/`To` address stays as received.
+ * Aliases are never valid `sendSystemEmail` senders (keep
+ * `systemEmailLocals` as the outbound allowlist).
+ *
+ * Keep `permanentlyReservedSystemLocals` in sync for every key here.
+ */
+export const systemEmailInboundAliases = {
+	team: 'support',
+} as const satisfies Record<string, SystemEmailLocal>
+
+export type SystemEmailInboundAliasLocal =
+	keyof typeof systemEmailInboundAliases
+
 export const systemEmailLimits = {
 	maxMessageBytes: maxRawMimeBytes,
 	maxReceivesPerDay: 1000,
@@ -62,6 +77,12 @@ const systemEmailDeleteIdsMaxParameters = 40
 
 const systemEmailLocalSet = new Set<string>(systemEmailLocals)
 
+const systemEmailInboundAliasMap = new Map<string, SystemEmailLocal>(
+	Object.entries(systemEmailInboundAliases) as Array<
+		[SystemEmailInboundAliasLocal, SystemEmailLocal]
+	>,
+)
+
 export type ProvisionedSystemEmailInbox = {
 	inbox: EmailInboxRecord
 	address: EmailInboxAddressRecord
@@ -71,6 +92,18 @@ export function isSystemEmailLocal(
 	localPart: string,
 ): localPart is SystemEmailLocal {
 	return systemEmailLocalSet.has(localPart.trim().toLowerCase())
+}
+
+/**
+ * Resolve an apex inbound local to its canonical system inbox local.
+ * Own locals map to themselves; inbound aliases map to their target.
+ */
+export function resolveSystemEmailInboundLocal(
+	localPart: string,
+): SystemEmailLocal | null {
+	const normalized = localPart.trim().toLowerCase()
+	if (isSystemEmailLocal(normalized)) return normalized
+	return systemEmailInboundAliasMap.get(normalized) ?? null
 }
 
 export async function ensureSystemEmailInbox(input: {

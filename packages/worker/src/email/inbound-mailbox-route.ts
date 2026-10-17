@@ -1,6 +1,9 @@
 import { isPermanentlyReservedUsername } from '#worker/identity/reserved-usernames.ts'
 import { normalizeEmailAddress, splitEmailLocalPart } from './address.ts'
-import { isSystemEmailLocal, type SystemEmailLocal } from './system-email.ts'
+import {
+	resolveSystemEmailInboundLocal,
+	type SystemEmailLocal,
+} from './system-email.ts'
 
 export type InboundMailboxRoute =
 	| {
@@ -58,16 +61,19 @@ export function resolveInboundMailboxRoute(input: {
 	const localPart = recipient.slice(0, atIndex)
 	const recipientDomain = recipient.slice(atIndex + 1)
 	const { base: localBase } = splitEmailLocalPart(localPart)
+	const systemLocal = resolveSystemEmailInboundLocal(localBase)
 
 	if (
 		input.systemDomain &&
 		input.acceptedSystemDomains.includes(recipientDomain) &&
-		isSystemEmailLocal(localBase)
+		systemLocal
 	) {
 		return {
 			kind: 'system',
 			recipient,
-			localBase,
+			// Canonical inbox local (aliases resolve here). Envelope `recipient`
+			// keeps the original aliased To address for storage.
+			localBase: systemLocal,
 			systemDomain: input.systemDomain,
 		}
 	}

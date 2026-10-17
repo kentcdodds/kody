@@ -285,6 +285,20 @@ test('reserved system locals store under the operator-owned system inbox', async
 		})
 		expect(await systemInboxNames()).toEqual(inboxes)
 	}
+
+	// Inbound-only alias: team@apex lands in the support inbox and keeps the
+	// original To; it must not provision a separate team system inbox.
+	const teamTo = `team@${systemDomain}`
+	expect(
+		await deliver({ to: teamTo, subject: 'Team alias inbound' }),
+	).toBeNull()
+	expect((await listSystemMessages())[0]).toMatchObject({
+		subject: 'Team alias inbound',
+		toAddresses: [teamTo],
+	})
+	expect(await systemInboxNames()).toEqual(['kody', 'psl', 'support'])
+	expect(await readSystemDailyReceiveCount('support')).toBeGreaterThanOrEqual(2)
+	expect(await readSystemDailyReceiveCount('team')).toBe(0)
 }, 30_000)
 
 test('user-subdomain mail delivers to live users (including reserved-local plus-tags) and rejects permanent or unowned reserved locals', async () => {
