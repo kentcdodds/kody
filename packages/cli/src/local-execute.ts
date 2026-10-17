@@ -19,6 +19,7 @@ import {
 	startLocalRuntimeBridge,
 	type LocalRuntimeBridge,
 } from './local-runtime-bridge.js'
+import { assertLocalPackageScopedSecretWriteAllowed } from './local-package-secret-write.js'
 import {
 	missingCredentialCallMapFeatureMessage,
 	sessionSupportsCredentialCallMap,
@@ -211,6 +212,7 @@ export async function runLocalExecute(
 					signal,
 				})
 				if (mocked) return await mocked
+				assertLocalPackageScopedSecretWriteAllowed(call.path, call.args)
 				return await callCapabilityProxy({
 					...client,
 					...call,

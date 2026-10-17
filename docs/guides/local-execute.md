@@ -168,6 +168,12 @@ subject to this deadline.
   errors carry the same list as `details.mint_scopes`. When your org role lacks
   the permission (`denial: missing_permission`), a new token cannot help; an org
   Owner has to grant it.
+- **Package-scoped `secretSet` / `secretSetMany` / `secretDelete` are not
+  available under `--local`.** Local CapabilityProxy does not attach package
+  secret authority (a client-supplied package id is not trusted as a hosted
+  run). Use hosted package execute, or set the secret from the account UI
+  (`/connect/secret-set`) or Open API `secretSet` with a user scope / outside
+  local execute. See [Secrets](./secrets.md#scopes).
 - The module imports `kody:@…`. Keep `--local`.
 - Auth priority for `--local`: `--token` / `KODY_API_TOKEN`, then the stored
   bootstrap token, then `kody login`.

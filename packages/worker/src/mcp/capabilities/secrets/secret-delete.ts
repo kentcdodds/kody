@@ -10,6 +10,7 @@ import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
 import { deleteSecret, findSecret } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
 import { authorizeSecret } from './authorize-secret.ts'
+import { assertPackageScopedSecretWriteAvailable } from './package-scoped-secret-write.ts'
 
 export const secretDeleteCapability = defineDomainCapability(
 	capabilityDomainNames.secrets,
@@ -37,6 +38,10 @@ export const secretDeleteCapability = defineDomainCapability(
 				resolveCallerSecretAuthority({
 					storageContext: ctx.callerContext.storageContext,
 				})
+			assertPackageScopedSecretWriteAvailable({
+				scope: args.scope,
+				storageContext,
+			})
 			await authorizeSecret(ctx, 'secret:delete', {
 				name: args.name,
 				scope: args.scope,

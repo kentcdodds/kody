@@ -17,6 +17,7 @@ import {
 } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
 import { authorizeSecretSet } from './authorize-secret.ts'
+import { assertPackageScopedSecretWriteAvailable } from './package-scoped-secret-write.ts'
 import {
 	applyCredentialFieldsOnly,
 	optInCredentialInputFields,
@@ -100,6 +101,10 @@ export const secretSetCapability = defineDomainCapability(
 				resolveCallerSecretAuthority({
 					storageContext: ctx.callerContext.storageContext,
 				})
+			assertPackageScopedSecretWriteAvailable({
+				scope: parsed.scope,
+				storageContext,
+			})
 			await authorizeSecretSet(ctx, {
 				name: parsed.name,
 				scope: parsed.scope,

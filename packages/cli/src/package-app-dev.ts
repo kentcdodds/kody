@@ -39,6 +39,7 @@ import {
 	startLocalRuntimeBridge,
 	type LocalRuntimeBridge,
 } from './local-runtime-bridge.js'
+import { assertLocalPackageScopedSecretWriteAllowed } from './local-package-secret-write.js'
 import { createDevBundler, type DevBundle } from './dev/dev-bundler.js'
 import {
 	parseWorkerdStdoutLine,
@@ -376,6 +377,7 @@ export async function startPackageAppDev(
 				signal,
 			})
 			if (mocked) return await mocked
+			assertLocalPackageScopedSecretWriteAllowed(call.path, call.args)
 			return await callCapabilityProxy({
 				...client,
 				...call,

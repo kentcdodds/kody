@@ -10,6 +10,7 @@ import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
 import { setSecretsAtomically } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
 import { authorizeSecretSet } from './authorize-secret.ts'
+import { assertPackageScopedSecretWriteAvailable } from './package-scoped-secret-write.ts'
 import { secretMetadataSchema, toSecretCapabilityOutput } from './shared.ts'
 
 const secretSetManyEntrySchema = z.object({
@@ -100,6 +101,10 @@ export const secretSetManyCapability = defineDomainCapability(
 				storageContext: ctx.callerContext.storageContext,
 			})
 			for (const secret of parsed.secrets) {
+				assertPackageScopedSecretWriteAvailable({
+					scope: secret.scope,
+					storageContext,
+				})
 				await authorizeSecretSet(ctx, {
 					name: secret.name,
 					scope: secret.scope,

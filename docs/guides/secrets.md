@@ -106,7 +106,12 @@ approve several pending secrets for one package in a click.
   keyed by the package id, and can be used only with package context.
   `secretList` and `packageGet` expose their metadata with `package_id` even
   outside an active package run. Search does not return or rank those
-  references.
+  references. **Creating or updating package-scoped secrets from
+  `kody execute --local` is unavailable** — local CapabilityProxy does not
+  attach package secret authority (and must not trust a client-supplied package
+  id). Prefer hosted package execute, `/connect/secret-set`, or Open API
+  `secretSet` outside local execute. Details:
+  [Local CLI execute](./local-execute.md#failure).
 
 A Use collaborator running your package in **your** org uses **your** org's
 secrets and integrations under the same host and package allowlists — they still
