@@ -31,7 +31,59 @@ type SecretMetadataRow = {
 	expires_at: string | null
 }
 
+type SecretEntryLookup = SecretEntryRow & { kind: StoredCredentialKind }
+
+/**
+ * Concurrent identical bucket lookups (fetch-gateway resolving N secrets via
+ * Promise.allSettled) share one D1 round-trip (KODY-9K). Cleared when the
+ * promise settles so a later write in the same isolate still re-reads.
+ */
+const inflightSecretBuckets = new WeakMap<
+	D1Database,
+	Map<string, Promise<SecretBucketRow | null>>
+>()
+
+type PendingSecretEntryRequest = {
+	bucketId: string
+	name: string
+	resolve: (entry: SecretEntryLookup | null) => void
+	reject: (error: unknown) => void
+}
+
+/**
+ * Concurrent `getSecretEntry` calls against the same `APP_DB` in one isolate
+ * turn share one batched `IN (…)` read per bucket (KODY-9K), matching the
+ * entity_sources microtask batch used for KODY-7H. A lone lookup still uses
+ * the single-name query.
+ */
+const pendingSecretEntryBatches = new WeakMap<
+	D1Database,
+	Array<PendingSecretEntryRequest>
+>()
+
 export async function getSecretBucket(input: {
+	db: D1Database
+	userId: string
+	scope: SecretScope
+	bindingKey: string
+	now?: string
+}): Promise<SecretBucketRow | null> {
+	const cacheKey = `${input.userId}\0${input.scope}\0${input.bindingKey}`
+	let inflight = inflightSecretBuckets.get(input.db)
+	if (!inflight) {
+		inflight = new Map()
+		inflightSecretBuckets.set(input.db, inflight)
+	}
+	const existing = inflight.get(cacheKey)
+	if (existing) return existing
+	const pending = loadSecretBucket(input).finally(() => {
+		if (inflight.get(cacheKey) === pending) inflight.delete(cacheKey)
+	})
+	inflight.set(cacheKey, pending)
+	return pending
+}
+
+async function loadSecretBucket(input: {
 	db: D1Database
 	userId: string
 	scope: SecretScope
@@ -86,7 +138,38 @@ export async function getSecretEntry(input: {
 	db: D1Database
 	bucketId: string
 	name: string
-}): Promise<(SecretEntryRow & { kind: StoredCredentialKind }) | null> {
+}): Promise<SecretEntryLookup | null> {
+	const db = input.db
+	return await new Promise<SecretEntryLookup | null>((resolve, reject) => {
+		const pending = pendingSecretEntryBatches.get(db)
+		if (pending) {
+			pending.push({
+				bucketId: input.bucketId,
+				name: input.name,
+				resolve,
+				reject,
+			})
+			return
+		}
+		pendingSecretEntryBatches.set(db, [
+			{
+				bucketId: input.bucketId,
+				name: input.name,
+				resolve,
+				reject,
+			},
+		])
+		queueMicrotask(() => {
+			void flushSecretEntryBatch(db)
+		})
+	})
+}
+
+async function loadSecretEntry(input: {
+	db: D1Database
+	bucketId: string
+	name: string
+}): Promise<SecretEntryLookup | null> {
 	const row = await input.db
 		.prepare(
 			`SELECT ${secretEntryColumns}, kind FROM secret_entries
@@ -95,9 +178,90 @@ export async function getSecretEntry(input: {
 		)
 		.bind(input.bucketId, input.name)
 		.first<Record<string, unknown>>()
-	return row
-		? { ...mapSecretEntryRow(row), kind: readStoredCredentialKind(row['kind']) }
-		: null
+	return mapSecretEntryLookup(row)
+}
+
+function mapSecretEntryLookup(
+	row: Record<string, unknown> | null,
+): SecretEntryLookup | null {
+	if (!row) return null
+	return {
+		...mapSecretEntryRow(row),
+		kind: readStoredCredentialKind(row['kind']),
+	}
+}
+
+async function flushSecretEntryBatch(db: D1Database) {
+	const pending = pendingSecretEntryBatches.get(db)
+	pendingSecretEntryBatches.delete(db)
+	if (!pending || pending.length === 0) return
+
+	const byBucket = new Map<string, Array<PendingSecretEntryRequest>>()
+	for (const request of pending) {
+		const group = byBucket.get(request.bucketId)
+		if (group) group.push(request)
+		else byBucket.set(request.bucketId, [request])
+	}
+
+	try {
+		await Promise.all(
+			[...byBucket.entries()].map(async ([bucketId, requests]) => {
+				const uniqueNames = [
+					...new Set(requests.map((request) => request.name)),
+				]
+				const [singleName] = uniqueNames
+				if (uniqueNames.length === 1 && singleName) {
+					const entry = await loadSecretEntry({
+						db,
+						bucketId,
+						name: singleName,
+					})
+					for (const request of requests) request.resolve(entry)
+					return
+				}
+				const byName = await loadSecretEntriesByNames({
+					db,
+					bucketId,
+					names: uniqueNames,
+				})
+				for (const request of requests) {
+					request.resolve(byName.get(request.name) ?? null)
+				}
+			}),
+		)
+	} catch (error) {
+		for (const request of pending) request.reject(error)
+	}
+}
+
+/**
+ * Fresh D1 read of live secret entries for `names` in one bucket. Chunks to
+ * stay within D1's bound-parameter cap (one binding for bucket id).
+ */
+async function loadSecretEntriesByNames(input: {
+	db: D1Database
+	bucketId: string
+	names: ReadonlyArray<string>
+}): Promise<Map<string, SecretEntryLookup>> {
+	const byName = new Map<string, SecretEntryLookup>()
+	if (input.names.length === 0) return byName
+	const nameChunks = chunkArray([...input.names], maxD1BoundParameters - 1)
+	for (const names of nameChunks) {
+		const placeholders = names.map(() => '?').join(', ')
+		const { results } = await input.db
+			.prepare(
+				`SELECT ${secretEntryColumns}, kind FROM secret_entries
+				WHERE bucket_id = ? AND name IN (${placeholders})
+				${andLiveDeletedAtSql()}`,
+			)
+			.bind(input.bucketId, ...names)
+			.all<Record<string, unknown>>()
+		for (const row of results ?? []) {
+			const entry = mapSecretEntryLookup(row)
+			if (entry) byName.set(entry.name, entry)
+		}
+	}
+	return byName
 }
 
 export function readStoredCredentialKind(value: unknown): StoredCredentialKind {

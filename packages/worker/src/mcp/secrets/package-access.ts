@@ -63,12 +63,43 @@ export function isPackageSecretAccessUnavailableError(error: unknown) {
 }
 
 /**
+ * Concurrent package-access checks for the same (user, package) while
+ * fetch-gateway resolves N secrets share one D1 load (KODY-9K). Cleared when
+ * the promise settles so a later adopt/unadopt still re-reads.
+ */
+const inflightImplicitUserSecretAccess = new WeakMap<
+	D1Database,
+	Map<string, Promise<boolean>>
+>()
+
+/**
  * Self-authored packages (no `community_forks` row) and adopted community
  * forks may read/use user secrets without an explicit `allowed_packages`
  * grant. Missing packages and unadopted forks do not. Host allowlists are
  * a separate gate and are never implied by this check.
  */
 export async function packageHasImplicitUserSecretReadAccess(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: OwnerId
+	packageId: string
+}): Promise<boolean> {
+	const db = input.env.APP_DB
+	const cacheKey = `${input.userId}\0${input.packageId}`
+	let inflight = inflightImplicitUserSecretAccess.get(db)
+	if (!inflight) {
+		inflight = new Map()
+		inflightImplicitUserSecretAccess.set(db, inflight)
+	}
+	const existing = inflight.get(cacheKey)
+	if (existing) return existing
+	const pending = loadImplicitUserSecretReadAccess(input).finally(() => {
+		if (inflight.get(cacheKey) === pending) inflight.delete(cacheKey)
+	})
+	inflight.set(cacheKey, pending)
+	return pending
+}
+
+async function loadImplicitUserSecretReadAccess(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: OwnerId
 	packageId: string

@@ -5,19 +5,52 @@ import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
+	getSecretBucket,
 	getSecretEntry,
 	getStoredCredentialEntry,
 	listPackageScopeSecretMetadata,
 	listSecretBucketsByScope,
 } from './repo.ts'
 
-function createSecretsDb(options?: { maxBindings?: number }) {
+function createSecretsDb(options?: {
+	maxBindings?: number
+	queries?: Array<string>
+}) {
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(sqlite, new URL('../../../migrations/', import.meta.url))
 	return {
 		sqlite,
 		db: createD1FromSqlite(sqlite, options),
 	}
+}
+
+function isSecretBucketLookup(query: string) {
+	const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
+	return (
+		normalized.includes('from secret_buckets') &&
+		normalized.includes('user_id = ?') &&
+		normalized.includes('scope = ?') &&
+		normalized.includes('binding_key = ?')
+	)
+}
+
+function isSecretEntrySingleLookup(query: string) {
+	const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
+	return (
+		normalized.includes('from secret_entries') &&
+		normalized.includes('bucket_id = ?') &&
+		normalized.includes('name = ?') &&
+		!normalized.includes('name in (')
+	)
+}
+
+function isSecretEntryBatchLookup(query: string) {
+	const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
+	return (
+		normalized.includes('from secret_entries') &&
+		normalized.includes('bucket_id = ?') &&
+		normalized.includes('name in (')
+	)
 }
 
 function insertPackageSecret(
@@ -46,6 +79,75 @@ function insertPackageSecret(
 		)
 		.run(input.bucketId, input.name)
 }
+
+test('getSecretBucket shares one D1 read for concurrent identical lookups (KODY-9K)', async () => {
+	const queries: Array<string> = []
+	const { sqlite, db } = createSecretsDb({ queries })
+	const userId = ownerIdFromStored('user-bucket-dedupe')
+	sqlite.exec(`
+		INSERT INTO secret_buckets (id, user_id, scope, binding_key)
+		VALUES ('bucket-user', '${userId}', 'user', '');
+	`)
+	queries.length = 0
+
+	const results = await Promise.all(
+		Array.from({ length: 6 }, () =>
+			getSecretBucket({
+				db,
+				userId,
+				scope: 'user',
+				bindingKey: '',
+				now: '2026-10-17T00:00:00.000Z',
+			}),
+		),
+	)
+	expect(results.every((bucket) => bucket?.id === 'bucket-user')).toBe(true)
+	expect(queries.filter(isSecretBucketLookup)).toHaveLength(1)
+
+	await expect(
+		getSecretBucket({
+			db,
+			userId,
+			scope: 'user',
+			bindingKey: '',
+			now: '2026-10-17T00:00:00.000Z',
+		}),
+	).resolves.toEqual(expect.objectContaining({ id: 'bucket-user' }))
+	expect(queries.filter(isSecretBucketLookup)).toHaveLength(2)
+})
+
+test('getSecretEntry batches concurrent names in one bucket into one IN read (KODY-9K)', async () => {
+	const queries: Array<string> = []
+	const { sqlite, db } = createSecretsDb({ queries })
+	sqlite.exec(`
+		INSERT INTO secret_buckets (id, user_id, scope, binding_key)
+		VALUES ('bucket-user', 'org-batch', 'user', '');
+		INSERT INTO secret_entries (id, bucket_id, name, encrypted_value)
+		VALUES
+			('cred-a', 'bucket-user', 'ALPHA', 'ct-a'),
+			('cred-b', 'bucket-user', 'BRAVO', 'ct-b'),
+			('cred-c', 'bucket-user', 'CHARLIE', 'ct-c'),
+			('cred-d', 'bucket-user', 'DELTA', 'ct-d'),
+			('cred-e', 'bucket-user', 'ECHO', 'ct-e'),
+			('cred-f', 'bucket-user', 'FOXTROT', 'ct-f');
+	`)
+	queries.length = 0
+
+	const names = ['ALPHA', 'BRAVO', 'CHARLIE', 'DELTA', 'ECHO', 'FOXTROT']
+	const results = await Promise.all(
+		names.map((name) => getSecretEntry({ db, bucketId: 'bucket-user', name })),
+	)
+	expect(results.map((entry) => entry?.name)).toEqual(names)
+	expect(queries.filter(isSecretEntrySingleLookup)).toHaveLength(0)
+	expect(queries.filter(isSecretEntryBatchLookup)).toHaveLength(1)
+
+	queries.length = 0
+	await expect(
+		getSecretEntry({ db, bucketId: 'bucket-user', name: 'ALPHA' }),
+	).resolves.toEqual(expect.objectContaining({ name: 'ALPHA' }))
+	expect(queries.filter(isSecretEntrySingleLookup)).toHaveLength(1)
+	expect(queries.filter(isSecretEntryBatchLookup)).toHaveLength(0)
+})
 
 test('listPackageScopeSecretMetadata chunks package ids to stay within the D1 binding limit', async () => {
 	const { sqlite, db } = createSecretsDb({ maxBindings: maxD1BoundParameters })
