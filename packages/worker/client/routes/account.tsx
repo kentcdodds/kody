@@ -33,6 +33,7 @@ import {
 	type AccountPagePayloads,
 	fetchAccountPagePayloads,
 } from '#client/routes/account-page-data.ts'
+import { AccountConvertPersonalOrgPanel } from '#client/routes/account-convert-personal-org-panel.tsx'
 import { AccountDeletePanel } from '#client/routes/account-delete-panel.tsx'
 import {
 	AccountManagementMessage,
@@ -571,6 +572,7 @@ export function AccountRoute(handle: Handle) {
 							onEmailChangePasswordInput:
 								accountEmailClaims.updateEmailChangePassword,
 						})}
+						<AccountConvertPersonalOrgPanel username={username} />
 					</>
 				) : null}
 				{status === 'ready' && view === 'security' ? (

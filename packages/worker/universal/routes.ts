@@ -446,6 +446,7 @@ export const routes = route({
 	account: '/account',
 	accountSecurity: '/account/security',
 	accountData: '/account/data',
+	accountConvertPersonalOrgPost: post('/account/convert-personal-org.json'),
 	accountOrganizations: '/account/organizations',
 	accountOrganizationsApi: '/account/organizations.json',
 	accountOrganizationsNew: get('/account/organizations/new'),

@@ -82,6 +82,8 @@ const storageRules: ReadonlyArray<StorageRule> = [
 				"Kody's own OAuth refresh-family state, not an org credential.",
 			'packages/worker/src/org-transfer/reencrypt.ts':
 				'Admin org resource transfer re-seals ciphertext from the source to the target owner context; plaintext never leaves the function.',
+			'packages/worker/src/orgs/convert-personal-org.ts':
+				'Personal-org conversion re-seals user secrets, OAuth apps, and integrations into the new personal org context; plaintext never leaves the function.',
 		},
 	},
 	{

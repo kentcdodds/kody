@@ -51,6 +51,7 @@ import {
 	createAdminSystemEmailHandler,
 } from '#app/handlers/admin-system-email.ts'
 import { createAccountHandler } from '#app/handlers/account.ts'
+import { createAccountConvertPersonalOrgPostHandler } from '#app/handlers/account-convert-personal-org.ts'
 import { createAccountDeleteHandler } from '#app/handlers/account-delete.ts'
 import { createAccountEmailApiHandler } from '#app/handlers/account-email.ts'
 import { createAccountEmailChangeHandler } from '#app/handlers/account-email-change.ts'
@@ -522,6 +523,8 @@ export function createAppRouter(env: Env) {
 			accountInviteAcceptPost: createAccountInviteAcceptPostHandler(env),
 			accountInviteDeclinePost: createAccountInviteDeclinePostHandler(env),
 			accountDelete: createAccountDeleteHandler(env),
+			accountConvertPersonalOrgPost:
+				createAccountConvertPersonalOrgPostHandler(env),
 			accountExport: createAccountExportHandler(env),
 			accountIntegrationsApi: createAccountIntegrationsApiHandler(env),
 			accountIntegrationsApiPost: createAccountIntegrationsApiHandler(env),

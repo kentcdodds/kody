@@ -108,6 +108,7 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		],
 		apis: [
 			'/account/profile.json',
+			'/account/convert-personal-org.json',
 			'/account/organizations.json',
 			'/account/organizations/:orgSlug/restore.json',
 			'/@:orgSlug/-/settings.json',

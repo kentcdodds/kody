@@ -36,6 +36,7 @@ type Invalidation =
 const writers: Record<string, Invalidation> = {
 	'orgs/access-writes.ts': 'same-batch-bump',
 	'orgs/offboarding.ts': 'same-batch-bump',
+	'orgs/convert-personal-org.ts': 'same-batch-bump',
 	'credentials/credential-grant-cleanup.ts': 'same-batch-bump',
 	'identity/permissions-db.ts': 'same-batch-bump',
 	'orgs/soft-delete.ts': 'org-tombstone-then-restore-bump',

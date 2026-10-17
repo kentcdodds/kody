@@ -1,0 +1,515 @@
+import {
+	ownerIdFromStored,
+	personalOrgId,
+	personIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
+import { DatabaseSync } from 'node:sqlite'
+import { expect, test, vi } from 'vitest'
+import {
+	decryptSecretValue,
+	decryptUserOauthAccessToken,
+	encryptSecretValue,
+	encryptUserOauthAccessToken,
+	userIntegrationCredentialContext,
+	userSecretContext,
+} from '#mcp/secrets/crypto.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { MAX_FREE_ORGS_PER_USER } from './billing.ts'
+import {
+	type ConvertPersonalOrgError,
+	convertPersonalOrg,
+} from './convert-personal-org.ts'
+import { isPersonalOrg } from './is-personal-org.ts'
+import { provisionPersonalOrg } from './provision.ts'
+
+vi.mock('#worker/mcp-client/hub-transfer.ts', () => ({
+	mcpClientHubTransferStub: () => ({
+		exportServerForTransfer: async () => null,
+		importServerForTransfer: async () => ({ ok: true as const }),
+		removeServerForTransfer: async () => {},
+		connectTransferredServer: async () => ({ ok: true as const }),
+		discardTransferredServer: async () => {},
+		listServerIdsForTransfer: async () => [],
+	}),
+}))
+
+vi.mock('#mcp/memory/memory-vectorize.ts', () => ({
+	deleteMemoryVector: async (_env: unknown, _memoryId: string) => {},
+	upsertMemoryVector: async () => {},
+}))
+
+const cryptoEnv = { SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum' }
+const now = '2026-10-17T00:00:00.000Z'
+const pkgId = '11111111-1111-4111-8111-111111111111'
+
+async function createHarness() {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const db = createD1FromSqlite(sqlite)
+	const env = {
+		...cryptoEnv,
+		APP_DB: db,
+		APP_BASE_URL: 'https://kody.codes',
+	} as unknown as Env
+	return { sqlite, db, env }
+}
+
+async function seedEqualIdPerson(
+	db: D1Database,
+	input: {
+		email: string
+		username: string
+		displayName?: string
+		avatarKey?: string
+	},
+) {
+	const personId = testStableUserIdFromEmail(input.email)
+	await db
+		.prepare(
+			`INSERT INTO users (
+				email, username, password_hash, stable_user_id,
+				display_name, avatar_key, created_at, updated_at
+			) VALUES (?, ?, 'hash', ?, ?, ?, ?, ?)`,
+		)
+		.bind(
+			input.email,
+			input.username,
+			personId,
+			input.displayName ?? null,
+			input.avatarKey ?? null,
+			now,
+			now,
+		)
+		.run()
+	await provisionPersonalOrg(db, {
+		stableUserId: personId,
+		username: input.username,
+		createdAt: now,
+		displayName: input.displayName ?? input.username,
+		avatarKey: input.avatarKey ?? null,
+		plan: 'free',
+	})
+	return personIdFromStored(personId)
+}
+
+async function seedOwnedSurfaces(
+	db: D1Database,
+	ownerId: OwnerId,
+	personId: string,
+) {
+	await db
+		.prepare(
+			`INSERT INTO saved_packages (id, user_id, name, kody_id, description, source_id)
+			 VALUES (?, ?, '@owner/alpha', 'alpha', 'desc', 'src-alpha')`,
+		)
+		.bind(pkgId, ownerId)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO mcp_memories (
+				id, user_id, subject, summary, created_at, updated_at
+			) VALUES ('mem-1', ?, 'demo', 'summary', ?, ?)`,
+		)
+		.bind(ownerId, now, now)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO secret_buckets (id, user_id, scope, binding_key)
+			 VALUES ('bucket-user', ?, 'user', '')`,
+		)
+		.bind(ownerId)
+		.run()
+	const secretCipher = await encryptSecretValue(
+		cryptoEnv,
+		'user-secret-plaintext',
+		userSecretContext(ownerId),
+	)
+	await db
+		.prepare(
+			`INSERT INTO secret_entries (id, bucket_id, name, encrypted_value)
+			 VALUES ('cred-personal', 'bucket-user', 'API_KEY', ?)`,
+		)
+		.bind(secretCipher)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO user_oauth_apps (
+				user_id, slug, provider, client_id, token_url, flow
+			) VALUES (?, 'myapp', 'github', 'client-1', 'https://example.com/token', 'confidential')`,
+		)
+		.bind(ownerId)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO user_integrations (
+				id, user_id, name, app_slug, access_token_encrypted
+			) VALUES ('int-1', ?, 'github', 'myapp', ?)`,
+		)
+		.bind(
+			ownerId,
+			await encryptUserOauthAccessToken(
+				cryptoEnv,
+				'access-token-plain',
+				userIntegrationCredentialContext(ownerId, 'github'),
+			),
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO webhook_endpoints (
+				id, user_id, package_id, webhook_name, url_secret_hash,
+				created_at, rotated_at
+			) VALUES ('hook-1', ?, ?, 'ping', 'hash-1', ?, ?)`,
+		)
+		.bind(ownerId, pkgId, now, now)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO api_tokens (
+				id, user_id, org_id, name, token_hash, scopes_json,
+				idle_ttl_seconds, expires_at, max_expires_at, created_via,
+				created_at, updated_at
+			) VALUES (
+				'token-1', ?, ?, 'cli', 'hash', '[]',
+				3600, ?, ?, 'test', ?, ?
+			)`,
+		)
+		.bind(personId, ownerId, now, now, now, now)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO follows (
+				id, follower_org_id, creator_user_id, target_kind,
+				target_owner_id, target_id, target_name, status,
+				created_at, updated_at
+			) VALUES (
+				'follow-1', 'other-org', ?, 'package',
+				?, ?, 'alpha', 'active', ?, ?
+			)`,
+		)
+		.bind(personId, personId, pkgId, now, now)
+		.run()
+}
+
+test('convertPersonalOrg demotes equal-id personal org and moves person surfaces', async () => {
+	const { db, env } = await createHarness()
+	const personId = await seedEqualIdPerson(db, {
+		email: 'ada@example.com',
+		username: 'ada',
+		displayName: 'Ada Lovelace',
+		avatarKey: 'avatars/ada.png',
+	})
+	const convertedOrgId = personalOrgId(personId)
+	await seedOwnedSurfaces(db, convertedOrgId, personId)
+
+	await db
+		.prepare(
+			`INSERT INTO orgs (id, slug, plan, created_at, updated_at)
+			 VALUES ('other-org', 'other-org', 'free', ?, ?)`,
+		)
+		.bind(now, now)
+		.run()
+
+	const result = await convertPersonalOrg({
+		env,
+		personId,
+		newHandle: 'ada-codes',
+		now: new Date(now),
+	})
+
+	expect(result.convertedSlug).toBe('ada')
+	expect(result.newUsername).toBe('ada-codes')
+	expect(result.convertedOrgId).toBe(convertedOrgId)
+	expect(result.newPersonalOrgId).not.toBe(convertedOrgId)
+	expect(result.moved.memories).toBe(1)
+	expect(result.moved.userSecrets).toBe(1)
+	expect(result.moved.integrations).toBe(1)
+	expect(result.moved.apiTokens).toBe(1)
+
+	const user = await db
+		.prepare(
+			`SELECT username, personal_org_id, display_name, avatar_key
+			 FROM users WHERE stable_user_id = ?`,
+		)
+		.bind(personId)
+		.first<{
+			username: string
+			personal_org_id: string
+			display_name: string | null
+			avatar_key: string | null
+		}>()
+	expect(user).toMatchObject({
+		username: 'ada-codes',
+		personal_org_id: result.newPersonalOrgId,
+		display_name: 'Ada Lovelace',
+		avatar_key: 'avatars/ada.png',
+	})
+	expect(await isPersonalOrg(db, convertedOrgId)).toBe(false)
+	expect(await isPersonalOrg(db, result.newPersonalOrgId)).toBe(true)
+
+	const convertedOrg = await db
+		.prepare(
+			`SELECT slug, display_name, avatar_key, plan FROM orgs WHERE id = ?`,
+		)
+		.bind(convertedOrgId)
+		.first<{
+			slug: string
+			display_name: string | null
+			avatar_key: string | null
+			plan: string
+		}>()
+	expect(convertedOrg).toMatchObject({
+		slug: 'ada',
+		display_name: 'Ada Lovelace',
+		avatar_key: 'avatars/ada.png',
+		plan: 'free',
+	})
+
+	const newOrg = await db
+		.prepare(
+			`SELECT slug, display_name, avatar_key, plan FROM orgs WHERE id = ?`,
+		)
+		.bind(result.newPersonalOrgId)
+		.first<{
+			slug: string
+			display_name: string | null
+			avatar_key: string | null
+			plan: string
+		}>()
+	expect(newOrg).toMatchObject({
+		slug: 'ada-codes',
+		display_name: 'Ada Lovelace',
+		avatar_key: 'avatars/ada.png',
+		plan: 'free',
+	})
+
+	const oldHandle = await db
+		.prepare(`SELECT user_id, org_id FROM handles WHERE handle = 'ada'`)
+		.first<{ user_id: string | null; org_id: string }>()
+	expect(oldHandle).toEqual({ user_id: null, org_id: convertedOrgId })
+	const newHandle = await db
+		.prepare(`SELECT user_id, org_id FROM handles WHERE handle = 'ada-codes'`)
+		.first<{ user_id: string | null; org_id: string }>()
+	expect(newHandle).toEqual({
+		user_id: personId,
+		org_id: result.newPersonalOrgId,
+	})
+
+	expect(
+		await db
+			.prepare(`SELECT user_id FROM saved_packages WHERE id = ?`)
+			.bind(pkgId)
+			.first(),
+	).toEqual({ user_id: convertedOrgId })
+	expect(
+		await db
+			.prepare(`SELECT user_id FROM webhook_endpoints WHERE id = 'hook-1'`)
+			.first(),
+	).toEqual({ user_id: convertedOrgId })
+	expect(
+		await db
+			.prepare(`SELECT user_id FROM mcp_memories WHERE id = 'mem-1'`)
+			.first(),
+	).toEqual({ user_id: result.newPersonalOrgId })
+	expect(
+		await db
+			.prepare(`SELECT user_id FROM secret_buckets WHERE id = 'bucket-user'`)
+			.first(),
+	).toEqual({ user_id: result.newPersonalOrgId })
+	expect(
+		await db
+			.prepare(`SELECT user_id FROM user_integrations WHERE id = 'int-1'`)
+			.first(),
+	).toEqual({ user_id: result.newPersonalOrgId })
+	expect(
+		await db
+			.prepare(`SELECT org_id FROM api_tokens WHERE id = 'token-1'`)
+			.first(),
+	).toEqual({ org_id: result.newPersonalOrgId })
+
+	const secret = await db
+		.prepare(
+			`SELECT encrypted_value FROM secret_entries WHERE name = 'API_KEY'`,
+		)
+		.first<{ encrypted_value: string }>()
+	expect(
+		await decryptSecretValue(
+			cryptoEnv,
+			secret!.encrypted_value,
+			userSecretContext(result.newPersonalOrgId),
+		),
+	).toBe('user-secret-plaintext')
+
+	const integration = await db
+		.prepare(
+			`SELECT access_token_encrypted FROM user_integrations WHERE id = 'int-1'`,
+		)
+		.first<{ access_token_encrypted: string }>()
+	expect(
+		await decryptUserOauthAccessToken(
+			cryptoEnv,
+			integration!.access_token_encrypted,
+			userIntegrationCredentialContext(result.newPersonalOrgId, 'github'),
+		),
+	).toBe('access-token-plain')
+
+	// Equal-id: follows already named the converted org id; no rewrite needed.
+	expect(
+		await db
+			.prepare(`SELECT target_owner_id FROM follows WHERE id = 'follow-1'`)
+			.first(),
+	).toEqual({ target_owner_id: convertedOrgId })
+
+	const inbox = await db
+		.prepare(
+			`SELECT address FROM email_inbox_addresses
+			 WHERE user_id = ? AND deleted_at IS NULL`,
+		)
+		.bind(result.newPersonalOrgId)
+		.first<{ address: string }>()
+	expect(inbox?.address).toBe('ada-codes@inbox.kody.codes')
+})
+
+test('convertPersonalOrg refuses while personal credentials are granted into other orgs', async () => {
+	const { db, env } = await createHarness()
+	const personId = await seedEqualIdPerson(db, {
+		email: 'granted@example.com',
+		username: 'granted',
+	})
+	const convertedOrgId = personalOrgId(personId)
+	await seedOwnedSurfaces(db, convertedOrgId, personId)
+	await db
+		.prepare(
+			`INSERT INTO orgs (id, slug, plan, created_at, updated_at)
+			 VALUES ('elsewhere', 'elsewhere', 'free', ?, ?)`,
+		)
+		.bind(now, now)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO credential_org_grants (
+				credential_id, user_id, org_id, created_at
+			) VALUES ('cred-personal', ?, 'elsewhere', ?)`,
+		)
+		.bind(personId, now)
+		.run()
+
+	await expect(
+		convertPersonalOrg({
+			env,
+			personId,
+			newHandle: 'granted-new',
+			now: new Date(now),
+		}),
+	).rejects.toMatchObject({
+		name: 'ConvertPersonalOrgError',
+		code: 'credential_grants',
+		message: expect.stringContaining('API_KEY'),
+	} satisfies Partial<ConvertPersonalOrgError>)
+	expect(
+		await db
+			.prepare(`SELECT username FROM users WHERE stable_user_id = ?`)
+			.bind(personId)
+			.first(),
+	).toEqual({ username: 'granted' })
+})
+
+test('convertPersonalOrg refuses when minting the new free personal org would exceed the free-org cap', async () => {
+	const { db, env } = await createHarness()
+	const personId = await seedEqualIdPerson(db, {
+		email: 'capped@example.com',
+		username: 'capped',
+	})
+	expect(MAX_FREE_ORGS_PER_USER).toBe(2)
+	await db
+		.prepare(
+			`INSERT INTO orgs (
+				id, slug, plan, entitlement_ladder, created_at, updated_at
+			) VALUES ('free-team', 'free-team', 'free', 'public', ?, ?)`,
+		)
+		.bind(now, now)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+			 VALUES ('free-team', ?, 'owner', ?)`,
+		)
+		.bind(personId, now)
+		.run()
+
+	await expect(
+		convertPersonalOrg({
+			env,
+			personId,
+			newHandle: 'capped-new',
+			now: new Date(now),
+		}),
+	).rejects.toMatchObject({
+		name: 'ConvertPersonalOrgError',
+		code: 'free_org_cap',
+		message: expect.stringMatching(/2 free organizations/),
+	})
+})
+
+test('convertPersonalOrg retargets follows when personal org id differs from person id', async () => {
+	const { db, env } = await createHarness()
+	const personId = testStableUserIdFromEmail('distinct@example.com')
+	const personalOrgId = ownerIdFromStored('org-personal-distinct')
+	await db
+		.prepare(
+			`INSERT INTO users (
+				email, username, password_hash, stable_user_id,
+				personal_org_id, display_name, created_at, updated_at
+			) VALUES (
+				'distinct@example.com', 'distinct', 'hash', ?, ?, 'Distinct', ?, ?
+			)`,
+		)
+		.bind(personId, personalOrgId, now, now)
+		.run()
+	await provisionPersonalOrg(db, {
+		stableUserId: personId,
+		orgId: personalOrgId,
+		username: 'distinct',
+		createdAt: now,
+		displayName: 'Distinct',
+		plan: 'free',
+	})
+	await db
+		.prepare(
+			`INSERT INTO orgs (id, slug, plan, created_at, updated_at)
+			 VALUES ('follower', 'follower', 'free', ?, ?)`,
+		)
+		.bind(now, now)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO follows (
+				id, follower_org_id, creator_user_id, target_kind,
+				target_owner_id, target_id, target_name, status,
+				created_at, updated_at
+			) VALUES (
+				'follow-person', 'follower', ?, 'package',
+				?, 'pkg-x', 'x', 'active', ?, ?
+			)`,
+		)
+		.bind(personId, personId, now, now)
+		.run()
+
+	const result = await convertPersonalOrg({
+		env,
+		personId: personIdFromStored(personId),
+		newHandle: 'distinct-new',
+		now: new Date(now),
+	})
+
+	expect(result.convertedOrgId).toBe(personalOrgId)
+	expect(result.moved.followsRetargeted).toBe(1)
+	expect(
+		await db
+			.prepare(`SELECT target_owner_id FROM follows WHERE id = 'follow-person'`)
+			.first(),
+	).toEqual({ target_owner_id: personalOrgId })
+})
