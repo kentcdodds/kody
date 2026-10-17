@@ -177,6 +177,15 @@ test('inbound labels prefer a known kind, then clientName, then hostname, then a
 			'Acme Agent',
 		],
 		[
+			{
+				clientId:
+					'https://nousresearch.github.io/hermes-agent/docs/oauth/client-metadata.json',
+				clientUri: 'https://hermes-agent.nousresearch.com',
+			},
+			'hermes',
+			'Hermes Agent',
+		],
+		[
 			{ clientId: 'https://unknown.example/oauth/client.json' },
 			null,
 			'unknown.example',
@@ -203,6 +212,8 @@ test('inbound labels prefer a known kind, then clientName, then hostname, then a
 		['Wajo', 'wajo', 'Wajo'],
 		['Cue', 'cue', 'Cue'],
 		['Dots', 'dots', 'Dots'],
+		['Hermes Agent', 'hermes', 'Hermes Agent'],
+		['hermes-agent', 'hermes', 'Hermes Agent'],
 	]
 	expect(names.map(([name]) => [name, classifyMcpClientName(name)])).toEqual(
 		names.map(([name, kind, label]) => [name, { kind, label }]),

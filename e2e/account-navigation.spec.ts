@@ -367,6 +367,7 @@ test('Add connection opens its own page with the client wall, then a host step (
 	await expect(page.getByTestId('onboarding-agent-claude-code')).toBeVisible()
 	await expect(page.getByTestId('onboarding-agent-grok')).toBeVisible()
 	await expect(page.getByTestId('onboarding-agent-muse')).toBeVisible()
+	await expect(page.getByTestId('onboarding-agent-hermes')).toBeVisible()
 
 	await page.getByTestId('onboarding-agent-claude-code').click()
 	await expect(page).toHaveURL(

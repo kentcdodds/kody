@@ -28,6 +28,9 @@ test('step 3 groups Cursor hosts with Grok and GitHub hosts together', () => {
 		(group) => group.id === 'muse',
 	)
 	expect(muse?.agents).toEqual(['muse'])
+	expect(
+		onboardingStep3EcosystemGroups.find((group) => group.id === 'nous'),
+	).toEqual({ id: 'nous', label: 'Hermes', agents: ['hermes'] })
 	expect(onboardingStep3EcosystemGroups.map((group) => group.id)).toEqual(
 		expect.arrayContaining(['wajo', 'cue', 'openmuse', 'openai']),
 	)

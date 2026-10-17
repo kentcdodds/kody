@@ -9,6 +9,8 @@ import {
 	buildCopilotCliMcpJson,
 	buildGrokCliAddCommand,
 	buildGrokCliMcpToml,
+	buildHermesMcpAddCommand,
+	buildHermesMcpYaml,
 	buildKodyAppIconUrl,
 	buildOpenClawMcpAddCommand,
 	buildOpenClawMcpJson,
@@ -23,6 +25,9 @@ import {
 	dotsIntroUrl,
 	grokBotInstallUrl,
 	grokConnectorsUrl,
+	hermesMcpGuideUrl,
+	hermesMcpLoginCommand,
+	hermesMcpTokensPath,
 	isDefaultKodyMcpUrl,
 	kodyAppIconFilename,
 	kodyChatGptPluginUrl,
@@ -378,6 +383,50 @@ export function renderPanelContent(
 				</>
 			)
 		}
+		case 'hermes': {
+			const hermesCommand = buildHermesMcpAddCommand(mcpServerUrl)
+			const hermesYaml = buildHermesMcpYaml(mcpServerUrl)
+			return (
+				<>
+					<ConnectCopyCard
+						highlights={highlights}
+						label="hermes CLI"
+						value={hermesCommand}
+						copyLabel="Copy command"
+						lang="sh"
+					/>
+					<p>
+						Hermes opens the Kody sign-in while it tests the connection, then
+						asks which tools to enable. It keeps the tokens in{' '}
+						<code>{hermesMcpTokensPath}</code>, not in its config (
+						<a href={hermesMcpGuideUrl} target="_blank" rel="noreferrer">
+							Hermes MCP docs
+						</a>
+						).
+					</p>
+					<OnboardingManualDetails
+						summaryLead="Or merge this into"
+						summaryCode="~/.hermes/config.yaml"
+					>
+						<ConnectCopyCard
+							highlights={highlights}
+							label="~/.hermes/config.yaml"
+							value={hermesYaml}
+							copyLabel="Copy YAML"
+							lang="yaml"
+						/>
+						<p>Then sign in from a fresh terminal:</p>
+						<ConnectCopyCard
+							highlights={highlights}
+							label="hermes mcp login"
+							value={hermesMcpLoginCommand}
+							copyLabel="Copy command"
+							lang="sh"
+						/>
+					</OnboardingManualDetails>
+				</>
+			)
+		}
 		case 'muse': {
 			const museSettingsJson = buildMuseSettingsJson(mcpServerUrl)
 			return (
@@ -658,6 +707,14 @@ export function renderPanelWarning(
 				<ClientWarning>
 					OpenClaw&apos;s browser app works from a phone. You can also run the
 					CLI later on a computer.
+				</ClientWarning>
+			) : null
+		case 'hermes':
+			return surface === 'mobile' ? (
+				<ClientWarning>
+					Add Kody on the computer or server that runs Hermes. After that,
+					Hermes can use Kody from Telegram, Discord, Slack, and its other
+					messaging apps.
 				</ClientWarning>
 			) : null
 		case 'muse':

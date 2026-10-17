@@ -55,6 +55,14 @@ test('every valid pick is a coding host, a chat host, and a third host of either
 		kind: 'coding',
 	})
 	expect(
+		walkthroughHostCatalog.find((host) => host.id === 'hermes'),
+	).toMatchObject({
+		label: 'Hermes Agent',
+		icon: 'hermes',
+		company: 'nous',
+		kind: 'both',
+	})
+	expect(
 		walkthroughHostCatalog.find((host) => host.id === 'openmuse'),
 	).toMatchObject({
 		label: 'OpenMuse',
@@ -163,6 +171,7 @@ test('phone slot offers chat apps plus coding hosts with a real phone surface', 
 		'gemini',
 		'grok',
 		'grok-bot',
+		'hermes',
 		'openclaw',
 	])
 	expect(listCodingWalkthroughHosts().map((host) => host.id)).toEqual(
@@ -172,6 +181,7 @@ test('phone slot offers chat apps plus coding hosts with a real phone surface', 
 			'copilot',
 			'cursor',
 			'devin',
+			'hermes',
 			'openclaw',
 		]),
 	)
@@ -216,6 +226,7 @@ test('phone slot offers chat apps plus coding hosts with a real phone surface', 
 		'Gemini',
 		'Grok',
 		'Grok Bot',
+		'Hermes Agent',
 		'OpenClaw',
 	])
 })

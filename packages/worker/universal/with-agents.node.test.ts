@@ -53,6 +53,14 @@ test('agents without an official path get the setup prompt and MCP URL', () => {
 	for (const agent of withAgents.filter((agent) => agent.official)) {
 		expect(agent.steps.some((step) => 'prompt' in step)).toBe(false)
 	}
+	expect(findWithAgentByPathname('/with/hermes')).toMatchObject({
+		name: 'Hermes Agent',
+		icon: 'hermes',
+		official: true,
+	})
+	expect(findWithAgentByPathname('/with/hermes')?.steps[0]?.code).toBe(
+		'hermes mcp add kody --url https://kody.codes/mcp --auth oauth',
+	)
 })
 
 test('marquee order is a permutation and untrusted loader data is repaired', () => {

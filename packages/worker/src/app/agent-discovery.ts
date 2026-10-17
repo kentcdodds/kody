@@ -83,8 +83,8 @@ const connectKodySkillBody = `# Connect Kody
 
 Kody is Your agents' cloud: an OAuth-protected MCP cloud for individuals and
 teams. You use it from an existing MCP host (Cursor, ChatGPT, Claude Desktop,
-Claude Code, Codex, Copilot, Grok, OpenCode, OpenClaw, Muse). There is no
-separate Kody chat app.
+Claude Code, Codex, Copilot, Grok, OpenCode, OpenClaw, Hermes Agent, Muse).
+There is no separate Kody chat app.
 
 ## When to use
 
@@ -357,8 +357,8 @@ export function buildAuthMarkdown(origin: string): string {
 		'4. After the connection works, call `search` before `execute`.',
 		'',
 		'Client-specific setup (Cursor, ChatGPT, Claude Desktop, Claude Code,',
-		'Codex, Copilot, Grok, OpenCode, OpenClaw, Muse) lives on `/onboarding`. A',
-		`no-account capability tour is at \`${origin}/docs/what-is-kody.md\`;`,
+		'Codex, Copilot, Grok, OpenCode, OpenClaw, Hermes Agent, Muse) lives on',
+		`\`/onboarding\`. A no-account capability tour is at \`${origin}/docs/what-is-kody.md\`;`,
 		`the full docs index is \`${origin}/llms.txt\`.`,
 		'',
 		'## OAuth',

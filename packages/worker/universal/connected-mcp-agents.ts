@@ -72,6 +72,8 @@ const clientNameKindRules = [
 	{ kind: 'devin', needles: ['devin'] },
 	{ kind: 'opencode', needles: ['opencode', 'open code'] },
 	{ kind: 'openclaw', needles: ['openclaw', 'open claw'] },
+	// Hermes registers its OAuth client as "Hermes Agent".
+	{ kind: 'hermes', needles: ['hermes agent', 'hermes-agent', 'hermes'] },
 	// OpenMuse before bare `muse` so CopilotKit OpenMuse does not classify as Muse.
 	{ kind: 'openmuse', needles: ['openmuse', 'open muse'] },
 	{ kind: 'wajo', needles: ['wajo'] },
@@ -94,6 +96,8 @@ const hostKindRules = [
 	{ kind: 'devin', hosts: ['devin.ai', 'app.devin.ai'] },
 	{ kind: 'opencode', hosts: ['opencode.ai'] },
 	{ kind: 'openclaw', hosts: ['openclaw.ai'] },
+	// `client_uri` in Hermes's CIMD client metadata document.
+	{ kind: 'hermes', hosts: ['hermes-agent.nousresearch.com'] },
 	{ kind: 'wajo', hosts: ['wajo.ai'] },
 	{ kind: 'cue', hosts: ['cue.im'] },
 	// Muse Code docs/OAuth live under dev.meta.ai — not muse.ai (video) or

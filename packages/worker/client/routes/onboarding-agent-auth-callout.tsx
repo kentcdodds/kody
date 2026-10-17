@@ -3,6 +3,7 @@ import {
 	type McpClientKind,
 	type OnboardingAgentSurface,
 	codexMcpLoginCommand,
+	hermesMcpLoginCommand,
 	isDefaultKodyMcpUrl,
 	museMcpLoginCommand,
 	openClawMcpLoginCommand,
@@ -162,6 +163,19 @@ function renderAgentAuthHint(
 				<>
 					Run <code>{openClawMcpLoginCommand}</code> after the server is saved.
 					Approve the Kody OAuth window.
+				</>
+			)
+		case 'hermes':
+			return surface === 'mobile' ? (
+				<>
+					On the computer that runs Hermes, run the <code>hermes mcp add</code>{' '}
+					command and approve the Kody OAuth window it opens.
+				</>
+			) : (
+				<>
+					<code>hermes mcp add</code> opens the sign-in while it tests the
+					connection. If you edited <code>config.yaml</code> instead, run{' '}
+					<code>{hermesMcpLoginCommand}</code>.
 				</>
 			)
 		case 'muse':

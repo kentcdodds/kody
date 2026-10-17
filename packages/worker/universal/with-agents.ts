@@ -1,6 +1,7 @@
 import {
 	buildClaudeCodeAddCommand,
 	buildCopilotCliAddCommand,
+	buildHermesMcpAddCommand,
 	buildMuseSettingsJson,
 	buildOpenClawMcpAddCommand,
 	buildOpenCodeMcpAddCommand,
@@ -259,6 +260,26 @@ export const withAgents = [
 				code: buildOpenClawMcpAddCommand(mcpUrl),
 			},
 			{ text: 'Then sign in:', code: openClawMcpLoginCommand },
+		],
+	},
+	{
+		slug: 'hermes',
+		name: 'Hermes Agent',
+		icon: 'hermes',
+		official: true,
+		pitch:
+			'Give Hermes the shared credentials and packages your team keeps in Kody, from the terminal or any chat app it runs in.',
+		steps: [
+			{
+				text: 'Add Kody on the machine that runs Hermes:',
+				code: buildHermesMcpAddCommand(mcpUrl),
+			},
+			{
+				text: 'Approve access in the Kody sign-in window, then choose which tools Hermes can use. Hermes saves the server to ~/.hermes/config.yaml.',
+			},
+			{
+				text: 'Run /reload-mcp in open Hermes sessions, or start a new one, then ask Hermes to list its Kody tools.',
+			},
 		],
 	},
 	{

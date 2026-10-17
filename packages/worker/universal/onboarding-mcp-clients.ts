@@ -23,6 +23,7 @@ export type McpClientKind =
 	| 'devin'
 	| 'gemini'
 	| 'openclaw'
+	| 'hermes'
 	| 'muse'
 	| 'wajo'
 	| 'cue'
@@ -56,6 +57,7 @@ export const mcpClientTabs = [
 	{ id: 'devin', label: 'Devin', isNonCodingAgent: false },
 	{ id: 'gemini', label: 'Gemini', isNonCodingAgent: true },
 	{ id: 'openclaw', label: 'OpenClaw', isNonCodingAgent: false },
+	{ id: 'hermes', label: 'Hermes Agent', isNonCodingAgent: false },
 	{ id: 'muse', label: 'Muse', isNonCodingAgent: false },
 	{ id: 'wajo', label: 'Wajo', isNonCodingAgent: false },
 	{ id: 'cue', label: 'Cue', isNonCodingAgent: false },
@@ -72,9 +74,9 @@ export const mcpClientTabs = [
  * ChatGPT.com, Claude Desktop, and Grok Bot fill the leftover seats so
  * the auto-fill desktop grid lands on complete rows with Not listed
  * (12 cards). Gemini stays under More on desktop (still featured on
- * mobile). Wajo, Cue, OpenMuse, and Dots are lower-priority MCP peers: they
- * stay off the featured 12 and appear under Not listed (and Account →
- * Connections). Grok.com, Grok CLI, and the Copilot app stay under Not
+ * mobile). Hermes Agent, Wajo, Cue, OpenMuse, and Dots are lower-priority
+ * MCP peers: they stay off the featured 12 and appear under Not listed (and
+ * Account → Connections). Grok.com, Grok CLI, and the Copilot app stay under Not
  * listed (Copilot desktop/CLI is already featured; Aider is not a Kody
  * connect path yet).
  */
@@ -95,9 +97,10 @@ export const onboardingDesktopFeaturedAgentIds = [
 /**
  * Lower-priority action agents / MCP peers. Shown under Not listed on
  * Get started (and on Account → Connections via the full catalog), not in
- * the featured Step 1 grid. Order: Wajo, Cue, OpenMuse, Dots.
+ * the featured Step 1 grid. Order: Hermes Agent, Wajo, Cue, OpenMuse, Dots.
  */
 const onboardingSecondaryAgentIds = [
+	'hermes',
 	'wajo',
 	'cue',
 	'openmuse',
@@ -106,8 +109,8 @@ const onboardingSecondaryAgentIds = [
 
 /**
  * Phone chooser: only hosts with a real mobile app. Desktop-only CLIs and
- * IDEs (Claude Code, Devin, Codex, Copilot CLI, OpenCode, OpenClaw, Muse,
- * Cursor) stay off this list and appear under Not listed on a phone.
+ * IDEs (Claude Code, Devin, Codex, Copilot CLI, OpenCode, OpenClaw, Hermes
+ * Agent, Muse, Cursor) stay off this list and appear under Not listed on a phone.
  */
 export const onboardingMobileFeaturedAgentIds = [
 	'chatgpt',
@@ -347,6 +350,8 @@ export function onboardingAgentIconName(
 			return 'gemini'
 		case 'openclaw':
 			return 'openclaw'
+		case 'hermes':
+			return 'hermes'
 		case 'muse':
 			return 'muse'
 		case 'wajo':
@@ -426,6 +431,10 @@ const grokCliMcpGuideUrl = 'https://docs.x.ai/build/features/mcp-servers'
 /** OpenClaw Control UI + CLI docs for adding a remote MCP server. */
 const openClawMcpGuideUrl = 'https://docs.openclaw.ai/tools/mcp'
 
+/** Hermes Agent MCP docs (`mcp_servers` in config.yaml, `auth: oauth`). */
+export const hermesMcpGuideUrl =
+	'https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp'
+
 /**
  * Muse Code MCP + OAuth docs (`mcp_servers` in settings, `muse mcp login`).
  * Extending page covers remote streamable_http servers and OAuth sign-in.
@@ -495,6 +504,8 @@ function onboardingAgentHelpHref(id: McpClientKind) {
 			return copilotAppCustomizeGuideUrl
 		case 'openclaw':
 			return openClawMcpGuideUrl
+		case 'hermes':
+			return hermesMcpGuideUrl
 		case 'muse':
 			return museMcpGuideUrl
 		case 'wajo':
@@ -643,6 +654,20 @@ export const openClawMcpLoginCommand = 'openclaw mcp login kody'
 
 const openClawMcpDoctorCommand = 'openclaw mcp doctor kody --probe'
 
+/**
+ * Hermes Agent remote add. `--auth oauth` runs the browser sign-in during
+ * the connection probe; without it Hermes asks for a bearer header instead.
+ */
+export function buildHermesMcpAddCommand(mcpServerUrl: string) {
+	return `hermes mcp add kody --url ${mcpServerUrl} --auth oauth`
+}
+
+/** Re-runs Hermes OAuth for a saved server (new machine, expired grant). */
+export const hermesMcpLoginCommand = 'hermes mcp login kody'
+
+/** Where Hermes caches MCP OAuth tokens (per profile, 0600). */
+export const hermesMcpTokensPath = '~/.hermes/mcp-tokens/kody.json'
+
 /** VS Code Copilot `.vscode/mcp.json` (root key is `servers`, not `mcpServers`). */
 export function buildVsCodeMcpJson(mcpServerUrl: string) {
 	return prettyJson({
@@ -702,6 +727,17 @@ export function buildOpenClawMcpJson(mcpServerUrl: string) {
 			},
 		},
 	})
+}
+
+/** Hermes Agent `~/.hermes/config.yaml` `mcp_servers` entry. */
+export function buildHermesMcpYaml(mcpServerUrl: string) {
+	return [
+		'mcp_servers:',
+		'  kody:',
+		`    url: ${JSON.stringify(mcpServerUrl)}`,
+		'    auth: oauth',
+		'',
+	].join('\n')
 }
 
 /**
@@ -770,6 +806,9 @@ export function collectOnboardingMcpSnippets(mcpServerUrl: string) {
 		{ code: buildOpenClawMcpJson(mcpServerUrl), lang: 'json' },
 		{ code: openClawMcpLoginCommand, lang: 'sh' },
 		{ code: openClawMcpDoctorCommand, lang: 'sh' },
+		{ code: buildHermesMcpAddCommand(mcpServerUrl), lang: 'sh' },
+		{ code: buildHermesMcpYaml(mcpServerUrl), lang: 'yaml' },
+		{ code: hermesMcpLoginCommand, lang: 'sh' },
 		{ code: buildCopilotCliAddCommand(mcpServerUrl), lang: 'sh' },
 		{ code: buildVsCodeMcpJson(mcpServerUrl), lang: 'json' },
 		{ code: buildCopilotCliMcpJson(mcpServerUrl), lang: 'json' },

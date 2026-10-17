@@ -29,6 +29,7 @@ const onboardingAgentEcosystems = {
 	cognition: ['devin'],
 	sst: ['opencode'],
 	openclaw: ['openclaw'],
+	nous: ['hermes'],
 	muse: ['muse'],
 	wajo: ['wajo'],
 	cue: ['cue'],
@@ -111,6 +112,11 @@ export const onboardingStep3EcosystemGroups = [
 		id: 'openclaw',
 		label: 'OpenClaw',
 		agents: ['openclaw'],
+	},
+	{
+		id: 'nous',
+		label: 'Hermes',
+		agents: ['hermes'],
 	},
 	{
 		id: 'muse',

@@ -21,6 +21,7 @@ type WalkthroughHostCompany =
 	| 'cognition'
 	| 'pi'
 	| 'openclaw'
+	| 'nous'
 	| 'meta'
 	| 'wajo'
 	| 'cue'
@@ -169,6 +170,13 @@ export const walkthroughHostCatalog = [
 		label: 'OpenClaw',
 		icon: 'openclaw',
 		company: 'openclaw',
+		kind: 'both',
+	},
+	{
+		id: 'hermes',
+		label: 'Hermes Agent',
+		icon: 'hermes',
+		company: 'nous',
 		kind: 'both',
 	},
 	{
