@@ -38,18 +38,17 @@ export async function runRemoteExecuteWithToken(
 	assertTokenSafeApiUrl(input.apiUrl)
 	const invoke = input.invoke?.trim()
 	const body: Record<string, unknown> = {}
-	if (invoke) {
-		if (input.code?.trim()) {
-			throw new Error(
-				'--invoke cannot be combined with --code, --file, or a module string.',
-			)
-		}
-		// Send the package specifier itself. A generated import wrapper would
-		// run as caller code and drop the server's invoke attribution.
-		body.invoke = invoke
-	} else {
-		body.code = resolveRemoteExecuteCode(input)
+	if (invoke && input.code?.trim()) {
+		throw new Error(
+			'--invoke cannot be combined with --code, --file, or a module string.',
+		)
 	}
+	// Cloud Open API execute still gates the `invoke` field on the
+	// execute-invoke experiment. Mint the same thin passthrough as `code` so
+	// `kody execute --invoke` keeps working for callers without that flag.
+	// When execute-invoke is generally available, prefer body.invoke here so
+	// Activity can attribute invoke vs handwritten code.
+	body.code = resolveRemoteExecuteCode(input)
 	if (input.params !== undefined) body.params = input.params
 	if (input.conversationId !== undefined)
 		body.conversationId = input.conversationId

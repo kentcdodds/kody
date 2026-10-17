@@ -1687,7 +1687,7 @@ export async function runRepoChecks(input: {
 						'Credential stamp notes (informational; enforceCredentialStamp=false):',
 					)
 					.replace(
-						/^Publish failed\.[^\n]*\n?/m,
+						/^Publish failed\. ?/m,
 						'Stamp findings below do not fail this check (community install / platform codemod lane). Authoring publish still enforces the gate.\n',
 					)
 			: credentialPatternCheck.message

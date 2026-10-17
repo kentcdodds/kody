@@ -47,6 +47,9 @@ function createEnv(overrides: Record<string, unknown> = {}) {
 		STORAGE_RUNNER: {},
 		PACKAGE_REALTIME_SESSION: {},
 		MCP_CLIENT_HUB: {},
+		// Node tests are a non-production runtime; omit Turnstile like local
+		// wrangler (WRANGLER_IS_LOCAL_DEV). Production-shaped cases override.
+		WRANGLER_IS_LOCAL_DEV: 'true',
 		...overrides,
 	} as unknown as Env
 }
@@ -68,17 +71,27 @@ test('getEnv memoizes per env identity and requires AUTH_RATE_LIMITER and Turnst
 	const env = createEnv()
 	expect(getEnv(env)).toBe(getEnv(env))
 	expect(getEnv(createEnv())).not.toBe(getEnv(env))
-	expect(() => getEnv(createEnv({ SENTRY_ENVIRONMENT: 'production' }))).toThrow(
-		'AUTH_RATE_LIMITER',
-	)
 	expect(() =>
 		getEnv(
-			createEnv({ SENTRY_ENVIRONMENT: 'production', AUTH_RATE_LIMITER: {} }),
+			createEnv({
+				WRANGLER_IS_LOCAL_DEV: undefined,
+				SENTRY_ENVIRONMENT: 'production',
+			}),
+		),
+	).toThrow('AUTH_RATE_LIMITER')
+	expect(() =>
+		getEnv(
+			createEnv({
+				WRANGLER_IS_LOCAL_DEV: undefined,
+				SENTRY_ENVIRONMENT: 'production',
+				AUTH_RATE_LIMITER: {},
+			}),
 		),
 	).toThrow('TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY')
 	expect(() =>
 		getEnv(
 			createEnv({
+				WRANGLER_IS_LOCAL_DEV: undefined,
 				SENTRY_ENVIRONMENT: 'production',
 				AUTH_RATE_LIMITER: {},
 				TURNSTILE_SITE_KEY: 'site-key',
@@ -88,6 +101,7 @@ test('getEnv memoizes per env identity and requires AUTH_RATE_LIMITER and Turnst
 	expect(() =>
 		getEnv(
 			createEnv({
+				WRANGLER_IS_LOCAL_DEV: undefined,
 				SENTRY_ENVIRONMENT: 'production',
 				AUTH_RATE_LIMITER: {},
 				TURNSTILE_SITE_KEY: 'site-key',
@@ -95,6 +109,10 @@ test('getEnv memoizes per env identity and requires AUTH_RATE_LIMITER and Turnst
 			}),
 		),
 	).not.toThrow()
+	// Unset SENTRY_ENVIRONMENT is not a known non-production runtime.
+	expect(() => getEnv(createEnv({ WRANGLER_IS_LOCAL_DEV: undefined }))).toThrow(
+		'TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY',
+	)
 })
 
 test('handleRequest serves multiple requests from the same env object', async () => {

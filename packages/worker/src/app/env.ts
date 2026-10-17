@@ -1,4 +1,5 @@
 import { parseSafe } from 'remix/data-schema'
+import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { EnvSchema } from '#worker/env-schema.ts'
 
 // Env binding objects are stable per isolate; validate them once per identity
@@ -28,14 +29,15 @@ function validateEnv(env: Env) {
 		)
 	}
 
-	// Signup is always open; production must not boot without Turnstile or
-	// public forms would fail open (see public-form-protection.ts).
-	if (env.SENTRY_ENVIRONMENT === 'production') {
+	// Signup is always open; only positively-known non-production runtimes may
+	// omit Turnstile. An unset SENTRY_ENVIRONMENT must not fail open (see
+	// public-form-protection.ts and isNonProductionRuntime).
+	if (!isNonProductionRuntime(env)) {
 		const siteKey = env.TURNSTILE_SITE_KEY?.trim()
 		const secretKey = env.TURNSTILE_SECRET_KEY?.trim()
 		if (!siteKey || !secretKey) {
 			throw new Error(
-				'Production requires TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY: signup is open and must not fail open without Turnstile.',
+				'TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY are required outside local/preview/test: signup is open and must not fail open without Turnstile.',
 			)
 		}
 	}

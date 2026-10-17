@@ -24,7 +24,7 @@ const credentialPatternCheckLabel = `codemod ${detectLegacyCredentialPatternsCod
 const credentialStampGateHeading =
 	'Credential stamp publish gate (issue #3836 phase 1):'
 const credentialStampGateFixIntro =
-	'Publish failed. Packages must be conversion-ready: every credential use is a fixed kody.credentials slot with a real description, and every call site uses a literal key. Callers pick which saved credential fills each slot with the execute credentials call map ({ "SLOT": "credential-name" }) or a stored/trigger mapping — never choose credential names at runtime, and do not use |scope=, secretMounts, server eval, vault placeholders, or credential.named() in stamped packages. Fix each item below, then publish again.'
+	'Publish failed. Packages must be conversion-ready: every credential use is a fixed kody.credentials slot with a real description, and every call site uses a literal key. Prefer credential("SLOT") / credentials("SLOT") so callers can pick which saved credential fills each slot with the execute credentials call map ({ "SLOT": "credential-name" }) or a stored/trigger mapping; placeholders and createAuthenticatedFetch resolve the literal slot name as a saved credential name. Never choose credential names at runtime, and do not use |scope=, secretMounts, server eval, vault placeholders, or credential.named() in stamped packages. Fix each item below, then publish again.'
 const credentialPatternFindingsHeading = `Credential placeholder references (${credentialPatternCheckLabel}):`
 const credentialPatternLabelsDoc =
 	'Labels are described under "Credential slots" in the packages docs.'

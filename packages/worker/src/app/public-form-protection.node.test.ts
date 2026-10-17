@@ -20,6 +20,7 @@ type PublicFormProtectionEnv = {
 	TURNSTILE_SITE_KEY?: string | undefined
 	TURNSTILE_SECRET_KEY?: string | undefined
 	SENTRY_ENVIRONMENT?: string | undefined
+	WRANGLER_IS_LOCAL_DEV?: string | undefined
 }
 
 function formProtectionEnv(env: PublicFormProtectionEnv) {
@@ -39,16 +40,17 @@ test('public form protection defaults closed, rejects honeypots, and verifies Tu
 		method: 'POST',
 		headers: { 'CF-Connecting-IP': '203.0.113.10' },
 	})
+	const localOmitKeys = formProtectionEnv({ WRANGLER_IS_LOCAL_DEV: 'true' })
 	await expect(
 		verifyPublicFormProtection({
-			env: formProtectionEnv({}),
+			env: localOmitKeys,
 			request,
 			body: {},
 		}),
 	).resolves.toEqual({ ok: true })
 
 	const honeypot = await verifyPublicFormProtection({
-		env: formProtectionEnv({}),
+		env: localOmitKeys,
 		request,
 		body: { [honeypotFieldName]: 'https://spam.example' },
 	})
@@ -61,7 +63,7 @@ test('public form protection defaults closed, rejects honeypots, and verifies Tu
 
 	await expect(
 		verifyPublicFormProtection({
-			env: formProtectionEnv({}),
+			env: localOmitKeys,
 			request,
 			body: { website: 'https://kody.codes' },
 		}),
@@ -138,7 +140,7 @@ test('public form protection defaults closed, rejects honeypots, and verifies Tu
 	}
 })
 
-test('production refuses when either Turnstile key is missing and reports to Sentry', async () => {
+test('non-production-unknown runtimes refuse when either Turnstile key is missing and report to Sentry', async () => {
 	captureException.mockClear()
 	const request = new Request('https://example.com/auth', { method: 'POST' })
 
@@ -167,6 +169,17 @@ test('production refuses when either Turnstile key is missing and reports to Sen
 			}),
 		}),
 	)
+
+	captureException.mockClear()
+	const unsetEnv = await verifyPublicFormProtection({
+		env: formProtectionEnv({}),
+		request,
+		body: {},
+	})
+	expect(unsetEnv.ok).toBe(false)
+	if (unsetEnv.ok) throw new Error('Expected unset-env fail-closed.')
+	expect(unsetEnv.response.status).toBe(503)
+	expect(captureException).toHaveBeenCalledTimes(1)
 
 	captureException.mockClear()
 	const siteOnly = await verifyPublicFormProtection({

@@ -1164,6 +1164,9 @@ test('runRepoChecks can keep credential stamp findings informational', async () 
 	expect(check?.ok).toBe(true)
 	expect(check?.message).toMatch(/informational|enforceCredentialStamp=false/)
 	expect(check?.message).not.toMatch(/Publish failed/)
+	// Soft-fail must keep the conversion-ready guidance, not strip the whole
+	// first line when replacing the Publish failed prefix.
+	expect(check?.message).toMatch(/conversion-ready|credentials call map/)
 	expect(check?.message).toMatch(/secretMounts|computed integration/)
 })
 

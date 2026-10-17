@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/cloudflare'
+import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { getRequestIp } from '#worker/audit-log.ts'
 import {
 	honeypotFieldName,
@@ -13,6 +14,7 @@ type PublicFormProtectionEnv = {
 	TURNSTILE_SITE_KEY?: string | undefined
 	TURNSTILE_SECRET_KEY?: string | undefined
 	SENTRY_ENVIRONMENT?: string | undefined
+	WRANGLER_IS_LOCAL_DEV?: string | undefined
 }
 
 function readTrimmedString(body: PublicFormBody, fieldName: string) {
@@ -50,11 +52,12 @@ export async function verifyPublicFormProtection(input: {
 
 	const siteKey = input.env.TURNSTILE_SITE_KEY?.trim()
 	const secretKey = input.env.TURNSTILE_SECRET_KEY?.trim()
-	// Local development, previews, and tests may omit Turnstile. Production
-	// must never fail open: refuse with a server error and report to Sentry.
-	// Boot also refuses when keys are missing (getEnv / env.ts).
+	// Local development, previews, and tests may omit Turnstile. Every other
+	// runtime (including unset SENTRY_ENVIRONMENT) must never fail open: refuse
+	// with a server error and report to Sentry. Boot also refuses when keys are
+	// missing (getEnv / env.ts).
 	if (!siteKey || !secretKey) {
-		if (input.env.SENTRY_ENVIRONMENT !== 'production') return { ok: true }
+		if (isNonProductionRuntime(input.env)) return { ok: true }
 
 		const error = new Error(turnstileKeysMissingProductionMessage)
 		Sentry.captureException(error, {
