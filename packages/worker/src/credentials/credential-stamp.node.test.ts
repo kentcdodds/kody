@@ -231,6 +231,34 @@ test('scanLiteralMcpServerKeys stamps literal servers and fails dynamic access',
 	expect(optionalBracketForms.keys).toEqual(['canva', 'home', 'linear'])
 	expect(optionalBracketForms.failures).toEqual([])
 
+	// adminCredentialStampBackfill sets stampKeyCount = plan.keys.length.
+	// Kasa 1.2.1 only uses cm.mcp?.['home']; before optional/bracket detection
+	// the plan was [] so a matching empty KV stamp reported stamped + 0.
+	const kasaSealPlan = planCredentialStampSeal({
+		'package.json': manifest({
+			credentials: {
+				home: {
+					kind: 'mcp',
+					description: 'Home connector for Kasa plugs.',
+				},
+			},
+		}),
+		'src/home-tools.ts': [
+			'export type KodyKasa = { mcp: { home: unknown } }',
+			'export function getHomeKasaTools(cm: KodyKasa) {',
+			"\treturn cm.mcp?.['home']",
+			'}',
+		].join('\n'),
+		'src/index.ts': [
+			"import { getHomeKasaTools } from './home-tools.ts'",
+			"import { kody } from 'kody:runtime'",
+			'export default () => getHomeKasaTools(kody as never)',
+		].join('\n'),
+	})
+	expect(kasaSealPlan.keys).toEqual(['home'])
+	expect(kasaSealPlan.blockingFailures).toEqual([])
+	expect(kasaSealPlan.sealReady).toBe(true)
+
 	const unrelatedMcpData = scanLiteralMcpServerKeys({
 		'package.json': manifest(),
 		'src/index.ts': [
