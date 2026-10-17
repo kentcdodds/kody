@@ -19,6 +19,7 @@ import {
 	devErrorHeader,
 	devRequestIdHeader,
 } from './dev/dev-protocol.js'
+import { devPublicUrlHeader } from './dev/dev-proxy-origin.js'
 
 export type PackageLocalContext = {
 	packageId: string
@@ -409,6 +410,7 @@ import {
 
 const __kodyRunSecretHeader = ${JSON.stringify(runSecretHeader)};
 const __kodyRequestIdHeader = ${JSON.stringify(devRequestIdHeader)};
+const __kodyPublicUrlHeader = ${JSON.stringify(devPublicUrlHeader)};
 const __kodyDevErrorHeader = ${JSON.stringify(devErrorHeader)};
 const __kodyLogMarker = ${JSON.stringify(appLogMarker)};
 const __kodyDevRequest = new AsyncLocalStorage();
@@ -487,16 +489,22 @@ export default {
 				});
 			},
 		});
-		const url = new URL(request.url);
+		// Public URL is set only by the Node proxy from the trusted listen
+		// origin (never from client Host). Rebuild request.url so CSRF checks
+		// comparing Origin to new URL(request.url).origin see the dev origin.
+		const publicUrl = request.headers.get(__kodyPublicUrlHeader);
+		const appUrl = publicUrl || request.url;
+		const url = new URL(appUrl);
 		const tag = {
 			id: request.headers.get(__kodyRequestIdHeader) ?? '-',
 			method: request.method,
 			path: url.pathname + url.search,
 		};
-		const headers = new Headers(request.headers);
-		headers.delete(__kodyRunSecretHeader);
-		headers.delete(__kodyRequestIdHeader);
-		const appRequest = new Request(request, { headers });
+		const appRequest = new Request(appUrl, request);
+		appRequest.headers.delete(__kodyRunSecretHeader);
+		appRequest.headers.delete(__kodyRequestIdHeader);
+		appRequest.headers.delete(__kodyPublicUrlHeader);
+		appRequest.headers.set('host', url.host);
 		return await __kodyDevRequest.run(tag, async () => {
 			try {
 				return await __kodyRunInLocalRuntime(async () => {

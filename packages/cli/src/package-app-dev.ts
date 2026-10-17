@@ -47,6 +47,12 @@ import {
 	type DevRequestTag,
 } from './dev/dev-events.js'
 import { devErrorHeader, devRequestIdHeader } from './dev/dev-protocol.js'
+import {
+	buildDevProxyUpstreamHeaders,
+	buildTrustedDevPublicUrl,
+	isAllowedDevHost,
+	trustedDevHostFromHostedUrl,
+} from './dev/dev-proxy-origin.js'
 import { listenDevServer } from './dev/dev-port.js'
 import { devStatusPath, type DevServerStatus } from './dev/dev-registry.js'
 import { createDevWatcher, type DevWatcher } from './dev/dev-watcher.js'
@@ -142,6 +148,12 @@ export type PackageAppDevOptions = {
 	 * `.kody/mocks.ts` is active (never carries real secrets).
 	 */
 	passthroughHosts?: ReadonlyArray<string>
+	/**
+	 * Extra Host header values allowed at the Node proxy (in addition to the
+	 * listen host and loopback aliases). Unknown Hosts are rejected before
+	 * workerd — never copy the incoming Host through (DNS rebinding).
+	 */
+	hostAliases?: ReadonlyArray<string>
 	workerdPath?: string
 	fetchFn?: typeof fetch
 	/**
@@ -814,8 +826,28 @@ export async function startPackageAppDev(
 		req: IncomingMessage,
 		res: ServerResponse,
 	): Promise<void> {
+		const trustedHost = trustedDevHostFromHostedUrl(hostedUrl)
+		if (
+			!isAllowedDevHost({
+				incomingHost: req.headers.host,
+				trustedHost,
+				aliases: options.hostAliases,
+			})
+		) {
+			res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' })
+			res.end(
+				`Unrecognized Host ${JSON.stringify(req.headers.host ?? '')}. ` +
+					`Open the URL kody dev printed (${hostedUrl}).\n`,
+			)
+			return Promise.resolve()
+		}
 		const incomingUrl = new URL(req.url ?? '/', hostedUrl)
 		const restPath = stripMount(incomingUrl.pathname, appBasePath)
+		const publicUrl = buildTrustedDevPublicUrl({
+			hostedUrl,
+			restPath,
+			search: incomingUrl.search,
+		})
 		const forwardUrl = new URL(
 			restPath + incomingUrl.search,
 			`http://127.0.0.1:${generation.workerd.port}`,
@@ -825,12 +857,13 @@ export async function startPackageAppDev(
 			method: req.method ?? 'GET',
 			path: restPath + incomingUrl.search,
 		}
-		const headers: Record<string, string | number | string[] | undefined> = {
-			...req.headers,
-			host: `127.0.0.1:${generation.workerd.port}`,
-			[runSecretHeader]: runSecret,
-			[devRequestIdHeader]: tag.id,
-		}
+		const headers = buildDevProxyUpstreamHeaders({
+			incoming: req.headers,
+			trustedHost,
+			publicUrl,
+			runSecret,
+			requestId: tag.id,
+		})
 		return new Promise<void>((resolve, reject) => {
 			const upstream = httpRequest(
 				forwardUrl,
