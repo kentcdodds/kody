@@ -30,6 +30,7 @@ import {
 import { isCredentialInvalidatedByStoredPasswordChange } from '#worker/password-change-lockout.ts'
 import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { personalOrgIdFromUserRow } from '#worker/orgs/personal-org-id.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import {
 	parseEmailVerificationDelivery,
@@ -48,6 +49,7 @@ type AuthUserRow = {
 	email_verification_delivery_class?: string | null
 	email_verification_delivery_at?: string | null
 	deleting_at?: string | null
+	deleted_at?: string | null
 	suspended_at?: string | null
 	password_changed_at?: string | null
 	stable_user_id: string | null
@@ -78,14 +80,17 @@ export type ResolvedRequestAuth = {
 
 const requestAuthStore = new WeakMap<Request, Promise<ResolvedRequestAuth>>()
 
-const authUserLookupSql = `select * from "users" where ("stable_user_id" = ?)`
+// Soft-deleted people must not resolve as authenticated (same live filter as
+// MCP/token auth). A leftover session cookie is destroyed below when the row
+// is missing or tombstoned.
+const authUserLookupSql = `select * from "users" where ("stable_user_id" = ?)${andLiveDeletedAtSql()}`
 const authRolesLookupSql = `SELECT DISTINCT r.name AS role_name, p.action, p.entity, p.access
 			 FROM user_roles ur
 			 INNER JOIN roles r ON r.id = ur.role_id
 			 INNER JOIN users u ON u.id = ur.user_id
 			 LEFT JOIN role_permissions rp ON rp.role_id = r.id
 			 LEFT JOIN permissions p ON p.id = rp.permission_id
-			 WHERE u.stable_user_id = ?`
+			 WHERE u.stable_user_id = ?${andLiveDeletedAtSql('u')}`
 
 function d1ResultRows<T>(result: D1Result<T> | undefined): Array<T> {
 	return result?.results ?? []
@@ -119,11 +124,16 @@ async function loadUserAndRoles(
 	} catch (error) {
 		console.error('Failed to load roles for authenticated user:', error)
 		const db = createDb(env.APP_DB)
-		const userRecord = await db.findOne(usersTable, {
+		const userRecord = (await db.findOne(usersTable, {
 			where: { stable_user_id: stableUserId },
-		})
+		})) as AuthUserRow | null
+		// findOne is unfiltered; refuse soft-deleted people the same way the
+		// primary live SQL path does when the batch lookup fails.
+		if (userRecord?.deleted_at) {
+			return { userRecord: null, roles: [], permissions: [] }
+		}
 		return {
-			userRecord: userRecord as AuthUserRow | null,
+			userRecord,
 			roles: [],
 			permissions: [],
 		}
@@ -162,7 +172,7 @@ async function resolveRequestAuth(
 		session.stableUserId,
 	)
 
-	if (!userRecord) {
+	if (!userRecord || userRecord.deleted_at) {
 		return {
 			sessionUserId: session.stableUserId,
 			setCookie: await destroyAuthCookie(isSecureRequest(request)),

@@ -16,6 +16,7 @@ export const usersTable = table({
 		password_hash: c.text(),
 		email_verified_at: c.text(),
 		deleting_at: c.text(),
+		deleted_at: c.text(),
 		suspended_at: c.text(),
 		email_verification_delivery_status: c.text(),
 		email_verification_delivery_at: c.text(),

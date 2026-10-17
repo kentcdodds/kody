@@ -173,8 +173,9 @@ async function getAccount(env: Env, session: AuthSession) {
 	)
 }
 
-test('account handler redirects to login with a session-destroy cookie for stale or deleting accounts', async () => {
+test('account handler redirects to login with a session-destroy cookie for stale, deleting, or soft-deleted accounts', async () => {
 	const deletingUserId = 'a'.repeat(64)
+	const softDeletedUserId = 'b'.repeat(64)
 	const cases = [
 		{
 			label: 'stale session',
@@ -193,6 +194,20 @@ test('account handler redirects to login with a session-destroy cookie for stale
 					username: 'deleting-user',
 					stable_user_id: deletingUserId,
 					deleting_at: '2026-08-31 15:00:00',
+				},
+			],
+		},
+		{
+			label: 'soft-deleted account',
+			stableUserId: softDeletedUserId,
+			email: 'soft-deleted@example.com',
+			users: [
+				{
+					id: 800,
+					email: 'soft-deleted@example.com',
+					username: 'soft-deleted-user',
+					stable_user_id: softDeletedUserId,
+					deleted_at: '2026-10-16T22:23:07.000Z',
 				},
 			],
 		},

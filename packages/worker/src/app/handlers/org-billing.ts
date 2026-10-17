@@ -3,6 +3,7 @@ import { type Action } from 'remix/router'
 import { personalOrgIdForPerson } from '#worker/orgs/personal-org-id.ts'
 import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
 import {
+	BillingPlanUnavailableError,
 	loadAccountBillingData,
 	type BillingPageOrg,
 } from '#app/account-billing-data.ts'
@@ -110,7 +111,7 @@ async function resolveOrgBillingAccess(input: {
 	}
 	const record = await getOrgById(input.env.APP_DB, resolution.org.id)
 	if (!record) {
-		throw new Error(`Cannot load billing: missing org ${resolution.org.id}.`)
+		return { ok: false, status: 404, error: 'Organization unavailable.' }
 	}
 	return {
 		ok: true,
@@ -153,14 +154,21 @@ async function loadOrgBillingPageData(input: {
 	org: BillingPageOrg
 }) {
 	const searchParams = new URL(input.request.url).searchParams
-	return await loadAccountBillingData({
-		env: input.env,
-		userId: input.user.userId,
-		org: input.org,
-		seats: Math.max(1, await countLiveSeats(input.env.APP_DB, input.org.id)),
-		errorCode: searchParams.get('error'),
-		noticeCode: searchParams.get('billing'),
-	})
+	try {
+		return await loadAccountBillingData({
+			env: input.env,
+			userId: input.user.userId,
+			org: input.org,
+			seats: Math.max(1, await countLiveSeats(input.env.APP_DB, input.org.id)),
+			errorCode: searchParams.get('error'),
+			noticeCode: searchParams.get('billing'),
+		})
+	} catch (error) {
+		if (error instanceof BillingPlanUnavailableError) {
+			return null
+		}
+		throw error
+	}
 }
 
 function renderBillingDenied(
@@ -198,6 +206,13 @@ export function createOrgBillingHandler(env: Env) {
 				user,
 				org: access.org,
 			})
+			if (!accountBilling) {
+				return renderBillingDenied(request, env, {
+					ok: false,
+					status: 404,
+					error: 'Organization unavailable.',
+				})
+			}
 			return renderAppPage({
 				request,
 				env,
@@ -225,9 +240,19 @@ export function createOrgBillingApiHandler(env: Env) {
 			if (!access.ok) {
 				return jsonResponse({ ok: false, error: access.error }, access.status)
 			}
-			return jsonResponse(
-				await loadOrgBillingPageData({ request, env, user, org: access.org }),
-			)
+			const accountBilling = await loadOrgBillingPageData({
+				request,
+				env,
+				user,
+				org: access.org,
+			})
+			if (!accountBilling) {
+				return jsonResponse(
+					{ ok: false, error: 'Organization unavailable.' },
+					404,
+				)
+			}
+			return jsonResponse(accountBilling)
 		},
 	} satisfies Action<typeof routes.orgBillingApi>
 }

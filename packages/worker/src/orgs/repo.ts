@@ -27,6 +27,20 @@ export type OrgBinding = {
 	role: OrgRole | null
 }
 
+/**
+ * Thrown when a person has no live personal-org membership row. Session auth
+ * catches this and treats the request as unauthenticated (defense in depth for
+ * soft-deleted people whose cookie still resolved before the live users filter).
+ */
+export class PersonalOrgBindingMissingError extends Error {
+	constructor(personId: string) {
+		super(
+			`No live personal-org membership for person ${personIdFromStored(personId)}. Every person must have users.personal_org_id (or legacy org_id = user_id) with a live membership.`,
+		)
+		this.name = 'PersonalOrgBindingMissingError'
+	}
+}
+
 export type PersonOrg = OrgRecord & {
 	role: OrgRole | null
 }
@@ -392,9 +406,7 @@ export function orgBindingForPersonFromRow(
 	row: OrgBindingRow | null,
 ): OrgBinding {
 	if (!row) {
-		throw new Error(
-			`No live personal-org membership for person ${personIdFromStored(personId)}. Every person must have users.personal_org_id (or legacy org_id = user_id) with a live membership.`,
-		)
+		throw new PersonalOrgBindingMissingError(personId)
 	}
 	return toBinding(row)
 }

@@ -14,6 +14,7 @@ import {
 	loadOrgBindingForOrg,
 	loadOrgBindingForPerson,
 	loadOrgBindingForSlug,
+	PersonalOrgBindingMissingError,
 } from './repo.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
@@ -64,7 +65,7 @@ test('loadOrgBindingForPerson throws when personal org membership is missing', a
 		email: 'missing-membership@example.com',
 	})
 	await expect(loadOrgBindingForPerson(db, stableUserId)).rejects.toThrow(
-		/No live personal-org membership/,
+		PersonalOrgBindingMissingError,
 	)
 })
 

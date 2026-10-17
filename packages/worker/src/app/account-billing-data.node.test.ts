@@ -34,6 +34,7 @@ vi.mock('#worker/billing/stripe-plan-refresh-client.ts', () => ({
 }))
 
 import {
+	BillingPlanUnavailableError,
 	loadAccountBillingData,
 	resolveBillingErrorMessage,
 	resolveBillingNoticeMessage,
@@ -197,6 +198,33 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 	})
 	expect(refreshStripePlanForUser).not.toHaveBeenCalled()
 	expect(scheduleStripePlanRefreshBackstop).toHaveBeenCalledTimes(2)
+})
+
+test('loadAccountBillingData fails closed when the personal plan row is missing', async () => {
+	const env = {
+		APP_DB: {
+			prepare() {
+				const statement = {
+					bind: () => statement,
+					first: async () => null,
+					all: async () => ({ results: [] }),
+					run: async () => ({ success: true }),
+				}
+				return statement
+			},
+		},
+		STRIPE_SECRET_KEY: 'sk_test',
+		STRIPE_PRO_PRICE_ID: 'price_pro',
+	} as unknown as Env
+
+	await expect(
+		loadAccountBillingData({
+			env,
+			userId: 800,
+			org: personalOrg,
+			seats: 1,
+		}),
+	).rejects.toBeInstanceOf(BillingPlanUnavailableError)
 })
 
 test("a team organization reads and refreshes its own Stripe customer, not the viewer's", async () => {

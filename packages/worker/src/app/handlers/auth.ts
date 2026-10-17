@@ -677,16 +677,20 @@ export function createAuthHandler(env: Env) {
 			const userRecord = await db.findOne(usersTable, {
 				where: { email: normalizedEmail },
 			})
+			// Soft-deleted people cannot mint a new session (restore is
+			// admin/MCP). Treat them like a missing account so login does not
+			// reopen the session hole closed in request-auth-cache.
+			const liveUserRecord = userRecord?.deleted_at ? null : userRecord
 			let passwordValid = false
-			if (userRecord) {
+			if (liveUserRecord) {
 				passwordValid = await verifyPassword(
 					normalizedPassword,
-					userRecord.password_hash,
+					liveUserRecord.password_hash,
 				)
 			} else {
 				await verifyPassword(normalizedPassword, dummyPasswordHash)
 			}
-			if (!userRecord || !passwordValid) {
+			if (!liveUserRecord || !passwordValid) {
 				void logAuditEvent({
 					db: auditDatabaseFromEnv(env),
 					category: 'auth',
@@ -706,9 +710,9 @@ export function createAuthHandler(env: Env) {
 			try {
 				await upgradePasswordHashIfNeeded(
 					db,
-					userRecord.id,
+					liveUserRecord.id,
 					normalizedPassword,
-					userRecord.password_hash,
+					liveUserRecord.password_hash,
 				)
 			} catch {
 				// A failed hash upgrade must never block an otherwise valid login.
@@ -717,12 +721,12 @@ export function createAuthHandler(env: Env) {
 			// Two-factor accounts get a short-lived pending cookie instead of a
 			// session; the real session cookie is only issued once the TOTP code
 			// passes at POST /verify/2fa.json.
-			if (await isTwoFactorEnabled(env.APP_DB, userRecord.id)) {
+			if (await isTwoFactorEnabled(env.APP_DB, liveUserRecord.id)) {
 				setVerifySessionSecret(env.COOKIE_SECRET)
 				const secure = isSecureRequest(request)
 				const verifyCookie = await createVerifySessionCookie(
 					{
-						stableUserId: personIdFromStored(userRecord.stable_user_id),
+						stableUserId: personIdFromStored(liveUserRecord.stable_user_id),
 						email: normalizedEmail,
 						rememberMe,
 					},
@@ -748,7 +752,7 @@ export function createAuthHandler(env: Env) {
 				)
 			}
 
-			const stableUserId = personIdFromStored(userRecord.stable_user_id)
+			const stableUserId = personIdFromStored(liveUserRecord.stable_user_id)
 			const cookie = await createAuthCookie(
 				{
 					stableUserId,

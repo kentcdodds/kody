@@ -531,7 +531,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				const currentUser = await db.findOne(usersTable, {
 					where: { stable_user_id: session.stableUserId },
 				})
-				if (!currentUser) {
+				if (!currentUser || currentUser.deleted_at) {
 					return fail('account-error', 'session_user_missing')
 				}
 				// Check the live users row, not the session cookie. A password
@@ -598,7 +598,9 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				const user = await db.findOne(usersTable, {
 					where: { id: connection.user_id },
 				})
-				if (!user) {
+				// Soft-deleted people cannot mint a session via a leftover
+				// provider connection (restore is admin/MCP).
+				if (!user || user.deleted_at) {
 					return fail('account-error', 'connection_user_missing')
 				}
 				await completeDiscordGuildLogin({

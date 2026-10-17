@@ -34,8 +34,9 @@ export async function loadSessionInfo(
 ): Promise<LoadedSessionResult> {
 	const resolved = await loadResolvedRequestAuth(request, env)
 	// Suspended and deleting accounts are signed out in the SSR shell
-	// (matching readAuthenticatedAppUser). Deleting also clears the cookie
-	// so /login does not bounce back to /account.
+	// (matching readAuthenticatedAppUser). Soft-deleted people never resolve
+	// as `user` (request-auth-cache destroys the cookie). Deleting also clears
+	// the cookie so /login does not bounce back to /account.
 	if (
 		!resolved.user ||
 		resolved.user.accountSuspended ||

@@ -2,7 +2,7 @@
  * soft-delete-read-filter: opt-out
  *
  * Invalidation must resolve soft-deleted users by id; resolve still refuses
- * tombstoned owners via an explicit live `deleted_at` check below.
+ * tombstoned owners via `users.deleted_at` below.
  */
 import { isSessionInvalidatedByStoredPasswordChange } from '#app/request-auth-cache.ts'
 import { findPublicOwnerIdentityByHandle } from '#worker/identity/user-lookup.ts'
@@ -29,8 +29,6 @@ import {
  * narrower identity than `AuthenticatedAppUser`: no roles, no permissions, and
  * nothing that would let the package-app origin act on first-party surfaces.
  */
-import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
-
 export type PackageAppOwner = {
 	/** Stable (hashed) user id used for every userId-scoped read. */
 	userId: OwnerId
@@ -193,13 +191,8 @@ async function loadPackageAppOwnerRowWithCache(input: {
 				packageAppOwnerRowCache.delete(cacheKey)
 				return null
 			}
-			// usersTable does not map deleted_at yet; refuse soft-deleted owners.
-			const live = await input.env.APP_DB.prepare(
-				`SELECT 1 AS ok FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
-			)
-				.bind(userRecord.id)
-				.first<{ ok: number }>()
-			if (!live) {
+			// findOne can still return a soft-deleted row; refuse tombstones.
+			if (userRecord.deleted_at) {
 				packageAppOwnerRowCache.delete(cacheKey)
 				return null
 			}

@@ -6,7 +6,10 @@ import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { loadRequestOrgResolution } from '#app/org-request-binding.ts'
-import { loadOrgBindingForPerson } from '#worker/orgs/repo.ts'
+import {
+	loadOrgBindingForPerson,
+	PersonalOrgBindingMissingError,
+} from '#worker/orgs/repo.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 
 export type AuthenticatedAppUser = {
@@ -48,10 +51,21 @@ async function readAuthenticatedAppUserInternal(
 		env,
 		resolved.user.mcpUser.userId,
 	)
-	const orgBinding =
-		resolution === 'personal' || resolution === 'denied'
-			? await loadOrgBindingForPerson(env.APP_DB, resolved.user.mcpUser.userId)
-			: resolution
+	let orgBinding
+	try {
+		orgBinding =
+			resolution === 'personal' || resolution === 'denied'
+				? await loadOrgBindingForPerson(
+						env.APP_DB,
+						resolved.user.mcpUser.userId,
+					)
+				: resolution
+	} catch (error) {
+		// Soft-deleted people (or otherwise missing personal-org membership)
+		// must not 500 on every authenticated surface — fail closed as signed out.
+		if (error instanceof PersonalOrgBindingMissingError) return null
+		throw error
+	}
 	const user = {
 		sessionUserId: resolved.sessionUserId,
 		userId: resolved.user.userId,

@@ -39,6 +39,18 @@ const billingErrorMessages: Record<string, string> = {
 	portal_failed: 'Unable to open the Stripe billing portal.',
 }
 
+/**
+ * Personal/team plan row is missing (soft-deleted person/org, or race). Handlers
+ * map this to 404 rather than an unhandled 500. Session auth should already
+ * refuse soft-deleted people; this is defense in depth for billing loaders.
+ */
+export class BillingPlanUnavailableError extends Error {
+	constructor(message: string) {
+		super(message)
+		this.name = 'BillingPlanUnavailableError'
+	}
+}
+
 export function resolveBillingErrorMessage(
 	errorCode: string | null | undefined,
 ): string | undefined {
@@ -126,7 +138,7 @@ async function readPersonalPlanState(
 		.bind(userId)
 		.first<BillingUserRow>()
 	if (!row) {
-		throw new Error(
+		throw new BillingPlanUnavailableError(
 			`Cannot load billing: missing personal org for user ${String(userId)}.`,
 		)
 	}
@@ -156,7 +168,9 @@ async function readTeamPlanState(env: Env, orgId: OwnerId): Promise<PlanState> {
 		.bind(orgId)
 		.first<BillingOrgRow>()
 	if (!row) {
-		throw new Error(`Cannot load billing: missing org ${orgId}.`)
+		throw new BillingPlanUnavailableError(
+			`Cannot load billing: missing org ${orgId}.`,
+		)
 	}
 	return {
 		manualPlan: parseStoredPlanName(row.plan),

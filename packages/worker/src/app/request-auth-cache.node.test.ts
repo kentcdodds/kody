@@ -169,3 +169,68 @@ test('resolveRequestAuth prefers users.display_name over username', async () => 
 	expect(resolved.user?.displayName).toBe('Kent C. Dodds')
 	expect(resolved.user?.mcpUser.displayName).toBe('Kent C. Dodds')
 })
+
+test('resolveRequestAuth destroys the cookie for soft-deleted people', async () => {
+	setAuthSessionSecret(testCookieSecret)
+	const cookie = await createAuthCookie(session, false, Date.now())
+	const request = new Request(
+		'https://example.com/@session-user/-/billing.json',
+		{
+			headers: { Cookie: cookie.split(';')[0]! },
+		},
+	)
+	const env = {
+		APP_DB: {
+			prepare(query: string) {
+				const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
+				const statement = {
+					query,
+					bind() {
+						return statement
+					},
+					async all() {
+						if (
+							normalizedQuery.startsWith('select') &&
+							normalizedQuery.includes('from "users"')
+						) {
+							// Simulate a code path that still sees the tombstone (or a
+							// mock that ignores the live filter): deleted_at must fail closed.
+							return {
+								results: [
+									{
+										id: 800,
+										email: sessionEmail,
+										username: 'session-user',
+										stable_user_id: stableUserId,
+										deleted_at: '2026-10-16T22:23:07.000Z',
+									},
+								],
+								meta: { changes: 0 },
+							}
+						}
+						if (normalizedQuery.includes('from user_roles')) {
+							return { results: [], meta: { changes: 0 } }
+						}
+						return { results: [], meta: { changes: 0 } }
+					},
+					async first() {
+						return null
+					},
+					async run() {
+						return { meta: { changes: 0 } }
+					},
+				}
+				return statement
+			},
+			async batch(statements: Array<{ query?: string }>) {
+				return await executePreparedD1Batch(statements)
+			},
+			async exec() {
+				return
+			},
+		} as unknown as D1Database,
+		COOKIE_SECRET: testCookieSecret,
+	} as Env
+
+	expectSignedOutWithClearedCookie(await loadResolvedRequestAuth(request, env))
+})
