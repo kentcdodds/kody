@@ -86,6 +86,10 @@ function createEnv(overrides: Record<string, unknown> = {}) {
 		CLOUDFLARE_ACCOUNT_ID: 'account-id',
 		CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
 		CLOUDFLARE_API_TOKEN: 'api-token',
+		// Form protection may omit Turnstile only on known non-production runtimes.
+		// Prefer test over WRANGLER_IS_LOCAL_DEV so request-origin email links stay
+		// gated the same way as before.
+		SENTRY_ENVIRONMENT: 'test',
 		...overrides,
 	} as unknown as Env
 }

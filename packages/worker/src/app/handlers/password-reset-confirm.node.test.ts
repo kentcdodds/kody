@@ -81,6 +81,7 @@ test('password reset confirm clears TOTP, passkeys, and linked providers', async
 		CLOUDFLARE_ACCOUNT_ID: 'account-id',
 		CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
 		CLOUDFLARE_API_TOKEN: 'api-token',
+		SENTRY_ENVIRONMENT: 'test',
 		OAUTH_PROVIDER: {
 			listUserGrants: async () => ({
 				items: revokedGrantIds.includes('grant-1')
