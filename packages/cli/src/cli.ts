@@ -33,6 +33,7 @@ import {
 } from './store.js'
 import { formatToolResult } from './tool-result.js'
 import { resolveLocalExecuteBearer } from './local-execute-auth.js'
+import { assertNoUnknownCliOptions } from './unknown-cli-option.js'
 import {
 	isPublishedPackageInvokeSpecifier,
 	resolveExecuteInvokeCode,
@@ -107,55 +108,62 @@ export function apiUrlFrom(
 	return values.apiUrl || env.KODY_API_URL || defaultApiUrl
 }
 
+const cliFlagOptions = {
+	help: { type: 'boolean', short: 'h' },
+	version: { type: 'boolean', short: 'v' },
+	json: { type: 'boolean' },
+	'mcp-url': { type: 'string' },
+	entity: { type: 'string' },
+	domain: { type: 'string' },
+	limit: { type: 'string' },
+	code: { type: 'string' },
+	file: { type: 'string' },
+	invoke: { type: 'string' },
+	params: { type: 'string' },
+	'conversation-id': { type: 'string' },
+	local: { type: 'boolean' },
+	'allow-private-network': { type: 'boolean' },
+	credential: { type: 'string', multiple: true },
+	token: { type: 'string' },
+	'api-url': { type: 'string' },
+	lifetime: { type: 'string' },
+	'idle-ttl-seconds': { type: 'string' },
+	'max-lifetime-seconds': { type: 'string' },
+	scopes: { type: 'string' },
+	project: { type: 'boolean' },
+	'no-browser': { type: 'boolean' },
+	org: { type: 'string' },
+	target: { type: 'string' },
+	'reset-storage': { type: 'boolean' },
+	'dry-run': { type: 'boolean' },
+	passthrough: { type: 'string' },
+	port: { type: 'string' },
+	'app-base-path': { type: 'string' },
+	'no-live-reload': { type: 'boolean' },
+	'ready-file': { type: 'string' },
+	'no-attach': { type: 'boolean' },
+	method: { type: 'string' },
+	body: { type: 'string' },
+	clients: { type: 'string' },
+	yes: { type: 'boolean', short: 'y' },
+	team: { type: 'string' },
+	user: { type: 'string' },
+	preset: { type: 'string' },
+	grant: { type: 'string' },
+} as const
+
+const cliFlagNames = Object.keys(cliFlagOptions)
+
 function parseKnown(args: Array<string>) {
-	return parseArgs({
+	const { tokens, values, positionals } = parseArgs({
 		args,
 		allowPositionals: true,
 		strict: false,
-		options: {
-			help: { type: 'boolean', short: 'h' },
-			version: { type: 'boolean', short: 'v' },
-			json: { type: 'boolean' },
-			'mcp-url': { type: 'string' },
-			entity: { type: 'string' },
-			domain: { type: 'string' },
-			limit: { type: 'string' },
-			code: { type: 'string' },
-			file: { type: 'string' },
-			invoke: { type: 'string' },
-			params: { type: 'string' },
-			'conversation-id': { type: 'string' },
-			local: { type: 'boolean' },
-			'allow-private-network': { type: 'boolean' },
-			credential: { type: 'string', multiple: true },
-			token: { type: 'string' },
-			'api-url': { type: 'string' },
-			lifetime: { type: 'string' },
-			'idle-ttl-seconds': { type: 'string' },
-			'max-lifetime-seconds': { type: 'string' },
-			scopes: { type: 'string' },
-			project: { type: 'boolean' },
-			'no-browser': { type: 'boolean' },
-			org: { type: 'string' },
-			target: { type: 'string' },
-			'reset-storage': { type: 'boolean' },
-			'dry-run': { type: 'boolean' },
-			passthrough: { type: 'string' },
-			port: { type: 'string' },
-			'app-base-path': { type: 'string' },
-			'no-live-reload': { type: 'boolean' },
-			'ready-file': { type: 'string' },
-			'no-attach': { type: 'boolean' },
-			method: { type: 'string' },
-			body: { type: 'string' },
-			clients: { type: 'string' },
-			yes: { type: 'boolean', short: 'y' },
-			team: { type: 'string' },
-			user: { type: 'string' },
-			preset: { type: 'string' },
-			grant: { type: 'string' },
-		},
+		tokens: true,
+		options: cliFlagOptions,
 	})
+	assertNoUnknownCliOptions(tokens, cliFlagNames)
+	return { values, positionals }
 }
 
 export function resolveCommand(argv: Array<string>): {

@@ -223,6 +223,35 @@ test('resolveCommand parses execute --local flags', () => {
 	assert.equal(values['api-url'], 'http://localhost:8787')
 })
 
+test('unknown --code-file is rejected and suggests --file', () => {
+	assert.throws(
+		() => resolveCommand(['execute', '--local', '--code-file', 'mod.js']),
+		/Unknown option "--code-file".*Did you mean --file\?/,
+	)
+})
+
+test('unknown flags write a usage error to stderr and do not run the module path', async () => {
+	let stdout = ''
+	let stderr = ''
+	const code = await runCli(
+		['execute', '--local', '--code-file', '/tmp/m.js'],
+		{
+			stdout: (text) => {
+				stdout += text
+			},
+			stderr: (text) => {
+				stderr += text
+			},
+		},
+	)
+	assert.equal(code, 1)
+	assert.equal(stdout, '')
+	assert.match(stderr, /Unknown option "--code-file"/)
+	assert.match(stderr, /Did you mean --file\?/)
+	assert.doesNotMatch(stderr, /Invalid regular expression/)
+	assert.doesNotMatch(stderr, /workerd/)
+})
+
 test('allow-private-network is limited to execute --local', async () => {
 	let stderr = ''
 	const code = await runCli(
