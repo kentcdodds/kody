@@ -1,5 +1,8 @@
 import { setAuthSessionSecret } from '#app/auth-session.ts'
-import { loadResolvedRequestAuth } from '#app/request-auth-cache.ts'
+import {
+	loadResolvedRequestAuth,
+	markResolvedRequestAuthSignedOut,
+} from '#app/request-auth-cache.ts'
 import { prefetchRequestFeatureFlagsForHtmlPage } from '#app/request-feature-flags-cache.ts'
 import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
@@ -62,8 +65,12 @@ async function readAuthenticatedAppUserInternal(
 				: resolution
 	} catch (error) {
 		// Soft-deleted people (or otherwise missing personal-org membership)
-		// must not 500 on every authenticated surface — fail closed as signed out.
-		if (error instanceof PersonalOrgBindingMissingError) return null
+		// must not 500 on every authenticated surface — fail closed as signed
+		// out and destroy the cookie so /login does not bounce them back.
+		if (error instanceof PersonalOrgBindingMissingError) {
+			await markResolvedRequestAuthSignedOut(request)
+			return null
+		}
 		throw error
 	}
 	const user = {

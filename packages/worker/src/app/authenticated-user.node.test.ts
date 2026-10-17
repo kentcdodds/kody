@@ -8,6 +8,7 @@ import {
 	readAuthenticatedAppUser,
 	readAuthenticatedAppUserForDeletion,
 } from './authenticated-user.ts'
+import { loadResolvedRequestAuth } from '#app/request-auth-cache.ts'
 import {
 	hasResolvedRequestFeatureFlags,
 	loadRequestFeatureFlags,
@@ -181,12 +182,16 @@ test('missing personal-org membership fails closed as signed out instead of 500'
 		user: { username: 'orphan-user' },
 		missingPersonalOrgBinding: true,
 	})
-	await expect(
-		readAuthenticatedAppUser(
-			await sessionRequest('https://example.com/account/organizations.json'),
-			env,
-		),
-	).resolves.toBeNull()
+	const request = await sessionRequest(
+		'https://example.com/account/organizations.json',
+	)
+	await expect(readAuthenticatedAppUser(request, env)).resolves.toBeNull()
+	// Same-request SSR/login must see signed-out + destroy-cookie so a live
+	// person with no personal-org membership cannot redirect-loop on /login.
+	const resolved = await loadResolvedRequestAuth(request, env)
+	expect(resolved.user).toBeNull()
+	expect(resolved.setCookie ?? '').toContain('kody_session=')
+	expect(resolved.setCookie ?? '').toContain('Max-Age=0')
 })
 
 test('readAuthenticatedAppUser prefetches flags only when HTML pages opt in', async () => {

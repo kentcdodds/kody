@@ -294,3 +294,22 @@ export function loadResolvedRequestAuth(
 	}
 	return promise
 }
+
+/**
+ * Replace this request's cached auth with signed-out + destroy-cookie.
+ * Used when a later gate (e.g. missing personal-org membership) refuses a
+ * person who still resolved as a live users row — so SSR/login see the same
+ * signed-out state and clear the cookie instead of redirect-looping.
+ */
+export async function markResolvedRequestAuthSignedOut(
+	request: Request,
+): Promise<ResolvedRequestAuth> {
+	const previous = await requestAuthStore.get(request)
+	const signedOut: ResolvedRequestAuth = {
+		sessionUserId: previous?.sessionUserId ?? null,
+		setCookie: await destroyAuthCookie(isSecureRequest(request)),
+		user: null,
+	}
+	requestAuthStore.set(request, Promise.resolve(signedOut))
+	return signedOut
+}

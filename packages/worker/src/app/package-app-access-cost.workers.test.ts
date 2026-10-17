@@ -180,12 +180,13 @@ test('package-app access gate D1 statements per actor and request kind', async (
 		ticketGateStatements: 0,
 		mintsTicket: actor !== 'anonymous',
 	})
+	// Owner resolution uses users.deleted_at from findOne (no extra live SQL).
 	expect(measured).toEqual([
-		row('owner', 'html', 7, 1),
+		row('owner', 'html', 6, 1),
 		row('owner', 'asset', 1, 1),
-		row('member', 'html', 8, 1),
+		row('member', 'html', 7, 1),
 		row('member', 'asset', 1, 1),
-		row('collaborator', 'html', 9, 1),
+		row('collaborator', 'html', 8, 1),
 		row('collaborator', 'asset', 1, 1),
 		row('anonymous', 'html', 2, 0),
 		row('anonymous', 'asset', 0, 0),
