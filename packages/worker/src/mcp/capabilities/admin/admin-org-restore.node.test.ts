@@ -20,7 +20,7 @@ vi.mock('#worker/orgs/soft-delete.ts', async (importOriginal) => {
 		await importOriginal<typeof import('#worker/orgs/soft-delete.ts')>()
 	return {
 		...actual,
-		restoreOrg: (...args: Array<unknown>) => mocks.restoreOrg(...args),
+		restoreOrg: mocks.restoreOrg,
 	}
 })
 
@@ -28,8 +28,7 @@ vi.mock('#worker/audit-log.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof AuditLog>()
 	return {
 		...actual,
-		logAuditEvent: (...args: Parameters<typeof AuditLog.logAuditEvent>) =>
-			mocks.logAuditEvent(...args),
+		logAuditEvent: mocks.logAuditEvent,
 	}
 })
 
