@@ -235,7 +235,7 @@ export function renderRestorableOrganizations(
 						trailing: (
 							<button
 								type="button"
-								disabled={actions.busySlug === org.slug}
+								disabled={actions.busySlug !== null}
 								data-testid="restore-organization"
 								mix={[
 									css(getPillButtonCss({ size: 'sm' })),
