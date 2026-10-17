@@ -259,18 +259,33 @@ ${orgBlock}
              local network addresses. Default is public-only.
 
   --target prod|mock
-             Where server-side calls go (storage, credentials, kody:*,
-             execute, invoke, search). Same meaning on \`dev\`, \`execute\`,
-             and \`search\`. Defaults: \`mock\` for \`kody dev\`; \`prod\` for
-             execute/search (unchanged). \`--target mock\` starts the
-             built-in CLI mock (no kody-celld); scratch storage; fake or
-             local credentials so unpublished packages never touch real
-             secrets. Unimplemented mock routes refuse with
-             \`not_implemented_in_mock\`.
+             Where CapabilityProxy / mock hops go for credentials, kody:*,
+             execute, invoke, and search. Same meaning on \`dev\`,
+             \`execute\`, and \`search\`. Defaults: \`mock\` for \`kody dev\`;
+             \`prod\` for execute/search (unchanged). \`--target mock\`
+             starts the built-in CLI mock (no kody-celld): scratch
+             \`packageStorage\` for the working-tree package; fake or local
+             credentials so unpublished packages never touch real secrets.
+             Unimplemented mock routes refuse with
+             \`not_implemented_in_mock\`. Without \`.kody/mocks.ts\`, mock
+             ambient fetch can still reach the public network (not
+             offline). \`--target prod\` keeps the process local but does
+             **not** give the working-tree package hosted
+             \`packageStorage\` / \`packageSecrets\` — those need a published
+             package id; imported published deps still use their own
+             hosted storage/secrets. See the package apps guide target
+             table.
 
   --reset-storage
              With \`--target mock\`, wipe the mock session's scratch storage
              before the command.
+
+  --app-base-path <path>
+             With \`kody dev\`, public mount path the Node proxy strips
+             before workerd (also \`packageContext.appBasePath\`). Default
+             is empty (serve at \`/\`). Use
+             \`--app-base-path /packages/<package-name>\` to match the
+             hosted app mount while iterating locally.
 
   --dry-run  With \`kody dev job|webhook|emit\`, print the module path and
              params that would run without invoking (safe against prod side
@@ -327,12 +342,16 @@ ${orgBlock}
              path maps, then published package-graph when a login/API token
              is available (storage/credentials stay on the mock; local-only
              deps need no login). Optional \`.kody/mocks.ts\` exports MSW
-             \`handlers\` for outbound fetch mocking (Node gateway; not
-             published with the package) — \`createAuthenticatedFetch\`,
-             \`credential().fetch\`, \`gatewayFetch\`, and
-             \`gatewayFetchStream\` all match against them. Unmocked
-             requests fail closed with a ready-to-paste MSW handler stub
-             pointing at \`.kody/mocks.ts\`. Share previews are out of scope.
+             \`handlers\` for outbound fetch mocking (local-dev hook / Node
+             gateway; not a publish entrypoint; ignored on
+             \`--target prod\`). Git-tracked files under \`.kody/\` still
+             ship in the published source snapshot — gitignore local-only
+             mocks/deps maps (or \`git rm --cached\` if already tracked).
+             \`createAuthenticatedFetch\`, \`credential().fetch\`,
+             \`gatewayFetch\`, and \`gatewayFetchStream\` all match against
+             the handlers. Unmocked requests fail closed with a
+             ready-to-paste MSW handler stub pointing at
+             \`.kody/mocks.ts\`. Share previews are out of scope.
 
 Environment:
   KODY_MCP_URL        Override the default MCP URL (${defaultMcpUrl})

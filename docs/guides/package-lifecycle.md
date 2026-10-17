@@ -224,10 +224,14 @@ for `kody dev`**, **`prod` for `execute` / `search`**).
 | **Subscriptions** | `kody dev emit <event> --body event.json` — delivers the platform subscription envelope (`synthetic: true`); on mock, any declared event type is allowed |
 | **Check**         | `kody dev check` — bundle + light publish validations without running                                                                                    |
 
-Mock first (safe iteration; scratch storage; no real credentials), then the same
-commands with `--target prod`, then publish. Share previews for unpublished
-packages are out of scope. `execute --local` without `--target` talks to the
-hosted account.
+Mock first (safe iteration; scratch `packageStorage` for the working tree; fake
+or local credentials), then re-run with `--target prod` for real CapabilityProxy
+hops before publish. `--target prod` still does **not** attach hosted
+`packageStorage` / `packageSecrets` to the working-tree package — publish (or
+import a published dep) for those. See the
+[target table in Package apps](./package-apps.md#local-testing-with-kody-dev).
+Share previews for unpublished packages are out of scope. `execute --local`
+without `--target` talks to the hosted account.
 
 ```bash
 cd ./my-package
@@ -243,10 +247,14 @@ npx @kodycodes/cli@latest dev emit user.deleted --body ./fixtures/user-deleted.j
 Optional, **CLI hosts only**. Under `--target mock` only, put MSW handlers in
 the package at `.kody/mocks.ts`. Package code still runs in workerd; the CLI’s
 Node-side gateway matches outbound fetches against those handlers (no patching
-inside workerd). Packages without the file keep native workerd fetch. The file
-is local-dev only — it is not a publish entrypoint and is ignored on
-`--target prod`. MCP-only agents cannot load this file; they rely on
-`repoRunChecks` and post-publish smokes instead.
+inside workerd). Without the file, mock is **not** offline: ambient / gateway
+fetch uses public-network passthrough (private hosts still need
+`--allow-private-network`); authenticated fetch stays fail-closed. The file is a
+local-dev hook — not a publish entrypoint, ignored on `--target prod` — but
+git-tracked paths under `.kody/` still ship in the published source snapshot.
+Gitignore local-only mocks or deps maps (or `git rm --cached` if already
+tracked). MCP-only agents cannot load this file; they rely on `repoRunChecks`
+and post-publish smokes instead.
 
 ```ts
 // .kody/mocks.ts

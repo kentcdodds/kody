@@ -171,17 +171,33 @@ npx @kodycodes/cli@latest dev fetch /health    # agent-friendly probe
 npx @kodycodes/cli@latest dev --target prod    # local app, real Kody
 ```
 
-`--target mock` (the `kody dev` default) uses the CLI’s built-in mock: scratch
-storage, fake or local credentials, no real credentials. `--target prod` keeps
-the app local but sends storage / credentials / `kody:*` hops to real Kody.
+`--target` chooses mock vs prod CapabilityProxy hops. It does **not** mean
+“offline,” and `--target prod` does **not** give the working-tree package hosted
+`packageStorage` / `packageSecrets` (those need a published package id).
+
+| Surface                             | `kody dev` / `execute --local` **mock**                                                                                                                                   | `kody dev` / `execute --local` **prod**                                      |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **Working-tree `packageStorage()`** | Scratch SQLite on the CLI mock                                                                                                                                            | Throws — working-tree id is `local:<kody.id>`                                |
+| **Working-tree `packageSecrets`**   | Throws on the local CLI bridge                                                                                                                                            | Throws on the local CLI bridge                                               |
+| **Credentials**                     | Fake / local mock credentials; used server-side under normal permissions, never handed to local code                                                                      | Real credentials via CapabilityProxy (same rule: server-side only)           |
+| **Imported published deps**         | Local `.kody/deps.json` / `kody.localDeps` when mapped; else package-graph when logged in. Published deps keep their own hosted storage/secrets                           | Package-graph from prod; published deps use their own hosted storage/secrets |
+| **Network**                         | With `.kody/mocks.ts`: MSW fail-closed (+ `--passthrough`). **Without** the file: public hosts can still reach the real network (private needs `--allow-private-network`) | Real network (no MSW file)                                                   |
+
 Share previews for unpublished apps are out of scope — publish to share.
 
 Optional outbound HTTP mocking: add `.kody/mocks.ts` (MSW `handlers`) so the CLI
 Node gateway answers package `fetch` calls under mock. Unmatched requests return
 `unmocked_request` with a paste-ready stub; `--passthrough <host,…>` opts hosts
-into real network without real credentials. Ignored on `--target prod` and when
-the file is absent. See
+into real network without real credentials. The file is a local-dev hook (not a
+publish entrypoint) and is ignored on `--target prod`; git-tracked files under
+`.kody/` still ship in the published source snapshot — gitignore local-only
+files. See
 [Package lifecycle → Mock outbound fetch](./package-lifecycle.md#mock-outbound-fetch-with-.kody-mocks.ts).
+
+`kody dev` serves at base path `''` by default (`--ready-file` reports
+`basePath`). Hosted apps mount at `/packages/<package-name>`. Pass
+`--app-base-path /packages/<package-name>` when you need the local proxy to
+strip the same mount and set `packageContext.appBasePath` to match production.
 
 While it runs, `kody dev`:
 
