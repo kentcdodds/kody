@@ -916,21 +916,47 @@ function isFunctionLikeAstNode(node: AstNode): boolean {
 	)
 }
 
+/**
+ * Local binding names from one function parameter pattern (identifier,
+ * `{ cm }` / `{ client: cm }`, or those with defaults). Used so loose
+ * `cm.mcp` on a destructured helper param counts like a direct `cm` param.
+ */
+function collectBindingNamesFromPattern(
+	pattern: AstNode | undefined,
+): Array<string> {
+	if (!pattern) return []
+	if (pattern.type === 'Identifier') {
+		const name = getNodeName(pattern)
+		return name ? [name] : []
+	}
+	if (pattern.type === 'AssignmentPattern') {
+		return collectBindingNamesFromPattern(pattern.left)
+	}
+	if (pattern.type === 'ObjectPattern') {
+		const names: Array<string> = []
+		for (const property of pattern.properties ?? []) {
+			if (property.type === 'RestElement' || property.type === 'RestProperty') {
+				names.push(...collectBindingNamesFromPattern(property.argument))
+				continue
+			}
+			if (property.type !== 'ObjectProperty') continue
+			// Shorthand `{ cm }` binds via key; `{ client: cm }` via value.
+			const value = property.value as AstNode | undefined
+			const binding =
+				value?.type === 'AssignmentPattern'
+					? value.left
+					: (value ?? property.key)
+			names.push(...collectBindingNamesFromPattern(binding))
+		}
+		return names
+	}
+	return []
+}
+
 function functionParamNames(node: AstNode): Array<string> {
 	const names: Array<string> = []
 	for (const param of node.params ?? []) {
-		if (param.type === 'Identifier') {
-			const name = getNodeName(param)
-			if (name) names.push(name)
-			continue
-		}
-		if (
-			param.type === 'AssignmentPattern' &&
-			param.left?.type === 'Identifier'
-		) {
-			const name = getNodeName(param.left)
-			if (name) names.push(name)
-		}
+		names.push(...collectBindingNamesFromPattern(param))
 	}
 	return names
 }

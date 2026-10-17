@@ -259,6 +259,23 @@ test('scanLiteralMcpServerKeys stamps literal servers and fails dynamic access',
 	expect(kasaSealPlan.blockingFailures).toEqual([])
 	expect(kasaSealPlan.sealReady).toBe(true)
 
+	// Destructured helper params bind the same way as a direct `cm` param.
+	const destructuredHelper = scanLiteralMcpServerKeys({
+		'package.json': manifest({
+			credentials: {
+				home: { kind: 'mcp', description: 'Home connector.' },
+			},
+		}),
+		'src/index.ts': [
+			'export type KodyKasa = { mcp: { home: unknown } }',
+			'export function getHome({ cm }: { cm: KodyKasa }) {',
+			"\treturn cm.mcp?.['home']",
+			'}',
+		].join('\n'),
+	})
+	expect(destructuredHelper.keys).toEqual(['home'])
+	expect(destructuredHelper.failures).toEqual([])
+
 	const unrelatedMcpData = scanLiteralMcpServerKeys({
 		'package.json': manifest(),
 		'src/index.ts': [
