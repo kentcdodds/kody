@@ -1,10 +1,10 @@
 # Connect your agent
 
 Kody is an MCP server. You use it from Cursor, ChatGPT, Codex, Claude Desktop,
-Grok.com, Grok CLI, Grok Bot, Claude Code, OpenCode, OpenClaw, Muse, Wajo, Cue,
-OpenMuse, Dots, Devin, Gemini, GitHub Copilot (VS Code or CLI), the GitHub
-Copilot app, or any other AI agent that supports MCP — not from a separate Kody
-chat app.
+Grok.com, Grok CLI, Grok Bot, Claude Code, OpenCode, OpenClaw, Hermes Agent,
+Muse, Wajo, Cue, OpenMuse, Dots, Devin, Gemini, GitHub Copilot (VS Code or CLI),
+the GitHub Copilot app, or any other AI agent that supports MCP — not from a
+separate Kody chat app.
 
 The three-step Get started flow lives in
 [Connect your agent](../guides/connect-your-agent.md) and on `/onboarding`. This
@@ -138,6 +138,19 @@ you only have the MCP URL.
   live connection. Or in the Control UI: Settings → MCP → Add server, choose
   Streamable HTTP, and paste the MCP URL. See OpenClaw's
   [MCP docs](https://docs.openclaw.ai/tools/mcp).
+- **Hermes Agent** — On the machine that runs
+  [Hermes](https://github.com/NousResearch/hermes-agent), run
+  `hermes mcp add kody --url <url> --auth oauth`. Hermes opens the Kody sign-in
+  while it tests the connection, asks which tools to enable, and saves the
+  server under `mcp_servers.kody` in `~/.hermes/config.yaml` (`url` plus
+  `auth: oauth`). OAuth tokens stay out of that file, in
+  `~/.hermes/mcp-tokens/kody.json`. If you edit `config.yaml` by hand, run
+  `hermes mcp login kody` from a fresh terminal, then `/reload-mcp` in open
+  sessions. `hermes mcp test kody` checks the connection. For a headless server,
+  see Hermes's
+  [OAuth over SSH guide](https://hermes-agent.nousresearch.com/docs/guides/oauth-over-ssh)
+  and
+  [MCP docs](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp).
 - **Muse** — [Muse Code](https://dev.meta.ai/docs/muse-code/) reads MCP from
   `~/.config/muse/settings.json` under `mcp_servers`. Add a remote
   `streamable_http` server with this deployment’s MCP URL (see
