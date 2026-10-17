@@ -92,11 +92,16 @@ export async function handleEmailDeliveryQueue(
 						eventRecorded: result.outcome === 'recorded',
 						waitUntil,
 					})
-					await applyOutboundConsecutiveFailureTracking({
-						db: env.APP_DB,
-						ownerId: result.message.userId,
-						deliveryStatus: result.providerEvent.payload.delivery.status,
-					})
+					// Consecutive-failure counting is not idempotent — only
+					// freshly recorded events may increment, or a queue retry
+					// after a later crash would inflate toward auto-pause.
+					if (result.outcome === 'recorded') {
+						await applyOutboundConsecutiveFailureTracking({
+							db: env.APP_DB,
+							ownerId: result.message.userId,
+							deliveryStatus: result.providerEvent.payload.delivery.status,
+						})
+					}
 					await dispatchEmailDeliverySubscriptionEvents({
 						env,
 						message: result.message,

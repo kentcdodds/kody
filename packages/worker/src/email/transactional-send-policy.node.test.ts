@@ -35,49 +35,47 @@ test('gate holds holdable mail for active rejecting providers', async () => {
 	])
 	const db = {
 		prepare(sql: string) {
-			return {
-				bind(...binds: Array<unknown>) {
-					return {
-						async first<T>() {
-							if (sql.includes('FROM email_recipient_cooldowns')) {
-								return null
-							}
-							if (sql.includes('FROM email_mx_lookup_cache')) {
-								return (mxCache.get(String(binds[0])) as T | undefined) ?? null
-							}
-							if (
-								sql.includes('FROM email_rejecting_providers') &&
-								sql.includes('provider_key = ?')
-							) {
-								const key = String(binds[0])
-								const at = rejecting.get(key)
-								if (!at) return null
-								const cutoff = String(binds[1])
-								return at >= cutoff ? ({ present: 1 } as T) : null
-							}
-							return null
-						},
-						async all<T>() {
-							if (sql.includes('FROM email_rejecting_providers')) {
-								const cutoff = String(binds[0])
-								const results = [...rejecting.entries()]
-									.filter(([, at]) => at >= cutoff)
-									.map(([provider_key, last_rejection_at]) => ({
-										provider_key,
-										last_rejection_at,
-										rejection_count: 1,
-										last_recipient_domain: null,
-										seeded: 0,
-									}))
-								return { results: results as Array<T> }
-							}
-							return { results: [] as Array<T> }
-						},
-						async run() {
-							return { meta: { changes: 0 } }
-						},
+			const bound = (...binds: Array<unknown>) => ({
+				async first<T>() {
+					if (sql.includes('FROM email_recipient_cooldowns')) {
+						return null
 					}
+					if (sql.includes('FROM email_mx_lookup_cache')) {
+						return (mxCache.get(String(binds[0])) as T | undefined) ?? null
+					}
+					if (
+						sql.includes('FROM email_rejecting_providers') &&
+						sql.includes('provider_key = ?')
+					) {
+						const key = String(binds[0])
+						const at = rejecting.get(key)
+						if (!at) return null
+						return { last_rejection_at: at } as T
+					}
+					return null
 				},
+				async all<T>() {
+					if (sql.includes('FROM email_rejecting_providers')) {
+						const results = [...rejecting.entries()].map(
+							([provider_key, last_rejection_at]) => ({
+								provider_key,
+								last_rejection_at,
+								rejection_count: 1,
+								last_recipient_domain: null,
+								seeded: 0,
+							}),
+						)
+						return { results: results as Array<T> }
+					}
+					return { results: [] as Array<T> }
+				},
+				async run() {
+					return { meta: { changes: 0 } }
+				},
+			})
+			return {
+				bind: bound,
+				...bound(),
 			}
 		},
 	} as unknown as D1Database

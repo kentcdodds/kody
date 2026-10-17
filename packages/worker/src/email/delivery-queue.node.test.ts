@@ -178,6 +178,9 @@ test('delivery queue handles terminal outcomes without a D1-to-Mailbox graph mir
 		},
 	)
 	expect(mocks.dispatchEmailDeliverySubscriptionEvents).toHaveBeenCalledTimes(3)
+	// recorded + dispatch-failure recorded — not the duplicate replay.
+	expect(mocks.applyOutboundConsecutiveFailureTracking).toHaveBeenCalledTimes(2)
+	expect(mocks.applyOutboundEmailAbusePause).toHaveBeenCalledTimes(4)
 	expect(waitUntilPromises).toHaveLength(0)
 	expect(prepare).not.toHaveBeenCalled()
 	expect(consoleWarn).toHaveBeenCalledWith('email-delivery-event-unmatched', {

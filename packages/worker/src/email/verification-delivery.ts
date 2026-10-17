@@ -227,6 +227,7 @@ export async function recordTransactionalEmailDeliveryEvent(input: {
 	smtpEnhancedStatusCode?: string | null
 }): Promise<
 	| { outcome: 'unmatched' }
+	| { outcome: 'stale' }
 	| { outcome: 'recorded'; event: RecordedTransactionalDelivery }
 > {
 	const index = await lookupTransactionalEmailDelivery({
@@ -282,17 +283,9 @@ export async function recordTransactionalEmailDeliveryEvent(input: {
 			Number.isFinite(eventAtMs) &&
 			eventAtMs < existingAtMs
 		) {
-			return {
-				outcome: 'recorded',
-				event: {
-					userId: index.user_id,
-					kind: index.kind,
-					recipient: index.recipient,
-					status: existing.status,
-					class: existing.class,
-					alreadyTerminal: true,
-				},
-			}
+			// Older than the status already on the user row — do not
+			// rewrite delivery state or re-arm deliverability holds.
+			return { outcome: 'stale' }
 		}
 	}
 	const alreadyTerminal = Boolean(

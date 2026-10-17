@@ -229,10 +229,7 @@ test('a newer verification send retires older provider ids and ignores stale eve
 			'2026-08-27T23:20:00.000Z',
 			senderBlockResponse,
 		),
-	).toMatchObject({
-		outcome: 'recorded',
-		event: { status: 'delivered', class: null, alreadyTerminal: true },
-	})
+	).toEqual({ outcome: 'stale' })
 	expect(await readUserDelivery(db)).toEqual({
 		status: 'delivered',
 		class: null,

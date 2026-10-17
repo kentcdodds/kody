@@ -31,6 +31,10 @@ CREATE INDEX idx_email_rejecting_providers_last_rejection
 
 -- Fallback seed while observed blocklist rejections catch up. Rows expire when
 -- last_rejection_at ages past the rejecting-provider TTL with no refresh.
+-- ISO-8601 UTC timestamps so lexicographic compares against
+-- Date.toISOString() cutoffs keep the full rejecting-provider TTL
+-- (SQLite CURRENT_TIMESTAMP uses a space before the time and sorts
+-- before same-day ISO cutoffs, which would drop the seed at midnight).
 INSERT INTO email_rejecting_providers (
 	provider_key,
 	last_rejection_at,
@@ -42,21 +46,21 @@ INSERT INTO email_rejecting_providers (
 ) VALUES
 	(
 		'messagingengine.com',
-		CURRENT_TIMESTAMP,
+		printf('%sT%sZ', date('now'), time('now')),
 		1,
 		NULL,
 		1,
-		CURRENT_TIMESTAMP,
-		CURRENT_TIMESTAMP
+		printf('%sT%sZ', date('now'), time('now')),
+		printf('%sT%sZ', date('now'), time('now'))
 	),
 	(
 		'simplelogin.co',
-		CURRENT_TIMESTAMP,
+		printf('%sT%sZ', date('now'), time('now')),
 		1,
 		NULL,
 		1,
-		CURRENT_TIMESTAMP,
-		CURRENT_TIMESTAMP
+		printf('%sT%sZ', date('now'), time('now')),
+		printf('%sT%sZ', date('now'), time('now'))
 	);
 
 CREATE TABLE email_mx_lookup_cache (

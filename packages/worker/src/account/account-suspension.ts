@@ -8,8 +8,10 @@
  * is the automatic outbound-email pause set by the delivery-event abuse
  * monitor (see `#worker/email/outbound-abuse.ts`); cleared by an admin from
  * the admin users page. `orgs.email_outbound_delivery_paused_at` is set after
- * consecutive terminal delivery failures and can be cleared by the account
- * owner from Account → Email.
+ * consecutive terminal delivery failures on that mailbox owner org and can be
+ * cleared by an owner from Account → Email while that org is selected.
+ * Outbound send gates the mailbox owner (`input.userId`), not only the
+ * actor's personal org.
  */
 
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'

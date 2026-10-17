@@ -129,14 +129,20 @@ export async function processCloudflareEmailDeliveryEvent(input: {
 		},
 	})
 	if (result.outcome !== 'unmatched') {
-		await applyDeliverabilitySideEffects({
-			db: input.env.APP_DB,
-			recipient: providerEvent.payload.recipient,
-			deliveryStatus: providerEvent.payload.delivery.status,
-			smtpResponse: providerEvent.payload.delivery.smtpResponse,
-			smtpEnhancedStatusCode:
-				providerEvent.payload.delivery.smtpEnhancedStatusCode,
-		})
+		// Only the status that actually won latest-delivery writes should
+		// mutate cooldowns / rejecting providers. Stale and duplicate
+		// payloads can arrive after a newer `delivered` and must not
+		// re-arm a 24h hold.
+		if (result.outcome === 'recorded') {
+			await applyDeliverabilitySideEffects({
+				db: input.env.APP_DB,
+				recipient: providerEvent.payload.recipient,
+				deliveryStatus: providerEvent.payload.delivery.status,
+				smtpResponse: providerEvent.payload.delivery.smtpResponse,
+				smtpEnhancedStatusCode:
+					providerEvent.payload.delivery.smtpEnhancedStatusCode,
+			})
+		}
 		return { ...result, providerEvent }
 	}
 
@@ -149,6 +155,9 @@ export async function processCloudflareEmailDeliveryEvent(input: {
 		smtpEnhancedStatusCode:
 			providerEvent.payload.delivery.smtpEnhancedStatusCode,
 	})
+	if (transactional.outcome === 'stale') {
+		return { ...result, providerEvent }
+	}
 	if (transactional.outcome !== 'recorded') {
 		return { ...result, providerEvent }
 	}

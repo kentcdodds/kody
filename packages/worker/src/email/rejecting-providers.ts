@@ -24,24 +24,37 @@ export type RejectingProviderRow = {
 	seeded: boolean
 }
 
+function isRejectingProviderTimestampActive(
+	lastRejectionAt: string,
+	now: Date,
+): boolean {
+	// SQLite CURRENT_TIMESTAMP is `YYYY-MM-DD HH:MM:SS` (UTC in D1). Normalize
+	// to ISO so it parses and compares as a real instant, not lexicographically
+	// against Date.toISOString() cutoffs.
+	const normalized = lastRejectionAt.includes('T')
+		? lastRejectionAt
+		: `${lastRejectionAt.replace(' ', 'T')}Z`
+	const lastMs = Date.parse(normalized)
+	if (!Number.isFinite(lastMs)) return false
+	return now.getTime() - lastMs <= emailRejectingProviderTtlMs
+}
+
 export async function listActiveRejectingProviders(input: {
 	db: D1Database
 	now?: Date
 }): Promise<Array<RejectingProviderRow>> {
 	const now = input.now ?? new Date()
-	const cutoff = new Date(
-		now.getTime() - emailRejectingProviderTtlMs,
-	).toISOString()
 	try {
+		// Filter in JS so SQLite CURRENT_TIMESTAMP seeds (space separator)
+		// and ISO writes from recordRejectingProvidersForRecipient both
+		// keep a true 24h window against Date-based cutoffs.
 		const result = await input.db
 			.prepare(
 				`SELECT provider_key, last_rejection_at, rejection_count,
 				        last_recipient_domain, seeded
 				 FROM email_rejecting_providers
-				 WHERE last_rejection_at >= ?
 				 ORDER BY last_rejection_at DESC`,
 			)
-			.bind(cutoff)
 			.all<{
 				provider_key: string
 				last_rejection_at: string
@@ -49,13 +62,17 @@ export async function listActiveRejectingProviders(input: {
 				last_recipient_domain: string | null
 				seeded: number
 			}>()
-		return (result.results ?? []).map((row) => ({
-			providerKey: row.provider_key,
-			lastRejectionAt: row.last_rejection_at,
-			rejectionCount: row.rejection_count,
-			lastRecipientDomain: row.last_recipient_domain,
-			seeded: row.seeded === 1,
-		}))
+		return (result.results ?? [])
+			.filter((row) =>
+				isRejectingProviderTimestampActive(row.last_rejection_at, now),
+			)
+			.map((row) => ({
+				providerKey: row.provider_key,
+				lastRejectionAt: row.last_rejection_at,
+				rejectionCount: row.rejection_count,
+				lastRecipientDomain: row.last_recipient_domain,
+				seeded: row.seeded === 1,
+			}))
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error)
 		if (
@@ -75,18 +92,16 @@ export async function isRejectingProviderActive(input: {
 	now?: Date
 }): Promise<boolean> {
 	const now = input.now ?? new Date()
-	const cutoff = new Date(
-		now.getTime() - emailRejectingProviderTtlMs,
-	).toISOString()
 	const row = await input.db
 		.prepare(
-			`SELECT 1 AS present
+			`SELECT last_rejection_at
 			 FROM email_rejecting_providers
-			 WHERE provider_key = ? AND last_rejection_at >= ?`,
+			 WHERE provider_key = ?`,
 		)
-		.bind(input.providerKey, cutoff)
-		.first<{ present: number }>()
-	return Boolean(row)
+		.bind(input.providerKey)
+		.first<{ last_rejection_at: string }>()
+	if (!row) return false
+	return isRejectingProviderTimestampActive(row.last_rejection_at, now)
 }
 
 export async function recordRejectingProvidersForRecipient(input: {
