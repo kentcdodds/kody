@@ -414,20 +414,20 @@ async function rewriteMcpServerOwnership(input: {
 	fromId: OwnerId
 	toId: OwnerId
 }) {
-	await input.db
-		.prepare(
-			`UPDATE mcp_server_settings SET user_id = ?
-			 WHERE user_id = ? AND deleted_at IS NULL`,
-		)
-		.bind(input.toId, input.fromId)
-		.run()
-	await input.db
-		.prepare(
-			`UPDATE mcp_user_server_instructions SET user_id = ?
-			 WHERE user_id = ? AND deleted_at IS NULL`,
-		)
-		.bind(input.toId, input.fromId)
-		.run()
+	await input.db.batch([
+		input.db
+			.prepare(
+				`UPDATE mcp_server_settings SET user_id = ?
+				 WHERE user_id = ? AND deleted_at IS NULL`,
+			)
+			.bind(input.toId, input.fromId),
+		input.db
+			.prepare(
+				`UPDATE mcp_user_server_instructions SET user_id = ?
+				 WHERE user_id = ? AND deleted_at IS NULL`,
+			)
+			.bind(input.toId, input.fromId),
+	])
 }
 
 /**
