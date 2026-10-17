@@ -553,7 +553,10 @@ test('P2/#5: local dep bundles rewrite kody:runtime to flat alias', async () => 
 			(m) => m.name === 'kody:@kentcdodds/grok-bot/export',
 		)
 		assert.ok(mod)
-		assert.match(mod.esModule, /from ["']\.__kody_runtime__\.js["']/)
+		// Import reference is absolute so workerd does not path-join under the
+		// path-like module name; registered alias stays without leading `/`.
+		assert.match(mod.esModule, /from ["']\/\.__kody_runtime__\.js["']/)
+		assert.doesNotMatch(mod.esModule, /from ["']\.__kody_runtime__\.js["']/)
 		assert.doesNotMatch(mod.esModule, /from ["']kody:runtime["']/)
 		assert.doesNotMatch(
 			mod.esModule,

@@ -25,8 +25,10 @@ export const localWorkerModuleNames = {
 	/**
 	 * Flat alias for `kody:runtime`. Path-like package module names
 	 * (`kody:@scope/pkg/export`) path-join bare `kody:runtime` into
-	 * `kody:@scope/pkg/kody:runtime`; local deps rewrite to this slash-free
-	 * name instead. workerd rejects leading-`/` absolute module names.
+	 * `kody:@scope/pkg/kody:runtime`; local deps rewrite imports to this
+	 * registered name, then prefix `/` on the import reference so workerd
+	 * does not still join it onto the importer. Registered names must not
+	 * start with `/` — workerd rejects those.
 	 */
 	runtimeFlatAlias: '.__kody_runtime__.js',
 } as const

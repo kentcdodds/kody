@@ -136,8 +136,12 @@ export async function hasLiteralDynamicSavedPackageImports(
 
 /**
  * Flat workerd module name for a bare `kody:` builtin (not `kody:@…`).
- * Path-like package modules path-join bare builtins; slash-free aliases do not.
- * workerd also rejects leading-`/` absolute module names.
+ * Path-like package modules path-join bare `kody:runtime` into
+ * `kody:@scope/pkg/kody:runtime`. Rewriting to this registered name is step
+ * one; {@link absolutizeWorkerdPackageImports} then prefixes `/` on the
+ * import reference so workerd does not still join `.__kody_runtime__.js`
+ * onto the importer (`kody:@scope/pkg/.__kody_runtime__.js`). Registered
+ * module names must stay without a leading `/` — workerd rejects those.
  */
 export function flatAliasForBareKodyBuiltin(specifier: string): string | null {
 	if (!specifier.startsWith('kody:') || specifier.startsWith('kody:@'))
@@ -145,16 +149,65 @@ export function flatAliasForBareKodyBuiltin(specifier: string): string | null {
 	if (specifier === localWorkerModuleNames.runtime) {
 		return localWorkerModuleNames.runtimeFlatAlias
 	}
-	// Future bare builtins: slash-free so path-like importers do not rejoin.
+	// Future bare builtins: same flat registered name; imports get `/` later.
 	const name = specifier.slice('kody:'.length)
 	if (!name || /[/\\]/.test(name)) return null
 	return `.__kody_builtin__${name}.js`
 }
 
 /**
+ * True when a specifier inside a path-like workerd module (`kody:@…/export`)
+ * would be path-joined onto the importer unless written with a leading `/`.
+ */
+export function needsWorkerdAbsoluteImportPrefix(specifier: string): boolean {
+	if (specifier.startsWith('/')) return false
+	if (specifier.startsWith('kody:@')) return true
+	if (specifier === localWorkerModuleNames.runtimeFlatAlias) return true
+	if (specifier.startsWith('.__kody_builtin__') && specifier.endsWith('.js')) {
+		return true
+	}
+	return false
+}
+
+/**
+ * Prefix `/` on import references that path-join under path-like module
+ * names. Leave registered module names alone (those cannot start with `/`).
+ * Call after nested `kody:@` scanning — a leading `/` would hide those
+ * imports from {@link listSavedPackageImports}.
+ */
+export async function absolutizeWorkerdPackageImports(
+	esModule: string,
+): Promise<string> {
+	await esModuleLexerReady
+	const edits = parseModuleImports(esModule)
+		.filter((im) => typeof im.specifier === 'string')
+		.map((im) => {
+			const specifier = im.specifier as string
+			if (!needsWorkerdAbsoluteImportPrefix(specifier)) return null
+			return { start: im.start, end: im.end, absolute: `/${specifier}` }
+		})
+		.filter(
+			(edit): edit is { start: number; end: number; absolute: string } =>
+				edit !== null,
+		)
+		.sort((a, b) => b.start - a.start)
+	let out = esModule
+	for (const edit of edits) {
+		const raw = esModule.slice(edit.start, edit.end)
+		const quote = raw.startsWith("'") || raw.startsWith('"') ? raw[0]! : null
+		const replacement = quote
+			? `${quote}${edit.absolute}${quote}`
+			: edit.absolute
+		out = `${out.slice(0, edit.start)}${replacement}${out.slice(edit.end)}`
+	}
+	return out
+}
+
+/**
  * Rewrite bare `kody:` builtins (not `kody:@…`) to flat aliases so workerd does
  * not path-join them under path-like module names
  * (`kody:@scope/pkg/export` → `kody:@scope/pkg/kody:runtime`).
+ * Pair with {@link absolutizeWorkerdPackageImports} after nested scans.
  */
 export async function rewriteBareKodyBuiltinImports(
 	esModule: string,

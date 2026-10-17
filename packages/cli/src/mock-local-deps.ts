@@ -17,6 +17,7 @@ import {
 	hasLiteralDynamicSavedPackageImports,
 	listSavedPackageImports,
 	LocalPackageGraphError,
+	absolutizeWorkerdPackageImports,
 	rewriteBareKodyBuiltinImports,
 } from './local-package-graph.js'
 import {
@@ -211,13 +212,19 @@ export async function resolveLocalPackageModules(input: {
 				{ code: 'local_dep_bundle_failed' },
 			)
 		}
-		// Path-like workerd module names path-join bare kody: builtins; rewrite
-		// to the flat runtime alias (re-exports the same kody:runtime instance).
-		const esModule = await rewriteBareKodyBuiltinImports(bundled)
-		modules.push({ name: specifier, esModule })
-		for (const nested of await listSavedPackageImports(esModule)) {
+		// Path-like workerd module names path-join bare kody: builtins and
+		// nested kody:@ imports. Rewrite builtins to the flat runtime alias,
+		// scan nested kody:@ while specifiers are still unprefixed, then
+		// prefix `/` on import references only (registered names stay bare —
+		// workerd rejects leading-`/` module names).
+		const rewritten = await rewriteBareKodyBuiltinImports(bundled)
+		for (const nested of await listSavedPackageImports(rewritten)) {
 			await resolveOne(nested)
 		}
+		modules.push({
+			name: specifier,
+			esModule: await absolutizeWorkerdPackageImports(rewritten),
+		})
 	}
 
 	for (const specifier of imports) {
