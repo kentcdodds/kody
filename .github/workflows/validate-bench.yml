@@ -1,0 +1,266 @@
+name: ⏱️ Validate bench
+
+# Uncached apples-to-apples Validate timing on a chosen runner label.
+# Does not bind Nx remote-cache secrets (no secrets: inherit). Always passes
+# no_cache=true into the reusable Validate workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Runner label for every Validate job
+        type: choice
+        options:
+          - ubuntu-latest
+          - warp-ubuntu-latest-x64-4x
+        default: ubuntu-latest
+      iterations:
+        description: >
+          How many full uncached Validate suites to run on this dispatch (1–5).
+          Iterations run sequentially (max-parallel: 1) to cut runner
+          contention.
+        type: number
+        default: 1
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: >-
+    validate-bench-${{ inputs.runner }}-${{ github.ref }}-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: 🧮 Prepare matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+      iterations: ${{ steps.gen.outputs.iterations }}
+    steps:
+      - name: 🔢 Build iteration matrix
+        id: gen
+        env:
+          N: ${{ inputs.iterations }}
+        run: |
+          set -u
+          python3 <<'PY'
+          import json, os
+
+          raw = os.environ.get("N") or "1"
+          try:
+              n = int(float(raw))
+          except ValueError:
+              n = 1
+          n = max(1, min(5, n))
+          matrix = {"iteration": list(range(1, n + 1))}
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"matrix={json.dumps(matrix, separators=(',', ':'))}\n")
+              fh.write(f"iterations={n}\n")
+          print(f"iterations={n} matrix={matrix}")
+          PY
+
+  validate:
+    name: ✅ Uncached validate (iter ${{ matrix.iteration }})
+    needs: prepare
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    uses: ./.github/workflows/validate.yml
+    with:
+      runner: ${{ inputs.runner }}
+      no_cache: true
+      iteration: ${{ matrix.iteration }}
+    # Intentionally omit secrets: inherit so NX_SELF_HOSTED_REMOTE_CACHE_*
+    # cannot bind even if an expression regresses.
+
+  summarize:
+    name: 📊 Bench summary
+    needs:
+      - prepare
+      - validate
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: 📥 Download timing artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: validate-timings-*
+          path: bench-timings
+          merge-multiple: false
+
+      - name: 🧾 Aggregate JSON/CSV + job summary
+        env:
+          RUNNER_LABEL: ${{ inputs.runner }}
+          ITERATIONS: ${{ needs.prepare.outputs.iterations }}
+          RUN_URL:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{
+            github.run_id }}
+          RUN_ID: ${{ github.run_id }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -u
+          python3 <<'PY'
+          import csv, json, os, statistics
+          from pathlib import Path
+
+          root = Path("bench-timings")
+          reports = []
+          for path in sorted(root.rglob("timings.json")):
+              reports.append(json.loads(path.read_text(encoding="utf-8")))
+
+          job_keys = [
+              "🧹 Static",
+              "🧪 Node",
+              "☁️ Workers",
+              "🔌 MCP",
+              "🎭 E2E",
+              "🧰 CLI",
+          ]
+
+          def median(xs):
+              return statistics.median(xs) if xs else None
+
+          def spread(xs):
+              if not xs:
+                  return None
+              return max(xs) - min(xs)
+
+          per_job = {}
+          walls = []
+          sums = []
+          for report in reports:
+              walls.append(report.get("wall_clock_seconds"))
+              sums.append(report.get("sum_job_duration_seconds"))
+              by_name = {j["job"]: j for j in report.get("jobs") or []}
+              for key in job_keys:
+                  row = by_name.get(key) or {}
+                  dur = row.get("duration_seconds")
+                  per_job.setdefault(key, []).append(dur)
+
+          def clean(xs):
+              return [x for x in xs if isinstance(x, (int, float))]
+
+          summary = {
+              "schema": "kody.validate-bench.v1",
+              "run_id": os.environ.get("RUN_ID"),
+              "run_url": os.environ.get("RUN_URL"),
+              "sha": os.environ.get("SHA"),
+              "runner": os.environ.get("RUNNER_LABEL"),
+              "iterations_requested": int(float(os.environ.get("ITERATIONS") or "0")),
+              "iterations_recorded": len(reports),
+              "wall_clock_seconds": {
+                  "values": clean(walls),
+                  "median": median(clean(walls)),
+                  "spread": spread(clean(walls)),
+              },
+              "sum_job_duration_seconds": {
+                  "values": clean(sums),
+                  "median": median(clean(sums)),
+                  "spread": spread(clean(sums)),
+              },
+              "jobs": {
+                  key: {
+                      "values": clean(per_job.get(key) or []),
+                      "median": median(clean(per_job.get(key) or [])),
+                      "spread": spread(clean(per_job.get(key) or [])),
+                  }
+                  for key in job_keys
+              },
+              "reports": reports,
+          }
+
+          out = Path("bench-summary")
+          out.mkdir(parents=True, exist_ok=True)
+          (out / "summary.json").write_text(
+              json.dumps(summary, indent=2) + "\n", encoding="utf-8"
+          )
+          with (out / "summary.csv").open("w", encoding="utf-8", newline="") as fh:
+              writer = csv.writer(fh)
+              writer.writerow(
+                  ["metric", "median_seconds", "spread_seconds", "values_seconds"]
+              )
+              writer.writerow(
+                  [
+                      "wall_clock",
+                      summary["wall_clock_seconds"]["median"],
+                      summary["wall_clock_seconds"]["spread"],
+                      ";".join(str(v) for v in summary["wall_clock_seconds"]["values"]),
+                  ]
+              )
+              writer.writerow(
+                  [
+                      "sum_job_duration",
+                      summary["sum_job_duration_seconds"]["median"],
+                      summary["sum_job_duration_seconds"]["spread"],
+                      ";".join(
+                          str(v) for v in summary["sum_job_duration_seconds"]["values"]
+                      ),
+                  ]
+              )
+              for key, stats in summary["jobs"].items():
+                  writer.writerow(
+                      [
+                          key,
+                          stats["median"],
+                          stats["spread"],
+                          ";".join(str(v) for v in stats["values"]),
+                      ]
+                  )
+
+          def fmt(x):
+              return "—" if x is None else f"{x}s"
+
+          lines = [
+              "## Validate bench summary",
+              f"- runner: `{summary['runner']}`",
+              f"- sha: `{summary['sha']}`",
+              f"- iterations recorded: **{summary['iterations_recorded']}** / {summary['iterations_requested']}",
+              f"- run: [{summary['run_id']}]({summary['run_url']})",
+              "",
+              "| Metric | Median | Spread (max−min) | Values |",
+              "| --- | --- | --- | --- |",
+              "| wall-clock | {m} | {s} | {v} |".format(
+                  m=fmt(summary["wall_clock_seconds"]["median"]),
+                  s=fmt(summary["wall_clock_seconds"]["spread"]),
+                  v=", ".join(fmt(x) for x in summary["wall_clock_seconds"]["values"])
+                  or "—",
+              ),
+              "| sum of jobs | {m} | {s} | {v} |".format(
+                  m=fmt(summary["sum_job_duration_seconds"]["median"]),
+                  s=fmt(summary["sum_job_duration_seconds"]["spread"]),
+                  v=", ".join(
+                      fmt(x) for x in summary["sum_job_duration_seconds"]["values"]
+                  )
+                  or "—",
+              ),
+          ]
+          for key, stats in summary["jobs"].items():
+              lines.append(
+                  f"| {key} | {fmt(stats['median'])} | {fmt(stats['spread'])} | "
+                  + (", ".join(fmt(x) for x in stats["values"]) or "—")
+                  + " |"
+              )
+          if not reports:
+              lines.append("")
+              lines.append(
+                  "_No timings.json artifacts found. Leaf Validate jobs may still "
+                  "be queued (e.g. WarpBuild runner not attached)._"
+              )
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+              fh.write("\n".join(lines) + "\n")
+          print(json.dumps({"recorded": len(reports), "runner": summary["runner"]}))
+          PY
+
+      - name: 📤 Upload bench summary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: >-
+            validate-bench-summary-${{ inputs.runner }}-run-${{ github.run_id }}
+          path: bench-summary/
+          if-no-files-found: warn
+          retention-days: 30
