@@ -290,10 +290,9 @@ const reservedUsernameSeparators = new RegExp(
 const reservedUsernameSubstringMinLength = 4
 
 /**
- * Platform system-email locals (and inbound-only aliases such as `team`) that
- * must never be unreserved. Mirrors `systemEmailLocals` plus every key of
- * `systemEmailInboundAliases` without importing `#worker/email/*` (that graph
- * already imports this module).
+ * Platform system-email locals that must never be unreserved. Mirrors
+ * `systemEmailLocals` without importing `#worker/email/*` (that graph already
+ * imports this module). These also feed built-in substring roots.
  */
 export const permanentlyReservedSystemLocals = [
 	'kody',
@@ -304,12 +303,19 @@ export const permanentlyReservedSystemLocals = [
 	'security',
 	'admin',
 	'psl',
-	'team',
 ] as const
 
-const permanentlyReservedSystemLocalSet = new Set<string>(
-	permanentlyReservedSystemLocals,
-)
+/**
+ * Inbound-only system-email alias locals (keys of `systemEmailInboundAliases`)
+ * that must never be unreserved. Exact/compact claim only — common words like
+ * `team` must not substring-block handles such as `team-one` or `fresh-team`.
+ */
+export const permanentlyReservedSystemInboundAliasLocals = ['team'] as const
+
+const permanentlyReservedSystemLocalSet = new Set<string>([
+	...permanentlyReservedSystemLocals,
+	...permanentlyReservedSystemInboundAliasLocals,
+])
 
 /**
  * Built-in denylist tokens that also block compact substrings (brand, system

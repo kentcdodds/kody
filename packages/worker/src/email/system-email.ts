@@ -43,7 +43,8 @@ export type SystemEmailLocal = (typeof systemEmailLocals)[number]
  * Aliases are never valid `sendSystemEmail` senders (keep
  * `systemEmailLocals` as the outbound allowlist).
  *
- * Keep `permanentlyReservedSystemLocals` in sync for every key here.
+ * Keep `permanentlyReservedSystemInboundAliasLocals` in sync for every key
+ * here (exact/compact permanent reserve — not substring roots).
  */
 export const systemEmailInboundAliases = {
 	team: 'support',

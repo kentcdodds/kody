@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	builtInReservedUsernameList,
 	isPermanentlyReservedUsername,
+	permanentlyReservedSystemInboundAliasLocals,
 	permanentlyReservedSystemLocals,
 	usernameCollidesWithReservedNames,
 } from '#worker/identity/reserved-usernames.ts'
@@ -29,7 +30,15 @@ test('permanent reserved locals cover system locals and inbound aliases', () => 
 	}
 	for (const alias of Object.keys(systemEmailInboundAliases)) {
 		expect(isPermanentlyReservedUsername(alias)).toBe(true)
-		expect(permanentlyReservedSystemLocals).toContain(alias)
+		expect(permanentlyReservedSystemInboundAliasLocals).toContain(alias)
+		// Alias locals stay exact/compact-only so common words do not
+		// substring-block handles like team-one.
+		expect(
+			usernameCollidesWithReservedNames(
+				`${alias}-one`,
+				builtInReservedUsernameList,
+			),
+		).toBe(false)
 	}
 })
 

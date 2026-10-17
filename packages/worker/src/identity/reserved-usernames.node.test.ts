@@ -45,6 +45,9 @@ test('reserved username validation rejects brand, support, and infrastructure na
 	expect(isUsernameEffectivelyReserved('team', { removed: ['team'] })).toBe(
 		true,
 	)
+	// Inbound alias permanent reserve is exact/compact only.
+	expect(isReservedUsername('team-one')).toBe(false)
+	expect(isReservedUsername('fresh-team')).toBe(false)
 
 	expect(isUsernameEffectivelyReserved('faq', { removed: ['faq'] })).toBe(false)
 	expect(
