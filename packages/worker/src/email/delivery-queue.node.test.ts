@@ -72,6 +72,16 @@ test('delivery queue handles terminal outcomes without a D1-to-Mailbox graph mir
 			'retry',
 		],
 		[
+			'stale-transactional',
+			{
+				outcome: 'stale_transactional',
+				providerEvent,
+				message: null,
+				event: null,
+			},
+			'ack',
+		],
+		[
 			'transactional',
 			{
 				outcome: 'recorded_transactional',

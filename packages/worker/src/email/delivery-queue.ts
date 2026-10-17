@@ -27,6 +27,11 @@ export async function handleEmailDeliveryQueue(
 				case 'invalid':
 					queueMessage.ack()
 					break
+				case 'stale_transactional':
+					// Older than the status already on the user row — ack so
+					// the queue does not retry as unmatched.
+					queueMessage.ack()
+					break
 				case 'recorded_transactional': {
 					const status = result.event.status
 					const isTerminalFailure =

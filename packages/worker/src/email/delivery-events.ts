@@ -156,7 +156,14 @@ export async function processCloudflareEmailDeliveryEvent(input: {
 			providerEvent.payload.delivery.smtpEnhancedStatusCode,
 	})
 	if (transactional.outcome === 'stale') {
-		return { ...result, providerEvent }
+		// Ackable: out-of-order against an already-written verification
+		// status. Must not fall through as mailbox `unmatched` (queue retry).
+		return {
+			outcome: 'stale_transactional' as const,
+			providerEvent,
+			event: null,
+			message: null,
+		}
 	}
 	if (transactional.outcome !== 'recorded') {
 		return { ...result, providerEvent }
