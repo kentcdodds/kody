@@ -306,7 +306,10 @@ function collectCredentialBindings(body: Array<AstNode>): CredentialBindings {
 	return { functions, runtimeObjects }
 }
 
-/** Property name of a member expression, including `obj['literal']`. */
+/**
+ * Property name of a member expression: `obj.lit`, `obj?.lit`, `obj['lit']`,
+ * `obj?.['lit']`, and template literals without expressions (`obj[\`lit\`]`).
+ */
 function memberPropertyName(node: AstNode | undefined): string | null {
 	if (
 		node?.type !== 'MemberExpression' &&
@@ -319,7 +322,7 @@ function memberPropertyName(node: AstNode | undefined): string | null {
 		if (property?.type === 'StringLiteral' || property?.type === 'Literal') {
 			return getNodeName(property)
 		}
-		return null
+		return templateLiteralStaticText(property)
 	}
 	return getNodeName(node.property)
 }
@@ -740,11 +743,11 @@ export function scanLiteralMcpServerKeys(files: Record<string, string>): {
 		}
 		walkAst(parsed, (node, ancestors) => {
 			if (node.type === 'VariableDeclarator') {
-				// `const mcp = kody.mcp` / `const mcp = runtime.mcp`
+				// `const mcp = kody.mcp` / `const mcp = cm.mcp` / `const mcp = runtime.mcp`
 				if (
 					node.id?.type === 'Identifier' &&
 					node.init &&
-					isKodyMcpRoot(node.init, kodyAliases, mcpAliases)
+					isMcpServerRoot(node.init, kodyAliases, mcpAliases)
 				) {
 					const local = getNodeName(node.id)
 					if (local) mcpAliases.add(local)
@@ -791,7 +794,7 @@ export function scanLiteralMcpServerKeys(files: Record<string, string>): {
 				if (
 					node.id?.type === 'ObjectPattern' &&
 					node.init &&
-					isKodyMcpRoot(node.init, kodyAliases, mcpAliases)
+					isMcpServerRoot(node.init, kodyAliases, mcpAliases)
 				) {
 					collectLiteralMcpServersFromObjectPattern({
 						pattern: node.id,
@@ -888,6 +891,28 @@ function isKodyMcpRoot(
 	return memberPropertyName(node) === 'mcp'
 }
 
+/**
+ * Credential-use scan root for literal MCP server keys. Same as
+ * {@link isKodyMcpRoot} for known `kody` / `mcp` aliases, plus any
+ * `identifier.mcp` / `identifier?.mcp` (and bracket / template forms) so
+ * helpers like kasa's `cm.mcp?.['home']` count as using `home`.
+ */
+function isMcpServerRoot(
+	node: AstNode,
+	kodyAliases: Set<string>,
+	mcpAliases: Set<string>,
+): boolean {
+	if (isKodyMcpRoot(node, kodyAliases, mcpAliases)) return true
+	if (
+		node.type !== 'MemberExpression' &&
+		node.type !== 'OptionalMemberExpression'
+	) {
+		return false
+	}
+	if (node.object?.type !== 'Identifier') return false
+	return memberPropertyName(node) === 'mcp'
+}
+
 function collectLiteralMcpServersFromObjectPattern(input: {
 	pattern: AstNode
 	path: string
@@ -949,18 +974,17 @@ function mcpServerFromMember(
 	) {
 		return undefined
 	}
-	if (isKodyMcpRoot(node, kodyAliases, mcpAliases)) {
-		// Bare `kody.mcp` / `mcp` root — wait for a child member when present.
+	if (isMcpServerRoot(node, kodyAliases, mcpAliases)) {
+		// Bare `kody.mcp` / `cm.mcp` / `mcp` root — wait for a child member.
 		return undefined
 	}
-	if (!node.object || !isKodyMcpRoot(node.object, kodyAliases, mcpAliases)) {
+	if (!node.object || !isMcpServerRoot(node.object, kodyAliases, mcpAliases)) {
 		return undefined
 	}
 	if (node.computed === true) {
 		const property = node.property
-		if (property?.type === 'StringLiteral' || property?.type === 'Literal') {
-			return getNodeName(property)
-		}
+		const literal = memberPropertyName(node)
+		if (literal != null) return literal
 		// `kody.mcp?.[CANVA_MCP_NAME]` when CANVA_MCP_NAME = 'canva' at module
 		// scope — same as credential("KEY") const folding.
 		if (property) {
@@ -968,7 +992,7 @@ function mcpServerFromMember(
 		}
 		return null
 	}
-	return getNodeName(node.property)
+	return memberPropertyName(node)
 }
 
 /**

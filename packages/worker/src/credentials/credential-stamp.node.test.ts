@@ -204,6 +204,42 @@ test('scanLiteralMcpServerKeys stamps literal servers and fails dynamic access',
 	expect(literal.keys).toEqual(['home', 'linear'])
 	expect(literal.failures).toEqual([])
 
+	// Optional chaining + brackets + static templates on any identifier.mcp
+	// (kasa: cm.mcp?.['home'] on a typed helper parameter).
+	const optionalBracketForms = scanLiteralMcpServerKeys({
+		'package.json': manifest(),
+		'src/home-tools.ts': [
+			'export type KodyKasa = { mcp: { home: unknown } }',
+			'export function getHomeKasaTools(cm: KodyKasa) {',
+			"\treturn cm.mcp?.['home']",
+			'}',
+		].join('\n'),
+		'src/index.ts': [
+			"import { kody } from 'kody:runtime'",
+			'export default async function run() {',
+			'\treturn kody.mcp?.home',
+			'\treturn kody.mcp?.[`linear`]',
+			"\treturn kody?.mcp?.['canva']",
+			'}',
+		].join('\n'),
+	})
+	expect(optionalBracketForms.keys).toEqual(['canva', 'home', 'linear'])
+	expect(optionalBracketForms.failures).toEqual([])
+
+	const viaParamAlias = scanLiteralMcpServerKeys({
+		'package.json': manifest(),
+		'src/index.ts': [
+			"import { kody } from 'kody:runtime'",
+			'export function bind(cm: { mcp: { home: unknown } }) {',
+			'\tconst mcp = cm.mcp',
+			'\treturn mcp?.home',
+			'}',
+			'export default async function run() { return bind(kody) }',
+		].join('\n'),
+	})
+	expect(viaParamAlias.keys).toEqual(['home'])
+	expect(viaParamAlias.failures).toEqual([])
+
 	const viaAlias = scanLiteralMcpServerKeys({
 		'package.json': manifest(),
 		'src/index.ts': [
