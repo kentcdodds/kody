@@ -323,6 +323,41 @@ ON email_inbound_due_owners(
 		`INSERT INTO system_email_graph_authority (
 	singleton, authority, cutover_at, graph_mismatch_count, provider_link_count
 ) VALUES (1, 'dedicated', CURRENT_TIMESTAMP, 0, 0);`,
+		`DROP TABLE IF EXISTS email_recipient_cooldowns;`,
+		`DROP TABLE IF EXISTS email_rejecting_providers;`,
+		`DROP TABLE IF EXISTS email_mx_lookup_cache;`,
+		`CREATE TABLE IF NOT EXISTS email_recipient_cooldowns (
+	recipient TEXT PRIMARY KEY NOT NULL,
+	class TEXT NOT NULL,
+	reason TEXT,
+	cooldown_until TEXT NOT NULL,
+	last_failure_at TEXT NOT NULL,
+	failure_count INTEGER NOT NULL DEFAULT 1,
+	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);`,
+		`CREATE INDEX IF NOT EXISTS idx_email_recipient_cooldowns_until
+ON email_recipient_cooldowns(cooldown_until);`,
+		`CREATE TABLE IF NOT EXISTS email_rejecting_providers (
+	provider_key TEXT PRIMARY KEY NOT NULL,
+	last_rejection_at TEXT NOT NULL,
+	rejection_count INTEGER NOT NULL DEFAULT 1,
+	last_recipient_domain TEXT,
+	seeded INTEGER NOT NULL DEFAULT 0,
+	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);`,
+		`CREATE INDEX IF NOT EXISTS idx_email_rejecting_providers_last_rejection
+ON email_rejecting_providers(last_rejection_at);`,
+		`CREATE TABLE IF NOT EXISTS email_mx_lookup_cache (
+	domain TEXT PRIMARY KEY NOT NULL,
+	provider_keys_json TEXT NOT NULL,
+	mx_hosts_json TEXT NOT NULL,
+	looked_up_at TEXT NOT NULL,
+	expires_at TEXT NOT NULL
+);`,
+		`CREATE INDEX IF NOT EXISTS idx_email_mx_lookup_cache_expires
+ON email_mx_lookup_cache(expires_at);`,
 	]
 	for (const statement of statements) {
 		await db.prepare(statement).run()

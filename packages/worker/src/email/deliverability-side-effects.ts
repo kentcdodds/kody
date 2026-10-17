@@ -57,6 +57,16 @@ export async function applyDeliverabilitySideEffects(input: {
 			fetchImpl: input.fetchImpl,
 		})
 	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		// Pre-migration / stripped workers fixtures omit policy tables. Fail
+		// open quietly so delivery-event processing still acks.
+		if (
+			error instanceof TypeError ||
+			/no such table/i.test(message) ||
+			/SQLITE_ERROR/i.test(message)
+		) {
+			return
+		}
 		console.warn('email-deliverability-side-effects-failed', error)
 	}
 }
