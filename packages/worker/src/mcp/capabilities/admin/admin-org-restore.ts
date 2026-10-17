@@ -1,3 +1,9 @@
+/**
+ * soft-delete-read-filter: opt-out
+ *
+ * Admin restore must read tombstoned orgs (and check personal-org ownership
+ * across soft-deleted person rows) before calling restoreOrg.
+ */
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
