@@ -282,8 +282,9 @@ ${orgBlock}
 
   --app-base-path <path>
              With \`kody dev\`, public mount path the Node proxy strips
-             before workerd (also \`packageContext.appBasePath\`). Default
-             is empty (serve at \`/\`). Use
+             before workerd (also \`packageContext.appBasePath\`; the
+             \`--ready-file\` JSON reports the same value as \`basePath\`).
+             Default is empty (serve at \`/\`). Use
              \`--app-base-path /packages/<package-name>\` to match the
              hosted app mount while iterating locally.
 
