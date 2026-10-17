@@ -5,8 +5,8 @@ issues labeled `friction`. They are not files in the tree.
 
 This is not [platform friction](../guides/platform-friction.md). That guide is
 for user-facing Kody product feedback. This page is for developing the
-`kentcdodds/kody` repo: confusing docs, a test that only fails locally, a
-command that needs a secret handshake, a type that lies.
+`kody-hq/kody` repo: confusing docs, a test that only fails locally, a command
+that needs a secret handshake, a type that lies.
 
 This page is the policy for humans and agents: when to file, where it belongs,
 and how to judge fixes. Durable API, qualify, daily investigation steps, and
@@ -48,7 +48,7 @@ Both `create` and `file` require
 
 | Ownership                                                                                | `target`                                                                                                     | Route                                                                                           |
 | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| **Platform / this GitHub repo** (docs, harness, worker contracts, contributor tooling)   | `{ host: 'github', repo: 'kentcdodds/kody' }`                                                                | GitHub `friction` issue on that repo (never raw `gh issue create` or a raw GitHub issues POST). |
+| **Platform / this GitHub repo** (docs, harness, worker contracts, contributor tooling)   | `{ host: 'github', repo: 'kody-hq/kody' }`                                                                   | GitHub `friction` issue on that repo (never raw `gh issue create` or a raw GitHub issues POST). |
 | **Another GitHub repo** with its own friction label workflow                             | `{ host: 'github', repo: 'owner/repo' }`                                                                     | GitHub `friction` issue on that `owner/repo`.                                                   |
 | **A Kody package** (saved package README, export shape, package job, package-owned docs) | `{ host: 'kody', repo: '@owner/leaf' }` (or the package's kody id / identity string the live export accepts) | Wakes **Patch** via grok-bot. No GitHub issue.                                                  |
 
@@ -103,15 +103,15 @@ pass `target`. Contract, fields, soft-skip shapes, and examples live in the
 point outside the ship-pr leftover pass. Ship-pr uses `./file` before Discord.
 
 Do not use `gh issue create` or `kody:@kentcdodds/github/request` POST to
-`/repos/kentcdodds/kody/issues`. Those paths can omit the `friction` label, so
-the daily sweep never sees the issue.
+`/repos/kody-hq/kody/issues`. Those paths can omit the `friction` label, so the
+daily sweep never sees the issue.
 
 ## Daily sweep
 
 `@kentcdodds/friction-log` runs the daily job. Daily sweep eligibility is:
 open + `friction` + NOT `friction-skipped`. Eligibility does not scrape issue
 comments. When any issues are eligible, the package may spawn one Cursor Cloud
-Agent on `kentcdodds/kody` `main`.
+Agent on `kody-hq/kody` `main`.
 
 Daily agent instructions (outcomes, skip/unskip, record-outcome) come from the
 package when spawned (`agent-prompt` and package `AGENTS.md`). On skip, apply

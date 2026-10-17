@@ -10,7 +10,7 @@ import { isolatedRunnerResourceLimitAdvice } from './isolated-runner-limit-messa
  * Object. One large package (for example morning-briefing) could otherwise
  * push the session isolate (workspace + git state + esbuild-wasm) over the
  * Durable Object memory limit and kill the publish (same class of failure as
- * kentcdodds/kody#987 for check phases). Each rebuild chunk gets a brand-new
+ * kody-hq/kody#987 for check phases). Each rebuild chunk gets a brand-new
  * DO id, so:
  *
  * - rebuilds never stack their peak memory on top of the session isolate or
@@ -28,7 +28,7 @@ import { isolatedRunnerResourceLimitAdvice } from './isolated-runner-limit-messa
  * Targets are chunked per throwaway isolate (same pattern as check-phase
  * bundle validation) so a multi-export package does not pay one cold
  * esbuild-wasm boot per export. Chunk size stays small so one isolate does
- * not stack toward the memory limit that motivated kentcdodds/kody#987;
+ * not stack toward the memory limit that motivated kody-hq/kody#987;
  * isolate concurrency stays capped so publish cannot stampede DO capacity.
  */
 

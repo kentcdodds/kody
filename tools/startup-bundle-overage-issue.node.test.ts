@@ -50,10 +50,10 @@ test('resolves the Actions run URL from standard GitHub env vars', () => {
 	expect(
 		resolveStartupBundleOverageRunUrl({
 			GITHUB_SERVER_URL: 'https://github.com',
-			GITHUB_REPOSITORY: 'kentcdodds/kody',
+			GITHUB_REPOSITORY: 'kody-hq/kody',
 			GITHUB_RUN_ID: '123',
 		}),
-	).toBe('https://github.com/kentcdodds/kody/actions/runs/123')
+	).toBe('https://github.com/kody-hq/kody/actions/runs/123')
 })
 
 test('upsertStartupBundleOverageIssue creates once then updates', () => {
@@ -67,7 +67,7 @@ test('upsertStartupBundleOverageIssue creates once then updates', () => {
 				title: startupBundleOverageIssueTitle('runtime'),
 				body: 'created',
 			}
-			return 'https://github.com/kentcdodds/kody/issues/42\n'
+			return 'https://github.com/kody-hq/kody/issues/42\n'
 		}
 		return ''
 	}
@@ -89,7 +89,7 @@ test('upsertStartupBundleOverageIssue creates once then updates', () => {
 	).toEqual({
 		action: 'created',
 		name: 'runtime',
-		url: 'https://github.com/kentcdodds/kody/issues/42',
+		url: 'https://github.com/kody-hq/kody/issues/42',
 	})
 	expect(
 		upsertStartupBundleOverageIssue(overage, { env, gh, findOpen }),
@@ -218,7 +218,7 @@ test('rejected title search still creates when no labeled issue exists', () => {
 			return JSON.stringify([])
 		}
 		if (args[0] === 'issue' && args[1] === 'create') {
-			return 'https://github.com/kentcdodds/kody/issues/99\n'
+			return 'https://github.com/kody-hq/kody/issues/99\n'
 		}
 		return ''
 	}
@@ -238,7 +238,7 @@ test('rejected title search still creates when no labeled issue exists', () => {
 	).toEqual({
 		action: 'created',
 		name: 'runtime',
-		url: 'https://github.com/kentcdodds/kody/issues/99',
+		url: 'https://github.com/kody-hq/kody/issues/99',
 	})
 	expect(calls.some((args) => args[1] === 'create')).toBe(true)
 })

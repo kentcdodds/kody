@@ -5,13 +5,13 @@
  * Keep the origin `.__kody_virtual__/runtime.js` module (CAF / packageStorage
  * re-exports). Register the mock wrap under a *flat* module name so bare
  * `kody:runtime` does not path-join under `.__kody_virtual__/` (same workerd
- * rule as kentcdodds/kody local-execute-package-graph).
+ * rule as kody-hq/kody local-execute-package-graph).
  */
 
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { localExecuteGatewayFetchShimModuleName } from '../local-package-graph.js'
-import type { WorkerdPackageModuleFile } from '../local-runtime-source.js'
+import { type WorkerdPackageModuleFile } from '../local-runtime-source.js'
 import { createMockGatewayFetchShimSource } from './mock-gateway-fetch-shim.js'
 
 const mockShimFileName = 'mock-gateway-fetch-shim.js'

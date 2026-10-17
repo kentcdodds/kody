@@ -19,7 +19,7 @@ const baseSha = 'c'.repeat(40)
 const previousBaseSha = 'd'.repeat(40)
 const repo = {
 	token: 'test-token',
-	repository: 'kentcdodds/kody',
+	repository: 'kody-hq/kody',
 	expectedBaseSha: baseSha,
 	sleep: () => Promise.resolve(),
 }
@@ -249,7 +249,7 @@ test('a dirty pull request fails a check on the head SHA', async () => {
 		...repo,
 		pullNumber: 2483,
 		headSha,
-		detailsUrl: 'https://github.com/kentcdodds/kody/actions/runs/7',
+		detailsUrl: 'https://github.com/kody-hq/kody/actions/runs/7',
 		fetchImpl: github.fetchImpl,
 		maxAttempts: 2,
 		delayMs: 1,
@@ -262,14 +262,14 @@ test('a dirty pull request fails a check on the head SHA', async () => {
 	])
 	expect(github.calls[0]?.url).toContain(`/compare/${baseSha}...${headSha}`)
 	expect(github.calls[1]?.url).toBe(
-		'https://api.github.com/repos/kentcdodds/kody/pulls/2483',
+		'https://api.github.com/repos/kody-hq/kody/pulls/2483',
 	)
 	expect(github.calls[2]?.body).toMatchObject({
 		name: mergeConflictCheckName,
 		head_sha: headSha,
 		status: 'completed',
 		conclusion: 'failure',
-		details_url: 'https://github.com/kentcdodds/kody/actions/runs/7',
+		details_url: 'https://github.com/kody-hq/kody/actions/runs/7',
 		output: { title: 'Conflicts with main' },
 	})
 	expect(github.calls[2]?.authorization).toBe('Bearer test-token')
@@ -401,7 +401,7 @@ test('main fails closed for a bad head SHA, an unknown mode, or a scan without a
 	consoleError.mockImplementation(() => {})
 	const auth = {
 		GITHUB_TOKEN: 'test-token',
-		GITHUB_REPOSITORY: 'kentcdodds/kody',
+		GITHUB_REPOSITORY: 'kody-hq/kody',
 	}
 	const envs = [
 		{ ...auth, PR_NUMBER: '12', HEAD_SHA: 'short' },

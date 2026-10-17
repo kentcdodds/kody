@@ -81,7 +81,7 @@ a closing keyword even after "does not". If a runbook exists, link both ways.
 When the cleanup later lands, close the issue.
 
 Create with `gh issue create` from a repo checkout, or
-`kody:@kentcdodds/github/request` `POST /repos/kentcdodds/kody/issues`.
+`kody:@kentcdodds/github/request` `POST /repos/kody-hq/kody/issues`.
 
 When the gate is a soak or calendar window, also schedule a wake (`execute` +
 `workflows.create({ runAt, idempotencyKey })`) as in the

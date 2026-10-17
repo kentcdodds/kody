@@ -132,8 +132,8 @@ npx @kodycodes/cli api usageGet --params '{}'
   a different API origin, use `auth bootstrap --api-url <origin>` or set
   `KODY_API_TOKEN`. The Open API must accept that OAuth bearer on
   CapabilityProxy / package-graph
-  ([kentcdodds/kody#2812](https://github.com/kentcdodds/kody/issues/2812));
-  until then use bootstrap or a scoped `kody_at_…` token.
+  ([kody-hq/kody#2812](https://github.com/kody-hq/kody/issues/2812)); until then
+  use bootstrap or a scoped `kody_at_…` token.
 - Wrong/expired token → 401 with a mint-fresh-token message (or the OAuth
   platform-gap message when the bearer is login OAuth).
 - Wrong scopes → the error names the missing scope and the exact command to mint
@@ -383,7 +383,7 @@ npx @kodycodes/cli execute --local --invoke kody:@scope/pkg/export --params '{"n
   tokens so they stay out of shell history and `ps`. The bearer stays in the CLI
   process; the sandbox only talks to a loopback bridge. Host MCP OAuth from
   other clients is never read. Until
-  [kentcdodds/kody#2812](https://github.com/kentcdodds/kody/issues/2812) ships,
+  [kody-hq/kody#2812](https://github.com/kody-hq/kody/issues/2812) ships,
   login-only Bearer is rejected by the Open API — use bootstrap or a `kody_at_…`
   token in that case.
 - **Node.js:** 22 or newer (`package.json` `engines` is `>=22`). Older Node
@@ -404,7 +404,7 @@ npx @kodycodes/cli execute --local --invoke kody:@scope/pkg/export --params '{"n
   override). The CLI calls `POST /v1/local-execute/package-graph` before
   starting workerd (it authenticates the bearer and, when the module imports
   `kody:@…`, downloads stamped package modules for local embedding,
-  [platform issue](https://github.com/kentcdodds/kody/issues/2808)) and
+  [platform issue](https://github.com/kody-hq/kody/issues/2808)) and
   `POST /v1/capability-proxy/call` with `{ path, args, conversationId? }` for
   each runtime call. CapabilityProxy requests go through Node's own
   `node:http(s)` client with one keep-alive connection and a 7-minute idle limit

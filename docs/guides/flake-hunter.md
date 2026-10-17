@@ -23,8 +23,8 @@ is documented in [Jobs, workflows, and webhooks](./triggers.md).
 ## The job
 
 Every day at 4am America/Denver, the published package scans the last 24 hours
-of GitHub Actions jobs on `kentcdodds/kody`. If any job indicates e2e flakiness,
-it starts **one** investigation. A clean day is silent.
+of GitHub Actions jobs on `kody-hq/kody`. If any job indicates e2e flakiness, it
+starts **one** investigation. A clean day is silent.
 
 That is the factory loop from [How Kody works](./how-kody-works.md) aimed at CI
 noise: ask once, save the scan, trigger it on a cron.

@@ -165,7 +165,7 @@ change.
 ## Connect one client to two orgs
 
 A connection binds exactly one org at consent
-([ADR 0064](https://raw.githubusercontent.com/kentcdodds/kody/main/docs/contributing/decisions/0064-oauth-org-binding.md)).
+([ADR 0064](https://raw.githubusercontent.com/kody-hq/kody/main/docs/contributing/decisions/0064-oauth-org-binding.md)).
 To use two orgs from the same client, add Kody twice, once per org, with
 `?org=<slug>` on the MCP URL:
 

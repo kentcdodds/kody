@@ -80,7 +80,7 @@ function transformExplicitWebhookUrlSecretVerification(
  * Detect-only: lists `kody.webhooks` entries with no `verification`. Omitting
  * `verification` is a supported, permanent state (URL secret only), so this
  * never rewrites manifests; owners choose whether to declare a type.
- * https://github.com/kentcdodds/kody/issues/3477
+ * https://github.com/kody-hq/kody/issues/3477
  */
 export const explicitWebhookUrlSecretVerificationCodemod = {
 	id: explicitWebhookUrlSecretVerificationCodemodId,

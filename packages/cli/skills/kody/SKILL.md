@@ -100,7 +100,7 @@ another API origin, use `auth bootstrap --api-url <origin>` or set
 `kody-pr-<n>` (which 404s `/v1/*` with HTML). Prefer bootstrap over
 `tokenCreate` for agents already on MCP so `kody_at_…` never appears in chat.
 Until the Open API accepts MCP OAuth on CapabilityProxy / package-graph
-(https://github.com/kentcdodds/kody/issues/2812), use bootstrap or mint a scoped
+(https://github.com/kody-hq/kody/issues/2812), use bootstrap or mint a scoped
 token with the MCP `api` tool `tokenCreate` — include `local-execute` plus the
 capability scopes the module calls — and pass `--token` or `KODY_API_TOKEN`. If
 none of those are available, the CLI error says that (bootstrap → login →

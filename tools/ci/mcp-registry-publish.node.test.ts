@@ -23,12 +23,12 @@ import {
 
 const localServer: ServerJson = {
 	$schema: 'https://example.test/server.schema.json',
-	name: 'io.github.kentcdodds/kody',
+	name: 'io.github.kody-hq/kody',
 	title: 'Kody',
 	description: "Your agents' cloud.",
 	version: '1.0.2',
 	websiteUrl: 'https://kody.codes',
-	repository: { url: 'https://github.com/kentcdodds/kody', source: 'github' },
+	repository: { url: 'https://github.com/kody-hq/kody', source: 'github' },
 	remotes: [{ type: 'streamable-http', url: 'https://kody.codes/mcp' }],
 }
 
@@ -44,7 +44,7 @@ test('classifies registry lookup into publish, skip, or version-bump failure', (
 		classifyPublishedVersion({ local: localServer, published: null }),
 	).toEqual({
 		action: 'publish',
-		reason: 'io.github.kentcdodds/kody@1.0.2 is not in the registry.',
+		reason: 'io.github.kody-hq/kody@1.0.2 is not in the registry.',
 	})
 	expect(
 		classifyPublishedVersion({
@@ -70,7 +70,7 @@ test('classifies registry lookup into publish, skip, or version-bump failure', (
 test('server.json equality ignores key order', () => {
 	const reversed: ServerJson = {
 		version: '1.0.2',
-		name: 'io.github.kentcdodds/kody',
+		name: 'io.github.kody-hq/kody',
 		remotes: localServer.remotes,
 		repository: localServer.repository,
 		websiteUrl: localServer.websiteUrl,
@@ -109,8 +109,8 @@ test('metadata edits without a version bump fail the local change check', () => 
 })
 
 test('parses registry payloads and encodes the version URL', () => {
-	expect(registryServerVersionUrl('io.github.kentcdodds/kody', '1.0.3')).toBe(
-		'https://registry.modelcontextprotocol.io/v0.1/servers/io.github.kentcdodds%2Fkody/versions/1.0.3',
+	expect(registryServerVersionUrl('io.github.kody-hq/kody', '1.0.3')).toBe(
+		'https://registry.modelcontextprotocol.io/v0.1/servers/io.github.kody-hq%2Fkody/versions/1.0.3',
 	)
 	expect(
 		parsePublishedServerResponse({

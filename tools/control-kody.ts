@@ -82,7 +82,7 @@ export const localSeedEmail = 'jane@example.com'
 export const localSeedPassword = 'ilikecode'
 export const localAdminEmail = 'kody@example.com'
 export const controlKodyUserAgent =
-	'Mozilla/5.0 (compatible; KodyControlKody/1.0; +https://github.com/kentcdodds/kody)'
+	'Mozilla/5.0 (compatible; KodyControlKody/1.0; +https://github.com/kody-hq/kody)'
 
 const usageLines = [
 	'Usage: node tools/control-kody.ts <command> [options]',

@@ -1871,7 +1871,7 @@ export async function runRepoChecks(input: {
 	// in fresh throwaway isolates whenever the env carries the bindings for
 	// it: one large package could otherwise push this isolate (session
 	// workspace + git state + checks) over the Durable Object memory limit
-	// and kill every publish attempt (kentcdodds/kody#987). Without the
+	// and kill every publish attempt (kody-hq/kody#987). Without the
 	// bindings (unit tests, minimal envs) the phases run inline; typecheck
 	// then runs BEFORE bundling so its disposable heap never stacks on top
 	// of esbuild-wasm memory, which stays resident once grown. The reported

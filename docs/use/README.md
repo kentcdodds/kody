@@ -11,7 +11,7 @@ curl -fsS https://kody.codes/docs/search-and-execute.md
 Files here are the MCP field reference those guides link to. Fetch one file:
 
 ```bash
-curl -fsS https://raw.githubusercontent.com/kentcdodds/kody/main/docs/use/search.md
+curl -fsS https://raw.githubusercontent.com/kody-hq/kody/main/docs/use/search.md
 ```
 
 A file that only repeats a guide is a stub.

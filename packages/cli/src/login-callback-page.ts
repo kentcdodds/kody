@@ -1,6 +1,6 @@
 /**
  * Self-contained OAuth callback HTML for `kody login`.
- * Tokens and CSS match kody.codes (`kentcdodds/kody` packages/worker/public/styles.css).
+ * Tokens and CSS match kody.codes (`kody-hq/kody` packages/worker/public/styles.css).
  * Inline CSS + inline SVG only — no external network requests from localhost.
  */
 import {
@@ -99,7 +99,7 @@ function statusIconSvg(kind: 'success' | 'error'): string {
 
 function pageCss(): string {
 	// Color / type / pattern tokens copied from kody.codes public/styles.css
-	// (kentcdodds/kody). Pattern is the official shirt tile, inlined as a mask.
+	// (kody-hq/kody). Pattern is the official shirt tile, inlined as a mask.
 	return `:root {
   color-scheme: light dark;
   --color-primary: oklch(0.54 0.18 145);

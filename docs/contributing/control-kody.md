@@ -167,9 +167,9 @@ login cookie.
 ## Daily garden
 
 `@kentcdodds/verification-skill-maintain` runs every day at 06:00
-America/Denver. It scans the Feature Map on `kentcdodds/kody` `main` and spawns
-one Cursor Cloud Agent when the catalog is stale or a required route is
-unmapped. The agent updates the map, follows
+America/Denver. It scans the Feature Map on `kody-hq/kody` `main` and spawns one
+Cursor Cloud Agent when the catalog is stale or a required route is unmapped.
+The agent updates the map, follows
 [`ship-pr`](../../.agents/skills/ship-pr/SKILL.md) for low or medium risk, and
 records an outcome. Pause with
 `kody:@kentcdodds/verification-skill-maintain/pause`.

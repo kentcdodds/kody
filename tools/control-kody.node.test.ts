@@ -776,9 +776,9 @@ test('loadHealthCommitInfo uses local git when present and GitHub when the merge
 		readGithubHealthCommitInfo(mergeSha, {
 			execFile: (_file, args) => {
 				if (args.includes('repo')) {
-					return JSON.stringify({ nameWithOwner: 'kentcdodds/kody' })
+					return JSON.stringify({ nameWithOwner: 'kody-hq/kody' })
 				}
-				expect(args.at(-1)).toBe(`repos/kentcdodds/kody/commits/${mergeSha}`)
+				expect(args.at(-1)).toBe(`repos/kody-hq/kody/commits/${mergeSha}`)
 				return JSON.stringify({
 					parents: [{ sha: headSha }],
 					commit: { message: `Merge ${headSha} into the preview base` },

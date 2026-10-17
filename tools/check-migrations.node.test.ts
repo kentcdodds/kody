@@ -607,7 +607,7 @@ test('the next free prefix skips open-PR claims and still allows gaps', () => {
 		scan: {
 			status: 'skipped',
 			reason: 'unauthorized',
-			detail: 'GitHub API GET /repos/kentcdodds/kody/pulls failed (401)',
+			detail: 'GitHub API GET /repos/kody-hq/kody/pulls failed (401)',
 		},
 	})
 	expect(unauthorized.suggestedPrefix).toBe('0098')

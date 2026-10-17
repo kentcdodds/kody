@@ -3,7 +3,7 @@ import { mcpOauthScopes } from '#worker/mcp-oauth-scopes.ts'
 export const cliClientIdMetadataPath = '/oauth/cli-client-metadata.json'
 export const cliOAuthCallbackUrl = 'http://127.0.0.1:43742/callback'
 export const cliClientName = '@kodycodes/cli'
-export const cliClientUri = 'https://github.com/kentcdodds/kody'
+export const cliClientUri = 'https://github.com/kody-hq/kody'
 
 /**
  * Official CLI Client ID Metadata Document (SEP-991).

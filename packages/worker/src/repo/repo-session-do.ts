@@ -2617,7 +2617,7 @@ class RepoSessionBase extends DurableObject<Env> {
 	/**
 	 * Pure-compute entrypoint for one heavy repo-check phase, invoked on a
 	 * throwaway Durable Object id so the phase's peak memory lives in its own
-	 * isolate (see isolated-check-phases.ts and kentcdodds/kody#987). It has
+	 * isolate (see isolated-check-phases.ts and kody-hq/kody#987). It has
 	 * no session and never touches this instance's storage; the staged source
 	 * files come from a short-TTL KV entry written by the orchestrating
 	 * checks run.

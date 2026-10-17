@@ -333,7 +333,7 @@ function createDeterministicAiBinding(): Ai {
 
 const editorThemeUri = 'https://docs.example.com/preferences/editor-theme'
 const memoryDocsUri =
-	'https://github.com/kentcdodds/kody/blob/main/docs/use/memory.md'
+	'https://github.com/kody-hq/kody/blob/main/docs/use/memory.md'
 
 test('memory service upserts, verifies, soft deletes, and validates source uris', async () => {
 	const testDb = createMemoryTestDb()

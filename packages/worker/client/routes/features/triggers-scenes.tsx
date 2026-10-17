@@ -127,7 +127,7 @@ function heroRows(
 			return [
 				{ label: 'Event', value: 'issue opened' },
 				{ label: 'Issue', value: '#184 weekly-brief' },
-				{ label: 'Repo', value: 'kentcdodds/kody' },
+				{ label: 'Repo', value: 'kody-hq/kody' },
 			]
 		case 'email':
 			return otherAddress

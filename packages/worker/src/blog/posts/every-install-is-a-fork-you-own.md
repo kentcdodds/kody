@@ -106,11 +106,11 @@ If you want to see what this feels like, the loop is short. Browse
 your agent to show you the code. That second step is the one most people have
 never done with software they installed, and it's the one that makes the rest of
 the ladder feel real. The docs on
-[public packages](https://github.com/kentcdodds/kody/blob/main/docs/use/community-packages.md)
+[public packages](https://github.com/kody-hq/kody/blob/main/docs/use/community-packages.md)
 and
-[packages generally](https://github.com/kentcdodds/kody/blob/main/docs/use/packages.md)
+[packages generally](https://github.com/kody-hq/kody/blob/main/docs/use/packages.md)
 cover the details, and the whole platform is
-[Fair Source](https://github.com/kentcdodds/kody) if you want to go deeper than
+[Fair Source](https://github.com/kody-hq/kody) if you want to go deeper than
 that.
 
 If you don't have an account yet,

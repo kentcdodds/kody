@@ -15,30 +15,29 @@ test('github repository and token parsing stay free of credential material', () 
 	expect(githubTokenFromEnv({ GITHUB_TOKEN: 'actions' })).toBe('actions')
 	expect(githubTokenFromEnv({ GH_TOKEN: ' ', GITHUB_TOKEN: '' })).toBeNull()
 
-	const secretUrl =
-		'https://x-access-token:secret@github.com/kentcdodds/kody.git'
-	expect(parseGithubRepository(secretUrl)).toBe('kentcdodds/kody')
-	expect(parseGithubRepository('git@github.com:kentcdodds/kody.git')).toBe(
-		'kentcdodds/kody',
+	const secretUrl = 'https://x-access-token:secret@github.com/kody-hq/kody.git'
+	expect(parseGithubRepository(secretUrl)).toBe('kody-hq/kody')
+	expect(parseGithubRepository('git@github.com:kody-hq/kody.git')).toBe(
+		'kody-hq/kody',
 	)
-	expect(parseGithubRepository('kentcdodds/kody')).toBe('kentcdodds/kody')
-	expect(parseGithubRepository('https://gitlab.com/kentcdodds/kody')).toBeNull()
+	expect(parseGithubRepository('kody-hq/kody')).toBe('kody-hq/kody')
+	expect(parseGithubRepository('https://gitlab.com/kody-hq/kody')).toBeNull()
 	expect(
-		parseGithubRepository('https://github.com/kentcdodds/kody/pull/1'),
+		parseGithubRepository('https://github.com/kody-hq/kody/pull/1'),
 	).toBeNull()
 	expect(
 		parseGithubRepository(
-			'https://git-manager.devin.ai/proxy/github.com/kentcdodds/kody',
+			'https://git-manager.devin.ai/proxy/github.com/kody-hq/kody',
 		),
-	).toBe('kentcdodds/kody')
+	).toBe('kody-hq/kody')
 	expect(
 		parseGithubRepository(
-			'https://git-manager.devin.ai/proxy/github.com/kentcdodds/kody.git',
+			'https://git-manager.devin.ai/proxy/github.com/kody-hq/kody.git',
 		),
-	).toBe('kentcdodds/kody')
+	).toBe('kody-hq/kody')
 	expect(
 		parseGithubRepository(
-			'https://git-manager.devin.ai/proxy/github.com/kentcdodds/kody/pull/1',
+			'https://git-manager.devin.ai/proxy/github.com/kody-hq/kody/pull/1',
 		),
 	).toBeNull()
 	expect(parseGithubRepository(secretUrl)).not.toContain('secret')
@@ -48,7 +47,7 @@ test('open pull request migration files are listed and the current pull request 
 	const calls: Array<{ url: string; authorization: string }> = []
 	const scan = await scanOpenPullRequestMigrationPrefixes({
 		migrationsDir,
-		repository: 'kentcdodds/kody',
+		repository: 'kody-hq/kody',
 		token,
 		baseRef: 'main',
 		env: { GITHUB_REF: 'refs/pull/7/merge' },
@@ -134,7 +133,7 @@ test('pull and file lists page until a short page', async () => {
 	}))
 	const scan = await scanOpenPullRequestMigrationPrefixes({
 		migrationsDir,
-		repository: 'kentcdodds/kody',
+		repository: 'kody-hq/kody',
 		token,
 		currentPullNumber: null,
 		fetchImpl: (input) => {
@@ -197,7 +196,7 @@ test('missing auth, a bad repository, and GitHub failures skip without throwing'
 	expect(
 		await scanOpenPullRequestMigrationPrefixes({
 			migrationsDir,
-			repository: 'kentcdodds/kody',
+			repository: 'kody-hq/kody',
 			token: null,
 			currentPullNumber: null,
 			fetchImpl,
@@ -206,7 +205,7 @@ test('missing auth, a bad repository, and GitHub failures skip without throwing'
 	expect(
 		await scanOpenPullRequestMigrationPrefixes({
 			migrationsDir,
-			repository: 'https://user:secret@github.com/kentcdodds/kody',
+			repository: 'https://user:secret@github.com/kody-hq/kody',
 			token,
 			currentPullNumber: null,
 			fetchImpl,
@@ -219,7 +218,7 @@ test('missing auth, a bad repository, and GitHub failures skip without throwing'
 	expect(
 		await scanOpenPullRequestMigrationPrefixes({
 			migrationsDir,
-			repository: 'kentcdodds/kody',
+			repository: 'kody-hq/kody',
 			token,
 			baseRef: 'main;touch',
 			currentPullNumber: null,
@@ -230,7 +229,7 @@ test('missing auth, a bad repository, and GitHub failures skip without throwing'
 
 	const unauthorized = await scanOpenPullRequestMigrationPrefixes({
 		migrationsDir,
-		repository: 'kentcdodds/kody',
+		repository: 'kody-hq/kody',
 		token,
 		currentPullNumber: null,
 		fetchImpl: () =>
@@ -248,7 +247,7 @@ test('missing auth, a bad repository, and GitHub failures skip without throwing'
 
 	const malformed = await scanOpenPullRequestMigrationPrefixes({
 		migrationsDir,
-		repository: 'kentcdodds/kody',
+		repository: 'kody-hq/kody',
 		token,
 		currentPullNumber: null,
 		fetchImpl: () => Promise.resolve(Response.json({ unexpected: true })),
@@ -264,7 +263,7 @@ test('missing auth, a bad repository, and GitHub failures skip without throwing'
 
 	const timedOut = await scanOpenPullRequestMigrationPrefixes({
 		migrationsDir,
-		repository: 'kentcdodds/kody',
+		repository: 'kody-hq/kody',
 		token,
 		currentPullNumber: null,
 		fetchImpl: () => {

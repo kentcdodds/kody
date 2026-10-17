@@ -101,5 +101,5 @@ required `path` string) instead of a hard-coded path.
 
 ## Related
 
-- Tracking: [issue #120](https://github.com/kentcdodds/kody/issues/120) (broader
+- Tracking: [issue #120](https://github.com/kody-hq/kody/issues/120) (broader
   official patterns folder).

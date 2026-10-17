@@ -36,9 +36,9 @@ this is the question I ask: is the safety property enforced by the architecture,
 or by the model's good behavior?
 
 Kody is Fair Source
-([github.com/kentcdodds/kody](https://github.com/kentcdodds/kody)), so you don't
-have to take my word for any of what follows. You can read the code. Here are
-the three layers.
+([github.com/kody-hq/kody](https://github.com/kody-hq/kody)), so you don't have
+to take my word for any of what follows. You can read the code. Here are the
+three layers.
 
 ## Layer 1: execute runs in a box with nothing in it
 
@@ -135,14 +135,14 @@ catastrophic. That's the trade, and I think it's a great one.
 Kody is Your agents' cloud: the memory, keys, code, and automations it keeps, no
 matter which agent I'm talking to. You connect the agent you already use over
 MCP
-([here's how](https://github.com/kentcdodds/kody/blob/main/docs/use/connect-your-agent.md)),
+([here's how](https://github.com/kody-hq/kody/blob/main/docs/use/connect-your-agent.md)),
 and everything it accumulates lives in an account you own.
 
 Your agents' cloud holding 51 keys had better be built like it. The full secrets
 model is documented at
-[Secrets and host approval](https://github.com/kentcdodds/kody/blob/main/docs/use/secrets-and-values.md),
+[Secrets and host approval](https://github.com/kody-hq/kody/blob/main/docs/use/secrets-and-values.md),
 and the code behind every claim in this post is in
-[the repo](https://github.com/kentcdodds/kody).
+[the repo](https://github.com/kody-hq/kody).
 
 If you'd rather own your assistant than rent one,
 [kody.codes/signup](https://kody.codes/signup) is where to start. And whether or

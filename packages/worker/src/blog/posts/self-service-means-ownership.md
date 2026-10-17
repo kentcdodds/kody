@@ -73,7 +73,7 @@ into the server-side secret store via
 into chat. They're encrypted, referenced in code as `{{secret:name}}`
 placeholders, and resolved only for hosts you've approved, so the plaintext
 never enters a prompt. The
-[secrets docs](https://github.com/kentcdodds/kody/blob/main/docs/use/secrets-and-values.md)
+[secrets docs](https://github.com/kody-hq/kody/blob/main/docs/use/secrets-and-values.md)
 have the details. Bring your own keys, keep your own keys.
 
 ## The honest cost
@@ -106,8 +106,8 @@ After the first one, the second takes half the time.
 
 If you don't have an account yet,
 [create one at kody.codes/signup](https://kody.codes/signup). The whole thing is
-[Fair Source](https://github.com/kentcdodds/kody) if you want to verify any of
-this yourself, which, given the subject of this post, seems fitting.
+[Fair Source](https://github.com/kody-hq/kody) if you want to verify any of this
+yourself, which, given the subject of this post, seems fitting.
 
 A few minutes of setup, and the door into your own data has your name on it.
 That's the feature.

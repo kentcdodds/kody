@@ -10,7 +10,7 @@ const shortAbsoluteLifetimeMs = 24 * 60 * 60 * 1000
 
 /** Platform tracking for login OAuth as CapabilityProxy / package-graph Bearer. */
 export const localExecuteOauthPlatformIssueUrl =
-	'https://github.com/kentcdodds/kody/issues/2812'
+	'https://github.com/kody-hq/kody/issues/2812'
 
 export type ResolveScopedApiTokenInput = {
 	tokenValues?: { token?: string }

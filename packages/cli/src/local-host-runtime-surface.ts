@@ -1,6 +1,6 @@
 /**
  * Hosted CapabilityProxy / local-execute host runtime surface that `--local`
- * must cover. Keep in sync with kentcdodds/kody:
+ * must cover. Keep in sync with kody-hq/kody:
  *
  * - `packages/worker/src/open-api/capability-proxy.ts` (JSON `/call` specials)
  * - `POST /v1/capability-proxy/gateway-fetch` (`gatewayFetchStream`)

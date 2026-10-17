@@ -38,7 +38,7 @@ the one you already had.
 Kody's answer is to not be a second brain at all. It's Your agents' cloud: the
 memory, keys, code, and automations your assistant keeps, no matter which agent
 you talk to. You connect the agent you already use
-[over MCP](https://github.com/kentcdodds/kody/blob/main/docs/use/connect-your-agent.md),
+[over MCP](https://github.com/kody-hq/kody/blob/main/docs/use/connect-your-agent.md),
 and it gets two tools, `search` and `execute`, with all of Kody's capabilities
 behind them. Your agent does every bit of the reasoning. Kody provides the hands
 and the long-term memory.
@@ -57,7 +57,7 @@ fashionable this quarter:
 - Memories your assistant accumulates across every conversation
 - Secrets stored server-side, never entering a prompt
 - Saved packages: repo-backed code your assistant writes once and reuses
-- [Scheduled jobs](https://github.com/kentcdodds/kody/blob/main/docs/use/execute.md)
+- [Scheduled jobs](https://github.com/kody-hq/kody/blob/main/docs/use/execute.md)
   that run on cron, interval, or one-shot schedules while your computer is off
 - Values, durable storage, an email inbox, OAuth integrations, remote connectors
 
@@ -119,12 +119,12 @@ when I burn.
 
 ## Owning vs renting
 
-Kody is Fair Source
-([github.com/kentcdodds/kody](https://github.com/kentcdodds/kody)) and built for
-people who'd rather own their assistant than rent one. Zero inference calls is
-what that principle looks like when it reaches the balance sheet: the thinking
-stays with the agent you chose, the capability accumulates in an account you
-own, and nobody profits from putting a meter on your assistant's thoughts.
+Kody is Fair Source ([github.com/kody-hq/kody](https://github.com/kody-hq/kody))
+and built for people who'd rather own their assistant than rent one. Zero
+inference calls is what that principle looks like when it reaches the balance
+sheet: the thinking stays with the agent you chose, the capability accumulates
+in an account you own, and nobody profits from putting a meter on your
+assistant's thoughts.
 
 If that's the kind of home you want your assistant to have,
 [kody.codes/signup](https://kody.codes/signup) is the place. And either way,

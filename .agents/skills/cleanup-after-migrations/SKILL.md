@@ -53,7 +53,7 @@ PR that added the leftover.
 gh issue create --title "Cleanup: … after …" --label improvement --body-file -
 ```
 
-Or `kody:@kentcdodds/github/request` `POST /repos/kentcdodds/kody/issues`.
+Or `kody:@kentcdodds/github/request` `POST /repos/kody-hq/kody/issues`.
 
 Soak or calendar gates also get a scheduled wake (`execute` +
 `workflows.create({ runAt, idempotencyKey })`) per

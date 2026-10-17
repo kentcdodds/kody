@@ -32,7 +32,7 @@ import { colors } from '#universal/styles/tokens.ts'
 
 /** GitHub-rendered agent docs for plain repos (not a /docs catalog guide). */
 const plainReposPromoteDocsHref =
-	'https://github.com/kentcdodds/kody/blob/main/docs/use/repos.md#promote-flow'
+	'https://github.com/kody-hq/kody/blob/main/docs/use/repos.md#promote-flow'
 
 export type CommunityDetailContentProps = {
 	listing: PublicCommunityListing | null

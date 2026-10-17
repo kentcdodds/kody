@@ -24,10 +24,10 @@ test('rewriteRelativeGuideLinks maps guide files to /docs routes and repo docs t
 	expect(rewritten).toContain('](/docs/oauth#redirect-uri)')
 	expect(rewritten).toContain('](/docs/google)')
 	expect(rewritten).toContain(
-		'](https://github.com/kentcdodds/kody/blob/main/docs/use/packages.md#ambient-storage-in-package-code) ([raw](https://raw.githubusercontent.com/kentcdodds/kody/main/docs/use/packages.md))',
+		'](https://github.com/kody-hq/kody/blob/main/docs/use/packages.md#ambient-storage-in-package-code) ([raw](https://raw.githubusercontent.com/kody-hq/kody/main/docs/use/packages.md))',
 	)
 	expect(rewritten).toContain(
-		'](https://raw.githubusercontent.com/kentcdodds/kody/main/docs/use/index.md)',
+		'](https://raw.githubusercontent.com/kody-hq/kody/main/docs/use/index.md)',
 	)
 	expect(rewritten).not.toContain('blob/main/docs/use/index.md')
 	expect(rewritten).toContain('](https://developers.google.com/identity)')

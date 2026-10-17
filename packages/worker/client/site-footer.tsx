@@ -47,7 +47,7 @@ export function SiteFooter(handle: Handle<SiteFooterProps>) {
 					<a href="/support">Support</a>
 					<a href="/blog">Blog</a>
 					<a
-						href="https://github.com/kentcdodds/kody"
+						href="https://github.com/kody-hq/kody"
 						target="_blank"
 						rel="noreferrer noopener"
 					>

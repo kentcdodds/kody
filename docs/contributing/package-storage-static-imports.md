@@ -8,9 +8,9 @@ and under [0037](./decisions/0037-no-author-packages-invoke.md) (authors compose
 with static import / `import(specifier)` / workflows; external clients use
 inbound webhooks).
 
-Related: [#1337](https://github.com/kentcdodds/kody/pull/1337) (fail-closed
-grants), [#1691](https://github.com/kentcdodds/kody/pull/1691) (caller secrets
-on package use), [#1742](https://github.com/kentcdodds/kody/pull/1742) (0037).
+Related: [#1337](https://github.com/kody-hq/kody/pull/1337) (fail-closed
+grants), [#1691](https://github.com/kody-hq/kody/pull/1691) (caller secrets on
+package use), [#1742](https://github.com/kody-hq/kody/pull/1742) (0037).
 
 ## What the code does
 
@@ -165,7 +165,7 @@ forked modules through a host library-load bridge
 (`resolveCurrentDynamicPackageArtifact` / nested evaluate with the caller's
 `packageContext` and callee stamp grants). Authors compose with static `kody:@`
 imports, `import(specifier)`, or workflows; `packages` stays `null`
-([#1750](https://github.com/kentcdodds/kody/issues/1750)).
+([#1750](https://github.com/kody-hq/kody/issues/1750)).
 
 If the specifier is a **caller-owned** package and `import()` means “library
 load in this isolate,” storage, context, and secrets match static import: A's

@@ -64,7 +64,7 @@ keep alive because you don't have one.
 **Where do the credentials live?** In a server-side secret store, encrypted,
 referenced by placeholder. The plaintext never enters a prompt and never sits in
 a crontab. The
-[secrets docs](https://github.com/kentcdodds/kody/blob/main/docs/use/secrets-and-values.md)
+[secrets docs](https://github.com/kody-hq/kody/blob/main/docs/use/secrets-and-values.md)
 cover how that works.
 
 **Is it worth an afternoon?** It's not an afternoon anymore. You describe the
@@ -72,14 +72,14 @@ recurring thing to your agent in one conversation, the agent writes the code and
 schedules it on a saved package, and you're done before the annoyance would have
 recurred once. Deferred one-shot reminders use `workflows.create({ runAt })`
 from `execute`. The
-[execute docs](https://github.com/kentcdodds/kody/blob/main/docs/use/execute.md)
+[execute docs](https://github.com/kody-hq/kody/blob/main/docs/use/execute.md)
 and
-[workflows docs](https://github.com/kentcdodds/kody/blob/main/docs/use/workflows.md)
+[workflows docs](https://github.com/kody-hq/kody/blob/main/docs/use/workflows.md)
 show those flows.
 
 And when a quick job turns out to matter, it graduates. Behavior worth keeping
 becomes a
-[saved package](https://github.com/kentcdodds/kody/blob/main/docs/use/packages.md):
+[saved package](https://github.com/kody-hq/kody/blob/main/docs/use/packages.md):
 repo-backed code with version history that you can read, test, and improve.
 Throwaway experiments stay throwaway; the keepers get a real home. You don't
 have to decide which one you're building up front.
@@ -113,7 +113,7 @@ thing you did this week, the one that made you think "I really should automate
 this" for the fifth time. That's your first job.
 
 If you have a Kody account,
-[connect the agent you already use](https://github.com/kentcdodds/kody/blob/main/docs/use/connect-your-agent.md)
+[connect the agent you already use](https://github.com/kody-hq/kody/blob/main/docs/use/connect-your-agent.md)
 and describe that one thing. If you don't have an account yet,
 [create one here](https://kody.codes/signup).
 

@@ -35,7 +35,7 @@ function invoke(
 	return invokeSitePerfPackage({
 		report: needsFixReport,
 		webhookUrl: exampleWebhookUrl,
-		repository: 'kentcdodds/kody',
+		repository: 'kody-hq/kody',
 		startingRef: 'main',
 		runId: '77',
 		fetchImpl: async () => {
@@ -57,14 +57,14 @@ test('invoke gates on needs-fix and a webhook URL, and builds a params body', as
 	expect(
 		buildInvokeBody({
 			report: needsFixReport,
-			repository: 'kentcdodds/kody',
+			repository: 'kody-hq/kody',
 			startingRef: 'main',
 			runId: '99',
 		}),
 	).toEqual({
 		params: {
 			report: needsFixReport,
-			repository: 'kentcdodds/kody',
+			repository: 'kody-hq/kody',
 			startingRef: 'main',
 		},
 		idempotencyKey: 'weekly-site-perf:99',
@@ -139,7 +139,7 @@ test('invoke posts params to the webhook URL, treats replay/in-progress as launc
 			body: {
 				params: {
 					report: needsFixReport,
-					repository: 'kentcdodds/kody',
+					repository: 'kody-hq/kody',
 					startingRef: 'main',
 				},
 				idempotencyKey: 'weekly-site-perf:77',

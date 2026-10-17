@@ -157,7 +157,7 @@ Local/preview/test may omit them. Dashboard: **Turnstile**.
 Every Worker reads its Cloudflare REST token as the Worker secret
 `CLOUDFLARE_API_TOKEN`, but production uploads a different least-privilege
 GitHub secret to each Worker
-([#2010](https://github.com/kentcdodds/kody/issues/2010)). The deploy token is
+([#2010](https://github.com/kody-hq/kody/issues/2010)). The deploy token is
 never uploaded to a Worker, and `.github/workflows/deploy.yml` runs a shared
 `require-worker-tokens` job before any production mutation when a Worker-scoped
 token is unset or equals the deploy token, or when the deploy token itself is
@@ -213,7 +213,7 @@ live traffic.
 
 Source of truth for this repository, Actions, preview environments, CLA signers,
 and MCP Registry publish (OIDC). Repo:
-[kentcdodds/kody](https://github.com/kentcdodds/kody).
+[kody-hq/kody](https://github.com/kody-hq/kody).
 
 Dashboard: repo **Settings → Secrets and variables → Actions**.
 
@@ -345,9 +345,9 @@ Webhook URL: `https://kody.codes/webhooks/stripe`. Handled events in
 
 Unknown types are acknowledged after process+record.
 
-Dashboard dunning ([#2140](https://github.com/kentcdodds/kody/pull/2140)
-describes the live settings): **Settings → Billing → Subscriptions and emails →
-Email notifications and customer management** has every customer email enabled
+Dashboard dunning ([#2140](https://github.com/kody-hq/kody/pull/2140) describes
+the live settings): **Settings → Billing → Subscriptions and emails → Email
+notifications and customer management** has every customer email enabled
 (trial-ending, upcoming renewals, expiring cards, failed card payments, failed
 bank-debit payments). **Manage failed payments** cancels the subscription when
 all retries fail. Kody also sends its own past-due / payment-failed mail; the
@@ -393,7 +393,7 @@ comments: `kody-cloudflare`. Org slug is a GitHub Actions variable
 OTLP destination name in Cloudflare: `sentry-otlp-traces` (see
 [Cloudflare](#cloudflare)). Release = `APP_COMMIT_SHA`.
 
-[#1092](https://github.com/kentcdodds/kody/issues/1092) item 1 asks for Sentry
+[#1092](https://github.com/kody-hq/kody/issues/1092) item 1 asks for Sentry
 alert rules (error-rate spike; cron-monitor on the DR staging watchdog) on a
 channel independent of Cloudflare Email. Those rules are dashboard-only.
 

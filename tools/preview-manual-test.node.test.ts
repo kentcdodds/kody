@@ -256,7 +256,7 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 		conclusion: 'success',
 		headSha: 'headsha',
 		event: 'pull_request',
-		url: 'https://github.com/kentcdodds/kody/actions/runs/10',
+		url: 'https://github.com/kody-hq/kody/actions/runs/10',
 		displayTitle: 'Preview #42',
 	}
 	const cancelled = {
@@ -265,7 +265,7 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 		conclusion: 'cancelled',
 		headSha: 'headsha',
 		event: 'pull_request',
-		url: 'https://github.com/kentcdodds/kody/actions/runs/11',
+		url: 'https://github.com/kody-hq/kody/actions/runs/11',
 		displayTitle: 'Preview #42',
 	}
 	const newerSuccess = {
@@ -274,7 +274,7 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 		conclusion: 'success',
 		headSha: 'headsha',
 		event: 'pull_request',
-		url: 'https://github.com/kentcdodds/kody/actions/runs/12',
+		url: 'https://github.com/kody-hq/kody/actions/runs/12',
 		displayTitle: 'Preview #42',
 	}
 	const skippedNoop = {
@@ -283,7 +283,7 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 		conclusion: 'skipped',
 		headSha: 'headsha',
 		event: 'pull_request',
-		url: 'https://github.com/kentcdodds/kody/actions/runs/13',
+		url: 'https://github.com/kody-hq/kody/actions/runs/13',
 		displayTitle: 'Preview #42',
 	}
 	const olderOtherPr = {
@@ -292,7 +292,7 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 		conclusion: 'success',
 		headSha: 'other',
 		event: 'pull_request',
-		url: 'https://github.com/kentcdodds/kody/actions/runs/14',
+		url: 'https://github.com/kody-hq/kody/actions/runs/14',
 		displayTitle: 'Preview #99',
 	}
 	// Cancelled first in the list (the latch bug): still follow the newest
@@ -973,7 +973,7 @@ test('preview manual test refuses draft PRs and failed preview workflows', async
 					commentBody: null,
 					runStatus: 'completed',
 					runConclusion: 'failure',
-					runUrl: 'https://github.com/kentcdodds/kody/actions/runs/99',
+					runUrl: 'https://github.com/kody-hq/kody/actions/runs/99',
 				}),
 		},
 	)
@@ -990,7 +990,7 @@ test('preview manual test skips a cancelled head-SHA run and follows the newer s
 		conclusion: 'cancelled',
 		headSha: 'headsha',
 		event: 'pull_request',
-		url: 'https://github.com/kentcdodds/kody/actions/runs/10',
+		url: 'https://github.com/kody-hq/kody/actions/runs/10',
 		displayTitle: 'Preview #42',
 	}
 	const successor = {
@@ -999,7 +999,7 @@ test('preview manual test skips a cancelled head-SHA run and follows the newer s
 		conclusion: 'success',
 		headSha: 'headsha',
 		event: 'pull_request',
-		url: 'https://github.com/kentcdodds/kody/actions/runs/11',
+		url: 'https://github.com/kody-hq/kody/actions/runs/11',
 		displayTitle: 'Preview #42',
 	}
 	// Cancelled listed first, as gh sometimes returns after concurrency cancel.
@@ -1045,7 +1045,7 @@ test('preview manual test keeps waiting when the only head-SHA run is cancelled 
 							conclusion: 'cancelled',
 							headSha: 'headsha',
 							event: 'pull_request',
-							url: 'https://github.com/kentcdodds/kody/actions/runs/10',
+							url: 'https://github.com/kody-hq/kody/actions/runs/10',
 							displayTitle: 'Preview #42',
 						},
 					],
@@ -1069,7 +1069,7 @@ test('preview manual test does not treat an older success as ready behind a newe
 		conclusion: 'success',
 		headSha: 'headsha',
 		event: 'pull_request',
-		url: 'https://github.com/kentcdodds/kody/actions/runs/10',
+		url: 'https://github.com/kody-hq/kody/actions/runs/10',
 		displayTitle: 'Preview #42',
 	}
 	const newerCancelled = {
@@ -1078,7 +1078,7 @@ test('preview manual test does not treat an older success as ready behind a newe
 		conclusion: 'cancelled',
 		headSha: 'headsha',
 		event: 'pull_request',
-		url: 'https://github.com/kentcdodds/kody/actions/runs/11',
+		url: 'https://github.com/kody-hq/kody/actions/runs/11',
 		displayTitle: 'Preview #42',
 	}
 	const { exitCode, result } = await runPreviewManualTest(
@@ -1168,13 +1168,13 @@ function fakeGh(
 	if (joined.startsWith('pr view')) {
 		return jsonGh({
 			number: 42,
-			url: 'https://github.com/kentcdodds/kody/pull/42',
+			url: 'https://github.com/kody-hq/kody/pull/42',
 			isDraft: input.isDraft === true,
 			headRefOid: input.headSha ?? 'headsha',
 		})
 	}
 	if (joined.startsWith('repo view')) {
-		return jsonGh({ nameWithOwner: 'kentcdodds/kody' })
+		return jsonGh({ nameWithOwner: 'kody-hq/kody' })
 	}
 	if (joined.includes('/issues/') && joined.includes('/comments')) {
 		const comments = input.commentBody ? [{ body: input.commentBody }] : []
@@ -1194,8 +1194,7 @@ function fakeGh(
 				conclusion: input.runConclusion ?? null,
 				headSha: input.headSha ?? 'headsha',
 				event: 'pull_request',
-				url:
-					input.runUrl ?? 'https://github.com/kentcdodds/kody/actions/runs/1',
+				url: input.runUrl ?? 'https://github.com/kody-hq/kody/actions/runs/1',
 				displayTitle: 'Preview #42',
 			},
 		])

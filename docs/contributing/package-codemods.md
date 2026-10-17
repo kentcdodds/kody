@@ -478,8 +478,8 @@ Findings are a recommendation for owners to declare a type, not a migration.
 ### `0013-declare-credential-needs`
 
 Prepares for credential-need enforcement
-([#3822](https://github.com/kentcdodds/kody/issues/3822)). That enforcement
-limits a package that someone other than its author runs to the credentials it
+([#3822](https://github.com/kody-hq/kody/issues/3822)). That enforcement limits
+a package that someone other than its author runs to the credentials it
 declares. The codemod adds a `kody.credentials` slot for each name the package
 fills through the fetch gateway by a literal name and does not declare yet:
 `{{secret:NAME}}`, `{{integration-token:NAME}}`,
@@ -514,7 +514,7 @@ same filter must come back clean before the enforcement flag is turned on.
 
 ### `0014-seal-credential-stamps`
 
-Fleet seal for [issue #3836](https://github.com/kentcdodds/kody/issues/3836)
+Fleet seal for [issue #3836](https://github.com/kody-hq/kody/issues/3836)
 phase 2. Declares missing `kody.credentials` slots for every stampable literal
 use (`credential("KEY")`, placeholders, `createAuthenticatedFetch`, JWT signing
 names, and literal `kody.mcp.SERVER` names) and fills an inferred description
@@ -545,7 +545,7 @@ counters, plus `missingStampPackages`, as zero. Only `stamped` and
 ### `0015-convert-credential-stamps`
 
 Platform migration for
-[issue #3836](https://github.com/kentcdodds/kody/issues/3836): convert other
+[issue #3836](https://github.com/kody-hq/kody/issues/3836): convert other
 owners' published packages (including `@kody/*`) when the result is
 stamp-sealable without disruption. Operator surface:
 `adminCredentialStampMigrate` (audited admin mutation; dry-run default).

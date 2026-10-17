@@ -176,12 +176,12 @@ test('agent discovery documents describe the MCP server and public pages', async
 	const securityTxt = buildSecurityTxt(origin, now)
 	expect(securityTxt).toContain('Contact: mailto:me@kentcdodds.com')
 	expect(securityTxt).toContain(
-		'Contact: https://github.com/kentcdodds/kody/security/advisories/new',
+		'Contact: https://github.com/kody-hq/kody/security/advisories/new',
 	)
 	expect(securityTxt).toContain('Expires: 2027-08-18T20:00:00.000Z')
 	expect(securityTxt).toContain(`Canonical: ${origin}/.well-known/security.txt`)
 	expect(securityTxt).toContain(
-		'Policy: https://raw.githubusercontent.com/kentcdodds/kody/main/SECURITY.md',
+		'Policy: https://raw.githubusercontent.com/kody-hq/kody/main/SECURITY.md',
 	)
 
 	expect(

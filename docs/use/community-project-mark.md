@@ -22,11 +22,11 @@ status obvious to users.
 
 ## Official vs community
 
-|                     | Official Kody                                                             | Community project          |
-| ------------------- | ------------------------------------------------------------------------- | -------------------------- |
-| Maintainer          | The [kody](https://github.com/kentcdodds/kody) repository and its deploys | You or your team           |
-| Visual identity     | The official Kody logo and product UI                                     | The Community Project mark |
-| Implies endorsement | Yes                                                                       | No                         |
+|                     | Official Kody                                                          | Community project          |
+| ------------------- | ---------------------------------------------------------------------- | -------------------------- |
+| Maintainer          | The [kody](https://github.com/kody-hq/kody) repository and its deploys | You or your team           |
+| Visual identity     | The official Kody logo and product UI                                  | The Community Project mark |
+| Implies endorsement | Yes                                                                    | No                         |
 
 Do **not** use the official Kody logo, app icon, or product screenshots in ways
 that suggest your project is official. Use the Community Project mark instead.
@@ -58,7 +58,7 @@ The mark is a courtesy for community builders. It does **not**:
 - Grant trademark rights beyond fair community use with clear attribution
 
 If you are unsure whether your use is appropriate, open a discussion in the
-[kody repository](https://github.com/kentcdodds/kody/discussions).
+[kody repository](https://github.com/kody-hq/kody/discussions).
 
 ## Questions
 

@@ -10,7 +10,7 @@ feature gap.
 Please report vulnerabilities privately — do not open a public issue.
 
 - Preferred:
-  [GitHub private vulnerability reporting](https://github.com/kentcdodds/kody/security/advisories/new)
+  [GitHub private vulnerability reporting](https://github.com/kody-hq/kody/security/advisories/new)
 - Alternative: email [me@kentcdodds.com](mailto:me@kentcdodds.com) with
   "SECURITY" in the subject line
 

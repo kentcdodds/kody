@@ -37,7 +37,7 @@ Do not invent a replacement primitive.
 ## Remaining work
 
 None in this repo. The code removal and the table drop are separate deploys.
-Tracked by [#1728](https://github.com/kentcdodds/kody/issues/1728).
+Tracked by [#1728](https://github.com/kody-hq/kody/issues/1728).
 
 ## What not to do
 

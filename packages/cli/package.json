@@ -38,11 +38,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kentcdodds/kody.git",
+    "url": "git+https://github.com/kody-hq/kody.git",
     "directory": "packages/cli"
   },
   "bugs": {
-    "url": "https://github.com/kentcdodds/kody/issues"
+    "url": "https://github.com/kody-hq/kody/issues"
   },
   "homepage": "https://kody.codes",
   "publishConfig": {

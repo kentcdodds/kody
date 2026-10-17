@@ -16,21 +16,21 @@ test('build-deploy-info collects git, PR, and Actions metadata for /health', asy
 		DEPLOY_COMMIT_SHA: commitSha,
 		DEPLOY_ENVIRONMENT: 'preview',
 		GITHUB_SERVER_URL: 'https://github.com',
-		GITHUB_REPOSITORY: 'kentcdodds/kody',
+		GITHUB_REPOSITORY: 'kody-hq/kody',
 		GITHUB_WORKFLOW: '🔎 Preview',
 		GITHUB_JOB: 'deploy',
 		GITHUB_RUN_ID: '99',
 		GITHUB_RUN_ATTEMPT: '2',
 		DEPLOY_PR_NUMBER: '1799',
-		DEPLOY_PR_URL: 'https://github.com/kentcdodds/kody/pull/1799',
+		DEPLOY_PR_URL: 'https://github.com/kody-hq/kody/pull/1799',
 		DEPLOY_PR_TITLE: 'Richer /health metadata',
 		DEPLOYED_AT: '2026-08-27T18:05:00Z',
 	})
 	expect(fromEnv.sha).toBe(commitSha)
-	expect(fromEnv.repoUrl).toBe('https://github.com/kentcdodds/kody')
+	expect(fromEnv.repoUrl).toBe('https://github.com/kody-hq/kody')
 	expect(fromEnv.pullRequest).toEqual({
 		number: 1799,
-		url: 'https://github.com/kentcdodds/kody/pull/1799',
+		url: 'https://github.com/kody-hq/kody/pull/1799',
 		title: 'Richer /health metadata',
 	})
 	if (!fromEnv.pullRequest) throw new Error('expected pull request info')
@@ -43,7 +43,7 @@ test('build-deploy-info collects git, PR, and Actions metadata for /health', asy
 		},
 	})
 	expect(info).toEqual({
-		repoUrl: 'https://github.com/kentcdodds/kody',
+		repoUrl: 'https://github.com/kody-hq/kody',
 		commit: {
 			sha: commitSha,
 			message: 'feat: richer /health metadata (#1799)\n\nMore detail.',
@@ -56,7 +56,7 @@ test('build-deploy-info collects git, PR, and Actions metadata for /health', asy
 			workflow: '🔎 Preview',
 			job: 'deploy',
 			runId: '99',
-			runUrl: 'https://github.com/kentcdodds/kody/actions/runs/99/attempts/2',
+			runUrl: 'https://github.com/kody-hq/kody/actions/runs/99/attempts/2',
 		},
 	} satisfies DeployInfo)
 	expect(parseDeployInfo(encodeDeployInfo(info))).toEqual(info)
@@ -90,7 +90,7 @@ test('build-deploy-info collects git, PR, and Actions metadata for /health', asy
 		).pullRequest,
 	).toEqual({
 		number: 42,
-		url: 'https://github.com/kentcdodds/kody/pull/42',
+		url: 'https://github.com/kody-hq/kody/pull/42',
 		title: null,
 	})
 
@@ -102,7 +102,7 @@ test('build-deploy-info collects git, PR, and Actions metadata for /health', asy
 				lookupPullRequests: async () => [
 					{
 						number: 7,
-						url: 'https://github.com/kentcdodds/kody/pull/7',
+						url: 'https://github.com/kody-hq/kody/pull/7',
 						title: 'From API',
 					},
 				],

@@ -51,7 +51,7 @@ jobs:
     # cleanups in one run, deferring whatever does not fit to the next run,
     # leaving room here for npm ci and the account-wide listing calls.
     timeout-minutes: 40
-    if: github.repository == 'kentcdodds/kody'
+    if: github.repository == 'kody-hq/kody'
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2

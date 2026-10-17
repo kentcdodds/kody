@@ -612,7 +612,7 @@ export async function persistPublishedPackageArtifactTarget(
  * Cap concurrent esbuild-wasm rebuilds so a many-export package cannot stack
  * isolate heap the way fully sequential rebuilds used to stretch wall time.
  * Two at a time cuts typical 4-target publishes roughly in half without
- * reopening the session-DO memory failure in kentcdodds/kody#987.
+ * reopening the session-DO memory failure in kody-hq/kody#987.
  */
 const publishedPackageArtifactRebuildConcurrency = 2
 

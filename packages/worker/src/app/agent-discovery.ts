@@ -28,7 +28,7 @@ export const kodyOpenApiOrigin = 'https://api.kody.codes'
 export const kodyApiDocsOrigin = 'https://api-docs.kody.codes'
 export const kodyOpenApiSpecUrl = `${kodyOpenApiOrigin}/openapi.json`
 export const kodyOpenApiV1Anchor = `${kodyOpenApiOrigin}/v1`
-export const kodyGithubUrl = 'https://github.com/kentcdodds/kody'
+export const kodyGithubUrl = 'https://github.com/kody-hq/kody'
 
 /**
  * Public OpenAI Apps domain-verification token for `openaiAppsChallengePath`.
@@ -474,7 +474,7 @@ export function homeSoftwareApplicationJsonLdScriptText(
  * at {@link kodyCanonicalMarketingOrigin}. Recompute if that JSON changes.
  */
 export const homeSoftwareApplicationJsonLdCspHash =
-	"'sha256-kA29cEckpxqhx3UH7quLqXA+rWPkZNkKL8yWo/7LPiY='"
+	"'sha256-M+uP/HENbGxRZOWd2/4MlETEUXL/WxQUaUi79Pg3bMw='"
 
 /**
  * Shared Open API discovery links for `/docs.md` and `/llms.txt`.
@@ -498,11 +498,11 @@ export function buildSecurityTxt(origin: string, now = new Date()): string {
 	const expires = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000)
 	return [
 		`Contact: mailto:me@kentcdodds.com`,
-		`Contact: https://github.com/kentcdodds/kody/security/advisories/new`,
+		`Contact: https://github.com/kody-hq/kody/security/advisories/new`,
 		`Expires: ${expires.toISOString()}`,
 		'Preferred-Languages: en',
 		`Canonical: ${origin}${securityTxtPath}`,
-		'Policy: https://raw.githubusercontent.com/kentcdodds/kody/main/SECURITY.md',
+		'Policy: https://raw.githubusercontent.com/kody-hq/kody/main/SECURITY.md',
 		'',
 	].join('\n')
 }

@@ -80,7 +80,7 @@ const providerIncident = (shortlink: string): ProviderIncident => ({
 
 const missing = (html: string, fragments: Array<string>) =>
 	fragments.filter((fragment) => !html.includes(fragment))
-const commitUrl = 'https://github.com/kentcdodds/kody/commit/'
+const commitUrl = 'https://github.com/kody-hq/kody/commit/'
 
 test('status page renders components, incidents, unknown state, and escapes detail html', () => {
 	const healthy = renderStatusPage(snapshot())

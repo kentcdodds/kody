@@ -390,7 +390,7 @@ function renderProviderIncident(incident: ProviderIncident): string {
 }
 
 /** Public GitHub repository for the main kody worker (production deploys). */
-const productionRepo = 'kentcdodds/kody'
+const productionRepo = 'kody-hq/kody'
 
 function productionCommitLink(commitSha: string): string {
 	const shortSha = commitSha.slice(0, 7)

@@ -28,14 +28,14 @@ const esModuleLexerReady = initEsModuleLexer()
  * Open API contract for downloading stamped `kody:@…` modules so
  * `execute --local` can embed them in workerd (no whole-module cloud execute).
  *
- * Platform tracking: https://github.com/kentcdodds/kody/issues/2808
+ * Platform tracking: https://github.com/kody-hq/kody/issues/2808
  * TODO(kody#2808): keep this path + response shape aligned with the shipped API.
  */
 export const localPackageGraphPath = 'v1/local-execute/package-graph'
 
 /** Linked from user-facing errors when the package-graph API is missing or blocked. */
 export const localPackageGraphPlatformIssueUrl =
-	'https://github.com/kentcdodds/kody/issues/2808'
+	'https://github.com/kody-hq/kody/issues/2808'
 
 /**
  * When `code` is larger than this, package-graph POSTs a tiny synthetic entry

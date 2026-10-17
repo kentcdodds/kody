@@ -1,4 +1,4 @@
-export const defaultGithubRepoUrl = 'https://github.com/kentcdodds/kody'
+export const defaultGithubRepoUrl = 'https://github.com/kody-hq/kody'
 export const maxCommitMessageLength = 500
 
 export type DeployCommitInfo = {

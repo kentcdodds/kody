@@ -209,7 +209,7 @@ export default greet
 				return
 			}
 			// Origin always returns the gateway-fetch shim, including when the
-			// entry has no kody:@ imports (kentcdodds/kody#3020).
+			// entry has no kody:@ imports (kody-hq/kody#3020).
 			if (imports.length === 0) {
 				send(200, {
 					imports: [],
@@ -793,7 +793,7 @@ test(
 	async () => {
 		reset()
 		const statuses: Array<string> = []
-		// Keep the Bearer {{secret:…}} shape in-source (kentcdodds/kody#3020) but
+		// Keep the Bearer {{secret:…}} shape in-source (kody-hq/kody#3020) but
 		// do not fetch outbound — this asserts CLI wiring only (always call
 		// package-graph + side-effect import the returned shim). Origin expands
 		// or fails closed once the real shim wraps globalThis.fetch.

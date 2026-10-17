@@ -1,6 +1,6 @@
 # Inbound contributions
 
-How outside patches enter [this repository](https://github.com/kentcdodds/kody).
+How outside patches enter [this repository](https://github.com/kody-hq/kody).
 The decision and the why live in
 [0018 — Inbound CLA](./decisions/0018-inbound-cla.md).
 

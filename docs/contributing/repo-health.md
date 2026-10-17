@@ -20,7 +20,7 @@ The sort lives in the `@kentcdodds/ship-pr` Kody package (`./tick` embeds it):
 ```bash
 npx @kodycodes/cli execute --local \
   --code 'import run from "kody:@kentcdodds/ship-pr/review-sort"; export default (p) => run(p)' \
-  --params '{"prUrl":"https://github.com/kentcdodds/kody/pull/123"}'
+  --params '{"prUrl":"https://github.com/kody-hq/kody/pull/123"}'
 ```
 
 Classification only by default; pass `applyInvalidReplies: true` to post the

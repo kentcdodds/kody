@@ -320,7 +320,7 @@ test('isPreviewDeployInProgress checks in_progress then queued workflow_dispatch
 
 	await expect(
 		isPreviewDeployInProgress({
-			repository: 'kentcdodds/kody',
+			repository: 'kody-hq/kody',
 			githubToken: 'token',
 			fetcher: respond(false),
 		}),
@@ -333,7 +333,7 @@ test('isPreviewDeployInProgress checks in_progress then queued workflow_dispatch
 	requestedStatuses.length = 0
 	await expect(
 		isPreviewDeployInProgress({
-			repository: 'kentcdodds/kody',
+			repository: 'kody-hq/kody',
 			githubToken: 'token',
 			fetcher: respond(true),
 		}),
@@ -344,7 +344,7 @@ test('isPreviewDeployInProgress checks in_progress then queued workflow_dispatch
 
 	await expect(
 		isPreviewDeployInProgress({
-			repository: 'kentcdodds/kody',
+			repository: 'kody-hq/kody',
 			githubToken: 'token',
 			fetcher: (async () => jsonResponse({}, 502)) as typeof fetch,
 		}),
@@ -372,7 +372,7 @@ test('hasBudgetForAnotherCleanup requires room for a full cleanup before the dea
 test('readPullRequestState maps GitHub responses and treats 404 as unknown', async () => {
 	const read = (response: Response) =>
 		readPullRequestState({
-			repository: 'kentcdodds/kody',
+			repository: 'kody-hq/kody',
 			number: 1,
 			githubToken: 'token',
 			fetcher: (async () => response) as typeof fetch,
@@ -536,7 +536,7 @@ test('planClosedSourceBranchSweep sweeps only previews whose source PRs all clos
 test('listBranchPullRequests queries by owner:branch across states', async () => {
 	const urls: Array<URL> = []
 	const pulls = await listBranchPullRequests({
-		repository: 'kentcdodds/kody',
+		repository: 'kody-hq/kody',
 		branch: 'cursor/credentials-list-904c',
 		githubToken: 'token',
 		fetcher: (async (input: RequestInfo | URL) => {
@@ -548,7 +548,7 @@ test('listBranchPullRequests queries by owner:branch across states', async () =>
 		}) as typeof fetch,
 	})
 	expect(urls[0]?.searchParams.get('head')).toBe(
-		'kentcdodds:cursor/credentials-list-904c',
+		'kody-hq:cursor/credentials-list-904c',
 	)
 	expect(urls[0]?.searchParams.get('state')).toBe('all')
 	expect(urls).toHaveLength(1)
@@ -558,7 +558,7 @@ test('listBranchPullRequests queries by owner:branch across states', async () =>
 	])
 	await expect(
 		listBranchPullRequests({
-			repository: 'kentcdodds/kody',
+			repository: 'kody-hq/kody',
 			branch: 'x',
 			githubToken: 'token',
 			fetcher: (async () => jsonResponse({}, 502)) as typeof fetch,

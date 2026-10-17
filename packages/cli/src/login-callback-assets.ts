@@ -1,6 +1,6 @@
 /**
  * Official Kody brand assets inlined for the localhost OAuth callback page.
- * Sourced from https://github.com/kentcdodds/kody:
+ * Sourced from https://github.com/kody-hq/kody:
  * - packages/worker/public/images/kody-mark.png
  * - packages/worker/public/images/kody-pattern.webp (compressed tile)
  * No external requests from the callback HTML.

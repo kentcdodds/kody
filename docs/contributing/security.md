@@ -732,7 +732,7 @@ change to these decisions here so future agents do not relitigate them.
   role, invite, or member/billing grant change declares `requiresLivePerson`, so
   a job, webhook, subscription, or inbound email run (and package code it
   starts) is denied even when its enabler is an Owner
-  ([#2393](https://github.com/kentcdodds/kody/issues/2393)). See
+  ([#2393](https://github.com/kody-hq/kody/issues/2393)). See
   [Capabilities that need a live person](./architecture/authorization.md#capabilities-that-need-a-live-person).
 - **Site-admin tools run from automation only for a site admin, and are
   audited.** Background package runs resolve the owner's roles with a short

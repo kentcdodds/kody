@@ -44,7 +44,7 @@ prints in `exampleInvokes`. The first tick is full. Re-ticks pass `brief: true`.
 ```bash
 npx @kodycodes/cli execute --local \
   --code 'import run from "kody:@kentcdodds/ship-pr/tick"; export default (p) => run(p)' \
-  --params '{"prUrl":"https://github.com/kentcdodds/kody/pull/123","risk":"medium","applySafeAutomations":true}'
+  --params '{"prUrl":"https://github.com/kody-hq/kody/pull/123","risk":"medium","applySafeAutomations":true}'
 ```
 
 ## Failure

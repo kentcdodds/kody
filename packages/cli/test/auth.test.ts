@@ -113,7 +113,7 @@ test('CLI OAuth identity is CIMD with a fixed loopback redirect', () => {
 		'https://kody.codes/oauth/cli-client-metadata.json',
 	)
 	assert.equal(metadata.client_name, '@kodycodes/cli')
-	assert.equal(metadata.client_uri, 'https://github.com/kentcdodds/kody')
+	assert.equal(metadata.client_uri, 'https://github.com/kody-hq/kody')
 	assert.deepEqual(metadata.redirect_uris, [cliRedirectUrl().href])
 	assert.equal(metadata.token_endpoint_auth_method, 'none')
 	assert.equal(metadata.application_type, 'native')

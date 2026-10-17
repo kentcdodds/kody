@@ -76,7 +76,7 @@ const __kodySecretResolutionHeader = 'x-kody-secret-resolution';
 /**
  * Streaming CapabilityProxy hop (POST /v1/capability-proxy/gateway-fetch via the
  * loopback bridge). Returns a real Response — not the JSON gatewayFetch envelope.
- * See kentcdodds/kody docs/contributing/contracts/cli-streaming-gateway-fetch.md.
+ * See kody-hq/kody docs/contributing/contracts/cli-streaming-gateway-fetch.md.
  */
 async function gatewayFetchStream(input) {
 	if (__kodyBridge === null || typeof __kodyBridge.gatewayFetch !== 'function') {
@@ -228,7 +228,7 @@ export const workflows = {
 // kody:@scope/package/export import when the name is known, or import(specifier)
 // when the name is data. Under --local, static kody:@ imports are resolved into
 // the workerd module list via POST /v1/local-execute/package-graph (see
-// local-package-graph.ts / kentcdodds/kody#2808) — never a whole-module
+// local-package-graph.ts / kody-hq/kody#2808) — never a whole-module
 // CapabilityProxy → kody.execute hop.
 export const packages = null;
 
@@ -418,7 +418,7 @@ export function __kodyRunInLocalRuntime(callback) {
  * Local workerd entry. Optional `sideEffectModules` are imported for their
  * evaluation side effects before the user module runs — used to load the
  * origin-supplied gateway-fetch shim so ambient `{{secret:…}}` fetch hops
- * even when the entry has no `kody:@` imports (kentcdodds/kody#3020).
+ * even when the entry has no `kody:@` imports (kody-hq/kody#3020).
  */
 export function createLocalEntrySource(
 	input: {

@@ -185,7 +185,7 @@ export async function main(argv = process.argv.slice(2)) {
 	const result = await invokeSitePerfPackage({
 		report,
 		webhookUrl: process.env.KODY_WEBHOOK_URL_RUN,
-		repository: process.env.GITHUB_REPOSITORY ?? 'kentcdodds/kody',
+		repository: process.env.GITHUB_REPOSITORY ?? 'kody-hq/kody',
 		startingRef: process.env.SITE_PERF_STARTING_REF ?? 'main',
 		runId: process.env.GITHUB_RUN_ID ?? 'local',
 	})

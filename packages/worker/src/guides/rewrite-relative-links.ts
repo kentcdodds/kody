@@ -4,8 +4,8 @@ import {
 	useDocGuideTwins,
 } from '#universal/docs-nav.ts'
 
-const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/kentcdodds/kody/main'
-const GITHUB_BLOB_BASE = 'https://github.com/kentcdodds/kody/blob/main'
+const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/kody-hq/kody/main'
+const GITHUB_BLOB_BASE = 'https://github.com/kody-hq/kody/blob/main'
 
 /** Directory of a guide file inside the repo, relative to the repo root. */
 export type GuideSourceDir = 'docs/guides' | 'docs/guides/providers'

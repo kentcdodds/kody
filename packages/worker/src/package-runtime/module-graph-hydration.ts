@@ -32,7 +32,7 @@ import { createRelativeImportSpecifier } from './module-graph-paths.ts'
  * Resolve a caller-owned `kody:@` specifier to its published
  * `importable-module` artifact. Used by literal dynamic-import hydration and
  * by computed `import(specifier)` library loads
- * ([#1750](https://github.com/kentcdodds/kody/issues/1750)).
+ * ([#1750](https://github.com/kody-hq/kody/issues/1750)).
  */
 export async function resolveCurrentDynamicPackageArtifact(input: {
 	env: Env

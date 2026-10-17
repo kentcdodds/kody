@@ -6,7 +6,7 @@
   </p>
 
   <p>
-    <a href="https://github.com/kentcdodds/kody/actions/workflows/deploy.yml"><img src="https://img.shields.io/github/actions/workflow/status/kentcdodds/kody/deploy.yml?branch=main&style=flat-square&logo=github&label=CI" alt="Build Status" /></a>
+    <a href="https://github.com/kody-hq/kody/actions/workflows/deploy.yml"><img src="https://img.shields.io/github/actions/workflow/status/kody-hq/kody/deploy.yml?branch=main&style=flat-square&logo=github&label=CI" alt="Build Status" /></a>
     <a href="https://kcd.im/kody-discord"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Join the Discord" /></a>
     <img src="https://img.shields.io/badge/TypeScript-6.0-blue?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
     <img src="https://img.shields.io/badge/Node-26-5FA04E?style=flat-square&logo=node.js&logoColor=white" alt="Node 26" />

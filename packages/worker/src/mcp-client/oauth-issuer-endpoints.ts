@@ -1,5 +1,5 @@
 /**
- * Mix-up defence (kentcdodds/kody#3284, parity with kody-celld#60 / #53): the
+ * Mix-up defence (kody-hq/kody#3284, parity with kody-celld#60 / #53): the
  * authorization and token endpoints must be on the issuer's origin. Every public
  * MCP authorization server surveyed (Linear, Notion, Atlassian, Sentry, Asana,
  * Canva, Zapier, PayPal, Supabase, GitHub) and Home Assistant keep both there.

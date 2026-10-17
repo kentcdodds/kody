@@ -37,7 +37,7 @@ chat you happened to open.
 
 You already have an agent. Cursor, Claude Code, Codex, ChatGPT, OpenClaw,
 whatever you actually talk to. Connect it to Kody
-[over MCP](https://github.com/kentcdodds/kody/blob/main/docs/use/connect-your-agent.md)
+[over MCP](https://github.com/kody-hq/kody/blob/main/docs/use/connect-your-agent.md)
 and it gets two tools: `search` and `execute`. Your agent does the thinking.
 Kody runs the code next to your secrets and your storage.
 
@@ -66,7 +66,7 @@ Your host reasons. The home does the doing.
 Once the walk works, ask the same agent to save it.
 
 In Kody that means a
-[saved package](https://github.com/kentcdodds/kody/blob/main/docs/use/packages.md):
+[saved package](https://github.com/kody-hq/kody/blob/main/docs/use/packages.md):
 repo-backed TypeScript with a `package.json`, a callable export, and version
 history you can open. The export is the answer shape you just proved — load a
 cursor from `packageStorage()`, return what is new, advance the cursor. The
@@ -145,6 +145,6 @@ on your behalf, which is why I wanted these to be packages you can open, not
 toggles in someone else's dashboard.
 
 Create a free account at [kody.codes/signup](https://kody.codes/signup). The
-source is [Fair Source](https://github.com/kentcdodds/kody).
+source is [Fair Source](https://github.com/kody-hq/kody).
 
 You already know the question. Ask it once. Keep the software.

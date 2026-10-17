@@ -71,10 +71,10 @@ Kody's `execute` isn't a calling convention in front of tools that exist
 elsewhere. It's the door to a runtime. When your assistant executes code in
 Kody, that code runs in a sandboxed Cloudflare Worker isolate next to the state
 it needs: your
-[secrets](https://github.com/kentcdodds/kody/blob/main/docs/use/secrets-and-values.md)
+[secrets](https://github.com/kody-hq/kody/blob/main/docs/use/secrets-and-values.md)
 resolve inside Kody's fetch gateway (never in prompts or in the model's
 context), your
-[saved packages](https://github.com/kentcdodds/kody/blob/main/docs/use/packages.md)
+[saved packages](https://github.com/kody-hq/kody/blob/main/docs/use/packages.md)
 import each other with real version history, and your scheduled jobs fire on
 Cloudflare's infrastructure at 2am with no client attached — there is no host
 around to do client-side code mode when your laptop is closed. As of
@@ -111,7 +111,7 @@ that outlive the session.
 Both connect to your agent over MCP (Kody's endpoint is https://kody.codes/mcp,
 and it works with Cursor, Claude Desktop, Claude Code, Codex and ChatGPT,
 OpenCode, VS Code, or any MCP-capable agent; see the
-[connection docs](https://github.com/kentcdodds/kody/blob/main/docs/use/connect-your-agent.md)).
+[connection docs](https://github.com/kody-hq/kody/blob/main/docs/use/connect-your-agent.md)).
 The difference is what's on the other side of the connection.
 
 Behind a gateway: other people's tools, reached through managed plumbing.
@@ -120,13 +120,13 @@ Behind Kody: your stuff. Your host agent does all the reasoning (Kody makes zero
 inference calls, so there's no second model bill), and ownership runs through
 the whole design. Installing a [public package](https://kody.codes/community)
 creates a published fork you own and can edit
-([docs](https://github.com/kentcdodds/kody/blob/main/docs/use/community-packages.md)).
+([docs](https://github.com/kody-hq/kody/blob/main/docs/use/community-packages.md)).
 OAuth connections use your own OAuth app, created at the provider and connected
 at https://kody.codes/connect/oauth: a few minutes of setup instead of one
 click, in exchange for your scopes, your rate limits, and no fixed provider list
 ([guide](https://kody.codes/docs/oauth)). And the whole thing is Fair Source,
-with code available at https://github.com/kentcdodds/kody, so "trust me" never
-has to be the answer.
+with code available at https://github.com/kody-hq/kody, so "trust me" never has
+to be the answer.
 
 ## Honest trade-offs, both directions
 

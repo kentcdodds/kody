@@ -22,8 +22,8 @@ not help the next agent.
 **Where:** always pass required
 `target: { host: 'github' | 'kody', repo: string }`.
 
-- Platform / this repo → `{ host: 'github', repo: 'kentcdodds/kody' }` (never
-  raw `gh`).
+- Platform / this repo → `{ host: 'github', repo: 'kody-hq/kody' }` (never raw
+  `gh`).
 - Kody package → `{ host: 'kody', repo: '@owner/leaf' }` (wakes Patch; no GitHub
   issue).
 

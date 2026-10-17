@@ -35,19 +35,19 @@ state:
 
 - **Memories.** Long-term facts about you and your preferences, available to
   whichever agent asks.
-  ([Memory docs](https://github.com/kentcdodds/kody/blob/main/docs/use/memory.md))
+  ([Memory docs](https://github.com/kody-hq/kody/blob/main/docs/use/memory.md))
 - **Secrets.** API keys and tokens your assistant can use without ever seeing.
-  ([Secrets docs](https://github.com/kentcdodds/kody/blob/main/docs/use/secrets-and-values.md))
+  ([Secrets docs](https://github.com/kody-hq/kody/blob/main/docs/use/secrets-and-values.md))
 - **Saved packages.** Repo-backed code you and your assistant wrote together,
   with version history.
-  ([Packages docs](https://github.com/kentcdodds/kody/blob/main/docs/use/packages.md))
+  ([Packages docs](https://github.com/kody-hq/kody/blob/main/docs/use/packages.md))
 - **Scheduled jobs.** Cron, interval, and one-shot tasks that run while your
   computer is off.
 - **Values and durable storage.** Configuration and data your packages read and
   write.
 - **An email inbox.** Your assistant gets its own address (like
   you@inbox.kody.codes) so services can reach it.
-  ([Email docs](https://github.com/kentcdodds/kody/blob/main/docs/use/email-primitives.md))
+  ([Email docs](https://github.com/kody-hq/kody/blob/main/docs/use/email-primitives.md))
 - **OAuth integrations and remote connectors.** Authenticated access to the
   services you actually use.
 
@@ -65,7 +65,7 @@ That freedom only exists if your accumulated state is portable. Kody connects to
 the agent you already use over MCP at https://kody.codes/mcp. Cursor, Claude
 Desktop, Claude Code, Codex and ChatGPT, OpenCode, VS Code: if it speaks MCP, it
 can be your assistant's front door.
-([Connection docs](https://github.com/kentcdodds/kody/blob/main/docs/use/connect-your-agent.md))
+([Connection docs](https://github.com/kody-hq/kody/blob/main/docs/use/connect-your-agent.md))
 
 Switch agents and Your agents' cloud comes with you. The memories are still
 there. The secrets are still there. The 42 jobs are still running (more on those
@@ -92,7 +92,7 @@ can't be an afterthought. Here's how it actually works:
 - **Code runs sandboxed.** When your assistant executes code, it runs in a
   Cloudflare Worker isolate without the parent environment. Capabilities are
   RPC'd back in, scoped to your userId.
-  ([Execute docs](https://github.com/kentcdodds/kody/blob/main/docs/use/execute.md))
+  ([Execute docs](https://github.com/kody-hq/kody/blob/main/docs/use/execute.md))
 - **Secrets never enter prompts.** They're encrypted server-side with AES-GCM
   and referenced in code as placeholders like `{{secret:name}}`. The real value
   is resolved only inside the fetch gateway, and only for hosts you explicitly
@@ -102,8 +102,8 @@ can't be an afterthought. Here's how it actually works:
   userId, and your scheduler and storage run in your own Durable Objects.
 
 And the part I care about most: Kody is Fair Source, with code available at
-https://github.com/kentcdodds/kody. You don't have to take my word for any of
-the above. Read the code.
+https://github.com/kody-hq/kody. You don't have to take my word for any of the
+above. Read the code.
 
 ## Owning beats renting
 
@@ -119,7 +119,7 @@ The community works the same way. When you install a package from
 https://kody.codes/community, that one click creates a published fork you own.
 Open it, edit it, schedule it, publish your improvements back. You can only rate
 a package you've actually forked and run, which keeps ratings honest.
-([Community docs](https://github.com/kentcdodds/kody/blob/main/docs/use/community-packages.md))
+([Community docs](https://github.com/kody-hq/kody/blob/main/docs/use/community-packages.md))
 
 This is a trade-off, and I want to name it plainly: ownership costs a little
 convenience up front. I think the trade is obviously worth it, but "obviously"
@@ -144,7 +144,7 @@ nothing.
 ## Your move
 
 Create a free account at https://kody.codes/signup. If you'd rather kick the
-tires on the code first, it's all at https://github.com/kentcdodds/kody.
+tires on the code first, it's all at https://github.com/kody-hq/kody.
 
 Either way, start noticing what your assistant accumulates that's worth keeping.
 Once you see it, you won't want to leave it locked inside somebody else's agent.

@@ -73,16 +73,16 @@ reasoning.
 When the Claw executes code, that code runs in a sandboxed Cloudflare Worker
 isolate next to the state it needs:
 
-- [Secrets](https://github.com/kentcdodds/kody/blob/main/docs/use/secrets-and-values.md)
+- [Secrets](https://github.com/kody-hq/kody/blob/main/docs/use/secrets-and-values.md)
   resolve inside Kody's fetch gateway. They never enter the Claw's prompt.
-- [Saved packages](https://github.com/kentcdodds/kody/blob/main/docs/use/packages.md)
+- [Saved packages](https://github.com/kody-hq/kody/blob/main/docs/use/packages.md)
   keep real version history. A one-off that works becomes code you own.
 - Scheduled jobs fire on Cloudflare's infrastructure at 2am with no laptop
   attached.
-- [Memories](https://github.com/kentcdodds/kody/blob/main/docs/use/memory.md)
+- [Memories](https://github.com/kody-hq/kody/blob/main/docs/use/memory.md)
   survive the conversation and the agent switch.
 - An
-  [inbox](https://github.com/kentcdodds/kody/blob/main/docs/use/email-primitives.md)
+  [inbox](https://github.com/kody-hq/kody/blob/main/docs/use/email-primitives.md)
   lets services reach your assistant while you're asleep.
 
 You can't re-render that as a skill folder on disk without losing the product.
@@ -143,7 +143,7 @@ do not need to add the server again.
 After the connection works, ask your Claw to `search` Kody before it `execute`s
 anything. Get started Step 2 gives you one prompt that has your Claw offer a few
 concrete first wins, then make one of them in your account, often a
-[package you own](https://github.com/kentcdodds/kody/blob/main/docs/use/packages.md).
+[package you own](https://github.com/kody-hq/kody/blob/main/docs/use/packages.md).
 That's the moment a useful Claw workflow stops being a chat and starts being a
 home.
 
@@ -172,7 +172,7 @@ https://kody.codes/onboarding?agent=openclaw.
 If you don't have either yet, start with the conversation or the home, whichever
 pain you actually have. OpenClaw is at https://openclaw.ai. Create a free Kody
 account at https://kody.codes/signup. The source is at
-https://github.com/kentcdodds/kody.
+https://github.com/kody-hq/kody.
 
 Either way, notice what your assistant is accumulating that you don't want
 locked inside one laptop. Once you see it, you'll want a place for it that keeps

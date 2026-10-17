@@ -12,7 +12,7 @@ import { isolatedRunnerResourceLimitAdvice } from './isolated-runner-limit-messa
  * isolates instead of the session/publish Durable Object. One large package
  * could otherwise push the session isolate (workspace + git state + checks)
  * over the Durable Object memory limit and kill every publish attempt
- * (kentcdodds/kody#987). Each phase invocation gets a brand-new DO id, so:
+ * (kody-hq/kody#987). Each phase invocation gets a brand-new DO id, so:
  *
  * - phases never stack their peak memory on top of the session isolate or
  *   each other (esbuild-wasm memory in particular never shrinks once grown),
