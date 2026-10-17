@@ -209,7 +209,11 @@ export function renderRestorableOrganizations(
 	data: AccountOrganizationsLoaderData,
 	actions: RestorableActions,
 ) {
-	if (data.restorableOrganizations.length === 0) return null
+	// Keep feedback after a restore that empties the list (window expired,
+	// already restored, or success without a redirect).
+	if (data.restorableOrganizations.length === 0 && !actions.message) {
+		return null
+	}
 	return (
 		<AccountManagementPanel
 			title="Recently deleted"
@@ -221,33 +225,36 @@ export function renderRestorableOrganizations(
 					{actions.message}
 				</AccountManagementMessage>
 			) : null}
-			<ul mix={css(orgListCss)} data-testid="restorable-organizations">
-				{data.restorableOrganizations.map((org) =>
-					renderOrgRow({
-						key: org.slug,
-						slug: org.slug,
-						displayName: org.displayName,
-						personal: false,
-						viewer: data.viewer,
-						detail: `Deleted ${formatTimestampDate(org.deletedAt)}`,
-						pills: [{ label: 'Deleted', tone: 'quiet' }],
-						testId: 'restorable-organization',
-						trailing: (
-							<button
-								type="button"
-								disabled={actions.busySlug !== null}
-								data-testid="restore-organization"
-								mix={[
-									css(getPillButtonCss({ size: 'sm' })),
-									on('click', () => actions.restore(org)),
-								]}
-							>
-								{actions.busySlug === org.slug ? 'Restoring…' : 'Restore'}
-							</button>
-						),
-					}),
-				)}
-			</ul>
+			{data.restorableOrganizations.length > 0 ? (
+				<ul mix={css(orgListCss)} data-testid="restorable-organizations">
+					{data.restorableOrganizations.map((org) =>
+						renderOrgRow({
+							key: org.slug,
+							slug: org.slug,
+							displayName: org.displayName,
+							personal: false,
+							viewer: data.viewer,
+							detail: `Deleted ${formatTimestampDate(org.deletedAt)}`,
+							pills: [{ label: 'Deleted', tone: 'quiet' }],
+							testId: 'restorable-organization',
+							trailing: (
+								<button
+									type="button"
+									disabled={actions.busySlug !== null}
+									aria-label={`Restore @${org.slug}`}
+									data-testid="restore-organization"
+									mix={[
+										css(getPillButtonCss({ size: 'sm' })),
+										on('click', () => actions.restore(org)),
+									]}
+								>
+									{actions.busySlug === org.slug ? 'Restoring…' : 'Restore'}
+								</button>
+							),
+						}),
+					)}
+				</ul>
+			) : null}
 		</AccountManagementPanel>
 	)
 }
