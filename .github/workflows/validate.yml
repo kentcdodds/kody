@@ -14,6 +14,16 @@ on:
       - ready_for_review
   workflow_dispatch:
     inputs:
+      runner:
+        description: >
+          Runner label for every Validate job on this manual run. Default
+          matches push and pull_request (WarpBuild). Choose ubuntu-latest for a
+          GitHub-hosted comparison.
+        type: choice
+        options:
+          - warp-ubuntu-latest-x64-4x
+          - ubuntu-latest
+        default: warp-ubuntu-latest-x64-4x
       no_cache:
         description: >
           Skip every Validate cache layer (Nx remote token unbound,
@@ -61,7 +71,9 @@ permissions:
 env:
   CI: '1'
   VALIDATE_NO_CACHE: ${{ inputs.no_cache == true && 'true' || 'false' }}
-  VALIDATE_RUNNER: ${{ inputs.runner || 'ubuntu-latest' }}
+  # Same expression as runs-on. Push/PR leave inputs.runner empty and report
+  # WarpBuild; workflow_call always sets it (default ubuntu-latest).
+  VALIDATE_RUNNER: ${{ inputs.runner || 'warp-ubuntu-latest-x64-4x' }}
   VALIDATE_ITERATION: ${{ inputs.iteration || 0 }}
   NX_SKIP_NX_CACHE: ${{ inputs.no_cache == true && 'true' || '' }}
   NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN: >-
@@ -76,12 +88,13 @@ env:
 # push; deploy.yml's sha-guard can deploy any completed run that is ahead of
 # production, though its own queue may replace an older pending deploy.
 # Runner / no_cache / iteration keep bench matrix cells and ubuntu-vs-warp
-# dispatches from cancelling each other.
+# dispatches from cancelling each other. The runner segment is the label
+# jobs actually use (inputs.runner, or WarpBuild when that input is absent).
 concurrency:
   group: >-
     validate-${{ github.event_name }}-${{ github.event.pull_request.number ||
-    github.ref }}-${{ inputs.runner || 'ubuntu-latest' }}-nocache-${{
-    inputs.no_cache || false }}-iter-${{ inputs.iteration || 0 }}
+    github.ref }}-${{ inputs.runner || 'warp-ubuntu-latest-x64-4x'
+    }}-nocache-${{ inputs.no_cache || false }}-iter-${{ inputs.iteration || 0 }}
   cancel-in-progress: ${{ github.event_name != 'push' }}
 
 # Same checks as `npm run validate`, split across runners so CPU-heavy suites
@@ -650,7 +663,7 @@ jobs:
             echo "## Validate wall-clock"
             echo "- event: \`${{ github.event_name }}\`"
             echo "- no_cache: \`${VALIDATE_NO_CACHE}\`"
-            echo "- runner input: \`${VALIDATE_RUNNER}\`"
+            echo "- runner: \`${VALIDATE_RUNNER}\`"
             echo "- iteration: \`${VALIDATE_ITERATION}\`"
             echo "- run: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
             echo "- sha: \`${{ github.sha }}\`"
