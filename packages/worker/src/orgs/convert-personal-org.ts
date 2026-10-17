@@ -378,7 +378,12 @@ async function stageMcpServerTransfers(input: {
 		}
 	} catch (error) {
 		for (const row of staged) {
-			await targetHub.discardTransferredServer({ serverId: row.id })
+			try {
+				await targetHub.discardTransferredServer({ serverId: row.id })
+			} catch {
+				// Keep discarding remaining staged servers; preserve the
+				// original convert/import error for the caller.
+			}
 		}
 		throw error
 	}
@@ -396,7 +401,11 @@ async function discardStagedMcpServerTransfers(input: {
 		userId: input.toId,
 	})
 	for (const row of input.servers) {
-		await targetHub.discardTransferredServer({ serverId: row.id })
+		try {
+			await targetHub.discardTransferredServer({ serverId: row.id })
+		} catch {
+			// Best-effort cleanup; never replace the original convert error.
+		}
 	}
 }
 
@@ -728,6 +737,14 @@ export async function convertPersonalOrg(input: {
 			toId: newPersonalOrgId,
 		})
 		mcpOwnershipRewritten = true
+		// Finalize hub remove/connect immediately after D1 ownership rewrite so
+		// later OAuth/email/reindex failures cannot leave MCP split.
+		await finalizeMcpServerTransfers({
+			env: input.env,
+			fromId: convertedOrgId,
+			toId: newPersonalOrgId,
+			servers: stagedMcpServers,
+		})
 
 		// Credentials left the converted org; drop that org's live grants to them
 		// so team members cannot keep using the person's private credentials.
@@ -798,13 +815,6 @@ export async function convertPersonalOrg(input: {
 			env: input.env,
 			db,
 			toId: newPersonalOrgId,
-		})
-
-		await finalizeMcpServerTransfers({
-			env: input.env,
-			fromId: convertedOrgId,
-			toId: newPersonalOrgId,
-			servers: stagedMcpServers,
 		})
 
 		return {

@@ -28,6 +28,7 @@ import { provisionPersonalOrg } from './provision.ts'
 const hubMock = vi.hoisted(() => {
 	const calls: Array<string> = []
 	let failImportOnServerId: string | null = null
+	let throwOnDiscardServerId: string | null = null
 	let usernameAtFirstImport: string | null = null
 	let readUsername: (() => Promise<string | null>) | null = null
 	return {
@@ -35,11 +36,15 @@ const hubMock = vi.hoisted(() => {
 		reset() {
 			calls.length = 0
 			failImportOnServerId = null
+			throwOnDiscardServerId = null
 			usernameAtFirstImport = null
 			readUsername = null
 		},
 		failImportOn(serverId: string) {
 			failImportOnServerId = serverId
+		},
+		throwOnDiscard(serverId: string) {
+			throwOnDiscardServerId = serverId
 		},
 		observeUsername(reader: () => Promise<string | null>) {
 			readUsername = reader
@@ -80,6 +85,9 @@ const hubMock = vi.hoisted(() => {
 			},
 			discardTransferredServer: async ({ serverId }: { serverId: string }) => {
 				calls.push(`discard:${userId}:${serverId}`)
+				if (throwOnDiscardServerId === serverId) {
+					throw new Error('discard boom')
+				}
 			},
 			listServerIdsForTransfer: async () => [],
 		}),
@@ -572,6 +580,45 @@ test('convertPersonalOrg stages MCP hub transfers before identity rewrite and di
 	expect(
 		hubMock.calls.some(
 			(call) => call.startsWith('discard:') && call.endsWith(':srv-a'),
+		),
+	).toBe(true)
+})
+
+test('convertPersonalOrg preserves import error when staged discard fails', async () => {
+	const { db, env } = await createHarness()
+	const personId = await seedEqualIdPerson(db, {
+		email: 'mcp-discard@example.com',
+		username: 'mcp-discard',
+	})
+	const convertedOrgId = personalOrgId(personId)
+	;(env as { MCP_CLIENT_HUB?: unknown }).MCP_CLIENT_HUB = {}
+	await db
+		.prepare(
+			`INSERT INTO mcp_server_settings (id, user_id, name, url)
+			 VALUES ('srv-keep', ?, 'keep', 'https://keep.example.com'),
+			        ('srv-fail', ?, 'fail', 'https://fail.example.com')`,
+		)
+		.bind(convertedOrgId, convertedOrgId)
+		.run()
+
+	hubMock.failImportOn('srv-fail')
+	hubMock.throwOnDiscard('srv-keep')
+
+	await expect(
+		convertPersonalOrg({
+			env,
+			personId,
+			newHandle: 'mcp-discard-new',
+			now: new Date(now),
+		}),
+	).rejects.toMatchObject({
+		name: 'ConvertPersonalOrgError',
+		code: 'failed',
+		message: 'Unable to import MCP server "fail" during conversion.',
+	})
+	expect(
+		hubMock.calls.some(
+			(call) => call.startsWith('discard:') && call.endsWith(':srv-keep'),
 		),
 	).toBe(true)
 })
