@@ -68,7 +68,7 @@ test('onboarding MCP client builders emit the structured configs each host expec
 				{ id: 'devin' },
 				{ id: 'openclaw', viewport: 'mobile-only' },
 				{ id: 'hermes', viewport: 'mobile-only' },
-				{ id: 'grok-bot', viewport: 'desktop-only' },
+				{ id: 'muse', viewport: 'both' },
 				{ id: 'wajo', viewport: 'both' },
 				{ id: 'cue', viewport: 'both' },
 				{ id: 'openmuse', viewport: 'both' },

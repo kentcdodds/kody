@@ -70,14 +70,14 @@ export const mcpClientTabs = [
  * Desktop chooser: coding agents first, then the highest-traffic chat hosts
  * that are not already represented. Devin stands in for Devin Desktop
  * (ex-Windsurf). OpenCode is the Cline / OpenCode slot. OpenClaw and Hermes
- * Agent are the local-first personal-agent slots. Muse is Meta's Muse Code
- * CLI slot. ChatGPT.com and Claude Desktop fill the leftover seats so the
- * auto-fill desktop grid lands on complete rows with Not listed (12 cards).
- * Gemini and Grok Bot stay under More on desktop (still featured on mobile).
- * Wajo, Cue, OpenMuse, and Dots are lower-priority MCP peers: they stay off
- * the featured 12 and appear under Not listed (and Account → Connections).
- * Grok.com, Grok CLI, and the Copilot app stay under Not listed (Copilot
- * desktop/CLI is already featured; Aider is not a Kody connect path yet).
+ * Agent are the local-first personal-agent slots. ChatGPT.com, Claude Desktop,
+ * and Grok Bot fill the leftover seats so the auto-fill desktop grid lands on
+ * complete rows with Not listed (12 cards). Gemini stays under More on desktop
+ * (still featured on mobile). Muse Code, Wajo, Cue, OpenMuse, and Dots are
+ * lower-priority MCP peers: they stay off the featured 12 and appear under Not
+ * listed (and Account → Connections). Grok.com, Grok CLI, and the Copilot app
+ * stay under Not listed (Copilot desktop/CLI is already featured; Aider is not
+ * a Kody connect path yet).
  */
 export const onboardingDesktopFeaturedAgentIds = [
 	'claude-code',
@@ -88,17 +88,18 @@ export const onboardingDesktopFeaturedAgentIds = [
 	'opencode',
 	'openclaw',
 	'hermes',
-	'muse',
 	'chatgpt',
 	'claude-desktop',
+	'grok-bot',
 ] as const satisfies ReadonlyArray<McpClientKind>
 
 /**
  * Lower-priority action agents / MCP peers. Shown under Not listed on
  * Get started (and on Account → Connections via the full catalog), not in
- * the featured Step 1 grid. Order: Wajo, Cue, OpenMuse, Dots.
+ * the featured Step 1 grid. Order: Muse, Wajo, Cue, OpenMuse, Dots.
  */
 const onboardingSecondaryAgentIds = [
+	'muse',
 	'wajo',
 	'cue',
 	'openmuse',

@@ -26,7 +26,7 @@ const renderTabs = (
 		jsx(OnboardingMcpClientTabs, { mcpServerUrl: defaultKodyMcpUrl, ...props }),
 	)
 
-test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok Bot surfaces', async () => {
+test('onboarding Step 1 picker selects an agent, then Not listed, with Muse under Not listed', async () => {
 	const picker = await renderTabs({})
 	expect(picker).toContain('data-testid="onboarding-agent-picker"')
 	expect(picker).toContain('data-testid="onboarding-agent-cursor"')
@@ -43,11 +43,10 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(picker).toContain('data-testid="onboarding-agent-grok-bot"')
 	expect(picker).toContain('data-testid="onboarding-agent-openclaw"')
 	expect(picker).toContain('href="/onboarding/step-1/openclaw"')
-	expect(picker).toContain('data-testid="onboarding-agent-muse"')
-	expect(picker).toContain('href="/onboarding/step-1/muse"')
 	expect(picker).toContain('data-testid="onboarding-agent-hermes"')
 	expect(picker).toContain('href="/onboarding/step-1/hermes"')
 	expect(picker).toContain('/images/icons/hermes.svg')
+	expect(picker).not.toContain('data-testid="onboarding-agent-muse"')
 	expect(picker).not.toContain('data-testid="onboarding-agent-wajo"')
 	expect(picker).not.toContain('data-testid="onboarding-agent-cue"')
 	expect(picker).not.toContain('data-testid="onboarding-agent-openmuse"')
@@ -64,12 +63,14 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(picker).toContain('href="/onboarding/step-1/grok"')
 	expect(picker).toContain('/images/icons/cursor.svg')
 	expect(picker).toContain('/images/icons/grokbot.svg')
-	expect(picker).toContain('/images/icons/muse.svg')
 
 	const notListed = await renderTabs({ selectedAgent: 'other' })
 	expect(notListed).toContain('data-testid="onboarding-agent-hermes"')
 	expect(notListed).toContain('href="/onboarding/step-1/hermes"')
 	expect(notListed).toContain('/images/icons/hermes.svg')
+	expect(notListed).toContain('data-testid="onboarding-agent-muse"')
+	expect(notListed).toContain('href="/onboarding/step-1/muse"')
+	expect(notListed).toContain('/images/icons/muse.svg')
 	expect(notListed).toContain('data-testid="onboarding-agent-wajo"')
 	expect(notListed).toContain('href="/onboarding/step-1/wajo"')
 	expect(notListed).toContain('data-testid="onboarding-agent-cue"')
