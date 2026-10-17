@@ -236,7 +236,11 @@ export function createAccountOrganizationsRestorePostHandler(env: Env) {
 				if (error instanceof FreeOrgLimitError) {
 					return jsonResponse({ ok: false, error: error.message }, 400)
 				}
-				if (error instanceof Error && error.message === 'org_restore_race') {
+				if (
+					error instanceof Error &&
+					(error.message === 'org_restore_race' ||
+						error.message === 'org_not_deleted')
+				) {
 					return jsonResponse(
 						{
 							ok: false,

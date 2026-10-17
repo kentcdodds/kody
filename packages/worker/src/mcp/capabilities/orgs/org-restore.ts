@@ -74,6 +74,15 @@ export const orgRestoreCapability = defineDomainCapability(
 				if (error instanceof FreeOrgLimitError) {
 					throw new McpCallerError(error.message)
 				}
+				if (
+					error instanceof Error &&
+					(error.message === 'org_restore_race' ||
+						error.message === 'org_not_deleted')
+				) {
+					throw new McpCallerError(
+						'That organization was already restored. Try again.',
+					)
+				}
 				throw error
 			}
 			return { orgId: args.orgId }

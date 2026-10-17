@@ -423,6 +423,18 @@ export async function softDeleteOrg(input: {
 }
 
 /**
+ * Owner memberships that authorize restore for a soft-deleted org: either
+ * tombstoned at the same generation as the org, or still live when soft-delete
+ * stamped the org and then failed before membership tombstones.
+ */
+const restoreOwnerMembershipJoinSql = `
+			  AND m.role = 'owner'
+			  AND (
+			    m.deleted_at = o.deleted_at
+			    OR m.deleted_at IS NULL
+			  )`
+
+/**
  * Soft-deleted orgs cannot be bound as the request org (memberships are
  * tombstoned). Restore authorization checks that the actor was an Owner of
  * the org at the deletion generation instead.
@@ -439,8 +451,7 @@ export async function assertActorCanRestoreSoftDeletedOrg(input: {
 			 INNER JOIN org_memberships m
 			   ON m.org_id = o.id
 			  AND m.user_id = ?
-			  AND m.role = 'owner'
-			  AND m.deleted_at = o.deleted_at
+			  ${restoreOwnerMembershipJoinSql}
 			 WHERE o.id = ?
 			   AND o.deleted_at IS NOT NULL`,
 		)
@@ -483,8 +494,7 @@ export async function listRestorableOrganizationsForPerson(input: {
 			 INNER JOIN org_memberships m
 			   ON m.org_id = o.id
 			  AND m.user_id = ?
-			  AND m.role = 'owner'
-			  AND m.deleted_at = o.deleted_at
+			  ${restoreOwnerMembershipJoinSql}
 			 WHERE o.deleted_at IS NOT NULL
 			   AND o.deleted_at >= ?
 			   AND NOT EXISTS (
@@ -535,8 +545,7 @@ export async function loadRestorableOrganizationBySlugForPerson(input: {
 			 INNER JOIN org_memberships m
 			   ON m.org_id = o.id
 			  AND m.user_id = ?
-			  AND m.role = 'owner'
-			  AND m.deleted_at = o.deleted_at
+			  ${restoreOwnerMembershipJoinSql}
 			 WHERE o.slug = ?
 			   AND o.deleted_at IS NOT NULL
 			   AND o.deleted_at >= ?
@@ -583,7 +592,9 @@ async function assertRestoreKeepsOwnersUnderFreeOrgCap(input: {
 			 FROM org_memberships m
 			 INNER JOIN users u ON u.stable_user_id = m.user_id AND u.deleted_at IS NULL
 			 LEFT JOIN handles h ON h.user_id = m.user_id
-			 WHERE m.org_id = ? AND m.role = 'owner' AND m.deleted_at = ?`,
+			 WHERE m.org_id = ?
+			   AND m.role = 'owner'
+			   AND (m.deleted_at = ? OR m.deleted_at IS NULL)`,
 		)
 		.bind(input.orgId, input.deletedAt)
 		.all<{ user_id: string; handle: string | null }>()
@@ -611,7 +622,7 @@ const freeOrgCapRestoreGuardSql = `
 		INNER JOIN users u ON u.stable_user_id = m.user_id AND u.deleted_at IS NULL
 		WHERE m.org_id = orgs.id
 		  AND m.role = 'owner'
-		  AND m.deleted_at = orgs.deleted_at
+		  AND (m.deleted_at = orgs.deleted_at OR m.deleted_at IS NULL)
 		  AND (
 		    SELECT COUNT(*)
 		    FROM orgs o2

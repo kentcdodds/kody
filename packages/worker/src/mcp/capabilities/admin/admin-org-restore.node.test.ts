@@ -87,3 +87,34 @@ test('adminOrgRestore calls restoreOrg for a soft-deleted team org', async () =>
 		expect.objectContaining({ orgId: ownerIdFromStored(orgId) }),
 	)
 })
+
+test('adminOrgRestore maps org_restore_race to a caller error', async () => {
+	const first = vi
+		.fn()
+		.mockResolvedValueOnce({
+			slug: 'admin-restore-race',
+			deleted_at: '2026-10-10T00:00:00.000Z',
+		})
+		.mockResolvedValueOnce(null)
+	const prepare = vi.fn(() => ({
+		bind: vi.fn(() => ({ first })),
+	}))
+	mocks.restoreOrg.mockRejectedValue(new Error('org_restore_race'))
+	await expect(
+		adminOrgRestoreCapability.handler({ org_id: orgId, reason }, {
+			env: { APP_DB: { prepare } } as unknown as Env,
+			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
+				baseUrl: 'https://heykody.dev',
+				user: {
+					userId: personIdFromStored(
+						testStableUserIdFromEmail('admin@example.com'),
+					),
+					email: 'admin@example.com',
+					displayName: 'Admin',
+					roles: ['admin'],
+				},
+			}),
+		} as never),
+	).rejects.toThrow('That organization was already restored. Try again.')
+})
