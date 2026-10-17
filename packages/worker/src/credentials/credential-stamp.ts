@@ -696,6 +696,9 @@ export function scanLiteralMcpServerKeys(files: Record<string, string>): {
 	files = omitOversizedCredentialStampModules(files)
 	const keys = new Set<string>()
 	const failures: Array<CredentialStampGateFailure> = []
+	const declaredMcpKeys = declaredMcpCredentialKeys(
+		readManifestCredentialSlots(files[packageManifestPath]),
+	)
 	const modulePaths = listScannableModulePaths(files)
 	const parsedModules = new Map(
 		modulePaths.map((path) => [path, parseModule(files[path]!)]),
@@ -743,11 +746,11 @@ export function scanLiteralMcpServerKeys(files: Record<string, string>): {
 		}
 		walkAst(parsed, (node, ancestors) => {
 			if (node.type === 'VariableDeclarator') {
-				// `const mcp = kody.mcp` / `const mcp = cm.mcp` / `const mcp = runtime.mcp`
+				// `const mcp = kody.mcp` / `const mcp = runtime.mcp`
 				if (
 					node.id?.type === 'Identifier' &&
 					node.init &&
-					isMcpServerRoot(node.init, kodyAliases, mcpAliases)
+					isKodyMcpRoot(node.init, kodyAliases, mcpAliases)
 				) {
 					const local = getNodeName(node.id)
 					if (local) mcpAliases.add(local)
@@ -794,7 +797,7 @@ export function scanLiteralMcpServerKeys(files: Record<string, string>): {
 				if (
 					node.id?.type === 'ObjectPattern' &&
 					node.init &&
-					isMcpServerRoot(node.init, kodyAliases, mcpAliases)
+					isKodyMcpRoot(node.init, kodyAliases, mcpAliases)
 				) {
 					collectLiteralMcpServersFromObjectPattern({
 						pattern: node.id,
@@ -814,6 +817,7 @@ export function scanLiteralMcpServerKeys(files: Record<string, string>): {
 					kodyAliases,
 					mcpAliases,
 					constantsWithoutShadows(constants, ancestors),
+					declaredMcpKeys,
 				)
 				if (server === null) {
 					failures.push({
@@ -891,26 +895,38 @@ function isKodyMcpRoot(
 	return memberPropertyName(node) === 'mcp'
 }
 
+function declaredMcpCredentialKeys(
+	slots: Record<string, ManifestCredentialSlot>,
+): ReadonlySet<string> {
+	const keys = new Set<string>()
+	for (const [name, slot] of Object.entries(slots)) {
+		if (slot.kind === 'mcp') keys.add(name)
+	}
+	return keys
+}
+
 /**
- * Credential-use scan root for literal MCP server keys. Same as
- * {@link isKodyMcpRoot} for known `kody` / `mcp` aliases, plus any
- * `identifier.mcp` / `identifier?.mcp` (and bracket / template forms) so
- * helpers like kasa's `cm.mcp?.['home']` count as using `home`.
+ * `cm.mcp` / `cm?.mcp` / `cm['mcp']` when `cm` is not a known kody/mcp alias.
+ * Used only to mark already-declared MCP slots as used (kasa helpers); never
+ * seals new keys or fails the publish gate.
  */
-function isMcpServerRoot(
+function isLooseDeclaredMcpRoot(
 	node: AstNode,
 	kodyAliases: Set<string>,
 	mcpAliases: Set<string>,
 ): boolean {
-	if (isKodyMcpRoot(node, kodyAliases, mcpAliases)) return true
 	if (
 		node.type !== 'MemberExpression' &&
 		node.type !== 'OptionalMemberExpression'
 	) {
 		return false
 	}
+	if (memberPropertyName(node) !== 'mcp') return false
 	if (node.object?.type !== 'Identifier') return false
-	return memberPropertyName(node) === 'mcp'
+	const objectName = getNodeName(node.object)
+	if (objectName == null) return false
+	if (kodyAliases.has(objectName) || mcpAliases.has(objectName)) return false
+	return true
 }
 
 function collectLiteralMcpServersFromObjectPattern(input: {
@@ -962,11 +978,27 @@ function collectLiteralMcpServersFromObjectPattern(input: {
  * when NAME is a module const string, or null when the access is dynamic, or
  * undefined when the node is not an mcp server access.
  */
+function literalMcpServerName(
+	node: AstNode,
+	constants: ReadonlyMap<string, string>,
+): string | null {
+	if (node.computed === true) {
+		const literal = memberPropertyName(node)
+		if (literal != null) return literal
+		if (node.property) {
+			return resolveStringExpression(node.property, constants)
+		}
+		return null
+	}
+	return memberPropertyName(node)
+}
+
 function mcpServerFromMember(
 	node: AstNode,
 	kodyAliases: Set<string>,
 	mcpAliases: Set<string>,
 	constants: ReadonlyMap<string, string> = new Map(),
+	declaredMcpKeys: ReadonlySet<string> = new Set(),
 ): string | null | undefined {
 	if (
 		node.type !== 'MemberExpression' &&
@@ -974,25 +1006,28 @@ function mcpServerFromMember(
 	) {
 		return undefined
 	}
-	if (isMcpServerRoot(node, kodyAliases, mcpAliases)) {
-		// Bare `kody.mcp` / `cm.mcp` / `mcp` root — wait for a child member.
+	if (isKodyMcpRoot(node, kodyAliases, mcpAliases)) {
+		// Bare `kody.mcp` / `mcp` root — wait for a child member when present.
 		return undefined
 	}
-	if (!node.object || !isMcpServerRoot(node.object, kodyAliases, mcpAliases)) {
-		return undefined
-	}
-	if (node.computed === true) {
-		const property = node.property
-		const literal = memberPropertyName(node)
-		if (literal != null) return literal
+	if (node.object && isKodyMcpRoot(node.object, kodyAliases, mcpAliases)) {
+		const server = literalMcpServerName(node, constants)
 		// `kody.mcp?.[CANVA_MCP_NAME]` when CANVA_MCP_NAME = 'canva' at module
-		// scope — same as credential("KEY") const folding.
-		if (property) {
-			return resolveStringExpression(property, constants)
-		}
-		return null
+		// scope — same as credential("KEY") const folding. Dynamic → fail.
+		return server
 	}
-	return memberPropertyName(node)
+	// Helpers like kasa's `cm.mcp?.['home']`: count a literal server only when
+	// that slot is already declared kind "mcp". Ignore unrelated `*.mcp` data
+	// and never fail the gate for dynamic access on those roots.
+	if (
+		node.object &&
+		isLooseDeclaredMcpRoot(node.object, kodyAliases, mcpAliases)
+	) {
+		const server = literalMcpServerName(node, constants)
+		if (server != null && declaredMcpKeys.has(server)) return server
+		return undefined
+	}
+	return undefined
 }
 
 /**

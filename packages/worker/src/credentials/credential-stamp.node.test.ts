@@ -204,10 +204,15 @@ test('scanLiteralMcpServerKeys stamps literal servers and fails dynamic access',
 	expect(literal.keys).toEqual(['home', 'linear'])
 	expect(literal.failures).toEqual([])
 
-	// Optional chaining + brackets + static templates on any identifier.mcp
-	// (kasa: cm.mcp?.['home'] on a typed helper parameter).
+	// Optional chaining + brackets + static templates on kody.mcp, and on a
+	// non-kody helper root only when the server is already a declared mcp slot
+	// (kasa: cm.mcp?.['home']).
 	const optionalBracketForms = scanLiteralMcpServerKeys({
-		'package.json': manifest(),
+		'package.json': manifest({
+			credentials: {
+				home: { kind: 'mcp', description: 'Home connector.' },
+			},
+		}),
 		'src/home-tools.ts': [
 			'export type KodyKasa = { mcp: { home: unknown } }',
 			'export function getHomeKasaTools(cm: KodyKasa) {',
@@ -226,19 +231,30 @@ test('scanLiteralMcpServerKeys stamps literal servers and fails dynamic access',
 	expect(optionalBracketForms.keys).toEqual(['canva', 'home', 'linear'])
 	expect(optionalBracketForms.failures).toEqual([])
 
-	const viaParamAlias = scanLiteralMcpServerKeys({
+	const unrelatedMcpData = scanLiteralMcpServerKeys({
+		'package.json': manifest(),
+		'src/index.ts': [
+			'const settings = { mcp: { enabled: true } }',
+			'export default async function run() {',
+			'\treturn settings.mcp.enabled',
+			'}',
+		].join('\n'),
+	})
+	expect(unrelatedMcpData.keys).toEqual([])
+	expect(unrelatedMcpData.failures).toEqual([])
+
+	const serverNamedMcp = scanLiteralMcpServerKeys({
 		'package.json': manifest(),
 		'src/index.ts': [
 			"import { kody } from 'kody:runtime'",
-			'export function bind(cm: { mcp: { home: unknown } }) {',
-			'\tconst mcp = cm.mcp',
-			'\treturn mcp?.home',
+			'const servers = kody.mcp',
+			'export default async function run() {',
+			'\treturn servers.mcp.tool({})',
 			'}',
-			'export default async function run() { return bind(kody) }',
 		].join('\n'),
 	})
-	expect(viaParamAlias.keys).toEqual(['home'])
-	expect(viaParamAlias.failures).toEqual([])
+	expect(serverNamedMcp.keys).toEqual(['mcp'])
+	expect(serverNamedMcp.failures).toEqual([])
 
 	const viaAlias = scanLiteralMcpServerKeys({
 		'package.json': manifest(),
